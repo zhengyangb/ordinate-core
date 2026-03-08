@@ -53,6 +53,7 @@ Current rule:
 
 - \# starts a new sheet
 - content belongs to that sheet until the next # or end of file
+- each sheet must contain exactly one table
 
 ## **Basic Table Form**
 
@@ -209,9 +210,7 @@ Those questions are left to later RFCs.
 ## **Open Questions**
 
 
-- should prose be allowed between tables inside a sheet
-- should a sheet allow multiple tables
+- should prose be allowed around the table inside a sheet
 - should || be the final Header Column marker
 - how should | or || inside cell text be escaped
 - how strict should Markdown compatibility be
-
