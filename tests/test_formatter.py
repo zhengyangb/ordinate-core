@@ -32,6 +32,17 @@ class FormatterTests(unittest.TestCase):
         self.assertIn("# Costs", output)
         self.assertTrue(output.endswith("\n"))
 
+    def test_format_expands_separator_to_column_width(self) -> None:
+        text = """
+# Revenue
+| VeryLongHeader | B |
+| --- | --- |
+| 1 | 2 |
+""".strip()
+
+        output = format_document(text)
+        self.assertIn("| -------------- | --- |", output)
+
 
 if __name__ == "__main__":
     unittest.main()

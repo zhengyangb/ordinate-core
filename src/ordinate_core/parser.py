@@ -17,6 +17,7 @@ class Sheet:
 
 @dataclass
 class ParsedRow:
+    raw_cells: list[str]
     cells: list[str]
     boundary: int | None
     errors: list[str]
@@ -77,12 +78,13 @@ def parse_table_row(row: str) -> ParsedRow:
     content = row.strip()
     errors: list[str] = []
     if not (content.startswith("|") and content.endswith("|")):
-        return ParsedRow(cells=[], boundary=None, errors=["row must start and end with '|'"])
+        return ParsedRow(raw_cells=[], cells=[], boundary=None, errors=["row must start and end with '|'"])
 
     inner = content[1:-1]
     segments, split_errors = _split_unescaped_pipes(inner)
     errors.extend(split_errors)
 
+    raw_cells: list[str] = []
     cells: list[str] = []
     boundary: int | None = None
     for segment in segments:
@@ -93,9 +95,10 @@ def parse_table_row(row: str) -> ParsedRow:
             else:
                 errors.append("multiple || boundary markers in one row")
             continue
+        raw_cells.append(segment)
         cells.append(segment.strip())
 
-    return ParsedRow(cells=cells, boundary=boundary, errors=errors)
+    return ParsedRow(raw_cells=raw_cells, cells=cells, boundary=boundary, errors=errors)
 
 
 def escape_cell_text(value: str) -> str:

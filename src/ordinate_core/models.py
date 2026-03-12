@@ -17,6 +17,8 @@ class SheetSummary:
     column_count: int | None
     header_row_count: int
     header_column_count: int
+    section_count: int
+    max_section_level: int
 
 
 @dataclass(frozen=True)

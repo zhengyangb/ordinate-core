@@ -1,0 +1,13 @@
+# Profit Statement
+| Line Item                || 2024                                                                  | 2025                                                                          |
+| ------------------------ || --------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [Revenue]                ||                                                                       |                                                                               |
+|   Product Revenue        || 400                                                                   | 450                                                                           |
+|   Service Revenue        || 200                                                                   | 240                                                                           |
+| Revenue Total            || 600 = @[Revenue."Product Revenue",] + @[Revenue."Service Revenue",]   | 690 = @[Revenue."Product Revenue",2025] + @[Revenue."Service Revenue",2025]   |
+| [Cost of Sales]          ||                                                                       |                                                                               |
+|   Materials              || 250                                                                   | 280                                                                           |
+|   Fulfillment            || 80                                                                    | 95                                                                            |
+| Cost of Sales Total      || 330 = @["Cost of Sales".Materials,] + @["Cost of Sales".Fulfillment,] | 375 = @["Cost of Sales".Materials,2025] + @["Cost of Sales".Fulfillment,2025] |
+| Gross Profit             || 270 = @["Revenue Total",] - @["Cost of Sales Total",]                 | 315 = @["Revenue Total",2025] - @["Cost of Sales Total",2025]                 |
+| Margin Check             || true = @["Gross Profit",] == 270                                      | true = @["Gross Profit",2025] == 315                                          |
