@@ -18,7 +18,7 @@ This RFC defines:
 - the minimal runtime value model
 - the distinction between user literal parsing and cache serialization
 - the role of cached values
-- the basic status of null and error values
+- the basic status of null, error, and blank-related values
 - the rule that formulas in this RFC produce a single value
 
 ## Non-Goals
@@ -161,6 +161,8 @@ The minimal runtime value categories are:
 
 This RFC does not yet define date as a first-class runtime value.
 
+`blank` is recognized as an important value category for later RFCs, but its concrete runtime semantics are deferred in this RFC.
+
 ## Reserved Literals
 
 This RFC treats the following as reserved literals:
@@ -179,11 +181,15 @@ Examples:
 
 Future RFCs may expand the reserved literal set.
 
+`blank` is not introduced as a reserved literal in this RFC.
+
 ## Null and Error
 
 ### Null
 
-`null` is a first-class value used to represent an empty or missing result in a strict serialized form.
+`null` is a first-class value used primarily to represent an empty or missing **evaluation result** in a strict serialized form.
+
+Literal `null` input is still syntactically allowed, but this RFC treats `null` primarily as an evaluated outcome rather than a commonly authored business literal.
 
 This RFC does not fully define the relationship between:
 
@@ -357,7 +363,9 @@ null = someExpressionThatProducesNull
 ## Deferred Topics
 
 - **Date inference and date literals**: examples include `2025-03-09` and typed date semantics
+- **Blank value type**: introduction of `blank` as a first-class value type is deferred
 - **Blank versus null versus empty string**: the exact distinction is deferred
+- **Blank coercion rules**: examples include future behavior such as coercion to `0` or `""` in selected contexts
 - **Aggregate functions over collections**: examples include `SUM(...)` over future range selectors
 - **Collection-valued references**: examples depend on future range and selector RFCs
 - **Function libraries and extensions**: built-ins, namespaces, and external integrations are deferred
@@ -373,6 +381,7 @@ null = someExpressionThatProducesNull
 - whether future literal parsing should include dates
 - whether the cached value should always be emitted by serializers or remain optional
 - how blank cells should relate to `null` in later RFCs
+- whether and where `blank` should coerce to `0` or `""`
 
 ## Current Working Assumptions
 
