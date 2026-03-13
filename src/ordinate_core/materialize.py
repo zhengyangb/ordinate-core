@@ -34,7 +34,10 @@ def evaluate_and_format_document(text: str) -> str:
                         if parsed_cell.kind == "formula":
                             rhs = parsed_cell.expression_text or ""
                             value = eval_row[c_idx] if c_idx < len(eval_row) else RuntimeValue("error", "internal")
-                            rendered_cells.append(f"{_serialize_value(value)} = {rhs}")
+                            if value.kind == "blank":
+                                rendered_cells.append(f"= {rhs}")
+                            else:
+                                rendered_cells.append(f"{_serialize_value(value)} = {rhs}")
                         else:
                             rendered_cells.append(raw_cell)
 
@@ -77,6 +80,8 @@ def _serialize_value(value: RuntimeValue) -> str:
         return _serialize_string(str(value.value if value.value is not None else ""))
     if value.kind == "boolean":
         return "true" if bool(value.value) else "false"
+    if value.kind == "blank":
+        return ""
     if value.kind == "null":
         return "null"
     if value.kind == "error":

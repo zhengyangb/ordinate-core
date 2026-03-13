@@ -64,7 +64,7 @@ class EvaluationResult:
 def parse_cell_input(text: str) -> ParsedCell:
     raw = text.strip()
     if raw == "":
-        return ParsedCell(kind="literal", literal=RuntimeValue("null", None), expression=None, cached=None, expression_text=None)
+        return ParsedCell(kind="literal", literal=RuntimeValue("blank", None), expression=None, cached=None, expression_text=None)
 
     if raw.startswith("="):
         expr_text = raw[1:].strip()
@@ -106,7 +106,7 @@ def evaluate_document(text: str) -> EvaluationResult:
 def evaluate_cell_input(text: str) -> RuntimeValue:
     parsed = parse_cell_input(text)
     if parsed.kind == "literal":
-        return parsed.literal or RuntimeValue("null", None)
+        return parsed.literal or RuntimeValue("blank", None)
     return _eval_expr(parsed.expression, 0, 0, lambda _r, _c: RuntimeValue("error", "no_context"), {}, {}, [], [])
 
 
@@ -154,7 +154,7 @@ def _evaluate_sheet(name: str, rows: list[str]) -> SheetEvaluation:
         parsed_cell = parse_cell_input(cell_text)
 
         if parsed_cell.kind == "literal":
-            value = parsed_cell.literal or RuntimeValue("null", None)
+            value = parsed_cell.literal or RuntimeValue("blank", None)
         else:
             value = _eval_expr(parsed_cell.expression, r, c, eval_cell, row_map, col_map, row_paths, col_labels)
 
@@ -201,39 +201,146 @@ def _eval_expr(
     if node.kind == "unary":
         op = node.value
         right = _eval_expr(node.right, row_idx, col_idx, eval_cell, row_map, col_map, row_paths, col_labels)
-        if right.kind == "error":
+        if _is_error(right):
             return right
-        if op == "-" and right.kind == "number":
-            return RuntimeValue("number", -right.value)
+        if op == "-":
+            if right.kind == "number":
+                return RuntimeValue("number", -right.value)
+            if right.kind == "blank":
+                return RuntimeValue("blank", None)
+            return RuntimeValue("error", "invalid_unary")
+        if op == "not":
+            if right.kind == "boolean":
+                return RuntimeValue("boolean", not bool(right.value))
+            return RuntimeValue("error", "invalid_unary")
         return RuntimeValue("error", "invalid_unary")
 
     left = _eval_expr(node.left, row_idx, col_idx, eval_cell, row_map, col_map, row_paths, col_labels)
     right = _eval_expr(node.right, row_idx, col_idx, eval_cell, row_map, col_map, row_paths, col_labels)
-    if left.kind == "error":
+    if _is_error(left):
         return left
-    if right.kind == "error":
+    if _is_error(right):
         return right
 
     op = node.value
     if op in {"+", "-", "*", "/"}:
-        if left.kind != "number" or right.kind != "number":
-            return RuntimeValue("error", "invalid_arithmetic")
-        if op == "+":
-            return RuntimeValue("number", left.value + right.value)
-        if op == "-":
-            return RuntimeValue("number", left.value - right.value)
-        if op == "*":
-            return RuntimeValue("number", left.value * right.value)
-        if right.value == 0:
-            return RuntimeValue("error", "divide_by_zero")
-        return RuntimeValue("number", left.value / right.value)
+        return _eval_arithmetic(op, left, right)
 
-    if op == "==":
-        if left.kind != right.kind:
-            return RuntimeValue("boolean", False)
-        return RuntimeValue("boolean", left.value == right.value)
+    if op in {"==", "!="}:
+        return _eval_equality(op, left, right)
+
+    if op in {"<", "<=", ">", ">="}:
+        return _eval_ordering(op, left, right)
 
     return RuntimeValue("error", "unknown_operator")
+
+
+def _is_error(value: RuntimeValue) -> bool:
+    return value.kind == "error"
+
+
+def _eval_arithmetic(op: str, left: RuntimeValue, right: RuntimeValue) -> RuntimeValue:
+    if left.kind == "blank" and right.kind == "blank":
+        if op in {"+", "-", "*"}:
+            return RuntimeValue("blank", None)
+        return RuntimeValue("error", "invalid_arithmetic")
+
+    if left.kind == "string" and right.kind == "string":
+        if op == "+":
+            return RuntimeValue("string", str(left.value) + str(right.value))
+        return RuntimeValue("error", "invalid_arithmetic")
+
+    if left.kind == "blank" and right.kind == "string":
+        if op == "+":
+            return RuntimeValue("string", str(right.value))
+        return RuntimeValue("error", "invalid_arithmetic")
+
+    if left.kind == "string" and right.kind == "blank":
+        if op == "+":
+            return RuntimeValue("string", str(left.value))
+        return RuntimeValue("error", "invalid_arithmetic")
+
+    if left.kind == "blank" and right.kind == "number":
+        if op == "/":
+            return RuntimeValue("number", 0)
+        if op in {"+", "-", "*"}:
+            return _eval_number_op(op, 0, right.value)
+        return RuntimeValue("error", "invalid_arithmetic")
+
+    if left.kind == "number" and right.kind == "blank":
+        if op == "/":
+            return RuntimeValue("error", "invalid_arithmetic")
+        if op in {"+", "-", "*"}:
+            return _eval_number_op(op, left.value, 0)
+        return RuntimeValue("error", "invalid_arithmetic")
+
+    if left.kind == "boolean" and right.kind == "number":
+        return _eval_number_op(op, _bool_to_number(left), right.value)
+
+    if left.kind == "number" and right.kind == "boolean":
+        return _eval_number_op(op, left.value, _bool_to_number(right))
+
+    if left.kind == "boolean" and right.kind == "boolean":
+        return _eval_number_op(op, _bool_to_number(left), _bool_to_number(right))
+
+    if left.kind == "number" and right.kind == "number":
+        return _eval_number_op(op, left.value, right.value)
+
+    return RuntimeValue("error", "invalid_arithmetic")
+
+
+def _eval_number_op(op: str, left: float, right: float) -> RuntimeValue:
+    if op == "+":
+        return RuntimeValue("number", left + right)
+    if op == "-":
+        return RuntimeValue("number", left - right)
+    if op == "*":
+        return RuntimeValue("number", left * right)
+    if right == 0:
+        return RuntimeValue("error", "divide_by_zero")
+    return RuntimeValue("number", left / right)
+
+
+def _bool_to_number(value: RuntimeValue) -> int:
+    return 1 if bool(value.value) else 0
+
+
+def _eval_equality(op: str, left: RuntimeValue, right: RuntimeValue) -> RuntimeValue:
+    if left.kind == "error" or right.kind == "error":
+        return RuntimeValue("error", "error")
+
+    if left.kind == "blank" and right.kind == "blank":
+        return RuntimeValue("boolean", op == "==")
+    if left.kind == "blank" or right.kind == "blank":
+        return RuntimeValue("boolean", op == "!=")
+
+    if left.kind == "null" and right.kind == "null":
+        return RuntimeValue("boolean", op == "==")
+    if left.kind == "null" or right.kind == "null":
+        return RuntimeValue("error", "invalid_comparison")
+
+    if left.kind != right.kind:
+        return RuntimeValue("error", "invalid_comparison")
+
+    result = left.value == right.value
+    return RuntimeValue("boolean", result if op == "==" else not result)
+
+
+def _eval_ordering(op: str, left: RuntimeValue, right: RuntimeValue) -> RuntimeValue:
+    if left.kind == "error" or right.kind == "error":
+        return RuntimeValue("error", "error")
+    if left.kind != "number" or right.kind != "number":
+        return RuntimeValue("error", "invalid_comparison")
+
+    if op == "<":
+        return RuntimeValue("boolean", left.value < right.value)
+    if op == "<=":
+        return RuntimeValue("boolean", left.value <= right.value)
+    if op == ">":
+        return RuntimeValue("boolean", left.value > right.value)
+    if op == ">=":
+        return RuntimeValue("boolean", left.value >= right.value)
+    return RuntimeValue("error", "invalid_comparison")
 
 
 def _resolve_row_selector(selector: RefSelector, current: int, row_map, row_paths: list[str]) -> int | None:
@@ -432,9 +539,21 @@ def _tokenize_expr(text: str) -> list[tuple[str, str]]:
             out.append((ch, ch))
             i += 1
             continue
+        if ch == "!" and i + 1 < len(text) and text[i + 1] == "=":
+            out.append(("!=", "!="))
+            i += 2
+            continue
         if ch == "=" and i + 1 < len(text) and text[i + 1] == "=":
             out.append(("==", "=="))
             i += 2
+            continue
+        if ch in "<>":
+            if i + 1 < len(text) and text[i + 1] == "=":
+                out.append((ch + "=", ch + "="))
+                i += 2
+                continue
+            out.append((ch, ch))
+            i += 1
             continue
         if ch == '"':
             j = i + 1
@@ -533,6 +652,11 @@ class _ExprParser:
             return None
         return self.tokens[self.pos]
 
+    def _peek_next(self) -> tuple[str, str] | None:
+        if self.pos + 1 >= len(self.tokens):
+            return None
+        return self.tokens[self.pos + 1]
+
     def _match(self, *kinds: str) -> tuple[str, str] | None:
         tk = self._peek()
         if tk is None:
@@ -546,10 +670,23 @@ class _ExprParser:
         return self._parse_eq()
 
     def _parse_eq(self) -> ExprNode:
+        node = self._parse_rel()
+        while True:
+            op = self._match("==", "!=")
+            if op is None:
+                break
+            right = self._parse_rel()
+            node = ExprNode(kind="binary", value=op[0], left=node, right=right)
+        return node
+
+    def _parse_rel(self) -> ExprNode:
         node = self._parse_add()
-        while self._match("=="):
+        while True:
+            op = self._match("<", "<=", ">", ">=")
+            if op is None:
+                break
             right = self._parse_add()
-            node = ExprNode(kind="binary", value="==", left=node, right=right)
+            node = ExprNode(kind="binary", value=op[0], left=node, right=right)
         return node
 
     def _parse_add(self) -> ExprNode:
@@ -599,6 +736,9 @@ class _ExprParser:
 
         tk = self._match("IDENT")
         if tk is not None:
+            next_tok = self._peek()
+            if next_tok is not None and next_tok[0] == "(":
+                return self._parse_function_call(tk[1])
             if tk[1] == "true":
                 return ExprNode(kind="literal", value=RuntimeValue("boolean", True))
             if tk[1] == "false":
@@ -616,6 +756,16 @@ class _ExprParser:
 
         self.pos += 1
         return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
+
+    def _parse_function_call(self, name: str) -> ExprNode:
+        if self._match("(") is None:
+            return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
+        arg = self.parse_expression()
+        if self._match(")") is None:
+            return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
+        if name != "not":
+            return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
+        return ExprNode(kind="unary", value="not", right=arg)
 
 
 def _parse_reference(text: str) -> ReferenceExpr:

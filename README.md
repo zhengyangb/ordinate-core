@@ -36,6 +36,8 @@ Tests:
 - RFC5 single-file readable cases: `tests/fixtures/rfc_0005/formula_eval_cases.spec`
 - RFC5 ORD input->output cache snapshot test: `tests/rfc_0005/test_evaluate_and_format_ord_file.py`
 - RFC5 ORD fixtures: `tests/fixtures/rfc_0005/profit_statement_input.ord` and `tests/fixtures/rfc_0005/profit_statement_expected.ord`
+- RFC6 types/operators spec tests: `tests/rfc_0006/test_types_and_operators.py`
+- RFC6 single-file readable cases: `tests/fixtures/rfc_0006/types_and_operators.spec`
 
 Spec format note:
 - `*.spec` here is a project-local readable DSL (`=== case`, `[doc]...[/doc]`, `expect_*`), not an external standard format.
