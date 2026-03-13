@@ -2,4 +2,4 @@
 | Item || V |
 | ---- || --- |
 | Materials || 250 |
-| Cost of Sales Total || = @[Cost of Sales.Materials,] |
+| Cost of Sales Total || = @[Cost of Sales.Materials,_] |

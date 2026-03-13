@@ -17,7 +17,7 @@ This RFC defines:
 
 - a basic reference form for label-based references
 - a basic place for contextual references
-- default behavior when row or column selectors are omitted
+- the `_` placeholder for the current row or column
 - quoting rules for path components
 - the rule that references in this RFC resolve to exactly one cell
 
@@ -50,7 +50,7 @@ In this RFC:
 - `row_selector` identifies a row target
 - `col_selector` identifies a column target
 - a reference must resolve to exactly one cell
-- omission is allowed on either side of the comma
+- selectors must be explicit; `_` denotes the current row or column
 
 ## Formula Context
 
@@ -61,27 +61,22 @@ A formula cell begins with `=`.
 Examples:
 
 - `=@["Revenue"."Total Revenue",2025]`
-- `=@["Cost of Sales",]`
-- `=@[thisRow(-1),]`
+- `=@["Cost of Sales",_]`
+- `=@[thisRow(-1),_]`
 
 This RFC does not define full evaluation behavior.
 
-## Defaulting Rules
+## `_` Placeholder Rules
 
-If `row_selector` is omitted, it defaults to the current row.
+`_` is the explicit placeholder for the current row or column.
 
-If `col_selector` is omitted, it defaults to the current column.
+Examples:
 
-Therefore:
+- `@[Revenue,_]` means row `Revenue`, current column
+- `@[_,_]` means current cell
+- `@[_-1,_]` means previous row, current column
 
-- `@[,]` means the current cell
-- `@[X,]` means row `X` in the current column
-- `@[,Y]` means the current row in column `Y`
-
-These defaults are conceptually equivalent to:
-
-- omitted row selector = `thisRow(0)`
-- omitted column selector = `thisCol(0)`
+`_` is reserved and must be quoted (`"_"`) to be used as a literal label component.
 
 ## Selector Families
 
@@ -95,9 +90,9 @@ Examples:
 
 - `@[Revenue.TotalRevenue,2025]`
 - `@["Revenue"."Total Revenue",2025]`
-- `@["Cost of Sales",]`
-- `@[,Actual]`
-- `@[,]`
+- `@["Cost of Sales",_]`
+- `@[_,Actual]`
+- `@[_,_]`
 
 ### 2. Contextual Selectors
 
@@ -107,8 +102,8 @@ This RFC introduces contextual selectors as function-like selectors.
 
 Examples:
 
-- `@[thisRow(-1),]`
-- `@[,thisCol(-1)]`
+- `@[thisRow(-1),_]`
+- `@[_,thisCol(-1)]`
 - `@[thisRow(0),thisCol(0)]`
 - `@[thisRow(1),Actual]`
 
@@ -156,6 +151,7 @@ At minimum, quoted path components should be used when a component contains:
 - `)`
 - `[`
 - `]`
+- `_` (reserved placeholder)
 
 Examples:
 
@@ -172,8 +168,8 @@ A selector ending in `()` is interpreted as a contextual selector rather than a 
 
 Examples:
 
-- `@[thisRow(-1),]`
-- `@[,thisCol(-1)]`
+- `@[thisRow(-1),_]`
+- `@[_,thisCol(-1)]`
 
 This allows future contextual selectors to accept parameters while remaining syntactically distinct from label-based paths.
 
@@ -207,9 +203,9 @@ Example:
 
 Current column implied:
 
-- `@["Revenue"."Phone Revenue",]`
-- `@["Cost of Sales"."Depreciation",]`
-- `@["Operating Income",]`
+- `@["Revenue"."Phone Revenue",_]`
+- `@["Cost of Sales"."Depreciation",_]`
+- `@["Operating Income",_]`
 
 Explicit row and column:
 
@@ -219,19 +215,19 @@ Explicit row and column:
 
 Current row implied:
 
-- `@[,2025]`
-- `@[,Actual]`
+- `@[_,2025]`
+- `@[_,Actual]`
 
 Current cell:
 
-- `@[,]`
+- `@[_,_]`
 
 Contextual scalar references:
 
-- `@[thisRow(-1),]`
-- `@[thisRow(1),]`
-- `@[,thisCol(-1)]`
-- `@[,thisCol(1)]`
+- `@[thisRow(-1),_]`
+- `@[thisRow(1),_]`
+- `@[_,thisCol(-1)]`
+- `@[_,thisCol(1)]`
 - `@[thisRow(0),thisCol(0)]`
 
 ## Single-Cell Rule
@@ -260,13 +256,13 @@ This RFC does not fully define evaluation behavior, but cycle invalidity is reco
 
 ## Deferred Topics
 
-- **Ranges**: examples include `@["Revenue":"Cost of Sales",2025]` and `@[thisRow(-3):thisRow(-1),]`
+- **Ranges**: examples include `@["Revenue":"Cost of Sales",2025]` and `@[thisRow(-3):thisRow(-1),_]`
 - **Multi-selector lists**: examples include `@[[ "Revenue", "Cost of Sales" ],2025]`
 - **Selector unions**: examples include `@union(@["Revenue",2025], @["Cost of Sales",2025])`
-- **Contextual collection selectors**: examples include `@[above(),]` and `@[,left()]`
-- **Shorthand syntax**: examples include `@[^,]`, `@[,<]`, and `@[,>]`
+- **Contextual collection selectors**: examples include `@[above(),_]` and `@[_,left()]`
+- **Shorthand syntax**: examples include `@[^,_]`, `@[_,<]`, and `@[_,>]`
 - **Coordinate-based syntax**: examples include `A1` and `B3`
-- **Structural filtering**: examples include `@[above(skipStructural=true),]`
+- **Structural filtering**: examples include `@[above(skipStructural=true),_]`
 
 ## Open Questions
 
@@ -282,8 +278,7 @@ This RFC does not fully define evaluation behavior, but cycle invalidity is reco
 ## Current Working Assumptions
 
 - the core reference shell is `@[row_selector, col_selector]`
-- omission defaults to the current row or current column
+- `_` is the explicit placeholder for the current row or current column
 - quoted path components are the escape mechanism for special characters
 - contextual scalar selectors use function-like notation
 - this RFC only covers references that resolve to a single cell
-

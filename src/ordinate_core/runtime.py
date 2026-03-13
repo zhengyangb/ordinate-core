@@ -9,6 +9,7 @@ _SEPARATOR_CELL_RE = re.compile(r"^:?-{3,}:?$")
 _SECTION_RE = re.compile(r"^(\[+)([^\[\]]+)(\]+)$")
 _THIS_ROW_RE = re.compile(r"^thisRow\((-?\d+)\)$")
 _THIS_COL_RE = re.compile(r"^thisCol\((-?\d+)\)$")
+_UNDERSCORE_OFFSET_RE = re.compile(r"^_([+-]?\d+)$")
 _NUMBER_RE = re.compile(r"^-?\d+(?:\.\d+)?$")
 _UNQUOTED_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
@@ -780,7 +781,12 @@ def _parse_reference(text: str) -> ReferenceExpr:
 
 def _parse_selector(text: str, is_row: bool) -> RefSelector:
     if text == "":
+        return RefSelector("invalid")
+    if text == "_":
         return RefSelector("current")
+    m = _UNDERSCORE_OFFSET_RE.match(text)
+    if m is not None:
+        return RefSelector("offset", int(m.group(1)))
 
     if is_row:
         m = _THIS_ROW_RE.match(text)
@@ -803,6 +809,8 @@ def _parse_path(text: str) -> list[str] | None:
     for p in parts:
         item = p.strip()
         if item == "":
+            return None
+        if item == "_":
             return None
         if _is_quoted(item):
             out.append(_unescape_quoted(item[1:-1]))
