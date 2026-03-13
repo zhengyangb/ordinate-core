@@ -5,7 +5,7 @@ from ordinate_core import evaluate_document, validate_document
 
 from tests.spec_loader import load_spec_cases, parse_scalar
 
-_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "rfc_0005" / "formula_eval_cases.spec"
+_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "rfc_0005" / "formula_eval_cases.cases"
 
 
 class Rfc0005FormulaEvalCases(unittest.TestCase):

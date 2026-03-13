@@ -31,13 +31,13 @@ Tests:
 - formatter expectation snapshots are compared via fixture-to-fixture assertions
 - runtime parser/evaluator tests: `tests/test_runtime_model.py`
 - RFC4 reference spec tests: `tests/rfc_0004/test_reference_cases.py`
-- RFC4 single-file readable cases: `tests/fixtures/rfc_0004/reference_cases.spec`
+- RFC4 single-file readable cases: `tests/fixtures/rfc_0004/reference_cases.cases`
 - RFC5 formula-eval spec tests: `tests/rfc_0005/test_formula_eval_cases.py`
-- RFC5 single-file readable cases: `tests/fixtures/rfc_0005/formula_eval_cases.spec`
+- RFC5 single-file readable cases: `tests/fixtures/rfc_0005/formula_eval_cases.cases`
 - RFC5 ORD input->output cache snapshot test: `tests/rfc_0005/test_evaluate_and_format_ord_file.py`
 - RFC5 ORD fixtures: `tests/fixtures/rfc_0005/profit_statement_input.ord` and `tests/fixtures/rfc_0005/profit_statement_expected.ord`
 - RFC6 types/operators spec tests: `tests/rfc_0006/test_types_and_operators.py`
-- RFC6 single-file readable cases: `tests/fixtures/rfc_0006/types_and_operators.spec`
+- RFC6 single-file readable cases: `tests/fixtures/rfc_0006/types_and_operators.cases`
 
 Spec format note:
-- `*.spec` here is a project-local readable DSL (`=== case`, `[doc]...[/doc]`, `expect_*`), not an external standard format.
+- `*.cases` here is a project-local readable DSL (`=== case`, `[doc]...[/doc]`, `expect_*`), not an external standard format.

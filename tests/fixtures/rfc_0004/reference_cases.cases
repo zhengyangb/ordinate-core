@@ -1,0 +1,136 @@
+=== label_row_current_col
+[doc]
+# Ref
+| Item || V |
+| ---- || --- |
+| A    || 10 |
+| B    || = @[A,_] + 5 |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: number
+expect_value: 15
+
+=== current_row_explicit_col
+[doc]
+# Ref
+| Item || V | W |
+| ---- || --- | --- |
+| A    || 10 | 7 |
+| B    || = @[_,W] + 1 | 9 |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: number
+expect_value: 10
+
+=== contextual_this_row
+[doc]
+# Ref
+| Item || V |
+| ---- || --- |
+| A    || 10 |
+| B    || = @[thisRow(-1),_] + 2 |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: number
+expect_value: 12
+
+=== contextual_this_col
+[doc]
+# Ref
+| Item || V | W |
+| ---- || --- | --- |
+| A    || 10 | = @[_,thisCol(-1)] + 3 |
+[/doc]
+target_row: A
+target_col: W
+expect_kind: number
+expect_value: 13
+
+=== quoted_path_reference
+[doc]
+# Ref
+| Item                  || V |
+| --------------------- || --- |
+| [Revenue]             ||   |
+|   Phone Revenue       || 20 |
+| Operating Income      || = @["Revenue"."Phone Revenue",_] + 1 |
+[/doc]
+target_row: Operating Income
+target_col: V
+expect_kind: number
+expect_value: 21
+
+=== missing_reference_returns_error
+[doc]
+# Ref
+| Item || V |
+| ---- || --- |
+| A    || = @[Missing,_] |
+[/doc]
+target_row: A
+target_col: V
+expect_kind: error
+
+=== ambiguous_row_reference_returns_error
+[doc]
+# Ref
+| Item || V |
+| ---- || --- |
+| A    || 1 |
+| A    || 2 |
+| B    || = @[A,_] |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: error
+
+=== contextual_out_of_range_row
+[doc]
+# Ref
+| Item || V |
+| ---- || --- |
+| A    || = @[thisRow(-1),_] |
+[/doc]
+target_row: A
+target_col: V
+expect_kind: error
+
+=== contextual_out_of_range_col
+[doc]
+# Ref
+| Item || V |
+| ---- || --- |
+| A    || = @[_,thisCol(1)] |
+[/doc]
+target_row: A
+target_col: V
+expect_kind: error
+
+=== quoted_component_with_dot
+[doc]
+# Ref
+| Item         || V |
+| ------------ || --- |
+| [Revenue]    ||   |
+|   U.S. Sales || 30 |
+| Total        || = @["Revenue"."U.S. Sales",_] + 2 |
+[/doc]
+target_row: Total
+target_col: V
+expect_kind: number
+expect_value: 32
+
+=== ambiguous_column_label_returns_error
+[doc]
+# Ref
+| Item || V | V |
+| ---- || --- | --- |
+| A    || 1 | 2 |
+| B    || = @[_,V] | 0 |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: error
