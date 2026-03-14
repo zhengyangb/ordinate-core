@@ -14,7 +14,7 @@ It introduces `view` as the unified concept for reference-derived table selectio
 This RFC defines:
 
 - `view` as the unified concept for table-derived reference objects
-- dimensional subtypes of `view`
+- dimensional constraints over `view` (e.g., `view[d=0]`, `view[d=1]`, `view[d=2]`, `view[d<=2]`)
 - the distinction between `view` and literal container values
 - the role of ranges as a way to construct views
 - the rule that aggregate functions consume views rather than selections directly
@@ -49,22 +49,22 @@ This allows Ordinate to model table-derived selections in a way that is closer t
 
 ## Dimensionality
 
-Views are classified by dimensionality.
+Dimensionality is a constraint on `view`, not a separate container family.
 
-### `view0d`
+The following constraint forms are used in the conceptual model:
 
-A `view0d` is a single-cell view.
+### `view[d=0]`
 
-This is the scalar case.
+`view[d=0]` means a single-cell view.
 
 Examples:
 
 - `@[_,_]`
 - `@[Revenue,"2025"]`
 
-### `view1d`
+### `view[d=1]`
 
-A `view1d` is a one-dimensional view.
+`view[d=1]` means a one-dimensional view.
 
 This may be:
 
@@ -78,14 +78,20 @@ Examples:
 - `@[#1:#5,_]`
 - `@[_,#1:#3]`
 
-### `view2d`
+### `view[d=2]`
 
-A `view2d` is a two-dimensional rectangular view.
+`view[d=2]` means a two-dimensional rectangular view.
 
 Examples:
 
 - `@[#1:#3,#1:#2]`
 - `@["Revenue":"Cost of Sales","2024":"2025"]`
+
+### `view[d<=2]`
+
+`view[d<=2]` means any currently supported view dimensionality.
+
+This is not a separate runtime container type; it is a constraint over `view`.
 
 ## Shape
 
@@ -93,10 +99,10 @@ A view preserves shape.
 
 Examples:
 
-- a single cell is a `1×1` shape and is modeled as `view0d`
-- a row slice is `1×N` and is modeled as `view1d`
-- a column slice is `N×1` and is modeled as `view1d`
-- a rectangular block is `M×N` and is modeled as `view2d`
+- a single cell is a `1×1` shape and satisfies `view[d=0]`
+- a row slice is `1×N` and satisfies `view[d=1]`
+- a column slice is `N×1` and satisfies `view[d=1]`
+- a rectangular block is `M×N` and satisfies `view[d=2]`
 
 This RFC treats shape as an intrinsic property of a view.
 
@@ -140,7 +146,7 @@ The aggregate is a function. It is not a kind of selector.
 
 This RFC adopts the direction that aggregate functions may accept views.
 
-A `view0d` may be implicitly lifted to a one-element aggregate input at aggregate-function boundaries.
+A `view[d=0]` may be implicitly lifted to a one-element aggregate input at aggregate-function boundaries.
 
 This lifting is not a general coercion rule for the language. It is only a rule for aggregate function boundaries.
 
@@ -250,12 +256,14 @@ This RFC adopts the idea that function signatures may constrain the dimensionali
 
 Examples of future function-signature directions:
 
-- a scalar function may require `view0d`
-- a row/column aggregate may require `view1d`
-- a matrix-style function may require `view2d`
-- a general aggregate such as `sum` may accept any `view`
+- a scalar function may require `view[d=0]`
+- a row/column aggregate may require `view[d=1]`
+- a matrix-style function may require `view[d=2]`
+- a general aggregate such as `sum` may accept `view[d<=2]`
 
 This RFC does not define the full function-signature system.
+
+Future RFCs may use dimensional view constraints such as `view[d=0]`, `view[d=1]`, and `view[d=2]` to express function requirements.
 
 ## Minimal Aggregate Example: `sum`
 
@@ -267,11 +275,11 @@ This RFC defines `sum` as a minimal aggregate example.
 
 This includes:
 
-- `view0d`
-- `view1d`
-- `view2d`
+- `view[d=0]`
+- `view[d=1]`
+- `view[d=2]`
 
-A `view0d` may be implicitly lifted to a one-element aggregate input.
+A `view[d=0]` may be implicitly lifted to a one-element aggregate input.
 
 ### Semantics
 
@@ -308,18 +316,18 @@ The zero identity ensures that empty inputs produce `0`, and that string values 
 
 ## Examples
 
-### Scalar View Examples
+### `view[d=0]` Examples
 
 - `@[_,_]`
 - `@[Revenue,"2025"]`
 
-### One-Dimensional View Examples
+### `view[d=1]` Examples
 
 - `@[:,"2025"]`
 - `@[Revenue,:]`
 - `@[#1:#5,_]`
 
-### Two-Dimensional View Examples
+### `view[d=2]` Examples
 
 - `@[#1:#3,#1:#2]`
 - `@["Revenue":"Cost of Sales","2024":"2025"]`
@@ -346,14 +354,14 @@ The zero identity ensures that empty inputs produce `0`, and that string values 
 - exclusive-endpoint range syntax
 - shape-conversion rules between different view dimensions
 - general multi-sheet view construction
-- full function contracts over `view0d`, `view1d`, and `view2d`
+- full function contracts over `view[d=0]`, `view[d=1]`, and `view[d=2]`
 - aggregates other than `sum`
 
 ## Open Questions
 
 - whether `#` should remain the final absolute-index syntax
 - whether aggregate functions should accept all view dimensions or only selected ones
-- whether `view0d` should always be implicitly liftable at aggregate boundaries
+- whether `view[d=0]` should always be implicitly liftable at aggregate boundaries
 - how future sparse multi-point selection should be represented
 - whether future list literals should coexist with views as a separate container family
 
@@ -361,7 +369,7 @@ The zero identity ensures that empty inputs produce `0`, and that string values 
 
 - all table-derived reference objects are uniformly called views
 - views preserve position and value, not just values
-- `view0d`, `view1d`, and `view2d` are the initial dimensional subtypes
+- dimensional constraints such as `view[d=0]`, `view[d=1]`, `view[d=2]`, and `view[d<=2]` apply to `view`
 - views are table-derived and distinct from hypothetical future list literals
 - views are not first-class runtime values and may only appear as aggregate inputs
 - `:` is the current range syntax
