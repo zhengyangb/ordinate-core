@@ -11,6 +11,7 @@ _THIS_ROW_RE = re.compile(r"^thisRow\((-?\d+)\)$")
 _THIS_COL_RE = re.compile(r"^thisCol\((-?\d+)\)$")
 _UNDERSCORE_OFFSET_RE = re.compile(r"^_([+-]?\d+)$")
 _NUMBER_RE = re.compile(r"^-?\d+(?:\.\d+)?$")
+_ABSOLUTE_RE = re.compile(r"^#([1-9]\d*)$")
 _UNQUOTED_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
@@ -30,6 +31,19 @@ class RefSelector:
 class ReferenceExpr:
     row_selector: RefSelector
     col_selector: RefSelector
+
+
+@dataclass(frozen=True)
+class ViewSelection:
+    row_indices: list[int]
+    col_indices: list[int]
+
+
+@dataclass(frozen=True)
+class AxisMapper:
+    rendered_count: int
+    to_rendered: callable
+    from_rendered: callable
 
 
 @dataclass(frozen=True)
@@ -108,7 +122,22 @@ def evaluate_cell_input(text: str) -> RuntimeValue:
     parsed = parse_cell_input(text)
     if parsed.kind == "literal":
         return parsed.literal or RuntimeValue("blank", None)
-    return _eval_expr(parsed.expression, 0, 0, lambda _r, _c: RuntimeValue("error", "no_context"), {}, {}, [], [])
+    return _eval_expr(
+        parsed.expression,
+        0,
+        0,
+        lambda _r, _c: RuntimeValue("error", "no_context"),
+        {},
+        {},
+        0,
+        0,
+        0,
+        0,
+        [],
+        [],
+        _build_row_axis_mapper(0, None),
+        _build_col_axis_mapper(0),
+    )
 
 
 def _evaluate_sheet(name: str, rows: list[str]) -> SheetEvaluation:
@@ -117,9 +146,17 @@ def _evaluate_sheet(name: str, rows: list[str]) -> SheetEvaluation:
         return SheetEvaluation(name=name, row_paths=[], col_labels=[], values=[])
 
     col_count = max((len(r.cells) for r in parsed_rows), default=0)
+    separator_index = _separator_row_index(parsed_rows)
     header_row_count = _header_row_count(parsed_rows)
     header_col_count = _header_col_count(parsed_rows)
     body_start = header_row_count + 1 if header_row_count > 0 else 0
+
+    all_cells: list[list[str]] = []
+    for row in parsed_rows:
+        cells = list(row.cells)
+        if len(cells) < col_count:
+            cells += [""] * (col_count - len(cells))
+        all_cells.append(cells)
 
     header_labels = parsed_rows[header_row_count - 1].cells if header_row_count > 0 else []
     col_labels: list[str] = []
@@ -129,21 +166,28 @@ def _evaluate_sheet(name: str, rows: list[str]) -> SheetEvaluation:
         else:
             col_labels.append(f"C{c + 1}")
 
-    row_paths, body_cells = _build_body_rows(parsed_rows, body_start, col_count)
+    row_paths, _body_cells = _build_body_rows(parsed_rows, body_start, col_count)
     row_keys = _build_row_keys(parsed_rows, body_start)
     row_map: dict[tuple[str, ...], list[int]] = {}
-    for i, key in enumerate(row_keys):
-        row_map.setdefault(key, []).append(i)
+    for offset, key in enumerate(row_keys):
+        abs_idx = body_start + offset
+        row_map.setdefault(key, []).append(abs_idx)
 
     col_map: dict[str, list[int]] = {}
     for i, label in enumerate(col_labels):
         col_map.setdefault(label, []).append(i)
 
+    body_row_count = len(parsed_rows) - body_start
+    data_row_indices = _data_row_indices(parsed_rows, body_start)
+    data_col_indices = list(range(header_col_count, col_count))
+    row_axis = _build_row_axis_mapper(len(parsed_rows), separator_index)
+    col_axis = _build_col_axis_mapper(col_count)
+
     states: dict[tuple[int, int], str] = {}
     memo: dict[tuple[int, int], RuntimeValue] = {}
 
-    def eval_cell(r: int, c: int) -> RuntimeValue:
-        key = (r, c)
+    def eval_cell(r_abs: int, c: int) -> RuntimeValue:
+        key = (r_abs, c)
         state = states.get(key)
         if state == "visiting":
             return RuntimeValue("error", "cycle")
@@ -151,21 +195,36 @@ def _evaluate_sheet(name: str, rows: list[str]) -> SheetEvaluation:
             return memo[key]
 
         states[key] = "visiting"
-        cell_text = body_cells[r][c] if c < len(body_cells[r]) else ""
+        cell_text = all_cells[r_abs][c] if 0 <= r_abs < len(all_cells) and 0 <= c < col_count else ""
         parsed_cell = parse_cell_input(cell_text)
 
         if parsed_cell.kind == "literal":
             value = parsed_cell.literal or RuntimeValue("blank", None)
         else:
-            value = _eval_expr(parsed_cell.expression, r, c, eval_cell, row_map, col_map, row_paths, col_labels)
+            value = _eval_expr(
+                parsed_cell.expression,
+                r_abs,
+                c,
+                eval_cell,
+                row_map,
+                col_map,
+                len(parsed_rows),
+                col_count,
+                body_start,
+                body_row_count,
+                data_row_indices,
+                data_col_indices,
+                row_axis,
+                col_axis,
+            )
 
         states[key] = "done"
         memo[key] = value
         return value
 
     values: list[list[RuntimeValue]] = []
-    for r in range(len(body_cells)):
-        values.append([eval_cell(r, c) for c in range(col_count)])
+    for r_abs in range(body_start, len(parsed_rows)):
+        values.append([eval_cell(r_abs, c) for c in range(col_count)])
 
     return SheetEvaluation(
         name=name,
@@ -182,8 +241,14 @@ def _eval_expr(
     eval_cell,
     row_map,
     col_map,
-    row_paths,
-    col_labels,
+    row_count: int,
+    col_count: int,
+    body_start: int,
+    body_row_count: int,
+    data_row_indices: list[int],
+    data_col_indices: list[int],
+    row_axis: AxisMapper,
+    col_axis: AxisMapper,
 ) -> RuntimeValue:
     if node is None:
         return RuntimeValue("error", "empty_expression")
@@ -193,15 +258,65 @@ def _eval_expr(
 
     if node.kind == "reference":
         ref: ReferenceExpr = node.value
-        target_row = _resolve_row_selector(ref.row_selector, row_idx, row_map, row_paths)
-        target_col = _resolve_col_selector(ref.col_selector, col_idx, col_map, col_labels)
-        if target_row is None or target_col is None:
+        view = _select_view(
+            ref,
+            row_idx,
+            col_idx,
+            row_map,
+            col_map,
+            row_count,
+            col_count,
+            body_start,
+            body_row_count,
+            data_row_indices,
+            data_col_indices,
+            row_axis,
+            col_axis,
+        )
+        if view is None:
             return RuntimeValue("error", "bad_reference")
-        return eval_cell(target_row, target_col)
+        if len(view.row_indices) != 1 or len(view.col_indices) != 1:
+            return RuntimeValue("error", "invalid_view")
+        return eval_cell(view.row_indices[0], view.col_indices[0])
+
+    if node.kind == "call":
+        if node.value != "sum":
+            return RuntimeValue("error", "unknown_function")
+        return _eval_sum(
+            node.right,
+            row_idx,
+            col_idx,
+            eval_cell,
+            row_map,
+            col_map,
+            row_count,
+            col_count,
+            body_start,
+            body_row_count,
+            data_row_indices,
+            data_col_indices,
+            row_axis,
+            col_axis,
+        )
 
     if node.kind == "unary":
         op = node.value
-        right = _eval_expr(node.right, row_idx, col_idx, eval_cell, row_map, col_map, row_paths, col_labels)
+        right = _eval_expr(
+            node.right,
+            row_idx,
+            col_idx,
+            eval_cell,
+            row_map,
+            col_map,
+            row_count,
+            col_count,
+            body_start,
+            body_row_count,
+            data_row_indices,
+            data_col_indices,
+            row_axis,
+            col_axis,
+        )
         if _is_error(right):
             return right
         if op == "-":
@@ -216,8 +331,38 @@ def _eval_expr(
             return RuntimeValue("error", "invalid_unary")
         return RuntimeValue("error", "invalid_unary")
 
-    left = _eval_expr(node.left, row_idx, col_idx, eval_cell, row_map, col_map, row_paths, col_labels)
-    right = _eval_expr(node.right, row_idx, col_idx, eval_cell, row_map, col_map, row_paths, col_labels)
+    left = _eval_expr(
+        node.left,
+        row_idx,
+        col_idx,
+        eval_cell,
+        row_map,
+        col_map,
+        row_count,
+        col_count,
+        body_start,
+        body_row_count,
+        data_row_indices,
+        data_col_indices,
+        row_axis,
+        col_axis,
+    )
+    right = _eval_expr(
+        node.right,
+        row_idx,
+        col_idx,
+        eval_cell,
+        row_map,
+        col_map,
+        row_count,
+        col_count,
+        body_start,
+        body_row_count,
+        data_row_indices,
+        data_col_indices,
+        row_axis,
+        col_axis,
+    )
     if _is_error(left):
         return left
     if _is_error(right):
@@ -344,33 +489,240 @@ def _eval_ordering(op: str, left: RuntimeValue, right: RuntimeValue) -> RuntimeV
     return RuntimeValue("error", "invalid_comparison")
 
 
-def _resolve_row_selector(selector: RefSelector, current: int, row_map, row_paths: list[str]) -> int | None:
-    if selector.kind == "current":
-        return current
-    if selector.kind == "offset":
-        idx = current + int(selector.value)
-        return idx if 0 <= idx < len(row_paths) else None
-    if selector.kind == "label":
-        matches = row_map.get(tuple(selector.value), [])
-        if len(matches) == 1:
-            return matches[0]
-        return None
-    return None
+def _eval_sum(
+    node: ExprNode | None,
+    row_idx: int,
+    col_idx: int,
+    eval_cell,
+    row_map,
+    col_map,
+    row_count: int,
+    col_count: int,
+    body_start: int,
+    body_row_count: int,
+    data_row_indices: list[int],
+    data_col_indices: list[int],
+    row_axis: AxisMapper,
+    col_axis: AxisMapper,
+) -> RuntimeValue:
+    view = _eval_view_expr(
+        node,
+        row_idx,
+        col_idx,
+        row_map,
+        col_map,
+        row_count,
+        col_count,
+        body_start,
+        body_row_count,
+        data_row_indices,
+        data_col_indices,
+        row_axis,
+        col_axis,
+    )
+    if view is None:
+        return RuntimeValue("error", "invalid_view")
+    if not view.row_indices or not view.col_indices:
+        return RuntimeValue("number", 0)
+
+    result = RuntimeValue("number", 0)
+    for r in view.row_indices:
+        for c in view.col_indices:
+            value = eval_cell(r, c)
+            if _is_error(value):
+                return value
+            result = _eval_arithmetic("+", result, value)
+            if _is_error(result):
+                return result
+    return result
 
 
-def _resolve_col_selector(selector: RefSelector, current: int, col_map, col_labels: list[str]) -> int | None:
-    if selector.kind == "current":
-        return current
-    if selector.kind == "offset":
-        idx = current + int(selector.value)
-        return idx if 0 <= idx < len(col_labels) else None
-    if selector.kind == "label":
-        label = ".".join(selector.value)
-        matches = col_map.get(label, [])
-        if len(matches) == 1:
-            return matches[0]
+def _eval_view_expr(
+    node: ExprNode | None,
+    row_idx: int,
+    col_idx: int,
+    row_map,
+    col_map,
+    row_count: int,
+    col_count: int,
+    body_start: int,
+    body_row_count: int,
+    data_row_indices: list[int],
+    data_col_indices: list[int],
+    row_axis: AxisMapper,
+    col_axis: AxisMapper,
+) -> ViewSelection | None:
+    if node is None:
         return None
-    return None
+    if node.kind != "reference":
+        return None
+    ref: ReferenceExpr = node.value
+    return _select_view(
+        ref,
+        row_idx,
+        col_idx,
+        row_map,
+        col_map,
+        row_count,
+        col_count,
+        body_start,
+        body_row_count,
+        data_row_indices,
+        data_col_indices,
+        row_axis,
+        col_axis,
+    )
+
+
+def _select_view(
+    ref: ReferenceExpr,
+    row_idx: int,
+    col_idx: int,
+    row_map,
+    col_map,
+    row_count: int,
+    col_count: int,
+    body_start: int,
+    body_row_count: int,
+    data_row_indices: list[int],
+    data_col_indices: list[int],
+    row_axis: AxisMapper,
+    col_axis: AxisMapper,
+) -> ViewSelection | None:
+    row_indices = _resolve_axis_selector(
+        ref.row_selector,
+        row_idx,
+        row_map,
+        row_count,
+        data_row_indices,
+        (body_start, body_row_count),
+        lambda path: tuple(path),
+        row_axis,
+    )
+    if row_indices is None:
+        return None
+    col_indices = _resolve_axis_selector(
+        ref.col_selector,
+        col_idx,
+        col_map,
+        col_count,
+        data_col_indices,
+        None,
+        lambda path: ".".join(path),
+        col_axis,
+    )
+    if col_indices is None:
+        return None
+    return ViewSelection(row_indices=row_indices, col_indices=col_indices)
+
+
+def _resolve_axis_selector(
+    selector: RefSelector,
+    current: int,
+    label_map,
+    total_count: int,
+    data_indices: list[int],
+    current_bounds: tuple[int, int] | None,
+    label_key,
+    axis: AxisMapper,
+) -> list[int] | None:
+    if selector.kind == "all":
+        return list(data_indices)
+    if selector.kind == "range":
+        start_sel, end_sel = selector.value
+        start = (
+            _resolve_scalar_rendered(
+                start_sel,
+                current,
+                label_map,
+                total_count,
+                current_bounds,
+                label_key,
+                axis,
+            )
+            if start_sel is not None
+            else 0
+        )
+        end = (
+            _resolve_scalar_rendered(
+                end_sel,
+                current,
+                label_map,
+                total_count,
+                current_bounds,
+                label_key,
+                axis,
+            )
+            if end_sel is not None
+            else axis.rendered_count - 1
+        )
+        if start is None or end is None:
+            return None
+        if start > end:
+            return None
+        return [axis.from_rendered(r) for r in range(start, end + 1)]
+    idx = _resolve_scalar_rendered(
+        selector,
+        current,
+        label_map,
+        total_count,
+        current_bounds,
+        label_key,
+        axis,
+    )
+    if idx is None:
+        return None
+    return [axis.from_rendered(idx)]
+
+
+def _resolve_scalar_rendered(
+    selector: RefSelector,
+    current: int,
+    label_map,
+    total_count: int,
+    current_bounds: tuple[int, int] | None,
+    label_key,
+    axis: AxisMapper,
+) -> int | None:
+    if selector.kind == "current":
+        if current_bounds is None:
+            idx = current
+        else:
+            base, count = current_bounds
+            rel = current - base
+            if rel < 0 or rel >= count:
+                return None
+            idx = base + rel
+        return axis.to_rendered(idx)
+    if selector.kind == "offset":
+        if current_bounds is None:
+            idx = current + int(selector.value)
+            if idx < 0 or idx >= total_count:
+                return None
+            return axis.to_rendered(idx)
+        base, count = current_bounds
+        rel = current - base
+        if rel < 0 or rel >= count:
+            return None
+        rel = rel + int(selector.value)
+        if rel < 0 or rel >= count:
+            return None
+        idx = base + rel
+        return axis.to_rendered(idx)
+    if selector.kind == "absolute":
+        idx = int(selector.value)
+        if idx < 0 or idx >= axis.rendered_count:
+            return None
+        return idx
+    elif selector.kind == "label":
+        key = label_key(selector.value)
+        matches = label_map.get(key, [])
+        if len(matches) != 1:
+            return None
+        idx = matches[0]
+        return axis.to_rendered(idx)
+    else:
+        return None
 
 
 def _build_body_rows(parsed_rows, body_start: int, col_count: int) -> tuple[list[str], list[list[str]]]:
@@ -406,6 +758,37 @@ def _build_body_rows(parsed_rows, body_start: int, col_count: int) -> tuple[list
     return row_paths, body
 
 
+def _data_row_indices(parsed_rows, body_start: int) -> list[int]:
+    data_indices: list[int] = []
+    for abs_idx, row in enumerate(parsed_rows[body_start:], start=body_start):
+        label_raw = row.raw_cells[0] if row.raw_cells else ""
+        marker = _parse_section_marker(label_raw.strip())
+        if marker is None:
+            data_indices.append(abs_idx)
+    return data_indices
+
+
+def _identity(value: int) -> int:
+    return value
+
+
+def _build_row_axis_mapper(row_count: int, separator_index: int | None) -> AxisMapper:
+    if separator_index is None:
+        return AxisMapper(rendered_count=row_count, to_rendered=_identity, from_rendered=_identity)
+
+    def to_rendered(idx: int) -> int:
+        return idx if idx < separator_index else idx - 1
+
+    def from_rendered(idx: int) -> int:
+        return idx if idx < separator_index else idx + 1
+
+    return AxisMapper(rendered_count=row_count - 1, to_rendered=to_rendered, from_rendered=from_rendered)
+
+
+def _build_col_axis_mapper(col_count: int) -> AxisMapper:
+    return AxisMapper(rendered_count=col_count, to_rendered=_identity, from_rendered=_identity)
+
+
 def _build_row_keys(parsed_rows, body_start: int) -> list[tuple[str, ...]]:
     section_stack: list[str] = []
     row_keys: list[tuple[str, ...]] = []
@@ -434,10 +817,8 @@ def _build_row_keys(parsed_rows, body_start: int) -> list[tuple[str, ...]]:
 
 
 def _header_row_count(rows) -> int:
-    for idx, row in enumerate(rows):
-        if row.cells and all(_SEPARATOR_CELL_RE.match(cell) is not None for cell in row.cells):
-            return idx
-    return 0
+    sep_idx = _separator_row_index(rows)
+    return sep_idx if sep_idx is not None else 0
 
 
 def _header_col_count(rows) -> int:
@@ -449,6 +830,13 @@ def _header_col_count(rows) -> int:
     if all(r.boundary == boundary for r in rows):
         return boundary
     return 0
+
+
+def _separator_row_index(rows) -> int | None:
+    for idx, row in enumerate(rows):
+        if row.cells and all(_SEPARATOR_CELL_RE.match(cell) is not None for cell in row.cells):
+            return idx
+    return None
 
 
 def _parse_user_literal(text: str) -> RuntimeValue:
@@ -764,9 +1152,11 @@ class _ExprParser:
         arg = self.parse_expression()
         if self._match(")") is None:
             return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
-        if name != "not":
-            return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
-        return ExprNode(kind="unary", value="not", right=arg)
+        if name == "not":
+            return ExprNode(kind="unary", value="not", right=arg)
+        if name == "sum":
+            return ExprNode(kind="call", value="sum", right=arg)
+        return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
 
 
 def _parse_reference(text: str) -> ReferenceExpr:
@@ -782,6 +1172,31 @@ def _parse_reference(text: str) -> ReferenceExpr:
 def _parse_selector(text: str, is_row: bool) -> RefSelector:
     if text == "":
         return RefSelector("invalid")
+    if text == ":":
+        return RefSelector("all")
+    parts = _split_top_level(text, ":")
+    if len(parts) > 2:
+        return RefSelector("invalid")
+    if len(parts) == 2:
+        start_text = parts[0].strip()
+        end_text = parts[1].strip()
+        if start_text == "" and end_text == "":
+            return RefSelector("invalid")
+        start = _parse_scalar_selector(start_text, is_row) if start_text != "" else None
+        end = _parse_scalar_selector(end_text, is_row) if end_text != "" else None
+        if start is not None and start.kind == "invalid":
+            return RefSelector("invalid")
+        if end is not None and end.kind == "invalid":
+            return RefSelector("invalid")
+        if start is not None and start.kind in {"all", "range"}:
+            return RefSelector("invalid")
+        if end is not None and end.kind in {"all", "range"}:
+            return RefSelector("invalid")
+        return RefSelector("range", (start, end))
+    return _parse_scalar_selector(text, is_row)
+
+
+def _parse_scalar_selector(text: str, is_row: bool) -> RefSelector:
     if text == "_":
         return RefSelector("current")
     m = _UNDERSCORE_OFFSET_RE.match(text)
@@ -796,6 +1211,10 @@ def _parse_selector(text: str, is_row: bool) -> RefSelector:
         m = _THIS_COL_RE.match(text)
         if m is not None:
             return RefSelector("offset", int(m.group(1)))
+
+    m = _ABSOLUTE_RE.match(text)
+    if m is not None:
+        return RefSelector("absolute", int(m.group(1)) - 1)
 
     path = _parse_path(text)
     if path is None or len(path) == 0:
@@ -815,6 +1234,8 @@ def _parse_path(text: str) -> list[str] | None:
         if _is_quoted(item):
             out.append(_unescape_quoted(item[1:-1]))
             continue
+        if _NUMBER_RE.match(item) is not None:
+            return None
         if _UNQUOTED_PATH_COMPONENT_RE.match(item) is None:
             return None
         out.append(item)
