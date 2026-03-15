@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .formatter import format_document as _format_document
+from .incremental import ChangeKind, DocumentState
 from .ir import DocumentIR, build_document_ir
 from .materialize import evaluate_and_format_document as _evaluate_and_format_document
 from .runtime import (
@@ -63,3 +64,7 @@ def evaluate_and_format_document(text: str) -> str:
 
 def evaluate_and_format_file(path: str | Path) -> str:
     return evaluate_and_format_document(Path(path).read_text(encoding="utf-8"))
+
+
+def create_document_state(text: str) -> DocumentState:
+    return DocumentState.from_text(text)

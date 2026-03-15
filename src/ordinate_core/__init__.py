@@ -1,4 +1,5 @@
 from .api import (
+    create_document_state,
     evaluate_cell,
     evaluate_and_format_document,
     evaluate_and_format_file,
@@ -12,6 +13,7 @@ from .api import (
     validate_document,
     validate_file,
 )
+from .incremental import ChangeKind, DocumentState
 from .ir import DocumentIR, RowIR, SectionIR, SheetIR, TableIR
 from .runtime import EvaluationResult, ParsedCell, RuntimeValue
 from .models import SheetSummary, ValidationError, ValidationResult, ValidationSummary
@@ -20,6 +22,7 @@ __all__ = [
     "evaluate_cell",
     "evaluate_and_format_document",
     "evaluate_and_format_file",
+    "create_document_state",
     "parse_cell",
     "evaluate_document",
     "evaluate_file",
@@ -41,4 +44,6 @@ __all__ = [
     "SheetSummary",
     "ValidationError",
     "ValidationResult",
+    "DocumentState",
+    "ChangeKind",
 ]
