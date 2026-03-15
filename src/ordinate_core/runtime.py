@@ -40,6 +40,12 @@ class ViewSelection:
 
 
 @dataclass(frozen=True)
+class FunctionCall:
+    name: str
+    args: list["ExprNode"]
+
+
+@dataclass(frozen=True)
 class ExprNode:
     kind: str
     value: object | None = None
@@ -267,10 +273,9 @@ def _eval_expr(
         return eval_cell(view.row_indices[0], view.col_indices[0])
 
     if node.kind == "call":
-        if node.value != "sum":
-            return RuntimeValue("error", "unknown_function")
-        return _eval_sum(
-            node.right,
+        call: FunctionCall = node.value
+        return _eval_function_call(
+            call,
             row_idx,
             col_idx,
             eval_cell,
@@ -468,8 +473,8 @@ def _eval_ordering(op: str, left: RuntimeValue, right: RuntimeValue) -> RuntimeV
     return RuntimeValue("error", "invalid_comparison")
 
 
-def _eval_sum(
-    node: ExprNode | None,
+def _eval_function_call(
+    call: FunctionCall,
     row_idx: int,
     col_idx: int,
     eval_cell,
@@ -482,10 +487,157 @@ def _eval_sum(
     data_row_indices: list[int],
     data_col_indices: list[int],
 ) -> RuntimeValue:
-    view = _eval_view_expr(
+    name = call.name
+    args = call.args
+
+    if name == "sum":
+        if len(args) != 1:
+            return RuntimeValue("error", "invalid_function_call")
+        arg_kind, arg_val = _eval_arg_value(
+            args[0],
+            row_idx,
+            col_idx,
+            eval_cell,
+            row_map,
+            col_map,
+            row_count,
+            col_count,
+            body_start,
+            body_row_count,
+            data_row_indices,
+            data_col_indices,
+        )
+        if arg_kind == "error":
+            return arg_val
+        if arg_kind != "view":
+            return RuntimeValue("error", "invalid_function_call")
+        return _sum_view(arg_val, eval_cell)
+
+    if name == "abs":
+        if len(args) != 1:
+            return RuntimeValue("error", "invalid_function_call")
+        value = _eval_scalar_arg(
+            args[0],
+            row_idx,
+            col_idx,
+            eval_cell,
+            row_map,
+            col_map,
+            row_count,
+            col_count,
+            body_start,
+            body_row_count,
+            data_row_indices,
+            data_col_indices,
+        )
+        if _is_error(value):
+            return value
+        if value.kind != "number":
+            return RuntimeValue("error", "invalid_function_call")
+        return RuntimeValue("number", abs(value.value))
+
+    if name == "not":
+        if len(args) != 1:
+            return RuntimeValue("error", "invalid_function_call")
+        value = _eval_scalar_arg(
+            args[0],
+            row_idx,
+            col_idx,
+            eval_cell,
+            row_map,
+            col_map,
+            row_count,
+            col_count,
+            body_start,
+            body_row_count,
+            data_row_indices,
+            data_col_indices,
+        )
+        if _is_error(value):
+            return value
+        if value.kind != "boolean":
+            return RuntimeValue("error", "invalid_function_call")
+        return RuntimeValue("boolean", not bool(value.value))
+
+    if name == "dotProduct":
+        if len(args) != 2:
+            return RuntimeValue("error", "invalid_function_call")
+        left_kind, left_val = _eval_arg_value(
+            args[0],
+            row_idx,
+            col_idx,
+            eval_cell,
+            row_map,
+            col_map,
+            row_count,
+            col_count,
+            body_start,
+            body_row_count,
+            data_row_indices,
+            data_col_indices,
+        )
+        if left_kind == "error":
+            return left_val
+        right_kind, right_val = _eval_arg_value(
+            args[1],
+            row_idx,
+            col_idx,
+            eval_cell,
+            row_map,
+            col_map,
+            row_count,
+            col_count,
+            body_start,
+            body_row_count,
+            data_row_indices,
+            data_col_indices,
+        )
+        if right_kind == "error":
+            return right_val
+        if left_kind != "view" or right_kind != "view":
+            return RuntimeValue("error", "invalid_function_call")
+        return _dot_product(left_val, right_val, eval_cell)
+
+    return RuntimeValue("error", "unknown_function")
+
+
+def _eval_arg_value(
+    node: ExprNode,
+    row_idx: int,
+    col_idx: int,
+    eval_cell,
+    row_map,
+    col_map,
+    row_count: int,
+    col_count: int,
+    body_start: int,
+    body_row_count: int,
+    data_row_indices: list[int],
+    data_col_indices: list[int],
+) -> tuple[str, RuntimeValue | ViewSelection]:
+    if node.kind == "reference":
+        ref: ReferenceExpr = node.value
+        view = _select_view(
+            ref,
+            row_idx,
+            col_idx,
+            row_map,
+            col_map,
+            row_count,
+            col_count,
+            body_start,
+            body_row_count,
+            data_row_indices,
+            data_col_indices,
+        )
+        if view is None:
+            return "error", RuntimeValue("error", "bad_reference")
+        return "view", view
+    value = _eval_expr(
         node,
         row_idx,
         col_idx,
+        eval_cell,
         row_map,
         col_map,
         row_count,
@@ -495,11 +647,52 @@ def _eval_sum(
         data_row_indices,
         data_col_indices,
     )
-    if view is None:
-        return RuntimeValue("error", "invalid_view")
+    if _is_error(value):
+        return "error", value
+    return "scalar", value
+
+
+def _eval_scalar_arg(
+    node: ExprNode,
+    row_idx: int,
+    col_idx: int,
+    eval_cell,
+    row_map,
+    col_map,
+    row_count: int,
+    col_count: int,
+    body_start: int,
+    body_row_count: int,
+    data_row_indices: list[int],
+    data_col_indices: list[int],
+) -> RuntimeValue:
+    kind, value = _eval_arg_value(
+        node,
+        row_idx,
+        col_idx,
+        eval_cell,
+        row_map,
+        col_map,
+        row_count,
+        col_count,
+        body_start,
+        body_row_count,
+        data_row_indices,
+        data_col_indices,
+    )
+    if kind == "error":
+        return value
+    if kind == "scalar":
+        return value
+    view: ViewSelection = value
+    if len(view.row_indices) != 1 or len(view.col_indices) != 1:
+        return RuntimeValue("error", "invalid_function_call")
+    return eval_cell(view.row_indices[0], view.col_indices[0])
+
+
+def _sum_view(view: ViewSelection, eval_cell) -> RuntimeValue:
     if not view.row_indices or not view.col_indices:
         return RuntimeValue("number", 0)
-
     result = RuntimeValue("number", 0)
     for r in view.row_indices:
         for c in view.col_indices:
@@ -512,37 +705,36 @@ def _eval_sum(
     return result
 
 
-def _eval_view_expr(
-    node: ExprNode | None,
-    row_idx: int,
-    col_idx: int,
-    row_map,
-    col_map,
-    row_count: int,
-    col_count: int,
-    body_start: int,
-    body_row_count: int,
-    data_row_indices: list[int],
-    data_col_indices: list[int],
-) -> ViewSelection | None:
-    if node is None:
-        return None
-    if node.kind != "reference":
-        return None
-    ref: ReferenceExpr = node.value
-    return _select_view(
-        ref,
-        row_idx,
-        col_idx,
-        row_map,
-        col_map,
-        row_count,
-        col_count,
-        body_start,
-        body_row_count,
-        data_row_indices,
-        data_col_indices,
-    )
+def _vector_values(view: ViewSelection, eval_cell) -> list[RuntimeValue] | None:
+    if len(view.row_indices) == 1:
+        row = view.row_indices[0]
+        return [eval_cell(row, c) for c in view.col_indices]
+    if len(view.col_indices) == 1:
+        col = view.col_indices[0]
+        return [eval_cell(r, col) for r in view.row_indices]
+    return None
+
+
+def _dot_product(left: ViewSelection, right: ViewSelection, eval_cell) -> RuntimeValue:
+    left_vals = _vector_values(left, eval_cell)
+    right_vals = _vector_values(right, eval_cell)
+    if left_vals is None or right_vals is None:
+        return RuntimeValue("error", "invalid_function_call")
+    if len(left_vals) != len(right_vals):
+        return RuntimeValue("error", "invalid_function_call")
+
+    total = 0.0
+    for l_val, r_val in zip(left_vals, right_vals):
+        if _is_error(l_val):
+            return l_val
+        if _is_error(r_val):
+            return r_val
+        if l_val.kind != "number" or r_val.kind != "number":
+            return RuntimeValue("error", "invalid_function_call")
+        total += float(l_val.value) * float(r_val.value)
+    if total.is_integer():
+        return RuntimeValue("number", int(total))
+    return RuntimeValue("number", total)
 
 
 def _select_view(
@@ -867,7 +1059,7 @@ def _tokenize_expr(text: str) -> list[tuple[str, str]]:
         if ch.isspace():
             i += 1
             continue
-        if ch in "()+-*/":
+        if ch in "()+-*/,":
             out.append((ch, ch))
             i += 1
             continue
@@ -1092,14 +1284,14 @@ class _ExprParser:
     def _parse_function_call(self, name: str) -> ExprNode:
         if self._match("(") is None:
             return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
-        arg = self.parse_expression()
+        if self._match(")") is not None:
+            return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
+        args = [self.parse_expression()]
+        while self._match(",") is not None:
+            args.append(self.parse_expression())
         if self._match(")") is None:
             return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
-        if name == "not":
-            return ExprNode(kind="unary", value="not", right=arg)
-        if name == "sum":
-            return ExprNode(kind="call", value="sum", right=arg)
-        return ExprNode(kind="literal", value=RuntimeValue("error", "parse_error"))
+        return ExprNode(kind="call", value=FunctionCall(name=name, args=args))
 
 
 def _parse_reference(text: str) -> ReferenceExpr:

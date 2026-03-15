@@ -1,0 +1,211 @@
+abs_scalar_number
+[doc]
+# AbsScalar
+| Item || V |
+| ---- || --- |
+| A    || = abs(-3) |
+[/doc]
+target_row: A
+target_col: V
+expect_kind: number
+expect_value: 3
+
+===
+abs_view_scalar_number
+[doc]
+# AbsView
+| Item || V |
+| ---- || --- |
+| A    || 5 |
+| B    || = abs(@[A,_]) |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: number
+expect_value: 5
+
+===
+abs_view_non_scalar_error
+[doc]
+# AbsViewRange
+| Item || V |
+| ---- || --- |
+| A    || 1 |
+| B    || 2 |
+| C    || = abs(@[#2:#3,_]) |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: error
+
+===
+not_scalar_boolean
+[doc]
+# NotScalar
+| Item || V |
+| ---- || --- |
+| A    || = not(true) |
+[/doc]
+target_row: A
+target_col: V
+expect_kind: boolean
+expect_value: false
+
+===
+not_view_boolean
+[doc]
+# NotView
+| Item || V |
+| ---- || --- |
+| A    || true |
+| B    || = not(@[A,_]) |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: boolean
+expect_value: false
+
+===
+sum_iterable_view
+[doc]
+# SumView
+| Item  || 2024 | 2025 |
+| ----  || ---- | ---- |
+| A     || 1    | 2 |
+| B     || 3    | 4 |
+| Total || = sum(@[:,2025]) |  |
+[/doc]
+target_row: Total
+target_col: 2024
+expect_kind: number
+expect_value: 6
+
+===
+sum_scalar_error
+[doc]
+# SumScalar
+| Item || V |
+| ---- || --- |
+| A    || = sum(3) |
+[/doc]
+target_row: A
+target_col: V
+expect_kind: error
+
+===
+sum_scalar_from_function_error
+[doc]
+# SumScalarFn
+| Item || 2024 |
+| ---- || ---- |
+| A    || = sum(abs(-3)) |
+[/doc]
+target_row: A
+target_col: 2024
+expect_kind: error
+
+===
+sum_includes_blank
+[doc]
+# SumBlank
+| Item  || 2024 |
+| ----  || ---- |
+| A     || 1 |
+| B     ||  |
+| C     || 3 |
+| Total || = sum(@[#2:#4,2024]) |
+[/doc]
+target_row: Total
+target_col: 2024
+expect_kind: number
+expect_value: 4
+
+===
+sum_includes_boolean
+[doc]
+# SumBoolean
+| Item  || 2024 |
+| ----  || ---- |
+| A     || true |
+| B     || false |
+| C     || 2 |
+| Total || = sum(@[#2:#4,2024]) |
+[/doc]
+target_row: Total
+target_col: 2024
+expect_kind: number
+expect_value: 3
+
+===
+sum_propagates_error
+[doc]
+# SumError
+| Item  || 2024 |
+| ----  || ---- |
+| A     || 1 |
+| B     || = 1 / 0 |
+| C     || 2 |
+| Total || = sum(@[#2:#4,2024]) |
+[/doc]
+target_row: Total
+target_col: 2024
+expect_kind: error
+
+===
+sum_rectangular_view
+[doc]
+# SumRect
+| Item  || 2024 | 2025 |
+| ----  || ---- | ---- |
+| A     || 1    | 2 |
+| B     || 3    | 4 |
+| Total || = sum(@[#2:#3,2024:2025]) |  |
+[/doc]
+target_row: Total
+target_col: 2024
+expect_kind: number
+expect_value: 10
+
+===
+dot_product_row_vectors
+[doc]
+# DotRow
+| Item || 2024 | 2025 | 2026 |
+| ---- || ---- | ---- | ---- |
+| A    || 1    | 2    | 3 |
+| B    || 4    | 5    | 6 |
+| C    || = dotProduct(@[A,2024:2026], @[B,2024:2026]) |  |  |
+[/doc]
+target_row: C
+target_col: 2024
+expect_kind: number
+expect_value: 32
+
+===
+dot_product_length_mismatch_error
+[doc]
+# DotMismatch
+| Item || 2024 | 2025 | 2026 |
+| ---- || ---- | ---- | ---- |
+| A    || 1    | 2    | 3 |
+| B    || 4    | 5    | 6 |
+| C    || = dotProduct(@[A,2024:2026], @[B,2024:2025]) |  |  |
+[/doc]
+target_row: C
+target_col: 2024
+expect_kind: error
+
+===
+dot_product_single_cell_vector
+[doc]
+# DotSingle
+| Item || 2025 |
+| ---- || ---- |
+| A    || 7 |
+| B    || 8 |
+| C    || = dotProduct(@[A,2025], @[B,2025]) |
+[/doc]
+target_row: C
+target_col: 2025
+expect_kind: number
+expect_value: 56
