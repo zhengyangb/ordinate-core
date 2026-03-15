@@ -1177,8 +1177,6 @@ def _parse_path(text: str) -> list[str] | None:
         if _is_quoted(item):
             out.append(_unescape_quoted(item[1:-1]))
             continue
-        if _NUMBER_RE.match(item) is not None:
-            return None
         if _UNQUOTED_PATH_COMPONENT_RE.match(item) is None:
             return None
         out.append(item)

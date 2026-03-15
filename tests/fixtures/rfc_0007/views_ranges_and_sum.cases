@@ -110,14 +110,15 @@ expect_kind: number
 expect_value: 1
 
 ===
-numeric_label_unquoted_invalid
+numeric_label_unquoted_ok
 [doc]
 # NumericLabel
 | Item || 2024 | 2025 |
 | ---- || ---- | ---- |
 | A    || = @[A,2025] | 2 |
 [/doc]
-expect_validate_ok: false
+expect_validate_ok: true
 target_row: A
 target_col: 2024
-expect_kind: error
+expect_kind: number
+expect_value: 2

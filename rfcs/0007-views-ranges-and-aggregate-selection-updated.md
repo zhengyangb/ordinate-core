@@ -60,7 +60,7 @@ The following constraint forms are used in the conceptual model:
 Examples:
 
 - `@[_,_]`
-- `@[Revenue,"2025"]`
+- `@[Revenue,2025]`
 
 ### `view[d=1]`
 
@@ -74,7 +74,7 @@ This may be:
 Examples:
 
 - `@[Revenue,:]`
-- `@[:,"2025"]`
+- `@[:,2025]`
 - `@[#1:#5,_]`
 - `@[_,#1:#3]`
 
@@ -85,7 +85,7 @@ Examples:
 Examples:
 
 - `@[#1:#3,#1:#2]`
-- `@["Revenue":"Cost of Sales","2024":"2025"]`
+- `@["Revenue":"Cost of Sales",2024:2025]`
 
 ### `view[d<=2]`
 
@@ -137,7 +137,7 @@ Selection and aggregation are separate concerns.
 
 Examples of the intended conceptual separation:
 
-- `sum(@[:,"2025"])`
+- `sum(@[:,2025])`
 - `avg(@[Revenue,:])`
 
 The aggregate is a function. It is not a kind of selector.
@@ -160,7 +160,7 @@ This RFC adopts the following directional syntax ideas for future multi-cell sel
 
 Examples:
 
-- `@[_, "2025"]`
+- `@[_, 2025]`
 - `@[Revenue,_]`
 - `@[_,_]`
 
@@ -177,7 +177,7 @@ Examples:
 
 Examples:
 
-- `@[:,"2025"]`
+- `@[:,2025]`
 - `@[Revenue,:]`
 - `@[:,:]`
 
@@ -219,7 +219,7 @@ Current working direction:
 Examples:
 
 - `@[#1:#5,_]`
-- `@["Revenue":"Cost of Sales","2025"]`
+- `@["Revenue":"Cost of Sales",2025]`
 - `@[#1:#3,#1:#2]`
 - `@[#2:,#2]`
 - `@[:#3,#2]`
@@ -247,7 +247,6 @@ Quoted labels are a selector-level escaping mechanism, not string literals.
 
 Current working direction:
 
-- numeric-looking labels must be quoted
 - labels are required to be unique on an axis; duplicates are a selection error
 
 ## Dimensional Requirements in Functions
@@ -319,29 +318,29 @@ The zero identity ensures that empty inputs produce `0`, and that string values 
 ### `view[d=0]` Examples
 
 - `@[_,_]`
-- `@[Revenue,"2025"]`
+- `@[Revenue,2025]`
 
 ### `view[d=1]` Examples
 
-- `@[:,"2025"]`
+- `@[:,2025]`
 - `@[Revenue,:]`
 - `@[#1:#5,_]`
 
 ### `view[d=2]` Examples
 
 - `@[#1:#3,#1:#2]`
-- `@["Revenue":"Cost of Sales","2024":"2025"]`
+- `@["Revenue":"Cost of Sales",2024:2025]`
 
 ### Contextual View Examples
 
 - `@[_-1,_]`
 - `@[_,_+1]`
-- `@[_-2:_,"2025"]`
+- `@[_-2:_,2025]`
 
 ### `sum` Examples
 
 - `sum(@[_,_])`
-- `sum(@[:,"2025"])`
+- `sum(@[:,2025])`
 - `sum(@["Revenue",:])`
 - `sum(@[#1:#5,_])`
 
@@ -382,6 +381,5 @@ The zero identity ensures that empty inputs produce `0`, and that string values 
 - `:` covers only the data region and excludes header/structural/non-data rows
 - absolute `#` positions are A1-style coordinates that include header and non-data rows
 - the header separator line is not a row for absolute row positions
-- numeric-looking labels must be quoted
 - labels are unique on an axis; duplicates are a selection error
 - range endpoints must resolve to valid positions; reversed or out-of-bounds ranges are selection errors
