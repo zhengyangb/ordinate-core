@@ -25,6 +25,7 @@ from .runtime import (
 
 class ChangeKind(str, Enum):
     VALUE = "value"
+    CLEAR = "clear"
     LABEL = "label"
     STRUCTURAL = "structural"
     SHEET = "sheet"
@@ -188,6 +189,9 @@ class SheetState:
         c = self.col_labels.index(col_label)
         self.set_cell_by_index(r_abs, c, text, kind=kind, eager=eager)
 
+    def clear_cell_by_label(self, row_path: str, col_label: str, eager: bool = True) -> None:
+        self.set_cell_by_label(row_path, col_label, "", kind=ChangeKind.CLEAR, eager=eager)
+
     def set_cell_by_index(
         self,
         r_abs: int,
@@ -207,7 +211,7 @@ class SheetState:
 
         self._update_row_text(r_abs, c, text)
 
-        if kind == ChangeKind.VALUE:
+        if kind in {ChangeKind.VALUE, ChangeKind.CLEAR}:
             self._update_dependencies_for_cell(r_abs, c)
             self._mark_dirty_from((r_abs, c))
         elif kind in {ChangeKind.LABEL, ChangeKind.STRUCTURAL, ChangeKind.SHEET}:
@@ -218,6 +222,9 @@ class SheetState:
 
         if eager:
             self.recalculate()
+
+    def clear_cell_by_index(self, r_abs: int, c: int, eager: bool = True) -> None:
+        self.set_cell_by_index(r_abs, c, "", kind=ChangeKind.CLEAR, eager=eager)
 
     def recalculate(self) -> None:
         for r_abs in range(self.row_count):
@@ -463,6 +470,10 @@ class DocumentState:
         sheet = self._find_sheet(sheet_name)
         sheet.set_cell_by_label(row_path, col_label, text, kind=kind, eager=eager)
 
+    def clear_cell(self, sheet_name: str, row_path: str, col_label: str, eager: bool = True) -> None:
+        sheet = self._find_sheet(sheet_name)
+        sheet.clear_cell_by_label(row_path, col_label, eager=eager)
+
     def set_cell_by_index(
         self,
         sheet_name: str,
@@ -474,6 +485,16 @@ class DocumentState:
     ) -> None:
         sheet = self._find_sheet(sheet_name)
         sheet.set_cell_by_index(row_index, col_index, text, kind=kind, eager=eager)
+
+    def clear_cell_by_index(
+        self,
+        sheet_name: str,
+        row_index: int,
+        col_index: int,
+        eager: bool = True,
+    ) -> None:
+        sheet = self._find_sheet(sheet_name)
+        sheet.clear_cell_by_index(row_index, col_index, eager=eager)
 
     def _find_sheet(self, name: str) -> SheetState:
         for sheet_state in self.sheets:
