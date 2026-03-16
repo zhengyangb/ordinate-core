@@ -1,0 +1,361 @@
+=== string_concat
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || "foo" |
+| B    || "bar" |
+| C    || = @[A,_] + @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: string
+expect_value: foobar
+
+=== string_plus_number_error
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || "foo" |
+| B    || 1 |
+| C    || = @[A,_] + @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: error
+
+=== number_plus_blank
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || 5 |
+| B    ||  |
+| C    || = @[A,_] + @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: number
+expect_value: 5
+
+=== blank_plus_number
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    || 5 |
+| C    || = @[A,_] + @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: number
+expect_value: 5
+
+=== blank_plus_blank
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    ||  |
+| C    || = @[A,_] + @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: blank
+
+=== blank_minus_blank
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    ||  |
+| C    || = @[A,_] - @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: blank
+
+=== blank_times_blank
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    ||  |
+| C    || = @[A,_] * @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: blank
+
+=== blank_div_blank_error
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    ||  |
+| C    || = @[A,_] / @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: error
+
+=== blank_div_number
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    || 5 |
+| C    || = @[A,_] / @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: number
+expect_value: 0
+
+=== number_div_blank_error
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || 5 |
+| B    ||  |
+| C    || = @[A,_] / @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: error
+
+=== boolean_numeric_add
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || true |
+| B    || 2 |
+| C    || = @[A,_] + @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: number
+expect_value: 3
+
+=== boolean_boolean_add
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || true |
+| B    || false |
+| C    || = @[A,_] + @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: number
+expect_value: 1
+
+=== unary_minus_blank
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    || = -@[A,_] |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: blank
+
+=== unary_minus_string_error
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || "x" |
+| B    || = -@[A,_] |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: error
+
+=== not_boolean_true
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || true |
+| B    || = not(@[A,_]) |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: boolean
+expect_value: false
+
+=== not_blank_error
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    || = not(@[A,_]) |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: error
+
+=== equality_number_number
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || 3 |
+| B    || 3 |
+| C    || = @[A,_] == @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: true
+
+=== equality_string_string
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || "foo" |
+| B    || "foo" |
+| C    || = @[A,_] == @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: true
+
+=== equality_boolean_boolean
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || true |
+| B    || true |
+| C    || = @[A,_] == @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: true
+
+=== equality_blank_blank
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    ||  |
+| C    || = @[A,_] == @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: true
+
+=== equality_blank_other_false
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    || 1 |
+| C    || = @[A,_] == @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: false
+
+=== equality_cross_type_error
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || 1 |
+| B    || "1" |
+| C    || = @[A,_] == @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: error
+
+=== inequality_blank_other_true
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    || 1 |
+| C    || = @[A,_] != @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: true
+
+=== inequality_string_string
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || "foo" |
+| B    || "bar" |
+| C    || = @[A,_] != @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: true
+
+=== ordering_number_number
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || 3 |
+| B    || 5 |
+| C    || = @[A,_] < @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: true
+
+=== ordering_string_error
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    || "a" |
+| B    || "b" |
+| C    || = @[A,_] < @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: error
+
+=== ordering_blank_error
+[doc]
+# Types
+| Item || V |
+| ---- || --- |
+| A    ||  |
+| B    || 1 |
+| C    || = @[A,_] < @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: error

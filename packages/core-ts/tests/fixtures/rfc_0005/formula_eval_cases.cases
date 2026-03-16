@@ -1,0 +1,175 @@
+=== arithmetic_over_references
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || 4 |
+| B    || 5 |
+| C    || = @[A,_] + @[B,_] * 2 |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: number
+expect_value: 14
+
+=== parentheses_over_references
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || 4 |
+| B    || 5 |
+| C    || = (@[A,_] + @[B,_]) * 2 |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: number
+expect_value: 18
+
+=== equality_true
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || 3 |
+| B    || 3 |
+| C    || = @[A,_] == @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: true
+
+=== equality_false
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || 3 |
+| B    || 4 |
+| C    || = @[A,_] == @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: boolean
+expect_value: false
+
+=== divide_by_zero_error
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || 3 |
+| B    || 0 |
+| C    || = @[A,_] / @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: error
+
+=== invalid_arithmetic_type_error
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || "x" |
+| B    || 1 |
+| C    || = @[A,_] + @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: error
+
+=== cycle_detection
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || = @[B,_] |
+| B    || = @[A,_] |
+[/doc]
+target_row: A
+target_col: V
+expect_kind: error
+
+=== cached_formula_ignored_as_source_of_truth
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || 1 |
+| B    || 2 |
+| C    || 0 = @[A,_] + @[B,_] |
+[/doc]
+target_row: C
+target_col: V
+expect_kind: number
+expect_value: 3
+
+=== string_contains_equals_literal_roundtrip
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || "a=b" |
+| B    || = @[A,_] |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: string
+expect_value: a=b
+expect_validate_ok: true
+
+=== quoted_equals_not_formula
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || "=1+2" |
+| B    || = @[A,_] |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: string
+expect_value: =1+2
+expect_validate_ok: true
+
+=== cached_string_with_equals_is_valid
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || "ok" |
+| B    || "x=y" = @[A,_] |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: string
+expect_value: ok
+expect_validate_ok: true
+
+=== invalid_cached_unquoted_string_is_validation_error
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || 1 |
+| B    || hello = @[A,_] |
+[/doc]
+target_row: B
+target_col: V
+expect_kind: number
+expect_value: 1
+expect_validate_ok: false
+
+=== invalid_formula_parse_is_validation_error
+[doc]
+# Calc
+| Item || V |
+| ---- || --- |
+| A    || = 1 + |
+[/doc]
+target_row: A
+target_col: V
+expect_kind: error
+expect_validate_ok: false
