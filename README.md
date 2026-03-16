@@ -1,6 +1,9 @@
 # ordinate-core
 
-A Python core library for Ordinate documents.
+Core library for Ordinate documents.
+
+Primary implementation: TypeScript (`packages/core-ts`).
+Python (`src/ordinate_core`) is a frozen reference and is not actively maintained.
 
 Current capabilities:
 - parse sheets and pipe tables from text
