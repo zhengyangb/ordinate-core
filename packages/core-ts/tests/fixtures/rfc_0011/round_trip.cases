@@ -1,0 +1,87 @@
+=== basic_round_trip_no_cache
+[doc]
+# Sheet
+| Item  || 2024 | 2025 |
+| ----  || ---- | ---- |
+| A     || 1    | 2    |
+| B     || 3    | 4    |
+| Total || = sum(@[#2:#3,2024:2025]) |  |
+[/doc]
+[expect]
+# Sheet
+| Item  || 2024 | 2025 |
+| ----  || ---- | ---- |
+| A     || 1    | 2    |
+| B     || 3    | 4    |
+| Total || = sum(@[#2:#3,2024:2025]) |  |
+[/expect]
+
+=== evaluated_cache_emitted
+[doc]
+# Sheet
+| Item  || 2024 | 2025 | Sum |
+| ----  || ---- | ---- | --- |
+| A     || 1    | 2    | = sum(@[A,2024:2025]) |
+| B     || 3    | 4    | = sum(@[B,2024:2025]) |
+[/doc]
+[expect]
+# Sheet
+| Item  || 2024 | 2025 | Sum |
+| ----  || ---- | ---- | --- |
+| A     || 1    | 2    | 3 = sum(@[A,2024:2025]) |
+| B     || 3    | 4    | 7 = sum(@[B,2024:2025]) |
+[/expect]
+evaluate: true
+
+=== blank_formula_keeps_no_cache
+[doc]
+# Sheet
+| Item  || 2024 | 2025 | Sum |
+| ----  || ---- | ---- | --- |
+| A     ||      |      | = @[A,2024] + @[A,2025] |
+[/doc]
+[expect]
+# Sheet
+| Item  || 2024 | 2025 | Sum |
+| ----  || ---- | ---- | --- |
+| A     ||      |      | = @[A,2024] + @[A,2025] |
+[/expect]
+evaluate: true
+
+=== sections_and_spacing_normalized
+[doc]
+# Sheet
+| Item        || 2024 | 2025 | Total |
+| ----        || ---- | ---- | ----- |
+| [Revenue]   ||      |      |       |
+|   Product A  || 2    | 3    | = sum(@["Revenue"."Product A",2024:2025]) |
+| [Cost]      ||      |      |       |
+|   Materials  || 1    | 1    | = sum(@["Cost"."Materials",2024:2025]) |
+[/doc]
+[expect]
+# Sheet
+| Item        || 2024 | 2025 | Total |
+| ----        || ---- | ---- | ----- |
+| [Revenue]   ||      |      |       |
+|   Product A  || 2    | 3    | = sum(@["Revenue"."Product A",2024:2025]) |
+| [Cost]      ||      |      |       |
+|   Materials  || 1    | 1    | = sum(@["Cost"."Materials",2024:2025]) |
+[/expect]
+
+=== multi_level_header_divider_once
+[doc]
+# Sheet
+|      || 2025 | 2025 | 2025 |
+|      || 03   | 03   | 04   |
+| Item || 14   | 15   | 01   |
+| ---- || ---- | ---- | ---- |
+| Rev  || 100  | 120  | 130  |
+[/doc]
+[expect]
+# Sheet
+|      || 2025 | 2025 | 2025 |
+|      || 03   | 03   | 04   |
+| Item || 14   | 15   | 01   |
+| ---- || ---- | ---- | ---- |
+| Rev  || 100  | 120  | 130  |
+[/expect]

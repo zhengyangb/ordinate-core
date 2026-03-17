@@ -26,3 +26,4 @@ export {
 } from "./runtime";
 
 export { ChangeKind, DocumentState, SheetState } from "./incremental";
+export { serializeDocumentState } from "./serializer";

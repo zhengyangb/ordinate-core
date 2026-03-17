@@ -139,9 +139,9 @@ describe("RFC-0009 incremental conformance", () => {
 | Item        || 2024 | 2025 | Total |
 | ----        || ---- | ---- | ----- |
 | [Revenue]   ||      |      |       |
-|  Product A  || 2    | 3    | = sum(@["Revenue"."Product A",2024:2025]) |
+|   Product A  || 2    | 3    | = sum(@["Revenue"."Product A",2024:2025]) |
 | [Cost]      ||      |      |       |
-|  Materials  || 1    | 1    | = sum(@["Cost"."Materials",2024:2025]) |
+|   Materials  || 1    | 1    | = sum(@["Cost"."Materials",2024:2025]) |
 | Profit      || = @["Revenue"."Product A",2024] - @["Cost"."Materials",2024] | = @["Revenue"."Product A",2025] - @["Cost"."Materials",2025] | = sum(@[Profit,2024:2025]) |
 `.trim();
 
