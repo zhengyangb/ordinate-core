@@ -46,6 +46,12 @@ export class SheetState {
   colLabels: string[];
   rowMap: Map<string, number[]>;
   colMap: Map<string, number[]>;
+  rowIds: number[];
+  colIds: number[];
+  rowIdToIndex: Map<number, number>;
+  colIdToIndex: Map<number, number>;
+  nextRowId: number;
+  nextColId: number;
   dataRowIndices: number[];
   dataColIndices: number[];
   logicalRows: ParsedRow[];
@@ -69,6 +75,8 @@ export class SheetState {
     colLabels: string[],
     rowMap: Map<string, number[]>,
     colMap: Map<string, number[]>,
+    rowIds: number[],
+    colIds: number[],
     dataRowIndices: number[],
     dataColIndices: number[],
     logicalRows: ParsedRow[],
@@ -85,6 +93,12 @@ export class SheetState {
     this.colLabels = colLabels;
     this.rowMap = rowMap;
     this.colMap = colMap;
+    this.rowIds = rowIds;
+    this.colIds = colIds;
+    this.rowIdToIndex = buildIdIndexMap(rowIds);
+    this.colIdToIndex = buildIdIndexMap(colIds);
+    this.nextRowId = rowIds.reduce((m, v) => Math.max(m, v), 0) + 1;
+    this.nextColId = colIds.reduce((m, v) => Math.max(m, v), 0) + 1;
     this.dataRowIndices = dataRowIndices;
     this.dataColIndices = dataColIndices;
     this.logicalRows = logicalRows;
@@ -116,6 +130,8 @@ export class SheetState {
         [],
         new Map(),
         new Map(),
+        [],
+        [],
         [],
         [],
         [],
@@ -160,6 +176,9 @@ export class SheetState {
     const dataRowIndices = computeDataRowIndices(logicalRows, bodyStart);
     const dataColIndices = Array.from({ length: colCount - headerColCount }, (_, i) => i + headerColCount);
 
+    const rowIds = Array.from({ length: logicalRows.length }, (_, i) => i + 1);
+    const colIds = Array.from({ length: colCount }, (_, i) => i + 1);
+
     const cells: CellState[][] = [];
     for (const row of logicalRows) {
       const rowCells: CellState[] = [];
@@ -186,11 +205,14 @@ export class SheetState {
       colLabels,
       rowMap,
       colMap,
+      rowIds,
+      colIds,
       dataRowIndices,
       dataColIndices,
       logicalRows,
       cells,
     );
+    sheet.bindAllFormulas();
     sheet.rebuildDependencies();
     return sheet;
   }
@@ -238,7 +260,7 @@ export class SheetState {
 
     const cell = this.cells[rAbs][c];
     cell.text = text;
-    cell.parsed = parseCellInput(text);
+    cell.parsed = this.bindParsedCell(parseCellInput(text));
     cell.dirty = true;
     cell.value = null;
 
@@ -262,6 +284,242 @@ export class SheetState {
   // Clear a cell by absolute indices.
   clearCellByIndex(rAbs: number, c: number, eager = true) {
     this.setCellByIndex(rAbs, c, "", ChangeKind.CLEAR, eager);
+  }
+
+  // Bind absolute selectors to stable IDs (tentative RFC-0012 behavior).
+  private bindParsedCell(parsed: ParsedCell): ParsedCell {
+    if (parsed.kind !== "formula" || !parsed.expression) {
+      return parsed;
+    }
+
+    const bindSelector = (selector: any, axis: "row" | "col"): any => {
+      if (!selector || typeof selector !== "object") return selector;
+      if (selector.kind === "range") {
+        const [startSel, endSel] = selector.value as [any | null, any | null];
+        return {
+          kind: "range",
+          value: [
+            startSel ? bindSelector(startSel, axis) : null,
+            endSel ? bindSelector(endSel, axis) : null,
+          ],
+        };
+      }
+      if (selector.kind === "absolute") {
+        const index = Number(selector.value);
+        const ids = axis === "row" ? this.rowIds : this.colIds;
+        if (index < 0 || index >= ids.length) {
+          return { kind: "invalid" };
+        }
+        return { kind: "absolute_id", value: ids[index] };
+      }
+      return selector;
+    };
+
+    const walk = (node: ExprNode | null) => {
+      if (!node) return;
+      if (node.kind === "reference") {
+        const ref = node.value as any;
+        ref.rowSelector = bindSelector(ref.rowSelector, "row");
+        ref.colSelector = bindSelector(ref.colSelector, "col");
+        return;
+      }
+      if (node.kind === "call") {
+        const call = node.value as { args: ExprNode[] };
+        call.args.forEach((arg) => walk(arg));
+        return;
+      }
+      if (node.kind === "unary") {
+        walk(node.right ?? null);
+        return;
+      }
+      if (node.kind === "binary") {
+        walk(node.left ?? null);
+        walk(node.right ?? null);
+      }
+    };
+
+    walk(parsed.expression);
+    return parsed;
+  }
+
+  // Bind all formulas to stable IDs after initial parse (tentative RFC-0012 behavior).
+  private bindAllFormulas() {
+    for (let rAbs = 0; rAbs < this.cells.length; rAbs += 1) {
+      for (let c = 0; c < this.cells[rAbs].length; c += 1) {
+        const cell = this.cells[rAbs][c];
+        cell.parsed = this.bindParsedCell(cell.parsed);
+      }
+    }
+  }
+
+  // Insert a blank row at a logical row index (tentative RFC-0012 behavior).
+  insertRow(rowIndex: number, eager = true) {
+    if (rowIndex < this.bodyStart) {
+      throw new Error("header row insertion is not supported (tentative)");
+    }
+    if (rowIndex < 0 || rowIndex > this.rowCount) {
+      throw new Error("row index out of range");
+    }
+
+    const boundary = this.logicalRows.length > 0 ? this.logicalRows[0].boundary : null;
+    const rawCells = Array.from({ length: this.colCount }, () => " ");
+    const cells = Array.from({ length: this.colCount }, () => "");
+    const newRow: ParsedRow = { rawCells, cells, boundary, errors: [] };
+    this.logicalRows.splice(rowIndex, 0, newRow);
+
+    const newCellStates: CellState[] = rawCells.map((text) => ({
+      text,
+      parsed: this.bindParsedCell(parseCellInput(text)),
+      value: null,
+      dirty: true,
+    }));
+    this.cells.splice(rowIndex, 0, newCellStates);
+    this.rowIds.splice(rowIndex, 0, this.nextRowId);
+    this.nextRowId += 1;
+
+    this.rebuildMetadata();
+    this.markAllDirty();
+    if (eager) {
+      this.recalculate();
+    }
+  }
+
+  // Delete a row at a logical row index (tentative RFC-0012 behavior).
+  deleteRow(rowIndex: number, eager = true) {
+    if (rowIndex < this.bodyStart) {
+      throw new Error("header row deletion is not supported (tentative)");
+    }
+    if (rowIndex < 0 || rowIndex >= this.rowCount) {
+      throw new Error("row index out of range");
+    }
+    this.logicalRows.splice(rowIndex, 1);
+    this.cells.splice(rowIndex, 1);
+    this.rowIds.splice(rowIndex, 1);
+    this.rebuildMetadata();
+    this.markAllDirty();
+    if (eager) {
+      this.recalculate();
+    }
+  }
+
+  // Insert a blank column at a logical column index (tentative RFC-0012 behavior).
+  insertCol(colIndex: number, eager = true) {
+    if (colIndex < this.headerColCount) {
+      throw new Error("header column insertion is not supported (tentative)");
+    }
+    if (colIndex < 0 || colIndex > this.colCount) {
+      throw new Error("column index out of range");
+    }
+
+    for (const row of this.logicalRows) {
+      row.rawCells.splice(colIndex, 0, " ");
+      row.cells.splice(colIndex, 0, "");
+    }
+    for (const rowCells of this.cells) {
+      rowCells.splice(colIndex, 0, {
+        text: " ",
+        parsed: this.bindParsedCell(parseCellInput(" ")),
+        value: null,
+        dirty: true,
+      });
+    }
+    this.colIds.splice(colIndex, 0, this.nextColId);
+    this.nextColId += 1;
+
+    this.rebuildMetadata();
+    this.markAllDirty();
+    if (eager) {
+      this.recalculate();
+    }
+  }
+
+  // Delete a column at a logical column index (tentative RFC-0012 behavior).
+  deleteCol(colIndex: number, eager = true) {
+    if (colIndex < this.headerColCount) {
+      throw new Error("header column deletion is not supported (tentative)");
+    }
+    if (colIndex < 0 || colIndex >= this.colCount) {
+      throw new Error("column index out of range");
+    }
+    for (const row of this.logicalRows) {
+      if (colIndex < row.rawCells.length) row.rawCells.splice(colIndex, 1);
+      if (colIndex < row.cells.length) row.cells.splice(colIndex, 1);
+    }
+    for (const rowCells of this.cells) {
+      rowCells.splice(colIndex, 1);
+    }
+    this.colIds.splice(colIndex, 1);
+
+    this.rebuildMetadata();
+    this.markAllDirty();
+    if (eager) {
+      this.recalculate();
+    }
+  }
+
+  // Rename a row label and rebind references when unique (tentative RFC-0012 behavior).
+  renameRowLabel(rowPath: string, newLabel: string, eager = true) {
+    if (!this.rowPaths.includes(rowPath)) {
+      throw new Error(`unknown row path '${rowPath}'`);
+    }
+    const parts = rowPath.split(".");
+    const parentParts = parts.slice(0, -1);
+    const rowRel = this.rowPaths.indexOf(rowPath);
+    const rAbs = this.bodyStart + rowRel;
+    const row = this.logicalRows[rAbs];
+    const raw = row.rawCells[0] ?? "";
+    const leading = raw.match(/^\s*/)?.[0] ?? "";
+    row.rawCells[0] = `${leading}${newLabel}`;
+    row.cells[0] = newLabel.trim();
+
+    const cellState = this.cells[rAbs]?.[0];
+    if (cellState) {
+      cellState.text = row.rawCells[0];
+      cellState.parsed = this.bindParsedCell(parseCellInput(row.rawCells[0]));
+      cellState.value = null;
+      cellState.dirty = true;
+    }
+
+    this.rebuildMetadata();
+    this.markAllDirty();
+
+    const newPath = [...parentParts, newLabel].join(".");
+    this.applyRowAlias(rowPath, newPath);
+
+    if (eager) {
+      this.recalculate();
+    }
+  }
+
+  // Rename a column label and rebind references when unique (tentative RFC-0012 behavior).
+  renameColLabel(oldLabel: string, newLabel: string, eager = true) {
+    if (!this.colLabels.includes(oldLabel)) {
+      throw new Error(`unknown column label '${oldLabel}'`);
+    }
+    if (this.headerRowCount === 0) {
+      throw new Error("column rename requires a header row (tentative)");
+    }
+    const colIndex = this.colLabels.indexOf(oldLabel);
+    const headerRowIndex = this.headerRowCount - 1;
+    const headerRow = this.logicalRows[headerRowIndex];
+    headerRow.rawCells[colIndex] = newLabel;
+    headerRow.cells[colIndex] = newLabel.trim();
+
+    const cellState = this.cells[headerRowIndex]?.[colIndex];
+    if (cellState) {
+      cellState.text = newLabel;
+      cellState.parsed = this.bindParsedCell(parseCellInput(newLabel));
+      cellState.value = null;
+      cellState.dirty = true;
+    }
+
+    this.rebuildMetadata();
+    this.markAllDirty();
+    this.applyColAlias(oldLabel, newLabel);
+
+    if (eager) {
+      this.recalculate();
+    }
   }
 
   // Recalculate all dirty cells.
@@ -310,6 +568,8 @@ export class SheetState {
         this.bodyRowCount,
         this.dataRowIndices,
         this.dataColIndices,
+        this.rowIdToIndex,
+        this.colIdToIndex,
       );
     }
 
@@ -407,6 +667,8 @@ export class SheetState {
           this.bodyRowCount,
           this.dataRowIndices,
           this.dataColIndices,
+          this.rowIdToIndex,
+          this.colIdToIndex,
         );
         if (view) views.push(view);
         return;
@@ -472,8 +734,28 @@ export class SheetState {
     this.dataColIndices = Array.from({ length: colCount - this.headerColCount }, (_, i) => i + this.headerColCount);
     this.rowCount = this.logicalRows.length;
     this.bodyRowCount = this.rowCount - this.bodyStart;
+    this.rowIdToIndex = buildIdIndexMap(this.rowIds);
+    this.colIdToIndex = buildIdIndexMap(this.colIds);
 
     this.rebuildDependencies();
+  }
+
+  // Add an alias for an old row path if the new label is unique (tentative RFC-0012 behavior).
+  private applyRowAlias(oldPath: string, newPath: string) {
+    const oldKey = JSON.stringify(oldPath.split("."));
+    const newKey = JSON.stringify(newPath.split("."));
+    const newMatches = this.rowMap.get(newKey) ?? [];
+    if (newMatches.length === 1 && !this.rowMap.has(oldKey)) {
+      this.rowMap.set(oldKey, [...newMatches]);
+    }
+  }
+
+  // Add an alias for an old column label if the new label is unique (tentative RFC-0012 behavior).
+  private applyColAlias(oldLabel: string, newLabel: string) {
+    const newMatches = this.colMap.get(newLabel) ?? [];
+    if (newMatches.length === 1 && !this.colMap.has(oldLabel)) {
+      this.colMap.set(oldLabel, [...newMatches]);
+    }
   }
 
   // Rebuild all view dependencies from scratch.
@@ -533,6 +815,12 @@ export class SheetState {
       }
     }
   }
+}
+
+function buildIdIndexMap(ids: number[]): Map<number, number> {
+  const map = new Map<number, number>();
+  ids.forEach((id, idx) => map.set(id, idx));
+  return map;
 }
 
 export class DocumentState {
@@ -601,6 +889,42 @@ export class DocumentState {
   clearCellByIndex(sheetName: string, rowIndex: number, colIndex: number, eager = true) {
     const sheet = this.findSheet(sheetName);
     sheet.clearCellByIndex(rowIndex, colIndex, eager);
+  }
+
+  // Insert a blank row into a sheet (tentative RFC-0012 behavior).
+  insertRow(sheetName: string, rowIndex: number, eager = true) {
+    const sheet = this.findSheet(sheetName);
+    sheet.insertRow(rowIndex, eager);
+  }
+
+  // Delete a row from a sheet (tentative RFC-0012 behavior).
+  deleteRow(sheetName: string, rowIndex: number, eager = true) {
+    const sheet = this.findSheet(sheetName);
+    sheet.deleteRow(rowIndex, eager);
+  }
+
+  // Insert a blank column into a sheet (tentative RFC-0012 behavior).
+  insertCol(sheetName: string, colIndex: number, eager = true) {
+    const sheet = this.findSheet(sheetName);
+    sheet.insertCol(colIndex, eager);
+  }
+
+  // Delete a column from a sheet (tentative RFC-0012 behavior).
+  deleteCol(sheetName: string, colIndex: number, eager = true) {
+    const sheet = this.findSheet(sheetName);
+    sheet.deleteCol(colIndex, eager);
+  }
+
+  // Rename a row label in a sheet (tentative RFC-0012 behavior).
+  renameRowLabel(sheetName: string, rowPath: string, newLabel: string, eager = true) {
+    const sheet = this.findSheet(sheetName);
+    sheet.renameRowLabel(rowPath, newLabel, eager);
+  }
+
+  // Rename a column label in a sheet (tentative RFC-0012 behavior).
+  renameColLabel(sheetName: string, oldLabel: string, newLabel: string, eager = true) {
+    const sheet = this.findSheet(sheetName);
+    sheet.renameColLabel(oldLabel, newLabel, eager);
   }
 
   private findSheet(name: string): SheetState {

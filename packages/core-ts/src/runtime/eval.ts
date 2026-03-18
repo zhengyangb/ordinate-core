@@ -152,6 +152,8 @@ export function evalExpr(
   bodyRowCount: number,
   dataRowIndices: number[],
   dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
 ): RuntimeValue {
   if (!node) {
     return { kind: "error", value: "empty_expression" };
@@ -175,6 +177,8 @@ export function evalExpr(
       bodyRowCount,
       dataRowIndices,
       dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
     );
     if (!view) {
       return { kind: "error", value: "bad_reference" };
@@ -200,6 +204,8 @@ export function evalExpr(
       bodyRowCount,
       dataRowIndices,
       dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
     );
   }
 
@@ -218,6 +224,8 @@ export function evalExpr(
       bodyRowCount,
       dataRowIndices,
       dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
     );
     if (isError(right)) {
       return right;
@@ -247,6 +255,8 @@ export function evalExpr(
     bodyRowCount,
     dataRowIndices,
     dataColIndices,
+    rowIdToIndex,
+    colIdToIndex,
   );
   const right = evalExpr(
     node.right ?? null,
@@ -261,6 +271,8 @@ export function evalExpr(
     bodyRowCount,
     dataRowIndices,
     dataColIndices,
+    rowIdToIndex,
+    colIdToIndex,
   );
   if (isError(left)) return left;
   if (isError(right)) return right;
@@ -418,6 +430,8 @@ export function selectView(
   bodyRowCount: number,
   dataRowIndices: number[],
   dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
 ): ViewSelection | null {
   const rowIndices = resolveAxisSelector(
     ref.rowSelector,
@@ -427,6 +441,7 @@ export function selectView(
     dataRowIndices,
     [bodyStart, bodyRowCount],
     (path) => JSON.stringify(path),
+    rowIdToIndex,
   );
   if (!rowIndices) return null;
   const colIndices = resolveAxisSelector(
@@ -437,6 +452,7 @@ export function selectView(
     dataColIndices,
     null,
     (path) => path.join("."),
+    colIdToIndex,
   );
   if (!colIndices) return null;
   return { rowIndices, colIndices };
@@ -451,6 +467,7 @@ function resolveAxisSelector(
   dataIndices: number[],
   currentBounds: [number, number] | null,
   labelKey: (path: string[]) => string,
+  idToIndex?: Map<number, number>,
 ): number[] | null {
   if (selector.kind === "all") {
     return [...dataIndices];
@@ -459,17 +476,17 @@ function resolveAxisSelector(
     const [startSel, endSel] = selector.value as [RefSelector | null, RefSelector | null];
     const start =
       startSel !== null
-        ? resolveScalarRendered(startSel, current, labelMap, totalCount, currentBounds, labelKey)
+        ? resolveScalarRendered(startSel, current, labelMap, totalCount, currentBounds, labelKey, idToIndex)
         : 0;
     const end =
       endSel !== null
-        ? resolveScalarRendered(endSel, current, labelMap, totalCount, currentBounds, labelKey)
+        ? resolveScalarRendered(endSel, current, labelMap, totalCount, currentBounds, labelKey, idToIndex)
         : totalCount - 1;
     if (start === null || end === null) return null;
     if (start > end) return null;
     return Array.from({ length: end - start + 1 }, (_, i) => start + i);
   }
-  const idx = resolveScalarRendered(selector, current, labelMap, totalCount, currentBounds, labelKey);
+  const idx = resolveScalarRendered(selector, current, labelMap, totalCount, currentBounds, labelKey, idToIndex);
   if (idx === null) return null;
   return [idx];
 }
@@ -482,6 +499,7 @@ function resolveScalarRendered(
   totalCount: number,
   currentBounds: [number, number] | null,
   labelKey: (path: string[]) => string,
+  idToIndex?: Map<number, number>,
 ): number | null {
   if (selector.kind === "current") {
     let idx = current;
@@ -509,6 +527,13 @@ function resolveScalarRendered(
   }
   if (selector.kind === "absolute") {
     const idx = Number(selector.value);
+    if (idx < 0 || idx >= totalCount) return null;
+    return idx;
+  }
+  if (selector.kind === "absolute_id") {
+    if (!idToIndex) return null;
+    const idx = idToIndex.get(Number(selector.value));
+    if (idx === undefined) return null;
     if (idx < 0 || idx >= totalCount) return null;
     return idx;
   }
@@ -638,6 +663,8 @@ function evalFunctionCall(
   bodyRowCount: number,
   dataRowIndices: number[],
   dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
 ): RuntimeValue {
   const name = call.name;
   const args = call.args;
@@ -657,6 +684,8 @@ function evalFunctionCall(
       bodyRowCount,
       dataRowIndices,
       dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
     );
     if (argKind === "error") return argVal as RuntimeValue;
     if (argKind !== "view") return { kind: "error", value: "invalid_function_call" };
@@ -678,6 +707,8 @@ function evalFunctionCall(
       bodyRowCount,
       dataRowIndices,
       dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
     );
     if (isError(value)) return value;
     if (value.kind !== "number") return { kind: "error", value: "invalid_function_call" };
@@ -699,6 +730,8 @@ function evalFunctionCall(
       bodyRowCount,
       dataRowIndices,
       dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
     );
     if (isError(value)) return value;
     if (value.kind !== "boolean") return { kind: "error", value: "invalid_function_call" };
@@ -720,6 +753,8 @@ function evalFunctionCall(
       bodyRowCount,
       dataRowIndices,
       dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
     );
     if (leftKind === "error") return leftVal as RuntimeValue;
     const [rightKind, rightVal] = evalArgValue(
@@ -735,6 +770,8 @@ function evalFunctionCall(
       bodyRowCount,
       dataRowIndices,
       dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
     );
     if (rightKind === "error") return rightVal as RuntimeValue;
     if (leftKind !== "view" || rightKind !== "view") return { kind: "error", value: "invalid_function_call" };
@@ -758,6 +795,8 @@ function evalArgValue(
   bodyRowCount: number,
   dataRowIndices: number[],
   dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
 ): [string, RuntimeValue | ViewSelection] {
   if (node.kind === "reference") {
     const ref = node.value as ReferenceExpr;
@@ -773,6 +812,8 @@ function evalArgValue(
       bodyRowCount,
       dataRowIndices,
       dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
     );
     if (!view) return ["error", { kind: "error", value: "bad_reference" }];
     return ["view", view];
@@ -790,6 +831,8 @@ function evalArgValue(
     bodyRowCount,
     dataRowIndices,
     dataColIndices,
+    rowIdToIndex,
+    colIdToIndex,
   );
   if (isError(value)) return ["error", value];
   return ["scalar", value];
@@ -809,6 +852,8 @@ function evalScalarArg(
   bodyRowCount: number,
   dataRowIndices: number[],
   dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
 ): RuntimeValue {
   const [kind, value] = evalArgValue(
     node,
@@ -823,6 +868,8 @@ function evalScalarArg(
     bodyRowCount,
     dataRowIndices,
     dataColIndices,
+    rowIdToIndex,
+    colIdToIndex,
   );
   if (kind === "error") return value as RuntimeValue;
   if (kind === "scalar") return value as RuntimeValue;
