@@ -14,6 +14,7 @@ import {
   type EvaluationResult,
   type ExprNode,
   type ParsedCell,
+  type ReferenceExpr,
   type RuntimeValue,
   type SheetEvaluation,
   type ViewSelection,
@@ -656,7 +657,7 @@ export class SheetState {
       if (!node) return;
       if (node.kind === "reference") {
         const view = selectView(
-          node.value,
+          node.value as ReferenceExpr,
           rAbs,
           c,
           this.rowMap,

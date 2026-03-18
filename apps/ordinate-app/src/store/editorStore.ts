@@ -1,0 +1,142 @@
+import { create } from "zustand";
+
+import {
+  DocumentState,
+  type EvaluationResult,
+  serializeDocumentState,
+} from "@ordinate/core";
+
+type EditorMode = "source" | "table";
+
+interface EditorState {
+  mode: EditorMode;
+  sourceText: string;
+  docState: DocumentState | null;
+  evaluation: EvaluationResult | null;
+  activeSheet: string | null;
+  error: string | null;
+  setSourceText: (text: string) => void;
+  setActiveSheet: (sheetName: string) => void;
+  exitSourceMode: () => void;
+  enterSourceMode: () => void;
+}
+
+const sampleDocument = `# Management Report
+|             || 2024 | 2024 | 2025 | 2025 |
+| Line Item   || H1   | H2   | H1   | H2   |
+| ----------- || ---- | ---- | ---- | ---- |
+| [Revenue]   ||      |      |      |      |
+|   Product A || 120  | 140  | 160  | 180  |
+|   Product B || 80   | 95   | 105  | 120  |
+| Revenue Total || = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] |
+| [Cost of Sales] ||      |      |      |      |
+|   Materials  || 60   | 70   | 82   | 90   |
+|   Fulfillment|| 20   | 25   | 28   | 35   |
+| Cost of Sales Total || = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] | = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] | = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] | = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] |
+| Gross Profit || = @["Revenue Total",_] - @["Cost of Sales Total",_] | = @["Revenue Total",_] - @["Cost of Sales Total",_] | = @["Revenue Total",_] - @["Cost of Sales Total",_] | = @["Revenue Total",_] - @["Cost of Sales Total",_] |
+| [Operating Expense] ||      |      |      |      |
+|   Marketing || 15   | 16   | 20   | 22   |
+|   RND       || 18   | 21   | 24   | 26   |
+| Opex Total || = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] | = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] | = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] | = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] |
+| Operating Profit || = @["Gross Profit",_] - @["Opex Total",_] | = @["Gross Profit",_] - @["Opex Total",_] | = @["Gross Profit",_] - @["Opex Total",_] | = @["Gross Profit",_] - @["Opex Total",_] |
+| Margin Ratio || = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] |
+
+# Executive Notes
+| Topic                    || Note |
+| ------------------------ || ---- |
+| Summary                  || "Revenue momentum stayed healthy in both product lines." |
+| Commentary               || "Cost mix improved in 2025 H2 due to procurement renegotiation." |
+| Key Risk                 || "Supplier lead time volatility remains high for chip components." |
+| Decision                 || "Prioritize margin quality and controlled hiring in Q4." |
+| Owner                    || "Finance + Operations" |
+
+# Error Playground
+| Line Item             || 2024 | 2025 |
+| --------------------- || ---- | ---- |
+| A                     || 1    | 2    |
+| B                     || 3    | = sum(@[#3:#2,#2]) |
+| Unknown Ref           || = @[Missing,2024] | 0 |
+| Invalid Scalar Context|| = @[#2:#3,#2] | 0 |
+
+# Regional Breakdown
+| Line Item          || Jan | Feb |
+| ------------------ || --- | --- |
+| [North America]    ||     |     |
+|   US               || 100 | 110 |
+|   Canada           || 40  | 45  |
+| [EMEA]             ||     |     |
+|   Germany          || 60  | 70  |
+|   France           || 35  | 38  |
+| [APAC]             ||     |     |
+|   Japan            || 44  | 50  |
+|   Australia        || 22  | 26  |
+| Grand Total        || 301 | 339 |
+`;
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function bootstrapFromSource(sourceText: string): Pick<
+  EditorState,
+  "mode" | "sourceText" | "docState" | "evaluation" | "activeSheet" | "error"
+> {
+  try {
+    const docState = DocumentState.fromText(sourceText);
+    const evaluation = docState.evaluate();
+    return {
+      mode: "table",
+      sourceText,
+      docState,
+      evaluation,
+      activeSheet: evaluation.sheets[0]?.name ?? null,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      mode: "source",
+      sourceText,
+      docState: null,
+      evaluation: null,
+      activeSheet: null,
+      error: toErrorMessage(error),
+    };
+  }
+}
+
+const initialState = bootstrapFromSource(sampleDocument);
+
+export const useEditorStore = create<EditorState>((set, get) => ({
+  ...initialState,
+  setSourceText: (text) => set({ sourceText: text, error: null }),
+  setActiveSheet: (sheetName) => set({ activeSheet: sheetName }),
+  exitSourceMode: () => {
+    try {
+      const docState = DocumentState.fromText(get().sourceText);
+      const evaluation = docState.evaluate();
+      const firstSheet = evaluation.sheets[0]?.name ?? null;
+
+      set({
+        mode: "table",
+        docState,
+        evaluation,
+        activeSheet: firstSheet,
+        error: null,
+      });
+    } catch (error) {
+      set({ error: toErrorMessage(error) });
+    }
+  },
+  enterSourceMode: () => {
+    const { docState, sourceText } = get();
+    const nextText = docState ? serializeDocumentState(docState) : sourceText;
+    set({
+      mode: "source",
+      sourceText: nextText,
+      error: null,
+    });
+  },
+}));
