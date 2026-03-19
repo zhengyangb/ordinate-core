@@ -7,6 +7,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    fs: {
+      allow: [path.resolve(__dirname, "../..")],
+    },
+  },
   resolve: {
     alias: {
       "@ordinate/core": path.resolve(__dirname, "../../packages/core-ts/src/index.ts"),

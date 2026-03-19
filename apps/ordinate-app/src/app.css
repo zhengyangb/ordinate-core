@@ -8,7 +8,7 @@
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --toolbar-height: 52px;
-  --sheetbar-height: 42px;
+  --sheetbar-height: 36px;
   --index-rail-width: 56px;
   --index-row-height: 36px;
   --grid-header-height: 40px;
@@ -138,8 +138,6 @@
 *::before,
 *::after {
   box-sizing: border-box;
-  animation: none !important;
-  transition: none !important;
 }
 
 html,
@@ -290,6 +288,22 @@ textarea {
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
+  transition:
+    background-color 160ms var(--ease-out-quart),
+    color 160ms var(--ease-out-quart),
+    box-shadow 160ms var(--ease-out-quart);
+}
+
+.tool-button:hover {
+  background: color-mix(in oklab, var(--toolbar-pill) 78%, oklch(100% 0 0 / 0.08));
+  color: var(--chrome-ink);
+}
+
+.tool-button:focus-visible {
+  outline: none;
+  background: color-mix(in oklab, var(--toolbar-pill) 76%, oklch(100% 0 0 / 0.08));
+  color: var(--chrome-ink);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--chrome-border) 72%, transparent);
 }
 
 .tool-icon {
@@ -544,16 +558,17 @@ textarea {
 }
 
 .sheet-tab {
-  flex: 1 1 5.7rem;
-  min-width: 4.5rem;
-  max-width: 12rem;
-  height: 1.95rem;
-  padding: 0 0.9rem;
+  flex: 1 1 5.4rem;
+  min-width: 0;
+  max-width: 10.5rem;
+  height: 1.56rem;
+  padding: 0 0.74rem;
   border: 1px solid color-mix(in oklab, var(--chrome-border) 92%, transparent);
   border-radius: 999px;
   background: var(--toolbar-pill);
   color: var(--chrome-soft);
-  font-size: 0.83rem;
+  font-size: 0.79rem;
+  line-height: 1.1;
   font-weight: 450;
   transition:
     background-color 160ms var(--ease-out-quart),
@@ -578,9 +593,9 @@ textarea {
 }
 
 .sheet-tab.active {
-  flex: 1 1 5.7rem;
-  min-width: 4.5rem;
-  max-width: 12rem;
+  flex: 1.02 1 5.2rem;
+  min-width: clamp(4.4rem, 14vw, 6.8rem);
+  max-width: min(11.4rem, 42vw);
   background: var(--accent);
   border-color: color-mix(in oklab, var(--accent-strong) 75%, transparent);
   color: oklch(99.1% 0.003 95);
@@ -1282,13 +1297,16 @@ textarea:focus-visible,
   }
 
   .sheet-tab {
-    min-width: 3.8rem;
-    max-width: 6.9rem;
+    min-width: 0;
+    max-width: 4.9rem;
+    height: 1.46rem;
+    padding-inline: 0.52rem;
   }
 
   .sheet-tab.active {
-    min-width: 3.8rem;
-    max-width: 6.9rem;
+    min-width: min(5.2rem, 40vw);
+    max-width: min(9.2rem, 56vw);
+    padding-inline: 0.72rem;
   }
 
   .sheetbar {
