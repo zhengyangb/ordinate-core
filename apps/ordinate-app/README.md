@@ -24,3 +24,7 @@ npm run dev
 - AG Grid is only the view layer.
 - Formula parsing/evaluation comes from `core-ts`.
 - Grid editing/drag interaction is intentionally disabled in this phase.
+
+## Third-party
+
+- See `THIRD_PARTY_NOTICES.md` for font attribution and license notices.
