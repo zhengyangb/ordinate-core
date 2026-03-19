@@ -134,6 +134,21 @@ body {
   box-shadow: 0 1px 0 oklch(100% 0 0 / 0.75);
 }
 
+.brand,
+.tab,
+.mode-button,
+.tree-cell,
+.ag-theme-quartz .ag-cell,
+.ag-theme-quartz .ag-header-cell,
+.ag-theme-quartz .ag-header-group-cell,
+.formula-bar-meta,
+.formula-chip,
+.formula-address,
+.formula-value-preview {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .mode-button {
   display: inline-grid;
   grid-template-columns: auto 1fr;
@@ -282,6 +297,111 @@ textarea {
   --ag-range-selection-background-color-4: transparent;
 }
 
+.formula-bar-shell {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  z-index: 24;
+  width: min(48rem, calc(100vw - 2rem));
+  transform: translateX(-50%) translateY(20px) scale(0.985);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.formula-bar {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem 0.95rem 0.92rem;
+  border: 1px solid color-mix(in oklab, var(--accent) 18%, var(--grid-border));
+  border-radius: 1.55rem;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--bg-panel) 96%, var(--accent-soft)), var(--bg-panel));
+  box-shadow:
+    0 22px 50px oklch(30% 0.02 170 / 0.16),
+    0 2px 0 oklch(100% 0 0 / 0.75) inset;
+  backdrop-filter: blur(16px) saturate(1.05);
+  pointer-events: auto;
+}
+
+.formula-bar-shell.is-visible {
+  animation: formula-bar-in 260ms var(--ease-out-quart) both;
+}
+
+.formula-bar-shell.is-hiding {
+  animation: formula-bar-out 180ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.formula-bar-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.formula-chip,
+.formula-address,
+.formula-value-preview {
+  min-width: 0;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.formula-chip {
+  padding: 0.28rem 0.6rem;
+  background: color-mix(in oklab, var(--accent-soft) 78%, var(--bg-panel));
+  color: color-mix(in oklab, var(--ink-1) 78%, var(--accent));
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.formula-chip.fx {
+  min-width: 2.1rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg-panel));
+}
+
+.formula-address {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0.28rem 0.72rem;
+  background: color-mix(in oklab, var(--bg-panel) 72%, var(--bg-header));
+  color: var(--ink-2);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.formula-value-preview {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0.28rem 0.72rem;
+  max-width: min(14rem, 36vw);
+  background: color-mix(in oklab, var(--bg-panel) 72%, var(--accent-soft));
+  color: var(--ink-1);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.formula-source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.92rem 1rem;
+  border: 1px solid color-mix(in oklab, var(--accent) 14%, var(--grid-border));
+  border-radius: 1.1rem;
+  background: color-mix(in oklab, var(--bg-panel) 78%, oklch(98.6% 0.004 160));
+  color: var(--ink-1);
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
 .grid-wrap .ag-root-wrapper {
   border: none;
 }
@@ -409,6 +529,7 @@ textarea {
   inset: -3px;
   border: 2px solid var(--accent) !important;
   border-radius: 6px;
+  animation: cell-selection-pulse 220ms var(--ease-out-quart) both;
   pointer-events: none;
 }
 
@@ -530,6 +651,39 @@ textarea {
   }
 }
 
+@keyframes formula-bar-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes formula-bar-out {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(14px) scale(0.99);
+  }
+}
+
+@keyframes cell-selection-pulse {
+  from {
+    opacity: 0.72;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @media (max-width: 900px) {
   .toolbar {
     align-items: flex-start;
@@ -549,6 +703,11 @@ textarea {
 
   .grid-wrap {
     height: calc(100vh - 9rem);
+  }
+
+  .formula-bar-shell {
+    width: min(44rem, calc(100vw - 1.2rem));
+    bottom: 0.8rem;
   }
 }
 
@@ -572,6 +731,31 @@ textarea {
     height: calc(100vh - 13rem);
     min-height: 22rem;
   }
+
+  .formula-bar-shell {
+    width: calc(100vw - 1rem);
+    bottom: 0.5rem;
+  }
+
+  .formula-bar {
+    padding: 0.72rem 0.78rem 0.8rem;
+    border-radius: 1.3rem;
+  }
+
+  .formula-bar-meta {
+    flex-wrap: wrap;
+  }
+
+  .formula-value-preview {
+    margin-left: 0;
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .formula-source {
+    font-size: 0.82rem;
+  }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
