@@ -14,33 +14,33 @@
   --grid-header-height: 40px;
   --grid-row-height: 38px;
 
-  --bg-page: oklch(94.6% 0.01 80);
-  --bg-page-accent: oklch(92.2% 0.015 112);
-  --chrome-bg: color-mix(in oklab, oklch(97.4% 0.003 95) 88%, oklch(93.4% 0.015 110));
-  --chrome-bg-strong: color-mix(in oklab, var(--chrome-bg) 80%, oklch(88.2% 0.02 108));
-  --chrome-border: oklch(84.5% 0.012 110 / 0.85);
-  --chrome-ink: oklch(34% 0.014 105);
-  --chrome-soft: oklch(52% 0.01 105);
-  --toolbar-pill: oklch(98.2% 0.004 95 / 0.88);
-  --workspace-frame: oklch(98.8% 0.003 95 / 0.92);
-  --workspace-border: oklch(83% 0.01 105 / 0.66);
-  --workspace-shadow: 0 22px 50px oklch(34% 0.02 90 / 0.08);
-  --sheet-surface: oklch(97.6% 0.004 95);
-  --sheet-grid: oklch(84.6% 0.006 105 / 0.84);
-  --sheet-header: oklch(90.6% 0.007 105);
-  --sheet-ink: oklch(18% 0.01 95);
-  --sheet-soft: oklch(47% 0.008 105);
-  --line-item-bg: oklch(94.2% 0.008 105);
-  --section-bg: oklch(88.6% 0.012 108);
+  --bg-page: oklch(97.2% 0.003 250);
+  --bg-page-accent: oklch(95.6% 0.01 225);
+  --chrome-bg: color-mix(in oklab, oklch(99.4% 0.002 250) 88%, oklch(94.6% 0.008 235));
+  --chrome-bg-strong: color-mix(in oklab, var(--chrome-bg) 82%, oklch(92.8% 0.01 230));
+  --chrome-border: oklch(86.2% 0.006 240 / 0.88);
+  --chrome-ink: oklch(31% 0.012 245);
+  --chrome-soft: oklch(55% 0.008 240);
+  --toolbar-pill: oklch(99.3% 0.002 250 / 0.9);
+  --workspace-frame: oklch(99.6% 0.002 250 / 0.96);
+  --workspace-border: oklch(84.2% 0.006 240 / 0.6);
+  --workspace-shadow: 0 22px 48px oklch(28% 0.01 245 / 0.08);
+  --sheet-surface: oklch(99.2% 0.002 250);
+  --sheet-grid: oklch(87.6% 0.004 240 / 0.82);
+  --sheet-header: oklch(95.2% 0.004 245);
+  --sheet-ink: oklch(21% 0.008 245);
+  --sheet-soft: oklch(50% 0.007 240);
+  --line-item-bg: oklch(97.2% 0.004 238);
+  --section-bg: oklch(93.8% 0.008 228);
   --accent: oklch(69% 0.19 145);
   --accent-strong: oklch(59% 0.18 145);
   --accent-soft: oklch(92% 0.05 145);
   --danger-bg: oklch(95% 0.03 24);
   --danger-border: oklch(73% 0.12 24);
   --danger-ink: oklch(44% 0.12 24);
-  --glass-bg: oklch(99% 0.003 95 / 0.78);
-  --glass-border: oklch(100% 0 0 / 0.62);
-  --glass-shadow: 0 24px 60px oklch(33% 0.02 90 / 0.16);
+  --glass-bg: oklch(99.4% 0.002 250 / 0.76);
+  --glass-border: oklch(100% 0 0 / 0.72);
+  --glass-shadow: 0 24px 60px oklch(28% 0.01 245 / 0.14);
 }
 
 :root[data-theme="light"] {
@@ -78,6 +78,11 @@
   --glass-shadow: 0 24px 60px oklch(10% 0.01 95 / 0.36);
 }
 
+:root[data-theme="dark"] .theme-option.active {
+  background: color-mix(in oklab, var(--accent-soft) 32%, var(--toolbar-pill));
+  color: oklch(92% 0.03 145);
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]),
   :root[data-theme="auto"] {
@@ -107,6 +112,12 @@
     --glass-border: oklch(100% 0 0 / 0.1);
     --glass-shadow: 0 24px 60px oklch(10% 0.01 95 / 0.36);
   }
+
+  :root:not([data-theme]) .theme-option.active,
+  :root[data-theme="auto"] .theme-option.active {
+    background: color-mix(in oklab, var(--accent-soft) 32%, var(--toolbar-pill));
+    color: oklch(92% 0.03 145);
+  }
 }
 
 * {
@@ -130,8 +141,9 @@ body {
   font-family: var(--font-body);
   color: var(--sheet-ink);
   background:
-    radial-gradient(circle at top left, color-mix(in oklab, var(--bg-page-accent) 72%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in oklab, var(--bg-page) 78%, var(--bg-page-accent)), var(--bg-page));
+    radial-gradient(circle at top left, color-mix(in oklab, var(--bg-page-accent) 34%, transparent), transparent 28%),
+    radial-gradient(circle at top right, color-mix(in oklab, var(--toolbar-pill) 56%, transparent), transparent 24%),
+    linear-gradient(180deg, color-mix(in oklab, var(--bg-page) 90%, var(--bg-page-accent)), var(--bg-page));
   font-kerning: normal;
   -webkit-font-smoothing: antialiased;
 }
@@ -345,7 +357,7 @@ textarea {
 
 .theme-option.active {
   background: color-mix(in oklab, var(--accent-soft) 62%, var(--toolbar-pill));
-  color: color-mix(in oklab, var(--chrome-ink) 78%, var(--accent));
+  color: oklch(28% 0.018 155);
 }
 
 .theme-option .tool-icon {
