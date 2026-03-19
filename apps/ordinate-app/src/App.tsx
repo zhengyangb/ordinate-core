@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AgGridReact } from "ag-grid-react";
 import {
@@ -24,10 +24,12 @@ const DATA_COLUMN_MIN_WIDTH = 132;
 const INDEX_RAIL_WIDTH = 56;
 const GRID_HEADER_HEIGHT = 40;
 const GRID_ROW_HEIGHT = 38;
+const FORMULA_BAR_SAFE_SPACE = 136;
 const THEME_STORAGE_KEY = "ordinate-theme-mode";
 
 type GridRow = {
   __rowPath: string;
+  __rowNumber: number;
   __label: string;
   __depth: number;
   __hasChildren: boolean;
@@ -58,6 +60,12 @@ type RowIndexMetric = {
 
 type ThemeMode = "auto" | "light" | "dark";
 type ThemeMenuPosition = { top: number; left: number };
+type FloatingMenuPosition = { top: number; left: number };
+type TabTooltip = {
+  text: string;
+  top: number;
+  left: number;
+};
 
 type ToolSpec = {
   label: string;
@@ -270,6 +278,16 @@ function PlusIcon() {
   );
 }
 
+function MoreIcon() {
+  return (
+    <ToolbarIcon>
+      <circle cx="5" cy="10" r="1.2" fill="currentColor" />
+      <circle cx="10" cy="10" r="1.2" fill="currentColor" />
+      <circle cx="15" cy="10" r="1.2" fill="currentColor" />
+    </ToolbarIcon>
+  );
+}
+
 function CodeIcon() {
   return (
     <ToolbarIcon>
@@ -365,6 +383,12 @@ export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [themeMenuPosition, setThemeMenuPosition] = useState<ThemeMenuPosition>({ top: 0, left: 0 });
+  const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [toolMenuPosition, setToolMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
+  const [tabTooltip, setTabTooltip] = useState<TabTooltip | null>(null);
+  const [hasVerticalOverlap, setHasVerticalOverlap] = useState(false);
+  const [hasHorizontalOverlap, setHasHorizontalOverlap] = useState(false);
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
   const [rowIndexTrackHeight, setRowIndexTrackHeight] = useState(0);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
@@ -373,6 +397,7 @@ export default function App() {
   const gridApiRef = useRef<GridApi<GridRow> | null>(null);
   const themeControlRef = useRef<HTMLDivElement | null>(null);
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const toolButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const clearActiveSelection = useCallback(() => {
     setSelectedCell(null);
@@ -394,6 +419,12 @@ export default function App() {
     document.documentElement.dataset.theme = themeMode;
     window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
   }, [themeMode]);
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     if (!themeMenuOpen) return;
@@ -418,6 +449,55 @@ export default function App() {
     };
   }, [themeMenuOpen]);
 
+  useEffect(() => {
+    if (!toolMenuOpen) return;
+
+    const updatePosition = () => {
+      const button = toolButtonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const menuWidth = 168;
+      setToolMenuPosition({
+        top: rect.bottom + 8,
+        left: Math.max(12, rect.right - menuWidth),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [toolMenuOpen]);
+
+  useEffect(() => {
+    const dismissTooltip = () => setTabTooltip(null);
+    window.addEventListener("resize", dismissTooltip);
+    window.addEventListener("scroll", dismissTooltip, true);
+    return () => {
+      window.removeEventListener("resize", dismissTooltip);
+      window.removeEventListener("scroll", dismissTooltip, true);
+    };
+  }, []);
+
+  const handleTabMouseEnter = useCallback(
+    (sheetName: string, target: HTMLButtonElement) => {
+      if (target.scrollWidth <= target.clientWidth + 1) {
+        setTabTooltip(null);
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      setTabTooltip({
+        text: sheetName,
+        top: rect.bottom + 8,
+        left: rect.left + rect.width / 2,
+      });
+    },
+    [],
+  );
+
   const syncRowIndexMetrics = useCallback((api: GridApi<GridRow> | null) => {
     if (!api) {
       setRowIndexMetrics([]);
@@ -438,7 +518,7 @@ export default function App() {
 
       nextMetrics.push({
         rowPath: rowNode.data.__rowPath,
-        number: index + 1,
+        number: rowNode.data.__rowNumber,
         top,
         height,
       });
@@ -490,8 +570,12 @@ export default function App() {
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
+      setTabTooltip(null);
       if (!target?.closest(".theme-control") && !target?.closest(".theme-menu")) {
         setThemeMenuOpen(false);
+      }
+      if (!target?.closest(".tool-overflow-control") && !target?.closest(".tool-menu")) {
+        setToolMenuOpen(false);
       }
     };
 
@@ -506,6 +590,10 @@ export default function App() {
         setThemeMenuOpen(false);
         return;
       }
+      if (toolMenuOpen) {
+        setToolMenuOpen(false);
+        return;
+      }
       if (mode === "source") return;
       if (!selectedCell) return;
       clearActiveSelection();
@@ -513,7 +601,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, selectedCell, clearActiveSelection, themeMenuOpen]);
+  }, [mode, selectedCell, clearActiveSelection, themeMenuOpen, toolMenuOpen]);
 
   useEffect(() => {
     if (mode === "source") return;
@@ -522,7 +610,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (!selectedCell) return;
       const interactiveRoot = target?.closest(
-        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .source-button, .theme-control, .theme-menu, .sheet-tab, textarea",
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, textarea",
       );
       if (interactiveRoot) return;
       clearActiveSelection();
@@ -594,7 +682,7 @@ export default function App() {
           const isCollapsed = data.__collapsed;
           const leadingSlot = showToggle ? (
             <button
-              className="tree-toggle"
+              className={isCollapsed ? "tree-toggle is-collapsed" : "tree-toggle"}
               onClick={(event) => {
                 event.stopPropagation();
                 toggleCollapse(data.__rowPath);
@@ -602,7 +690,9 @@ export default function App() {
               aria-label={isCollapsed ? "Expand section" : "Collapse section"}
               title={isCollapsed ? "Expand" : "Collapse"}
             >
-              {isCollapsed ? ">" : "v"}
+              <svg className="tree-toggle-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                <path d="M4 2.5 8.5 6 4 9.5Z" fill="currentColor" />
+              </svg>
             </button>
           ) : showSpacer ? (
             <span className="tree-spacer" />
@@ -650,6 +740,7 @@ export default function App() {
 
         const item: GridRow = {
           __rowPath: rowPath,
+          __rowNumber: rowIndex + 1,
           __label: leafLabel(rowPath),
           __depth: depth,
           __hasChildren: hasChildren,
@@ -670,7 +761,7 @@ export default function App() {
 
   const rowIndexLookup = useMemo(() => {
     const map = new Map<string, number>();
-    rowData.forEach((row, index) => map.set(row.__rowPath, index + 1));
+    rowData.forEach((row) => map.set(row.__rowPath, row.__rowNumber));
     return map;
   }, [rowData]);
 
@@ -707,6 +798,10 @@ export default function App() {
       const left = horizontalViewport?.scrollLeft ?? 0;
       rowTrack.style.transform = `translateY(${-top}px)`;
       columnTrack.style.transform = `translateX(${-left}px)`;
+      const nextVertical = top > 0.5;
+      const nextHorizontal = left > 0.5;
+      setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
+      setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
     };
 
     syncScroll();
@@ -803,181 +898,222 @@ export default function App() {
   const themeButtonLabel = themeMode === "auto" ? "Automatic appearance" : themeMode === "light" ? "Light mode" : "Dark mode";
   const themeButtonIcon =
     themeMode === "auto" ? <AutoIcon /> : themeMode === "light" ? <SunIcon /> : <MoonIcon />;
+  const visibleToolCount = viewportWidth < 720 ? 3 : viewportWidth < 860 ? 4 : viewportWidth < 1040 ? 5 : TOOLBAR_ITEMS.length;
+  const visibleTools = TOOLBAR_ITEMS.slice(0, visibleToolCount);
+  const overflowTools = TOOLBAR_ITEMS.slice(visibleToolCount);
+  const tableStageClassName = [
+    "table-stage",
+    hasVerticalOverlap ? "has-scroll-y" : "",
+    hasHorizontalOverlap ? "has-scroll-x" : "",
+  ]
+    .join(" ")
+    .trim();
+  const tableStageStyle = useMemo<CSSProperties>(
+    () => ({
+      "--formula-bar-safe-space": `${FORMULA_BAR_SAFE_SPACE}px`,
+    }) as CSSProperties,
+    [],
+  );
 
   return (
     <div className="page">
-      <header className={mode === "source" ? "app-chrome source-mode" : "app-chrome"}>
-        <div className="topbar">
-          <div className="brand-lockup">
-            <span className="brand-name">Ordinate</span>
-          </div>
-
-          <nav className="toolbar-tools" aria-label="Placeholder toolbar">
-            {TOOLBAR_ITEMS.map((item) => (
-              <button
-                key={item.label}
-                className="tool-button"
-                type="button"
-                tabIndex={-1}
-                aria-label={item.label}
-                title={item.label}
-              >
-                <span className="tool-icon">{item.icon}</span>
-              </button>
-            ))}
-          </nav>
-
-          <div className="toolbar-actions">
-            <div className="theme-control" ref={themeControlRef}>
-              <button
-                className={themeMenuOpen ? "tool-button theme-button active" : "tool-button theme-button"}
-                type="button"
-                onClick={() => setThemeMenuOpen((open) => !open)}
-                ref={themeButtonRef}
-                title={themeButtonLabel}
-                aria-label={themeButtonLabel}
-                aria-haspopup="menu"
-                aria-expanded={themeMenuOpen}
-              >
-                <span className="tool-icon">{themeButtonIcon}</span>
-              </button>
+      <div className={mode === "source" ? "app-window source-mode" : "app-window"}>
+        <header className={mode === "source" ? "app-chrome source-mode" : "app-chrome"}>
+          <div className="topbar">
+            <div className="brand-lockup">
+              <span className="brand-name">Ordinate</span>
             </div>
 
-            <button
-              className={mode === "source" ? "tool-button source-button active" : "tool-button source-button"}
-              onClick={mode === "source" ? exitSourceMode : enterSourceMode}
-              title={mode === "source" ? "Return to table view" : "Open source mode"}
-              aria-label={mode === "source" ? "Return to table view" : "Open source mode"}
-            >
-              <span className="tool-icon">
-                <CodeIcon />
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div className="sheetbar-shell" aria-hidden={mode === "source"}>
-          <div className="sheetbar">
-            <button className="sheet-add" type="button" aria-label="Add sheet placeholder" tabIndex={-1}>
-              <PlusIcon />
-            </button>
-            <div className="sheet-tabs" role="tablist" aria-label="Sheets">
-              {evaluation?.sheets.map((sheet) => (
+            <nav className="toolbar-tools" aria-label="Placeholder toolbar">
+              {visibleTools.map((item) => (
                 <button
-                  key={sheet.name}
-                  className={sheet.name === activeSheet ? "sheet-tab active" : "sheet-tab"}
-                  onClick={() => setActiveSheet(sheet.name)}
+                  key={item.label}
+                  className="tool-button"
                   type="button"
-                  tabIndex={mode === "source" ? -1 : 0}
+                  tabIndex={-1}
+                  aria-label={item.label}
+                  title={item.label}
                 >
-                  {sheet.name}
+                  <span className="tool-icon">{item.icon}</span>
                 </button>
               ))}
-            </div>
-          </div>
-        </div>
-      </header>
+              {overflowTools.length > 0 ? (
+                <div className="tool-overflow-control">
+                  <button
+                    ref={toolButtonRef}
+                    className={toolMenuOpen ? "tool-button tool-more-button active" : "tool-button tool-more-button"}
+                    type="button"
+                    onClick={() => setToolMenuOpen((open) => !open)}
+                    aria-label="More tools"
+                    title="More tools"
+                    aria-haspopup="menu"
+                    aria-expanded={toolMenuOpen}
+                  >
+                    <span className="tool-icon">
+                      <MoreIcon />
+                    </span>
+                  </button>
+                </div>
+              ) : null}
+            </nav>
 
-      {error ? (
-        <div className="error" role="alert">
-          <strong>Source has parse or evaluation issues.</strong>
-          <span>{error}</span>
-        </div>
-      ) : null}
-
-      {mode === "source" ? (
-        <section className="source-shell">
-          <textarea value={sourceText} onChange={(event) => setSourceText(event.target.value)} spellCheck={false} />
-        </section>
-      ) : (
-        <section className="workspace-shell">
-          {currentSheet ? (
-            <div className="table-stage">
-              <div className="table-corner">
-                <button className="corner-button" type="button" tabIndex={-1} aria-label="Corner placeholder">
-                  <span className="corner-dot" />
+            <div className="toolbar-actions">
+              <div className="theme-control" ref={themeControlRef}>
+                <button
+                  className={themeMenuOpen ? "tool-button theme-button active" : "tool-button theme-button"}
+                  type="button"
+                  onClick={() => setThemeMenuOpen((open) => !open)}
+                  ref={themeButtonRef}
+                  title={themeButtonLabel}
+                  aria-label={themeButtonLabel}
+                  aria-haspopup="menu"
+                  aria-expanded={themeMenuOpen}
+                >
+                  <span className="tool-icon">{themeButtonIcon}</span>
                 </button>
               </div>
 
-              <div className="column-index-strip">
-                <div
-                  ref={columnTrackRef}
-                  className="column-index-track"
-                  style={{ gridTemplateColumns }}
-                  aria-hidden="true"
-                >
-                  {Array.from({ length: renderedColumnCount }, (_, index) => (
-                    <div key={`column-index-${index + 1}`} className="column-index-cell">
-                      {index + 1}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div
-                className="row-index-strip"
-                aria-hidden="true"
-                style={rowIndexStripHeight > 0 ? { height: `${rowIndexStripHeight}px` } : undefined}
+              <button
+                className={mode === "source" ? "tool-button source-button active" : "tool-button source-button"}
+                onClick={mode === "source" ? exitSourceMode : enterSourceMode}
+                title={mode === "source" ? "Return to table view" : "Open source mode"}
+                aria-label={mode === "source" ? "Return to table view" : "Open source mode"}
               >
-                <div className="row-index-spacer" />
-                <div className="row-index-viewport">
-                  <div
-                    ref={rowTrackRef}
-                    className="row-index-track"
-                    style={rowIndexTrackHeight > 0 ? { height: `${rowIndexTrackHeight}px` } : undefined}
+                <span className="tool-icon">
+                  <CodeIcon />
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div className="sheetbar-shell" aria-hidden={mode === "source"}>
+            <div className="sheetbar">
+              <button className="sheet-add" type="button" aria-label="Add sheet placeholder" tabIndex={-1}>
+                <PlusIcon />
+              </button>
+              <div className="sheet-tabs" role="tablist" aria-label="Sheets">
+                {evaluation?.sheets.map((sheet) => (
+                  <button
+                    key={sheet.name}
+                    className={sheet.name === activeSheet ? "sheet-tab active" : "sheet-tab"}
+                    onClick={() => setActiveSheet(sheet.name)}
+                    type="button"
+                    tabIndex={mode === "source" ? -1 : 0}
+                    onMouseEnter={(event) => handleTabMouseEnter(sheet.name, event.currentTarget)}
+                    onMouseLeave={() => setTabTooltip(null)}
+                    onFocus={(event) => handleTabMouseEnter(sheet.name, event.currentTarget)}
+                    onBlur={() => setTabTooltip(null)}
                   >
-                    {rowIndexMetrics.map((row) => (
-                      <div
-                        key={`row-index-${row.rowPath}`}
-                        className="row-index-cell"
-                        style={{
-                          top: `${row.top}px`,
-                          height: `${row.height}px`,
-                        }}
-                      >
-                        {row.number}
+                    {sheet.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {error ? (
+          <div className="error" role="alert">
+            <strong>Source has parse or evaluation issues.</strong>
+            <span>{error}</span>
+          </div>
+        ) : null}
+
+        {mode === "source" ? (
+          <section className="source-shell">
+            <textarea value={sourceText} onChange={(event) => setSourceText(event.target.value)} spellCheck={false} />
+          </section>
+        ) : (
+          <section className="workspace-shell">
+            {currentSheet ? (
+              <div className={tableStageClassName} style={tableStageStyle}>
+                <div className="table-corner">
+                  <button className="corner-button" type="button" tabIndex={-1} aria-label="Corner placeholder">
+                    <span className="corner-dot" />
+                  </button>
+                </div>
+
+                <div className="column-index-strip">
+                  <div
+                    ref={columnTrackRef}
+                    className="column-index-track"
+                    style={{ gridTemplateColumns }}
+                    aria-hidden="true"
+                  >
+                    {Array.from({ length: renderedColumnCount }, (_, index) => (
+                      <div key={`column-index-${index + 1}`} className="column-index-cell">
+                        {index + 1}
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
 
-              <div className="grid-shell">
-                <div className="grid-wrap" ref={gridWrapRef}>
-                  <AgGridReact<GridRow>
-                    rowData={rowData}
-                    columnDefs={columnDefs}
-                    defaultColDef={{
-                      editable: false,
-                      sortable: false,
-                      filter: false,
-                      resizable: false,
-                      suppressMovable: true,
-                    }}
-                    getRowId={(params) => params.data.__rowPath}
-                    suppressMovableColumns
-                    suppressDragLeaveHidesColumns
-                    suppressContextMenu
-                    theme={themeQuartz}
-                    onGridReady={handleGridReady}
-                    onFirstDataRendered={handleFirstDataRendered}
-                    onModelUpdated={handleModelUpdated}
-                    onCellFocused={handleCellFocused}
-                    rowClassRules={{
-                      "section-row": (params) => Boolean(params.data?.__isSection),
-                    }}
-                  />
+                <div
+                  className="row-index-strip"
+                  aria-hidden="true"
+                  style={rowIndexStripHeight > 0 ? { height: `${rowIndexStripHeight}px` } : undefined}
+                >
+                  <div className="row-index-spacer" />
+                  <div className="row-index-viewport">
+                    <div
+                      ref={rowTrackRef}
+                      className="row-index-track"
+                      style={rowIndexTrackHeight > 0 ? { height: `${rowIndexTrackHeight}px` } : undefined}
+                    >
+                      {rowIndexMetrics.map((row) => (
+                        <div
+                          key={`row-index-${row.rowPath}`}
+                          className="row-index-cell"
+                          style={{
+                            top: `${row.top}px`,
+                            height: `${row.height}px`,
+                          }}
+                        >
+                          {row.number}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid-shell">
+                  <div className="grid-wrap" ref={gridWrapRef}>
+                    <AgGridReact<GridRow>
+                      rowData={rowData}
+                      columnDefs={columnDefs}
+                      animateRows
+                      defaultColDef={{
+                        editable: false,
+                        sortable: false,
+                        filter: false,
+                        resizable: false,
+                        suppressMovable: true,
+                      }}
+                      getRowId={(params) => params.data.__rowPath}
+                      suppressMovableColumns
+                      suppressDragLeaveHidesColumns
+                      suppressContextMenu
+                      theme={themeQuartz}
+                      onGridReady={handleGridReady}
+                      onFirstDataRendered={handleFirstDataRendered}
+                      onModelUpdated={handleModelUpdated}
+                      onCellFocused={handleCellFocused}
+                      rowClassRules={{
+                        "section-row": (params) => Boolean(params.data?.__isSection),
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="empty-state">
-              <h3>No sheet selected</h3>
-              <p>Pick a sheet from the tab strip or return to source mode to inspect the document.</p>
-            </div>
-          )}
-        </section>
-      )}
+            ) : (
+              <div className="empty-state">
+                <h3>No sheet selected</h3>
+                <p>Pick a sheet from the tab strip or return to source mode to inspect the document.</p>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
 
       {mode === "table" && formulaBarSnapshot ? (
         <aside
@@ -1029,6 +1165,38 @@ export default function App() {
               <span>{option.label}</span>
             </button>
           ))}
+        </div>,
+        document.body,
+      )}
+
+      {createPortal(
+        <div
+          className={toolMenuOpen ? "tool-menu open" : "tool-menu"}
+          role="menu"
+          aria-hidden={!toolMenuOpen}
+          style={{ top: `${toolMenuPosition.top}px`, left: `${toolMenuPosition.left}px` }}
+        >
+          {overflowTools.map((item) => (
+            <button key={item.label} className="tool-menu-option" type="button" role="menuitem" tabIndex={toolMenuOpen ? 0 : -1}>
+              <span className="tool-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+
+      {createPortal(
+        <div
+          className={tabTooltip ? "tab-tooltip visible" : "tab-tooltip"}
+          role="tooltip"
+          aria-hidden={!tabTooltip}
+          style={{
+            top: `${tabTooltip?.top ?? 0}px`,
+            left: `${tabTooltip?.left ?? 0}px`,
+          }}
+        >
+          {tabTooltip?.text ?? ""}
         </div>,
         document.body,
       )}

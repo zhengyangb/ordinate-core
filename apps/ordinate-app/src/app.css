@@ -1,10 +1,10 @@
-@import url("https://fonts.googleapis.com/css2?family=Libre+Caslon+Condensed:wght@500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap");
 
 :root {
   --font-body:
     "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   --font-mono: "SF Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-display: "Libre Caslon Condensed", "Iowan Old Style", "Times New Roman", serif;
+  --font-display: "Instrument Serif", "Iowan Old Style", "Times New Roman", serif;
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --toolbar-height: 52px;
@@ -28,6 +28,8 @@
   --sheet-surface: oklch(99.2% 0.002 250);
   --sheet-grid: oklch(87.6% 0.004 240 / 0.82);
   --sheet-header: oklch(95.2% 0.004 245);
+  --sheet-header-row: oklch(90.8% 0.004 245);
+  --sheet-header-col: oklch(95.6% 0.004 245);
   --sheet-ink: oklch(21% 0.008 245);
   --sheet-soft: oklch(50% 0.007 240);
   --line-item-bg: oklch(97.2% 0.004 238);
@@ -41,6 +43,10 @@
   --glass-bg: oklch(99.4% 0.002 250 / 0.76);
   --glass-border: oklch(100% 0 0 / 0.72);
   --glass-shadow: 0 24px 60px oklch(28% 0.01 245 / 0.14);
+  --chrome-canvas-seam: oklch(86.5% 0.004 242 / 0.52);
+  --chrome-canvas-seam-glow: oklch(100% 0 0 / 0.52);
+  --menu-hover-bg: color-mix(in oklab, var(--chrome-bg) 78%, oklch(88% 0.004 248));
+  --menu-hover-ink: oklch(24% 0.01 246);
 }
 
 :root[data-theme="light"] {
@@ -66,6 +72,8 @@
   --sheet-surface: oklch(97.4% 0.003 95);
   --sheet-grid: oklch(83.8% 0.005 100 / 0.88);
   --sheet-header: oklch(90% 0.006 100);
+  --sheet-header-row: oklch(87.6% 0.006 100);
+  --sheet-header-col: oklch(92.2% 0.005 100);
   --sheet-ink: oklch(18% 0.01 95);
   --sheet-soft: oklch(47% 0.008 105);
   --line-item-bg: oklch(93.8% 0.007 105);
@@ -76,6 +84,10 @@
   --glass-bg: oklch(31% 0.008 100 / 0.78);
   --glass-border: oklch(100% 0 0 / 0.1);
   --glass-shadow: 0 24px 60px oklch(10% 0.01 95 / 0.36);
+  --chrome-canvas-seam: oklch(34% 0.006 104 / 0.58);
+  --chrome-canvas-seam-glow: oklch(100% 0 0 / 0.05);
+  --menu-hover-bg: color-mix(in oklab, var(--toolbar-pill) 76%, oklch(100% 0 0 / 0.1));
+  --menu-hover-ink: var(--chrome-ink);
 }
 
 :root[data-theme="dark"] .theme-option.active {
@@ -111,6 +123,8 @@
     --glass-bg: oklch(31% 0.008 100 / 0.78);
     --glass-border: oklch(100% 0 0 / 0.1);
     --glass-shadow: 0 24px 60px oklch(10% 0.01 95 / 0.36);
+    --menu-hover-bg: color-mix(in oklab, var(--toolbar-pill) 76%, oklch(100% 0 0 / 0.1));
+    --menu-hover-ink: var(--chrome-ink);
   }
 
   :root:not([data-theme]) .theme-option.active,
@@ -120,24 +134,27 @@
   }
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+  animation: none !important;
+  transition: none !important;
 }
 
 html,
 body,
 #root {
-  min-height: 100%;
+  height: 100%;
 }
 
 html {
-  overflow-y: scroll;
-  scrollbar-gutter: stable both-edges;
   color-scheme: light dark;
 }
 
 body {
   margin: 0;
+  overflow: hidden;
   font-family: var(--font-body);
   color: var(--sheet-ink);
   background:
@@ -155,30 +172,39 @@ textarea {
 }
 
 .page {
-  display: grid;
-  grid-template-rows: auto auto 1fr;
-  min-height: 100vh;
+  height: 100dvh;
   padding: 0.75rem;
-  gap: 0.75rem;
 }
 
-.app-chrome,
-.workspace-shell,
-.source-shell,
+.app-window,
 .error {
   border: 1px solid var(--workspace-border);
   box-shadow: var(--workspace-shadow);
 }
 
+.app-window {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 1.5rem);
+  overflow: hidden;
+  border-radius: 1.22rem;
+  background: var(--workspace-frame);
+  box-shadow:
+    var(--workspace-shadow),
+    inset 0 1px 0 color-mix(in oklab, var(--glass-border) 58%, transparent);
+}
+
 .app-chrome {
-  position: sticky;
-  top: 0.75rem;
+  position: relative;
+  flex: 0 0 auto;
   z-index: 28;
   overflow: hidden;
-  border-radius: 1.25rem;
+  border-bottom: 1px solid var(--chrome-canvas-seam);
+  border-radius: 1.22rem 1.22rem 0 0;
   background: var(--chrome-bg);
   backdrop-filter: blur(24px) saturate(1.08);
   color: var(--chrome-ink);
+  box-shadow: inset 0 -1px 0 var(--chrome-canvas-seam-glow);
 }
 
 .app-chrome.source-mode .tool-button:not(.source-button):not(.theme-button) {
@@ -195,7 +221,7 @@ textarea {
 
 .topbar {
   min-height: var(--toolbar-height);
-  padding: 0.38rem 0.72rem 0.34rem;
+  padding: 0.38rem 0.72rem 0.34rem 0.9rem;
   gap: 0.75rem;
   border-bottom: 1px solid color-mix(in oklab, var(--chrome-border) 86%, transparent);
 }
@@ -208,6 +234,7 @@ textarea {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
+  padding-inline-start: 0.16rem;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -240,6 +267,10 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 0.12rem;
+  flex: 0 0 auto;
+}
+
+.tool-overflow-control {
   flex: 0 0 auto;
 }
 
@@ -305,6 +336,11 @@ textarea {
   color: var(--chrome-ink);
 }
 
+.tool-more-button.active {
+  background: color-mix(in oklab, var(--toolbar-pill) 74%, oklch(100% 0 0 / 0.08));
+  color: var(--chrome-ink);
+}
+
 .theme-button:hover {
   background: color-mix(in oklab, var(--toolbar-pill) 78%, oklch(100% 0 0 / 0.08));
 }
@@ -314,9 +350,29 @@ textarea {
   display: grid;
   gap: 0.18rem;
   width: 9.25rem;
-  padding: 0.35rem;
+  padding: 0.26rem;
   border: 1px solid color-mix(in oklab, var(--chrome-border) 86%, transparent);
-  border-radius: 0.95rem;
+  border-radius: 0.78rem;
+  background: color-mix(in oklab, var(--chrome-bg) 88%, var(--toolbar-pill));
+  box-shadow: 0 18px 42px oklch(20% 0.01 100 / 0.14);
+  backdrop-filter: blur(20px) saturate(1.08);
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  pointer-events: none;
+  z-index: 120;
+  transition:
+    opacity 160ms var(--ease-out-quart),
+    transform 160ms var(--ease-out-quart);
+}
+
+.tool-menu {
+  position: fixed;
+  display: grid;
+  gap: 0.18rem;
+  width: 10.25rem;
+  padding: 0.26rem;
+  border: 1px solid color-mix(in oklab, var(--chrome-border) 86%, transparent);
+  border-radius: 0.78rem;
   background: color-mix(in oklab, var(--chrome-bg) 88%, var(--toolbar-pill));
   box-shadow: 0 18px 42px oklch(20% 0.01 100 / 0.14);
   backdrop-filter: blur(20px) saturate(1.08);
@@ -335,15 +391,48 @@ textarea {
   pointer-events: auto;
 }
 
+.tool-menu.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.tab-tooltip {
+  position: fixed;
+  max-width: 24rem;
+  padding: 0.42rem 0.62rem;
+  border: 1px solid color-mix(in oklab, var(--chrome-border) 82%, transparent);
+  border-radius: 0.52rem;
+  background: color-mix(in oklab, var(--chrome-bg) 86%, var(--toolbar-pill));
+  color: var(--chrome-ink);
+  font-size: 0.8rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  transform: translate(-50%, -4px) scale(0.98);
+  box-shadow: 0 10px 24px oklch(20% 0.01 100 / 0.16);
+  backdrop-filter: blur(14px) saturate(1.04);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 130;
+  transition:
+    opacity 70ms linear,
+    transform 90ms var(--ease-out-quart);
+}
+
+.tab-tooltip.visible {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
 .theme-option {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   width: 100%;
-  min-height: 2rem;
-  padding: 0.38rem 0.52rem;
+  min-height: 1.8rem;
+  padding: 0.28rem 0.48rem;
   border: 0;
-  border-radius: 0.72rem;
+  border-radius: 0.62rem;
   background: transparent;
   color: var(--chrome-ink);
   font-size: 0.81rem;
@@ -351,8 +440,30 @@ textarea {
   cursor: pointer;
 }
 
+.tool-menu-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 1.8rem;
+  padding: 0.28rem 0.48rem;
+  border: 0;
+  border-radius: 0.62rem;
+  background: transparent;
+  color: var(--chrome-ink);
+  font-size: 0.81rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-menu-option:hover {
+  background: var(--menu-hover-bg);
+  color: var(--menu-hover-ink);
+}
+
 .theme-option:hover {
-  background: color-mix(in oklab, var(--toolbar-pill) 76%, oklch(100% 0 0 / 0.1));
+  background: var(--menu-hover-bg);
+  color: var(--menu-hover-ink);
 }
 
 .theme-option.active {
@@ -371,6 +482,7 @@ textarea {
 }
 
 .sheetbar-shell {
+  flex: 0 0 auto;
   overflow: hidden;
   max-height: calc(var(--sheetbar-height) + 1rem);
   opacity: 1;
@@ -425,19 +537,16 @@ textarea {
 .sheet-tabs {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.42rem;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.sheet-tabs::-webkit-scrollbar {
-  display: none;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .sheet-tab {
-  flex: 0 0 auto;
-  min-width: 7rem;
+  flex: 1 1 5.7rem;
+  min-width: 4.5rem;
+  max-width: 12rem;
   height: 1.95rem;
   padding: 0 0.9rem;
   border: 1px solid color-mix(in oklab, var(--chrome-border) 92%, transparent);
@@ -454,6 +563,9 @@ textarea {
     backdrop-filter 160ms var(--ease-out-quart);
   -webkit-user-select: none;
   user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sheet-tab:hover {
@@ -466,6 +578,9 @@ textarea {
 }
 
 .sheet-tab.active {
+  flex: 1 1 5.7rem;
+  min-width: 4.5rem;
+  max-width: 12rem;
   background: var(--accent);
   border-color: color-mix(in oklab, var(--accent-strong) 75%, transparent);
   color: oklch(99.1% 0.003 95);
@@ -474,8 +589,11 @@ textarea {
 .error {
   display: grid;
   gap: 0.2rem;
-  padding: 0.95rem 1rem;
-  border-radius: 1rem;
+  margin: 0.72rem 0.72rem 0;
+  padding: 0.78rem 0.88rem;
+  border: 1px solid color-mix(in oklab, var(--danger-border) 44%, transparent);
+  border-radius: 0.82rem;
+  box-shadow: none;
   background: linear-gradient(135deg, var(--danger-bg), color-mix(in oklab, var(--danger-bg) 78%, white));
   color: var(--danger-ink);
 }
@@ -488,29 +606,30 @@ textarea {
 .source-shell {
   position: relative;
   min-height: 0;
-  border-radius: 1.35rem;
+  flex: 1 1 auto;
+  border-radius: 0;
   overflow: hidden;
-  background: var(--workspace-frame);
+  background: var(--sheet-surface);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--glass-border) 28%, transparent);
 }
 
 .workspace-shell {
-  padding: 0.82rem;
+  padding: 0;
 }
 
 .source-shell {
-  display: grid;
-  gap: 0.75rem;
-  padding: 1rem;
+  display: block;
+  padding: 0;
 }
 
 textarea {
   width: 100%;
-  height: calc(100vh - 10.2rem);
-  min-height: 22rem;
-  padding: 1rem 1.05rem;
+  height: 100%;
+  min-height: calc(100vh - 8.5rem);
+  padding: 1.05rem 1.18rem 1.4rem;
   border: 0;
-  border-radius: 0.9rem;
-  background: color-mix(in oklab, var(--sheet-surface) 96%, transparent);
+  border-radius: 0;
+  background: color-mix(in oklab, var(--sheet-surface) 98%, transparent);
   color: var(--sheet-ink);
   font-family: var(--font-mono);
   font-size: 0.84rem;
@@ -519,21 +638,35 @@ textarea {
 }
 
 .table-stage {
+  --sticky-row-shadow: none;
+  --sticky-col-shadow: none;
+  --formula-bar-safe-space: 136px;
   display: grid;
   grid-template-columns: var(--index-rail-width) minmax(0, 1fr);
   grid-template-rows: var(--index-row-height) minmax(0, 1fr);
-  height: calc(100vh - 11.75rem);
-  min-height: 32rem;
+  height: 100%;
+  min-height: calc(100vh - 8.5rem);
   overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--workspace-border) 76%, transparent);
-  border-radius: 1.1rem;
+  border: 0;
+  border-radius: 0;
   background: var(--sheet-surface);
 }
 
+.table-stage.has-scroll-y {
+  --sticky-row-shadow: 0 12px 18px -15px color-mix(in oklab, var(--sheet-ink) 24%, transparent);
+}
+
+.table-stage.has-scroll-x {
+  --sticky-col-shadow: 12px 0 18px -15px color-mix(in oklab, var(--sheet-ink) 20%, transparent);
+}
+
 .table-corner,
-.column-index-strip,
+.column-index-strip {
+  background: var(--sheet-header-row);
+}
+
 .row-index-strip {
-  background: var(--sheet-header);
+  background: var(--sheet-header-col);
 }
 
 .table-corner {
@@ -541,6 +674,11 @@ textarea {
   place-items: center;
   border-inline-end: 1px solid var(--sheet-grid);
   border-bottom: 1px solid var(--sheet-grid);
+  box-shadow:
+    1px 0 0 color-mix(in oklab, var(--glass-border) 22%, transparent),
+    0 1px 0 var(--sheet-grid),
+    var(--sticky-row-shadow),
+    var(--sticky-col-shadow);
 }
 
 .corner-button {
@@ -564,6 +702,10 @@ textarea {
 .column-index-strip {
   overflow: hidden;
   border-bottom: 1px solid var(--sheet-grid);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--glass-border) 28%, transparent),
+    0 1px 0 var(--sheet-grid),
+    var(--sticky-row-shadow);
 }
 
 .column-index-track {
@@ -591,6 +733,10 @@ textarea {
   align-self: start;
   overflow: hidden;
   border-inline-end: 1px solid var(--sheet-grid);
+  box-shadow:
+    inset 1px 0 0 color-mix(in oklab, var(--glass-border) 28%, transparent),
+    1px 0 0 var(--sheet-grid),
+    var(--sticky-col-shadow);
 }
 
 .row-index-spacer {
@@ -599,6 +745,8 @@ textarea {
 
 .row-index-viewport {
   overflow: hidden;
+  padding-bottom: var(--formula-bar-safe-space);
+  box-sizing: border-box;
 }
 
 .row-index-track {
@@ -617,6 +765,10 @@ textarea {
   font-variant-numeric: tabular-nums;
   -webkit-user-select: none;
   user-select: none;
+  transition:
+    top 180ms var(--ease-out-quart),
+    height 180ms var(--ease-out-quart),
+    opacity 120ms linear;
 }
 
 .grid-shell {
@@ -636,7 +788,7 @@ textarea {
   --ag-header-height: var(--grid-header-height);
   --ag-list-item-height: var(--grid-row-height);
   --ag-row-height: var(--grid-row-height);
-  --ag-header-background-color: var(--sheet-header);
+  --ag-header-background-color: var(--sheet-header-row);
   --ag-header-foreground-color: var(--sheet-soft);
   --ag-active-color: var(--accent-strong);
   --ag-row-hover-color: color-mix(in oklab, var(--accent-soft) 30%, white);
@@ -652,12 +804,26 @@ textarea {
   border: 0;
 }
 
+.grid-wrap .ag-body-viewport.ag-layout-normal,
+.grid-wrap .ag-body-viewport {
+  padding-bottom: var(--formula-bar-safe-space);
+  box-sizing: border-box;
+  scroll-padding-bottom: calc(var(--formula-bar-safe-space) + 10px);
+}
+
 .grid-wrap .ag-header,
 .grid-wrap .ag-header-viewport,
 .grid-wrap .ag-header-row,
 .grid-wrap .ag-header-cell,
 .grid-wrap .ag-header-group-cell {
-  background: var(--sheet-header) !important;
+  background: var(--sheet-header-row) !important;
+}
+
+.grid-wrap .ag-header {
+  box-shadow:
+    0 1px 0 var(--sheet-grid),
+    var(--sticky-row-shadow);
+  z-index: 3;
 }
 
 .ag-theme-quartz .ag-header-cell {
@@ -677,7 +843,7 @@ textarea {
 }
 
 .line-item-header {
-  background: color-mix(in oklab, var(--sheet-header) 82%, var(--line-item-bg)) !important;
+  background: var(--sheet-header-col) !important;
 }
 
 .line-item-header .ag-header-cell-label {
@@ -828,6 +994,17 @@ textarea {
     border-color 160ms var(--ease-out-quart);
 }
 
+.tree-toggle-icon {
+  width: 0.7rem;
+  height: 0.7rem;
+  transform: rotate(90deg);
+  transition: transform 160ms var(--ease-out-quart);
+}
+
+.tree-toggle.is-collapsed .tree-toggle-icon {
+  transform: rotate(0deg);
+}
+
 .tree-toggle:hover {
   background: color-mix(in oklab, var(--accent-soft) 52%, white);
   border-color: color-mix(in oklab, var(--accent) 28%, transparent);
@@ -861,6 +1038,11 @@ textarea {
   background: var(--sheet-surface);
 }
 
+.grid-wrap .ag-pinned-left-cols-container,
+.grid-wrap .ag-pinned-left-header {
+  box-shadow: var(--sticky-col-shadow);
+}
+
 .formula-bar-shell {
   position: fixed;
   left: 50%;
@@ -874,11 +1056,13 @@ textarea {
 }
 
 .formula-bar-shell.is-visible {
-  animation: formula-bar-in 260ms var(--ease-out-expo) both;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
 }
 
 .formula-bar-shell.is-hiding {
-  animation: formula-bar-out 180ms cubic-bezier(0.4, 0, 1, 1) both;
+  opacity: 0;
+  transform: translateX(-50%) translateY(12px) scale(0.99);
 }
 
 .formula-bar {
@@ -981,7 +1165,7 @@ textarea {
   display: grid;
   place-items: center;
   gap: 0.35rem;
-  height: calc(100vh - 11.75rem);
+  height: 100%;
   min-height: 26rem;
   padding: 2rem;
   text-align: center;
@@ -1055,7 +1239,7 @@ textarea:focus-visible,
   }
 
   .table-stage {
-    height: calc(100vh - 12.25rem);
+    min-height: calc(100vh - 9rem);
   }
 }
 
@@ -1065,16 +1249,15 @@ textarea:focus-visible,
   }
 
   .topbar {
-    align-items: flex-start;
-    flex-direction: column;
+    gap: 0.5rem;
   }
 
   .toolbar-tools {
-    width: 100%;
+    overflow: hidden;
   }
 
-  .source-button {
-    align-self: flex-end;
+  .brand-name {
+    font-size: 0.9rem;
   }
 
   .formula-bar-shell {
@@ -1093,15 +1276,28 @@ textarea:focus-visible,
 }
 
 @media (max-width: 640px) {
-  .page {
-    gap: 0.55rem;
+  .topbar {
+    padding-inline: 0.5rem;
+    padding-inline-start: 0.7rem;
   }
 
   .sheet-tab {
-    min-width: 6rem;
+    min-width: 3.8rem;
+    max-width: 6.9rem;
+  }
+
+  .sheet-tab.active {
+    min-width: 3.8rem;
+    max-width: 6.9rem;
+  }
+
+  .sheetbar {
+    gap: 0.32rem;
+    padding-inline: 0.5rem;
   }
 
   .table-stage {
+    --formula-bar-safe-space: 120px;
     grid-template-columns: 46px minmax(0, 1fr);
     min-height: 22rem;
   }
@@ -1115,7 +1311,7 @@ textarea:focus-visible,
   }
 
   textarea {
-    height: calc(100vh - 14rem);
+    min-height: calc(100vh - 7.5rem);
   }
 }
 
