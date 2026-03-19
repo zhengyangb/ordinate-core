@@ -19,6 +19,18 @@ type GridRow = {
   [key: string]: string | number | boolean;
 };
 
+type SelectedCell = {
+  rowPath: string;
+  colId: string;
+};
+
+type FormulaBarData = {
+  address: string;
+  chip: string;
+  displayText: string;
+  sourceText: string;
+};
+
 function runtimeValueToText(value: RuntimeValue): string {
   switch (value.kind) {
     case "number":
@@ -35,6 +47,25 @@ function runtimeValueToText(value: RuntimeValue): string {
       return "#ERROR";
     default:
       return String(value.value ?? "");
+  }
+}
+
+function runtimeKindLabel(value: RuntimeValue | null | undefined): string {
+  switch (value?.kind) {
+    case "number":
+      return "Number";
+    case "string":
+      return "Text";
+    case "boolean":
+      return "Boolean";
+    case "blank":
+      return "Blank";
+    case "null":
+      return "Null";
+    case "error":
+      return "Error";
+    default:
+      return "Value";
   }
 }
 
@@ -131,6 +162,7 @@ export default function App() {
   const {
     mode,
     sourceText,
+    docState,
     evaluation,
     activeSheet,
     error,
@@ -141,11 +173,25 @@ export default function App() {
   } = useEditorStore();
 
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
+  const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
+  const [formulaBarSnapshot, setFormulaBarSnapshot] = useState<FormulaBarData | null>(null);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
+
+  const clearActiveSelection = useCallback(() => {
+    setSelectedCell(null);
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) {
+      active.blur();
+    }
+  }, []);
 
   useEffect(() => {
     setCollapsedPaths(new Set());
   }, [activeSheet]);
+
+  useEffect(() => {
+    setSelectedCell(null);
+  }, [activeSheet, mode]);
 
   useEffect(() => {
     const root = gridWrapRef.current;
@@ -155,6 +201,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       const headerCell = target?.closest<HTMLElement>(".ag-header-cell, .ag-header-group-cell");
       if (!headerCell) return;
+      setSelectedCell(null);
       headerCell.tabIndex = 0;
       requestAnimationFrame(() => headerCell.focus());
     };
@@ -162,6 +209,36 @@ export default function App() {
     root.addEventListener("mousedown", handlePointerDown);
     return () => root.removeEventListener("mousedown", handlePointerDown);
   }, [mode, activeSheet]);
+
+  useEffect(() => {
+    if (mode === "source") return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (!selectedCell) return;
+      clearActiveSelection();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [mode, selectedCell, clearActiveSelection]);
+
+  useEffect(() => {
+    if (mode === "source") return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!selectedCell) return;
+      const target = event.target as HTMLElement | null;
+      const interactiveRoot = target?.closest(
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .mode-button, .tab, textarea",
+      );
+      if (interactiveRoot) return;
+      clearActiveSelection();
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [mode, selectedCell, clearActiveSelection]);
 
   const toggleCollapse = useCallback((rowPath: string) => {
     setCollapsedPaths((prev) => {
@@ -180,12 +257,25 @@ export default function App() {
     return evaluation.sheets.find((s) => s.name === activeSheet) ?? null;
   }, [evaluation, activeSheet]);
 
-  const columnDefs: ColDef<GridRow>[] = useMemo(() => {
+  const currentSheetState = useMemo(() => {
+    if (!docState || !activeSheet) return null;
+    return docState.sheets.find((s) => s.name === activeSheet) ?? null;
+  }, [docState, activeSheet]);
+
+  const hiddenFirstDataColumn = useMemo(
+    () => (currentSheet ? shouldHideFirstDataColumn(currentSheet) : false),
+    [currentSheet],
+  );
+
+  const visibleDataColumns = useMemo(() => {
     if (!currentSheet) return [];
-    const hiddenFirstDataColumn = shouldHideFirstDataColumn(currentSheet);
-    const visibleCols = currentSheet.colLabels
+    return currentSheet.colLabels
       .map((colLabel, colIndex) => ({ colLabel, colIndex }))
       .filter(({ colIndex }) => !(hiddenFirstDataColumn && colIndex === 0));
+  }, [currentSheet, hiddenFirstDataColumn]);
+
+  const columnDefs: ColDef<GridRow>[] = useMemo(() => {
+    if (!currentSheet) return [];
 
     return [
       {
@@ -230,7 +320,7 @@ export default function App() {
           );
         },
       },
-      ...visibleCols.map(({ colLabel, colIndex }) => ({
+      ...visibleDataColumns.map(({ colLabel, colIndex }) => ({
         field: `c_${colIndex}`,
         headerName: compactColLabel(colLabel),
         headerTooltip: colLabel,
@@ -247,14 +337,10 @@ export default function App() {
         },
       })),
     ];
-  }, [currentSheet, toggleCollapse]);
+  }, [currentSheet, toggleCollapse, visibleDataColumns]);
 
   const rowData: GridRow[] = useMemo(() => {
     if (!currentSheet) return [];
-    const hiddenFirstDataColumn = shouldHideFirstDataColumn(currentSheet);
-    const visibleColIndices = currentSheet.colLabels
-      .map((_, colIndex) => colIndex)
-      .filter((colIndex) => !(hiddenFirstDataColumn && colIndex === 0));
 
     return currentSheet.values
       .map((row, rowIndex) => {
@@ -273,7 +359,7 @@ export default function App() {
           __collapsed: collapsedPaths.has(rowPath),
         };
 
-        visibleColIndices.forEach((colIndex) => {
+        visibleDataColumns.forEach(({ colIndex }) => {
           const value = row[colIndex] as RuntimeValue;
           item[`c_${colIndex}`] = runtimeValueToText(value);
           item[`__kind_${colIndex}`] = value.kind;
@@ -282,7 +368,79 @@ export default function App() {
         return item;
       })
       .filter((row) => isVisiblePath(row.__rowPath, collapsedPaths));
-  }, [currentSheet, collapsedPaths]);
+  }, [currentSheet, collapsedPaths, visibleDataColumns]);
+
+  const handleCellFocused = useCallback(
+    (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
+      if (event.rowIndex == null || !event.column) {
+        setSelectedCell(null);
+        return;
+      }
+
+      const row = rowData[event.rowIndex];
+      if (!row) {
+        setSelectedCell(null);
+        return;
+      }
+
+      const colId = typeof event.column === "string" ? event.column : event.column.getColId();
+      setSelectedCell({
+        rowPath: row.__rowPath,
+        colId,
+      });
+    },
+    [rowData],
+  );
+
+  const formulaBarData = useMemo<FormulaBarData | null>(() => {
+    if (!currentSheet || !currentSheetState || !selectedCell) return null;
+
+    const rowRel = currentSheet.rowPaths.indexOf(selectedCell.rowPath);
+    if (rowRel < 0) return null;
+
+    const rAbs = currentSheetState.bodyStart + rowRel;
+    const rowLeaf = leafLabel(selectedCell.rowPath);
+
+    if (selectedCell.colId === "__label") {
+      const rawCell = hiddenFirstDataColumn ? currentSheetState.cells[rAbs]?.[0] : null;
+      const rawText = rawCell?.text?.trim() ? rawCell.text : rowLeaf;
+      return {
+        address: `${rowHeaderLabel(currentSheet)} · ${rowLeaf}`,
+        chip: "Label",
+        displayText: rowLeaf,
+        sourceText: rawText,
+      };
+    }
+
+    if (!selectedCell.colId.startsWith("c_")) return null;
+
+    const colIndex = Number(selectedCell.colId.slice(2));
+    if (!Number.isFinite(colIndex) || colIndex < 0 || colIndex >= currentSheet.colLabels.length) {
+      return null;
+    }
+
+    const runtimeValue = currentSheet.values[rowRel]?.[colIndex] as RuntimeValue | undefined;
+    const rawCell = currentSheetState.cells[rAbs]?.[colIndex];
+    const sourceText = rawCell?.text ?? runtimeValueToText(runtimeValue ?? { kind: "blank", value: null });
+    const chip = rawCell?.parsed.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);
+
+    return {
+      address: `${currentSheet.colLabels[colIndex]} · ${rowLeaf}`,
+      chip,
+      displayText: runtimeValue ? runtimeValueToText(runtimeValue) : "",
+      sourceText: sourceText.length > 0 ? sourceText : "(blank)",
+    };
+  }, [currentSheet, currentSheetState, hiddenFirstDataColumn, selectedCell]);
+
+  useEffect(() => {
+    if (formulaBarData) {
+      setFormulaBarSnapshot(formulaBarData);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setFormulaBarSnapshot(null), 180);
+    return () => window.clearTimeout(timeout);
+  }, [formulaBarData]);
 
   return (
     <div className="page">
@@ -346,6 +504,7 @@ export default function App() {
                 suppressDragLeaveHidesColumns
                 suppressContextMenu
                 theme={themeQuartz}
+                onCellFocused={handleCellFocused}
                 rowClassRules={{
                   "section-row": (params) => Boolean(params.data?.__isSection),
                 }}
@@ -357,6 +516,25 @@ export default function App() {
               </div>
             )}
           </div>
+          {formulaBarSnapshot ? (
+            <aside
+              className={formulaBarData ? "formula-bar-shell is-visible" : "formula-bar-shell is-hiding"}
+              aria-live="polite"
+              aria-hidden={formulaBarData ? undefined : true}
+            >
+              <div className="formula-bar">
+                <div className="formula-bar-meta">
+                  <span className="formula-chip fx">fx</span>
+                  <span className="formula-address">{formulaBarSnapshot.address}</span>
+                  <span className="formula-chip">{formulaBarSnapshot.chip}</span>
+                  <span className="formula-value-preview">{formulaBarSnapshot.displayText || " "}</span>
+                </div>
+                <div className="formula-source" title={formulaBarSnapshot.sourceText}>
+                  {formulaBarSnapshot.sourceText}
+                </div>
+              </div>
+            </aside>
+          ) : null}
         </section>
       )}
     </div>
