@@ -6,11 +6,12 @@
   --font-mono: "SF Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-display: "Instrument Serif", "Iowan Old Style", "Times New Roman", serif;
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --toolbar-height: 52px;
   --sheetbar-height: 36px;
-  --index-rail-width: 56px;
-  --index-row-height: 36px;
+  --index-rail-width: 30px;
+  --index-row-height: 28px;
   --grid-header-height: 40px;
   --grid-row-height: 38px;
 
@@ -656,9 +657,15 @@ textarea {
   --sticky-row-shadow: none;
   --sticky-col-shadow: none;
   --formula-bar-safe-space: 136px;
+  --index-rail-gap: 8px;
+  --index-rail-width-active: var(--index-rail-width);
+  --index-rail-height-active: var(--index-row-height);
+  --index-rail-surface: color-mix(in oklab, oklch(100% 0 0) 90%, var(--sheet-header-col));
+  --index-rail-border: color-mix(in oklab, var(--sheet-grid) 62%, transparent);
+  --index-rail-highlight: color-mix(in oklab, oklch(100% 0 0 / 0.82) 68%, transparent);
   display: grid;
-  grid-template-columns: var(--index-rail-width) minmax(0, 1fr);
-  grid-template-rows: var(--index-row-height) minmax(0, 1fr);
+  grid-template-columns: calc(var(--index-rail-width-active) + var(--index-rail-gap)) minmax(0, 1fr);
+  grid-template-rows: calc(var(--index-rail-height-active) + var(--index-rail-gap)) minmax(0, 1fr);
   height: 100%;
   min-height: calc(100vh - 8.5rem);
   overflow: hidden;
@@ -675,36 +682,47 @@ textarea {
   --sticky-col-shadow: 12px 0 18px -15px color-mix(in oklab, var(--sheet-ink) 20%, transparent);
 }
 
-.table-corner,
-.column-index-strip {
-  background: var(--sheet-header-row);
+.index-rail {
+  opacity: 0;
+  transform: translateY(2px);
+  filter: saturate(0.94);
+  pointer-events: none;
+  transition:
+    opacity 220ms var(--ease-out-quint),
+    transform 260ms var(--ease-out-quint),
+    filter 220ms var(--ease-out-quint);
 }
 
-.row-index-strip {
-  background: var(--sheet-header-col);
+.index-rail.index-rail--visible {
+  opacity: 1;
+  transform: translate(0, 0);
+  filter: none;
+  pointer-events: auto;
 }
 
 .table-corner {
-  display: grid;
+  display: inline-grid;
   place-items: center;
-  border-inline-end: 1px solid var(--sheet-grid);
-  border-bottom: 1px solid var(--sheet-grid);
-  box-shadow:
-    1px 0 0 color-mix(in oklab, var(--glass-border) 22%, transparent),
-    0 1px 0 var(--sheet-grid),
-    var(--sticky-row-shadow),
-    var(--sticky-col-shadow);
+  justify-self: start;
+  align-self: start;
+  width: calc(var(--index-rail-width-active) + var(--index-rail-gap));
+  height: calc(var(--index-rail-height-active) + var(--index-rail-gap));
+  padding-inline-end: var(--index-rail-gap);
+  padding-bottom: var(--index-rail-gap);
+  transform: translate(-4px, -4px);
 }
 
 .corner-button {
   display: inline-grid;
   place-items: center;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid color-mix(in oklab, var(--sheet-grid) 74%, transparent);
+  width: min(2rem, calc(var(--index-rail-height-active) - 2px));
+  height: min(2rem, calc(var(--index-rail-height-active) - 2px));
+  border: 1px solid var(--index-rail-border);
   border-radius: 999px;
-  background: color-mix(in oklab, white 82%, transparent);
-  box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.78);
+  background: var(--index-rail-surface);
+  box-shadow:
+    inset 0 1px 0 var(--index-rail-highlight),
+    0 6px 14px color-mix(in oklab, var(--sheet-ink) 10%, transparent);
 }
 
 .corner-dot {
@@ -715,18 +733,24 @@ textarea {
 }
 
 .column-index-strip {
+  align-self: start;
   overflow: hidden;
-  border-bottom: 1px solid var(--sheet-grid);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklab, var(--glass-border) 28%, transparent),
-    0 1px 0 var(--sheet-grid),
-    var(--sticky-row-shadow);
+  padding-bottom: var(--index-rail-gap);
+  transform: translateY(-5px);
+  background: var(--sheet-surface);
 }
 
 .column-index-track {
   display: grid;
   min-width: 100%;
-  height: 100%;
+  height: var(--index-rail-height-active);
+  border: 1px solid var(--index-rail-border);
+  border-radius: 0.78rem;
+  background: var(--index-rail-surface);
+  box-shadow:
+    inset 0 1px 0 var(--index-rail-highlight),
+    var(--sticky-row-shadow);
+  overflow: hidden;
   will-change: transform;
 }
 
@@ -734,7 +758,7 @@ textarea {
   display: grid;
   place-items: center;
   min-width: 0;
-  border-inline-end: 1px solid var(--sheet-grid);
+  border-inline-end: 1px solid color-mix(in oklab, var(--index-rail-border) 78%, transparent);
   color: var(--sheet-soft);
   font-size: 0.8rem;
   font-weight: 500;
@@ -743,29 +767,59 @@ textarea {
 }
 
 .row-index-strip {
-  display: grid;
-  grid-template-rows: var(--grid-header-height) minmax(0, 1fr);
-  align-self: start;
+  display: block;
+  align-self: stretch;
   overflow: hidden;
-  border-inline-end: 1px solid var(--sheet-grid);
-  box-shadow:
-    inset 1px 0 0 color-mix(in oklab, var(--glass-border) 28%, transparent),
-    1px 0 0 var(--sheet-grid),
-    var(--sticky-col-shadow);
+  justify-self: start;
+  width: calc(var(--index-rail-width-active) + var(--index-rail-gap));
+  padding-inline-end: var(--index-rail-gap);
+  transform: translateX(-5px);
+  background: var(--sheet-surface);
 }
 
-.row-index-spacer {
-  border-bottom: 1px solid var(--sheet-grid);
+.row-index-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--index-rail-width-active);
+  height: 100%;
+  border: 1px solid var(--index-rail-border);
+  border-radius: 0.78rem;
+  background: var(--index-rail-surface);
+  box-shadow:
+    inset 1px 0 0 var(--index-rail-highlight),
+    var(--sticky-col-shadow);
+  overflow: hidden;
+}
+
+.row-index-header-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--index-rail-width-active);
+  min-height: 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--index-rail-border) 82%, transparent);
+  overflow: hidden;
+}
+
+.row-index-header-track.is-empty {
+  border-bottom: 0;
 }
 
 .row-index-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  width: var(--index-rail-width-active);
+  min-height: 0;
   overflow: hidden;
+  background: transparent;
   padding-bottom: var(--formula-bar-safe-space);
   box-sizing: border-box;
 }
 
 .row-index-track {
   position: relative;
+  background: transparent;
+  overflow: hidden;
   will-change: transform;
 }
 
@@ -774,7 +828,7 @@ textarea {
   inset-inline: 0;
   display: grid;
   place-items: center;
-  border-bottom: 1px solid var(--sheet-grid);
+  border-bottom: 1px solid color-mix(in oklab, var(--index-rail-border) 78%, transparent);
   color: var(--sheet-soft);
   font-size: 0.84rem;
   font-variant-numeric: tabular-nums;
@@ -786,13 +840,64 @@ textarea {
     opacity 120ms linear;
 }
 
+.row-index-cell.is-header {
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
 .grid-shell {
+  position: relative;
   min-width: 0;
   min-height: 0;
+  background: var(--sheet-surface);
+}
+
+.header-matrix-overlay {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.header-matrix-cell {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0 0.64rem;
+  border: 1px solid var(--sheet-grid);
+  border-bottom: 0;
+  background: var(--sheet-header-row);
+  color: var(--sheet-soft);
+  font-size: 0.81rem;
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.header-matrix-cell > span {
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-matrix-cell:hover {
+  background: color-mix(in oklab, var(--sheet-header-row) 88%, oklch(100% 0 0 / 0.12));
 }
 
 .grid-wrap {
+  box-sizing: border-box;
   height: 100%;
+  padding-top: var(--header-overlay-height, 0px);
   background: var(--sheet-surface);
   --ag-background-color: var(--sheet-surface);
   --ag-foreground-color: var(--sheet-ink);
@@ -801,6 +906,7 @@ textarea {
   --ag-border-color: var(--sheet-grid);
   --ag-wrapper-border-radius: 0;
   --ag-header-height: var(--grid-header-height);
+  --ag-group-header-height: var(--grid-header-height);
   --ag-list-item-height: var(--grid-row-height);
   --ag-row-height: var(--grid-row-height);
   --ag-header-background-color: var(--sheet-header-row);
@@ -821,6 +927,9 @@ textarea {
 
 .grid-wrap .ag-body-viewport.ag-layout-normal,
 .grid-wrap .ag-body-viewport {
+  border-inline-start: 1px solid var(--sheet-grid);
+  border-inline-end: 1px solid var(--sheet-grid);
+  border-bottom: 1px solid var(--sheet-grid);
   padding-bottom: var(--formula-bar-safe-space);
   box-sizing: border-box;
   scroll-padding-bottom: calc(var(--formula-bar-safe-space) + 10px);
@@ -865,10 +974,20 @@ textarea {
   padding-inline-start: 0.72rem;
 }
 
+.matrix-group-header,
+.data-column-header {
+  background: var(--sheet-header-row) !important;
+}
+
 .line-item-cell {
   background: var(--line-item-bg);
   font-weight: 560;
   padding-inline: 0 !important;
+}
+
+.header-column-cell {
+  background: color-mix(in oklab, var(--line-item-bg) 84%, var(--sheet-surface));
+  font-weight: 530;
 }
 
 .line-item-cell .ag-cell-wrapper,
@@ -1068,14 +1187,17 @@ textarea {
   opacity: 0;
   pointer-events: none;
   will-change: transform, opacity;
+  transition:
+    transform 260ms var(--ease-out-quint),
+    opacity 220ms var(--ease-out-quint);
 }
 
-.formula-bar-shell.is-visible {
+.formula-bar-shell--visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0) scale(1);
 }
 
-.formula-bar-shell.is-hiding {
+.formula-bar-shell--hiding {
   opacity: 0;
   transform: translateX(-50%) translateY(12px) scale(0.99);
 }
@@ -1316,7 +1438,9 @@ textarea:focus-visible,
 
   .table-stage {
     --formula-bar-safe-space: 120px;
-    grid-template-columns: 46px minmax(0, 1fr);
+    --index-rail-width-active: 28px;
+    --index-rail-height-active: 24px;
+    --index-rail-gap: 5px;
     min-height: 22rem;
   }
 

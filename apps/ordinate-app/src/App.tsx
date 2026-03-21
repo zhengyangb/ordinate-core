@@ -17,9 +17,12 @@ import TableStage from "./components/TableStage";
 import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
 import { useEditorStore } from "./store/editorStore";
 import type {
+  ChromeVisibilityPhase,
   FloatingMenuPosition,
   FormulaBarData,
   GridRow,
+  HeaderIndexMetric,
+  HeaderOverlayCell,
   RowIndexMetric,
   SelectedCell,
   TabTooltip,
@@ -30,10 +33,8 @@ import {
   compactColLabel,
   isVisiblePath,
   leafLabel,
-  rowHeaderLabel,
   runtimeKindLabel,
   runtimeValueToText,
-  shouldHideFirstDataColumn,
   splitPath,
 } from "./utils/sheetView";
 
@@ -42,16 +43,79 @@ import "ag-grid-community/styles/ag-grid.css";
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 const LABEL_COLUMN_WIDTH = 280;
+const HEADER_COLUMN_WIDTH = 168;
 const DATA_COLUMN_MIN_WIDTH = 132;
 const GRID_HEADER_HEIGHT = 40;
 const GRID_ROW_HEIGHT = 38;
 const FORMULA_BAR_SAFE_SPACE = 136;
+const CHROME_TRANSITION_MS = 260;
 const THEME_STORAGE_KEY = "ordinate-theme-mode";
+const BLANK_RUNTIME_VALUE: RuntimeValue = { kind: "blank", value: null };
 
 function resolveInitialThemeMode(): ThemeMode {
   if (typeof window === "undefined") return "auto";
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
   return stored === "light" || stored === "dark" || stored === "auto" ? stored : "auto";
+}
+
+function toColFieldId(colIndex: number): string {
+  return `col_${colIndex}`;
+}
+
+function parseColIndexFromField(colId: string): number {
+  if (!colId.startsWith("col_")) return -1;
+  const parsed = Number(colId.slice(4));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : -1;
+}
+
+function resolveHeaderColId(target: HTMLElement | null, colCount: number, colIndexLookup: Map<string, number>): string | null {
+  if (!target) return null;
+
+  const headerCell = target.closest<HTMLElement>(".ag-header-cell[col-id], .ag-header-group-cell[col-id]");
+  const rawColId = headerCell?.getAttribute("col-id");
+  if (rawColId && colIndexLookup.has(rawColId)) {
+    return rawColId;
+  }
+
+  const ariaColIndex = Number(headerCell?.getAttribute("aria-colindex"));
+  if (Number.isFinite(ariaColIndex)) {
+    const zeroBased = ariaColIndex - 1;
+    if (zeroBased >= 0 && zeroBased < colCount) {
+      return toColFieldId(zeroBased);
+    }
+  }
+
+  return null;
+}
+
+function resolveLeafHeaderColIdByClientX(
+  root: HTMLElement,
+  clientX: number,
+  colIndexLookup: Map<string, number>,
+): string | null {
+  const headerCells = Array.from(root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]"));
+  for (const cell of headerCells) {
+    const colId = cell.getAttribute("col-id");
+    if (!colId || !colIndexLookup.has(colId)) continue;
+    const rect = cell.getBoundingClientRect();
+    if (clientX >= rect.left && clientX <= rect.right) {
+      return colId;
+    }
+  }
+  return null;
+}
+
+function overlayCellsEqual(previous: HeaderOverlayCell[], next: HeaderOverlayCell[]): boolean {
+  if (previous.length !== next.length) return false;
+  for (let index = 0; index < previous.length; index += 1) {
+    const a = previous[index];
+    const b = next[index];
+    if (a.key !== b.key) return false;
+    if (a.rowNumber !== b.rowNumber || a.label !== b.label) return false;
+    if (Math.abs(a.left - b.left) > 0.5) return false;
+    if (Math.abs(a.width - b.width) > 0.5) return false;
+  }
+  return true;
 }
 
 export default function App() {
@@ -82,6 +146,7 @@ export default function App() {
   const [hasHorizontalOverlap, setHasHorizontalOverlap] = useState(false);
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
   const [rowIndexTrackHeight, setRowIndexTrackHeight] = useState(0);
+  const [headerOverlayCells, setHeaderOverlayCells] = useState<HeaderOverlayCell[]>([]);
 
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
   const columnTrackRef = useRef<HTMLDivElement | null>(null);
@@ -90,6 +155,57 @@ export default function App() {
   const themeControlRef = useRef<HTMLDivElement | null>(null);
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const currentSheet = useMemo(() => {
+    if (!evaluation || !activeSheet) return null;
+    return evaluation.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
+  }, [evaluation, activeSheet]);
+
+  const currentSheetState = useMemo(() => {
+    if (!docState || !activeSheet) return null;
+    return docState.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
+  }, [docState, activeSheet]);
+
+  const sheetColCount = currentSheetState?.colCount ?? 0;
+  const headerRowCount = currentSheetState?.headerRowCount ?? 0;
+  const headerColCount = Math.min(currentSheetState?.headerColCount ?? 0, sheetColCount);
+  const headerOverlayRows = Math.max(0, headerRowCount - 1);
+  const headerOverlayHeight = headerOverlayRows * GRID_HEADER_HEIGHT;
+
+  const headerMatrix = useMemo(() => {
+    if (!currentSheetState || sheetColCount === 0) return [] as string[][];
+
+    const matrixDepth = Math.max(1, headerRowCount);
+    return Array.from({ length: matrixDepth }, (_, rowIndex) => {
+      const sourceRow = rowIndex < headerRowCount ? currentSheetState.cells[rowIndex] : null;
+      return Array.from({ length: sheetColCount }, (_, colIndex) => {
+        const raw = sourceRow?.[colIndex]?.text?.trim() ?? "";
+        if (raw.length > 0) return raw;
+        if (rowIndex === matrixDepth - 1) {
+          return currentSheetState.colLabels[colIndex] ?? currentSheet?.colLabels[colIndex] ?? `C${colIndex + 1}`;
+        }
+        return "";
+      });
+    });
+  }, [currentSheetState, currentSheet, sheetColCount, headerRowCount]);
+
+  const headerLeafLabels = useMemo(() => {
+    if (sheetColCount === 0) return [] as string[];
+    const leafRow = headerMatrix[headerMatrix.length - 1] ?? [];
+    return Array.from({ length: sheetColCount }, (_, colIndex) => {
+      const label = leafRow[colIndex] ?? currentSheetState?.colLabels[colIndex] ?? `C${colIndex + 1}`;
+      return compactColLabel(label);
+    });
+  }, [headerMatrix, currentSheetState, sheetColCount]);
+
+  const headerSemanticLabels = useMemo(() => {
+    if (sheetColCount === 0) return [] as string[];
+    return Array.from({ length: sheetColCount }, (_, colIndex) => {
+      const fromLabels = currentSheetState?.colLabels[colIndex];
+      if (fromLabels && fromLabels.length > 0) return fromLabels;
+      return headerLeafLabels[colIndex] ?? `C${colIndex + 1}`;
+    });
+  }, [currentSheetState, headerLeafLabels, sheetColCount]);
 
   const clearActiveSelection = useCallback(() => {
     setSelectedCell(null);
@@ -106,6 +222,12 @@ export default function App() {
   useEffect(() => {
     setSelectedCell(null);
   }, [activeSheet, mode]);
+
+  useEffect(() => {
+    if (mode === "source") {
+      setFormulaBarSnapshot(null);
+    }
+  }, [mode]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -207,7 +329,7 @@ export default function App() {
 
       nextMetrics.push({
         rowPath: rowNode.data.__rowPath,
-        number: rowNode.data.__rowNumber,
+        number: rowNode.data.__absoluteRowNumber,
         top,
         height,
       });
@@ -238,23 +360,6 @@ export default function App() {
     },
     [syncRowIndexMetrics],
   );
-
-  useEffect(() => {
-    const root = gridWrapRef.current;
-    if (!root || mode === "source") return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      const headerCell = target?.closest<HTMLElement>(".ag-header-cell, .ag-header-group-cell");
-      if (!headerCell) return;
-      setSelectedCell(null);
-      headerCell.tabIndex = 0;
-      requestAnimationFrame(() => headerCell.focus());
-    };
-
-    root.addEventListener("mousedown", handlePointerDown);
-    return () => root.removeEventListener("mousedown", handlePointerDown);
-  }, [mode, activeSheet]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -321,109 +426,8 @@ export default function App() {
     });
   }, []);
 
-  const currentSheet = useMemo(() => {
-    if (!evaluation || !activeSheet) return null;
-    return evaluation.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
-  }, [evaluation, activeSheet]);
-
-  const currentSheetState = useMemo(() => {
-    if (!docState || !activeSheet) return null;
-    return docState.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
-  }, [docState, activeSheet]);
-
-  const hiddenFirstDataColumn = useMemo(() => (currentSheet ? shouldHideFirstDataColumn(currentSheet) : false), [currentSheet]);
-
-  const visibleDataColumns = useMemo(() => {
-    if (!currentSheet) return [];
-    return currentSheet.colLabels
-      .map((colLabel, colIndex) => ({ colLabel, colIndex }))
-      .filter(({ colIndex }) => !(hiddenFirstDataColumn && colIndex === 0));
-  }, [currentSheet, hiddenFirstDataColumn]);
-
-  const renderedColumnCount = 1 + visibleDataColumns.length;
-  const gridTemplateColumns = useMemo(
-    () => `${LABEL_COLUMN_WIDTH}px repeat(${visibleDataColumns.length}, minmax(${DATA_COLUMN_MIN_WIDTH}px, 1fr))`,
-    [visibleDataColumns.length],
-  );
-
-  const columnDefs: ColDef<GridRow>[] = useMemo(() => {
-    if (!currentSheet) return [];
-
-    return [
-      {
-        field: "__label",
-        headerName: rowHeaderLabel(currentSheet),
-        pinned: "left",
-        width: LABEL_COLUMN_WIDTH,
-        suppressMovable: true,
-        headerClass: "line-item-header",
-        cellClass: "line-item-cell",
-        cellRenderer: (params: { data?: GridRow }) => {
-          const data = params.data;
-          if (!data) return null;
-
-          const showToggle = data.__hasChildren;
-          const showSpacer = !showToggle && data.__depth > 0;
-          const paddingLeft = Math.max(0, data.__depth - 1) * 12;
-          const isCollapsed = data.__collapsed;
-          const leadingSlot = showToggle ? (
-            <button
-              className={isCollapsed ? "tree-toggle is-collapsed" : "tree-toggle"}
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                toggleCollapse(data.__rowPath);
-              }}
-              aria-label={isCollapsed ? "Expand section" : "Collapse section"}
-              title={isCollapsed ? "Expand" : "Collapse"}
-            >
-              <svg className="tree-toggle-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-                <path d="M4 2.5 8.5 6 4 9.5Z" fill="currentColor" />
-              </svg>
-            </button>
-          ) : showSpacer ? (
-            <span className="tree-spacer" />
-          ) : (
-            <span className="tree-inline-pad" aria-hidden="true" />
-          );
-
-          return (
-            <div className="tree-cell" style={{ paddingLeft }}>
-              {leadingSlot}
-              <span className={data.__hasChildren ? "tree-label section" : "tree-label"}>{data.__label}</span>
-            </div>
-          );
-        },
-      },
-      ...visibleDataColumns.map(({ colLabel, colIndex }) => ({
-        field: `c_${colIndex}`,
-        headerName: compactColLabel(colLabel),
-        headerTooltip: colLabel,
-        minWidth: DATA_COLUMN_MIN_WIDTH,
-        flex: 1,
-        suppressMovable: true,
-        cellClass: (params: { data?: GridRow }) => {
-          const kind = params.data?.[`__kind_${colIndex}`];
-          const classes = ["data-cell"];
-          if (kind === "number") classes.push("is-numeric");
-          if (kind === "error") classes.push("is-error");
-          if (kind === "blank") classes.push("is-blank");
-          return classes.join(" ");
-        },
-      })),
-    ];
-  }, [currentSheet, toggleCollapse, visibleDataColumns]);
-
   const rowData: GridRow[] = useMemo(() => {
-    if (!currentSheet) return [];
+    if (!currentSheet || !currentSheetState) return [];
 
     return currentSheet.values
       .map((row, rowIndex) => {
@@ -432,31 +436,47 @@ export default function App() {
         const hasChildren = currentSheet.rowPaths.some(
           (candidate) => candidate !== rowPath && candidate.startsWith(`${rowPath}.`),
         );
+        const absoluteRowNumber = currentSheetState.bodyStart + rowIndex + 1;
+        const rowLeaf = leafLabel(rowPath);
 
         const item: GridRow = {
           __rowPath: rowPath,
-          __rowNumber: rowIndex + 1,
-          __label: leafLabel(rowPath),
+          __absoluteRowNumber: absoluteRowNumber,
           __depth: depth,
           __hasChildren: hasChildren,
           __isSection: hasChildren,
           __collapsed: collapsedPaths.has(rowPath),
+          __displayLabel: rowLeaf,
         };
 
-        visibleDataColumns.forEach(({ colIndex }) => {
-          const value = row[colIndex] as RuntimeValue;
-          item[`c_${colIndex}`] = runtimeValueToText(value);
-          item[`__kind_${colIndex}`] = value.kind;
-        });
+        for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
+          const field = toColFieldId(colIndex);
+          const rawCell = currentSheetState.cells[currentSheetState.bodyStart + rowIndex]?.[colIndex];
+          const runtimeValue = row[colIndex] as RuntimeValue | undefined;
+
+          if (colIndex < headerColCount) {
+            if (colIndex === 0) {
+              item[field] = rowLeaf;
+              item[`__kind_${colIndex}`] = "label";
+            } else {
+              const headerValue = rawCell?.text ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+              item[field] = headerValue;
+              item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
+            }
+          } else {
+            item[field] = runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+            item[`__kind_${colIndex}`] = runtimeValue?.kind ?? "blank";
+          }
+        }
 
         return item;
       })
       .filter((row) => isVisiblePath(row.__rowPath, collapsedPaths));
-  }, [currentSheet, collapsedPaths, visibleDataColumns]);
+  }, [currentSheet, currentSheetState, collapsedPaths, sheetColCount, headerColCount]);
 
   const rowIndexLookup = useMemo(() => {
     const map = new Map<string, number>();
-    rowData.forEach((row) => map.set(row.__rowPath, row.__rowNumber));
+    rowData.forEach((row) => map.set(row.__rowPath, row.__absoluteRowNumber));
     return map;
   }, [rowData]);
 
@@ -467,12 +487,268 @@ export default function App() {
 
   const colIndexLookup = useMemo(() => {
     const map = new Map<string, number>();
-    map.set("__label", 1);
-    visibleDataColumns.forEach(({ colIndex }, index) => {
-      map.set(`c_${colIndex}`, index + 2);
-    });
+    for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
+      map.set(toColFieldId(colIndex), colIndex + 1);
+    }
     return map;
-  }, [visibleDataColumns]);
+  }, [sheetColCount]);
+
+  const syncHeaderOverlayCells = useCallback(
+    (root: HTMLElement | null) => {
+      if (!root || mode === "source" || headerOverlayRows === 0 || sheetColCount === 0) {
+        setHeaderOverlayCells((current) => (current.length === 0 ? current : []));
+        return;
+      }
+
+      const rootRect = root.getBoundingClientRect();
+      const leafCells = Array.from(root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]"))
+        .map((cell) => {
+          const colId = cell.getAttribute("col-id");
+          if (!colId) return null;
+          const colNumber = colIndexLookup.get(colId);
+          if (!colNumber) return null;
+          const rect = cell.getBoundingClientRect();
+          return {
+            colId,
+            colIndex: colNumber - 1,
+            left: rect.left - rootRect.left,
+            right: rect.right - rootRect.left,
+          };
+        })
+        .filter((cell): cell is { colId: string; colIndex: number; left: number; right: number } => cell !== null)
+        .sort((a, b) => a.left - b.left);
+
+      if (leafCells.length === 0) {
+        setHeaderOverlayCells((current) => (current.length === 0 ? current : []));
+        return;
+      }
+
+      const nextCells: HeaderOverlayCell[] = [];
+
+      for (let rowOffset = 0; rowOffset < headerOverlayRows; rowOffset += 1) {
+        let cursor = 0;
+        while (cursor < leafCells.length) {
+          const start = leafCells[cursor];
+          const label = headerMatrix[rowOffset]?.[start.colIndex] ?? "";
+          let end = cursor;
+          while (end + 1 < leafCells.length) {
+            const current = leafCells[end];
+            const candidate = leafCells[end + 1];
+            if (candidate.colIndex !== current.colIndex + 1) break;
+            const candidateLabel = headerMatrix[rowOffset]?.[candidate.colIndex] ?? "";
+            if (candidateLabel !== label) break;
+            end += 1;
+          }
+
+          const left = start.left;
+          const width = Math.max(0, leafCells[end].right - left);
+          if (width > 0.5) {
+            const startCol = start.colIndex + 1;
+            const endCol = leafCells[end].colIndex + 1;
+            const rowNumber = rowOffset + 1;
+            nextCells.push({
+              key: `r${rowNumber}-c${startCol}-${endCol}`,
+              rowNumber,
+              label,
+              left,
+              width,
+              top: rowOffset * GRID_HEADER_HEIGHT,
+              height: GRID_HEADER_HEIGHT,
+            });
+          }
+
+          cursor = end + 1;
+        }
+      }
+
+      setHeaderOverlayCells((current) => (overlayCellsEqual(current, nextCells) ? current : nextCells));
+    },
+    [mode, headerOverlayRows, sheetColCount, colIndexLookup, headerMatrix],
+  );
+
+  const renderedColumnCount = sheetColCount;
+
+  const gridTemplateColumns = useMemo(() => {
+    if (sheetColCount === 0) return "";
+    const tracks = Array.from({ length: sheetColCount }, (_, colIndex) => {
+      if (colIndex < headerColCount) {
+        return colIndex === 0 ? `${LABEL_COLUMN_WIDTH}px` : `${HEADER_COLUMN_WIDTH}px`;
+      }
+      return `minmax(${DATA_COLUMN_MIN_WIDTH}px, 1fr)`;
+    });
+    return tracks.join(" ");
+  }, [sheetColCount, headerColCount]);
+
+  const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
+    if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
+
+    return Array.from({ length: sheetColCount }, (_, colIndex) => {
+      const field = toColFieldId(colIndex);
+      const isHeaderColumn = colIndex < headerColCount;
+      const leafHeader = headerLeafLabels[colIndex] ?? `C${colIndex + 1}`;
+      const semanticLabel = headerSemanticLabels[colIndex] ?? leafHeader;
+
+      const baseDef: ColDef<GridRow> = {
+        colId: field,
+        field,
+        headerName: leafHeader,
+        headerTooltip: semanticLabel,
+        suppressMovable: true,
+      };
+
+      if (isHeaderColumn) {
+        const withHeader: ColDef<GridRow> = {
+          ...baseDef,
+          pinned: "left",
+          width: colIndex === 0 ? LABEL_COLUMN_WIDTH : HEADER_COLUMN_WIDTH,
+          minWidth: colIndex === 0 ? LABEL_COLUMN_WIDTH : HEADER_COLUMN_WIDTH,
+          headerClass: "line-item-header",
+          cellClass: colIndex === 0 ? "line-item-cell" : "header-column-cell",
+        };
+
+        if (colIndex === 0) {
+          withHeader.cellRenderer = (params: { data?: GridRow }) => {
+            const data = params.data;
+            if (!data) return null;
+
+            const showToggle = data.__hasChildren;
+            const showSpacer = !showToggle && data.__depth > 0;
+            const paddingLeft = Math.max(0, data.__depth - 1) * 12;
+            const isCollapsed = data.__collapsed;
+            const leadingSlot = showToggle ? (
+              <button
+                className={isCollapsed ? "tree-toggle is-collapsed" : "tree-toggle"}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  toggleCollapse(data.__rowPath);
+                }}
+                aria-label={isCollapsed ? "Expand section" : "Collapse section"}
+                title={isCollapsed ? "Expand" : "Collapse"}
+              >
+                <svg className="tree-toggle-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                  <path d="M4 2.5 8.5 6 4 9.5Z" fill="currentColor" />
+                </svg>
+              </button>
+            ) : showSpacer ? (
+              <span className="tree-spacer" />
+            ) : (
+              <span className="tree-inline-pad" aria-hidden="true" />
+            );
+
+            return (
+              <div className="tree-cell" style={{ paddingLeft }}>
+                {leadingSlot}
+                <span className={data.__hasChildren ? "tree-label section" : "tree-label"}>
+                  {String(data.__displayLabel ?? data.__rowPath)}
+                </span>
+              </div>
+            );
+          };
+        }
+
+        return withHeader;
+      }
+
+      return {
+        ...baseDef,
+        minWidth: DATA_COLUMN_MIN_WIDTH,
+        flex: 1,
+        headerClass: "data-column-header",
+        cellClass: (params: { data?: GridRow }) => {
+          const kind = params.data?.[`__kind_${colIndex}`];
+          const classes = ["data-cell"];
+          if (kind === "number") classes.push("is-numeric");
+          if (kind === "error") classes.push("is-error");
+          if (kind === "blank") classes.push("is-blank");
+          return classes.join(" ");
+        },
+      } satisfies ColDef<GridRow>;
+    });
+  }, [
+    currentSheet,
+    currentSheetState,
+    sheetColCount,
+    headerColCount,
+    headerLeafLabels,
+    headerSemanticLabels,
+    toggleCollapse,
+  ]);
+
+  const headerIndexMetrics = useMemo<HeaderIndexMetric[]>(() => {
+    return Array.from({ length: headerRowCount }, (_, index) => ({
+      number: index + 1,
+      top: index * GRID_HEADER_HEIGHT,
+      height: GRID_HEADER_HEIGHT,
+    }));
+  }, [headerRowCount]);
+
+  const headerIndexTrackHeight = headerRowCount * GRID_HEADER_HEIGHT;
+
+  const handleHeaderOverlaySelect = useCallback(
+    (clientX: number, rowNumber: number) => {
+      const root = gridWrapRef.current;
+      if (!root) return;
+
+      const colId = resolveLeafHeaderColIdByClientX(root, clientX, colIndexLookup);
+      if (!colId) return;
+
+      const maxHeaderRow = Math.max(1, headerRowCount);
+      const clampedRowNumber = Math.max(1, Math.min(rowNumber, maxHeaderRow));
+      setSelectedCell({
+        kind: "header",
+        colId,
+        headerRowNumber: clampedRowNumber,
+      });
+
+      const matchingLeafCell = Array.from(root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]")).find(
+        (cell) => cell.getAttribute("col-id") === colId,
+      );
+      if (matchingLeafCell) {
+        matchingLeafCell.tabIndex = 0;
+        requestAnimationFrame(() => matchingLeafCell.focus());
+      }
+    },
+    [colIndexLookup, headerRowCount],
+  );
+
+  useEffect(() => {
+    const root = gridWrapRef.current;
+    if (!root || mode === "source") return;
+
+    const leafHeaderRowNumber = Math.max(1, headerRowCount);
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const headerCell = target?.closest<HTMLElement>(".ag-header-cell, .ag-header-group-cell");
+      if (!headerCell) return;
+
+      const colId =
+        resolveLeafHeaderColIdByClientX(root, event.clientX, colIndexLookup) ??
+        resolveHeaderColId(target, sheetColCount, colIndexLookup);
+      if (!colId) return;
+
+      setSelectedCell({
+        kind: "header",
+        colId,
+        headerRowNumber: leafHeaderRowNumber,
+      });
+
+      headerCell.tabIndex = 0;
+      requestAnimationFrame(() => headerCell.focus());
+    };
+
+    root.addEventListener("mousedown", handlePointerDown);
+    return () => root.removeEventListener("mousedown", handlePointerDown);
+  }, [mode, headerRowCount, sheetColCount, colIndexLookup]);
 
   useEffect(() => {
     if (mode === "source") return;
@@ -488,33 +764,58 @@ export default function App() {
       root.querySelector<HTMLElement>(".ag-body-horizontal-scroll-viewport") ??
       root.querySelector<HTMLElement>(".ag-center-cols-viewport");
 
-    const syncScroll = () => {
+    let rafId: number | null = null;
+    const applyScrollSync = () => {
+      rafId = null;
       const top = verticalViewport?.scrollTop ?? 0;
       const left = horizontalViewport?.scrollLeft ?? 0;
       rowTrack.style.transform = `translateY(${-top}px)`;
       columnTrack.style.transform = `translateX(${-left}px)`;
+      syncHeaderOverlayCells(root);
       const nextVertical = top > 0.5;
       const nextHorizontal = left > 0.5;
       setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
       setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
     };
 
-    syncScroll();
-    verticalViewport?.addEventListener("scroll", syncScroll);
-    horizontalViewport?.addEventListener("scroll", syncScroll);
-    window.addEventListener("resize", syncScroll);
+    const scheduleScrollSync = () => {
+      if (rafId != null) return;
+      rafId = window.requestAnimationFrame(applyScrollSync);
+    };
+
+    scheduleScrollSync();
+    verticalViewport?.addEventListener("scroll", scheduleScrollSync, { passive: true });
+    horizontalViewport?.addEventListener("scroll", scheduleScrollSync, { passive: true });
+    window.addEventListener("resize", scheduleScrollSync, { passive: true });
 
     return () => {
-      verticalViewport?.removeEventListener("scroll", syncScroll);
-      horizontalViewport?.removeEventListener("scroll", syncScroll);
-      window.removeEventListener("resize", syncScroll);
+      if (rafId != null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      verticalViewport?.removeEventListener("scroll", scheduleScrollSync);
+      horizontalViewport?.removeEventListener("scroll", scheduleScrollSync);
+      window.removeEventListener("resize", scheduleScrollSync);
     };
-  }, [mode, activeSheet, rowData.length, renderedColumnCount]);
+  }, [mode, activeSheet, rowData.length, renderedColumnCount, syncHeaderOverlayCells]);
 
   const handleCellFocused = useCallback(
     (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
-      if (event.rowIndex == null || !event.column) {
+      if (!event.column) {
         setSelectedCell(null);
+        return;
+      }
+
+      const rawColId = typeof event.column === "string" ? event.column : event.column.getColId();
+      if (!colIndexLookup.has(rawColId)) {
+        return;
+      }
+
+      if (event.rowIndex == null) {
+        setSelectedCell({
+          kind: "header",
+          colId: rawColId,
+          headerRowNumber: Math.max(1, headerRowCount),
+        });
         return;
       }
 
@@ -524,60 +825,90 @@ export default function App() {
         return;
       }
 
-      const colId = typeof event.column === "string" ? event.column : event.column.getColId();
       setSelectedCell({
+        kind: "body",
         rowPath: row.__rowPath,
-        colId,
+        colId: rawColId,
+        absoluteRowNumber: row.__absoluteRowNumber,
       });
     },
-    [rowData],
+    [rowData, colIndexLookup, headerRowCount],
   );
 
   const formulaBarData = useMemo<FormulaBarData | null>(() => {
     if (!currentSheet || !currentSheetState || !selectedCell) return null;
 
-    const rowRel = currentSheet.rowPaths.indexOf(selectedCell.rowPath);
-    if (rowRel < 0) return null;
-
-    const rowNumber = rowIndexLookup.get(selectedCell.rowPath);
     const colNumber = colIndexLookup.get(selectedCell.colId);
-    if (!rowNumber || !colNumber) return null;
+    if (!colNumber) return null;
 
-    const rAbs = currentSheetState.bodyStart + rowRel;
-    const rowLeaf = leafLabel(selectedCell.rowPath);
+    const colIndex = parseColIndexFromField(selectedCell.colId);
+    if (colIndex < 0 || colIndex >= sheetColCount) return null;
 
-    if (selectedCell.colId === "__label") {
-      const rawCell = hiddenFirstDataColumn ? currentSheetState.cells[rAbs]?.[0] : null;
-      const rawText = rawCell?.text?.trim() ? rawCell.text : rowLeaf;
+    const semanticColLabel = headerSemanticLabels[colIndex] ?? `C${colIndex + 1}`;
+
+    if (selectedCell.kind === "header") {
+      const maxHeaderRow = Math.max(1, headerRowCount);
+      const headerRowNumber = Math.max(1, Math.min(selectedCell.headerRowNumber, maxHeaderRow));
+      const headerAbsIndex = headerRowNumber - 1;
+      const sourceFromSheet = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex]?.text ?? "" : "";
+      const displayText =
+        headerMatrix[headerRowNumber - 1]?.[colIndex] ??
+        sourceFromSheet ??
+        semanticColLabel;
+      const sourceText = sourceFromSheet.length > 0 ? sourceFromSheet : displayText;
+
       return {
-        primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
-        secondaryAddress: `${rowHeaderLabel(currentSheet)} / ${rowLeaf}`,
-        chip: "Label",
-        displayText: rowLeaf,
-        sourceText: rawText,
+        primaryAddress: `Col ${colNumber} · Row ${headerRowNumber}`,
+        secondaryAddress: `${semanticColLabel} / Header`,
+        chip: "Header",
+        displayText: displayText.length > 0 ? displayText : "(blank)",
+        sourceText: sourceText.length > 0 ? sourceText : "(blank)",
       };
     }
 
-    if (!selectedCell.colId.startsWith("c_")) return null;
+    const rowRel = currentSheet.rowPaths.indexOf(selectedCell.rowPath);
+    if (rowRel < 0) return null;
 
-    const colIndex = Number(selectedCell.colId.slice(2));
-    if (!Number.isFinite(colIndex) || colIndex < 0 || colIndex >= currentSheet.colLabels.length) {
-      return null;
+    const rowLeaf = leafLabel(selectedCell.rowPath);
+    const rowNumber = rowIndexLookup.get(selectedCell.rowPath) ?? selectedCell.absoluteRowNumber;
+    const absoluteRowIndex = currentSheetState.bodyStart + rowRel;
+
+    if (colIndex < headerColCount) {
+      const sourceText = currentSheetState.cells[absoluteRowIndex]?.[colIndex]?.text ?? "";
+      const displayText = colIndex === 0 ? rowLeaf : sourceText;
+      return {
+        primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
+        secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
+        chip: colIndex === 0 ? "Label" : "Header Col",
+        displayText: displayText.length > 0 ? displayText : "(blank)",
+        sourceText: sourceText.length > 0 ? sourceText : displayText.length > 0 ? displayText : "(blank)",
+      };
     }
 
     const runtimeValue = currentSheet.values[rowRel]?.[colIndex] as RuntimeValue | undefined;
-    const rawCell = currentSheetState.cells[rAbs]?.[colIndex];
-    const sourceText = rawCell?.text ?? runtimeValueToText(runtimeValue ?? { kind: "blank", value: null });
+    const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
+    const sourceText = rawCell?.text ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
     const chip = rawCell?.parsed.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);
 
     return {
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
-      secondaryAddress: `${currentSheet.colLabels[colIndex]} / ${rowLeaf}`,
+      secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
       chip,
       displayText: runtimeValue ? runtimeValueToText(runtimeValue) : "",
       sourceText: sourceText.length > 0 ? sourceText : "(blank)",
     };
-  }, [currentSheet, currentSheetState, hiddenFirstDataColumn, selectedCell, rowIndexLookup, colIndexLookup]);
+  }, [
+    currentSheet,
+    currentSheetState,
+    selectedCell,
+    colIndexLookup,
+    sheetColCount,
+    headerSemanticLabels,
+    headerMatrix,
+    headerRowCount,
+    rowIndexLookup,
+    headerColCount,
+  ]);
 
   useEffect(() => {
     if (formulaBarData) {
@@ -585,11 +916,13 @@ export default function App() {
       return;
     }
 
-    const timeout = window.setTimeout(() => setFormulaBarSnapshot(null), 180);
+    const timeout = window.setTimeout(() => setFormulaBarSnapshot(null), CHROME_TRANSITION_MS);
     return () => window.clearTimeout(timeout);
   }, [formulaBarData]);
 
-  const rowIndexStripHeight = rowIndexTrackHeight + GRID_HEADER_HEIGHT;
+  const chromeVisibilityPhase: ChromeVisibilityPhase =
+    mode === "table" ? (formulaBarData ? "visible" : formulaBarSnapshot ? "hiding" : "hidden") : "hidden";
+
   const themeButtonLabel = themeMode === "auto" ? "Automatic appearance" : themeMode === "light" ? "Light mode" : "Dark mode";
   const themeButtonIcon = themeMode === "auto" ? <AutoIcon /> : themeMode === "light" ? <SunIcon /> : <MoonIcon />;
 
@@ -599,6 +932,7 @@ export default function App() {
 
   const tableStageClassName = [
     "table-stage",
+    `index-rails-${chromeVisibilityPhase}`,
     hasVerticalOverlap ? "has-scroll-y" : "",
     hasHorizontalOverlap ? "has-scroll-x" : "",
   ]
@@ -609,8 +943,9 @@ export default function App() {
     () =>
       ({
         "--formula-bar-safe-space": `${FORMULA_BAR_SAFE_SPACE}px`,
+        "--header-overlay-height": `${headerOverlayHeight}px`,
       }) as CSSProperties,
-    [],
+    [headerOverlayHeight],
   );
 
   return (
@@ -657,14 +992,19 @@ export default function App() {
                 tableStageStyle={tableStageStyle}
                 gridTemplateColumns={gridTemplateColumns}
                 renderedColumnCount={renderedColumnCount}
-                rowIndexStripHeight={rowIndexStripHeight}
+                headerIndexMetrics={headerIndexMetrics}
+                headerIndexTrackHeight={headerIndexTrackHeight}
+                headerOverlayHeight={headerOverlayHeight}
+                headerOverlayCells={headerOverlayCells}
                 rowIndexTrackHeight={rowIndexTrackHeight}
+                indexRailsPhase={chromeVisibilityPhase}
                 rowIndexMetrics={rowIndexMetrics}
                 columnTrackRef={columnTrackRef}
                 rowTrackRef={rowTrackRef}
                 gridWrapRef={gridWrapRef}
                 rowData={rowData}
                 columnDefs={columnDefs}
+                handleHeaderOverlaySelect={handleHeaderOverlaySelect}
                 handleGridReady={handleGridReady}
                 handleFirstDataRendered={handleFirstDataRendered}
                 handleModelUpdated={handleModelUpdated}
@@ -680,7 +1020,12 @@ export default function App() {
         )}
       </div>
 
-      <FormulaBarOverlay mode={mode} formulaBarData={formulaBarData} formulaBarSnapshot={formulaBarSnapshot} />
+      <FormulaBarOverlay
+        mode={mode}
+        phase={chromeVisibilityPhase}
+        formulaBarData={formulaBarData}
+        formulaBarSnapshot={formulaBarSnapshot}
+      />
 
       <OverlayPortals
         themeMenuOpen={themeMenuOpen}

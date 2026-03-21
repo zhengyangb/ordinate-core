@@ -2,8 +2,7 @@ import type { ReactNode } from "react";
 
 export type GridRow = {
   __rowPath: string;
-  __rowNumber: number;
-  __label: string;
+  __absoluteRowNumber: number;
   __depth: number;
   __hasChildren: boolean;
   __isSection: boolean;
@@ -11,10 +10,18 @@ export type GridRow = {
   [key: string]: string | number | boolean;
 };
 
-export type SelectedCell = {
-  rowPath: string;
-  colId: string;
-};
+export type SelectedCell =
+  | {
+      kind: "header";
+      colId: string;
+      headerRowNumber: number;
+    }
+  | {
+      kind: "body";
+      rowPath: string;
+      colId: string;
+      absoluteRowNumber: number;
+    };
 
 export type FormulaBarData = {
   primaryAddress: string;
@@ -24,9 +31,27 @@ export type FormulaBarData = {
   sourceText: string;
 };
 
+export type ChromeVisibilityPhase = "visible" | "hiding" | "hidden";
+
 export type RowIndexMetric = {
   rowPath: string;
   number: number;
+  top: number;
+  height: number;
+};
+
+export type HeaderIndexMetric = {
+  number: number;
+  top: number;
+  height: number;
+};
+
+export type HeaderOverlayCell = {
+  key: string;
+  rowNumber: number;
+  label: string;
+  left: number;
+  width: number;
   top: number;
   height: number;
 };

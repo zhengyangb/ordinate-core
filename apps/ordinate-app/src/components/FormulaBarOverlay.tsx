@@ -1,17 +1,18 @@
-import type { FormulaBarData } from "../types/ui";
+import type { ChromeVisibilityPhase, FormulaBarData } from "../types/ui";
 
 type FormulaBarOverlayProps = {
   mode: "table" | "source";
+  phase: ChromeVisibilityPhase;
   formulaBarData: FormulaBarData | null;
   formulaBarSnapshot: FormulaBarData | null;
 };
 
-export default function FormulaBarOverlay({ mode, formulaBarData, formulaBarSnapshot }: FormulaBarOverlayProps) {
-  if (mode !== "table" || !formulaBarSnapshot) return null;
+export default function FormulaBarOverlay({ mode, phase, formulaBarData, formulaBarSnapshot }: FormulaBarOverlayProps) {
+  if (mode !== "table" || phase === "hidden" || !formulaBarSnapshot) return null;
 
   return (
     <aside
-      className={formulaBarData ? "formula-bar-shell is-visible" : "formula-bar-shell is-hiding"}
+      className={`formula-bar-shell formula-bar-shell--${phase}`}
       aria-live="polite"
       aria-hidden={formulaBarData ? undefined : true}
     >
