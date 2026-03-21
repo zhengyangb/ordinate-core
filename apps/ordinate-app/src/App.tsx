@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { AgGridReact } from "ag-grid-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   AllCommunityModule,
   ModuleRegistry,
@@ -9,173 +7,50 @@ import {
   type GridApi,
   type GridReadyEvent,
   type ModelUpdatedEvent,
-  themeQuartz,
 } from "ag-grid-community";
 
-import { type RuntimeValue, type SheetEvaluation } from "@ordinate/core";
+import { type RuntimeValue } from "@ordinate/core";
+import AppChrome from "./components/AppChrome";
+import FormulaBarOverlay from "./components/FormulaBarOverlay";
+import OverlayPortals from "./components/OverlayPortals";
+import TableStage from "./components/TableStage";
+import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
 import { useEditorStore } from "./store/editorStore";
+import type {
+  ChromeVisibilityPhase,
+  FloatingMenuPosition,
+  FormulaBarData,
+  GridRow,
+  HeaderIndexMetric,
+  HeaderOverlayCell,
+  RowIndexMetric,
+  SelectedCell,
+  TabTooltip,
+  ThemeMenuPosition,
+  ThemeMode,
+} from "./types/ui";
+import {
+  compactColLabel,
+  isVisiblePath,
+  leafLabel,
+  runtimeKindLabel,
+  runtimeValueToText,
+  splitPath,
+} from "./utils/sheetView";
 
 import "ag-grid-community/styles/ag-grid.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 const LABEL_COLUMN_WIDTH = 280;
+const HEADER_COLUMN_WIDTH = 168;
 const DATA_COLUMN_MIN_WIDTH = 132;
-const INDEX_RAIL_WIDTH = 56;
 const GRID_HEADER_HEIGHT = 40;
 const GRID_ROW_HEIGHT = 38;
 const FORMULA_BAR_SAFE_SPACE = 136;
+const CHROME_TRANSITION_MS = 260;
 const THEME_STORAGE_KEY = "ordinate-theme-mode";
-
-type GridRow = {
-  __rowPath: string;
-  __rowNumber: number;
-  __label: string;
-  __depth: number;
-  __hasChildren: boolean;
-  __isSection: boolean;
-  __collapsed: boolean;
-  [key: string]: string | number | boolean;
-};
-
-type SelectedCell = {
-  rowPath: string;
-  colId: string;
-};
-
-type FormulaBarData = {
-  primaryAddress: string;
-  secondaryAddress: string;
-  chip: string;
-  displayText: string;
-  sourceText: string;
-};
-
-type RowIndexMetric = {
-  rowPath: string;
-  number: number;
-  top: number;
-  height: number;
-};
-
-type ThemeMode = "auto" | "light" | "dark";
-type ThemeMenuPosition = { top: number; left: number };
-type FloatingMenuPosition = { top: number; left: number };
-type TabTooltip = {
-  text: string;
-  top: number;
-  left: number;
-};
-
-type ToolSpec = {
-  label: string;
-  icon: ReactNode;
-};
-
-function runtimeValueToText(value: RuntimeValue): string {
-  switch (value.kind) {
-    case "number":
-      return String(value.value ?? "");
-    case "string":
-      return String(value.value ?? "");
-    case "boolean":
-      return value.value ? "true" : "false";
-    case "blank":
-      return "";
-    case "null":
-      return "null";
-    case "error":
-      return "#ERROR";
-    default:
-      return String(value.value ?? "");
-  }
-}
-
-function runtimeKindLabel(value: RuntimeValue | null | undefined): string {
-  switch (value?.kind) {
-    case "number":
-      return "Number";
-    case "string":
-      return "Text";
-    case "boolean":
-      return "Boolean";
-    case "blank":
-      return "Blank";
-    case "null":
-      return "Null";
-    case "error":
-      return "Error";
-    default:
-      return "Value";
-  }
-}
-
-function splitPath(path: string): string[] {
-  return path.split(".").filter((part) => part.length > 0);
-}
-
-function leafLabel(path: string): string {
-  const parts = splitPath(path);
-  return parts[parts.length - 1] ?? path;
-}
-
-function compactColLabel(label: string): string {
-  const parts = splitPath(label);
-  if (parts.length <= 1) return label;
-  return parts.slice(-2).join(" / ");
-}
-
-function isVisiblePath(path: string, collapsed: Set<string>): boolean {
-  const parts = splitPath(path);
-  let current = "";
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    current = current ? `${current}.${parts[i]}` : parts[i];
-    if (collapsed.has(current)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function normalizeLabel(text: string): string {
-  return text.replace(/^\[|\]$/g, "").trim().toLowerCase();
-}
-
-function shouldHideFirstDataColumn(sheet: SheetEvaluation): boolean {
-  if (sheet.colLabels.length === 0 || sheet.values.length === 0) {
-    return false;
-  }
-
-  let comparableRows = 0;
-  let matchedRows = 0;
-
-  for (let i = 0; i < sheet.values.length; i += 1) {
-    const rowPath = sheet.rowPaths[i] ?? "";
-    const rawValue = runtimeValueToText(sheet.values[i]?.[0] as RuntimeValue);
-    if (!rowPath || rawValue.length === 0) continue;
-    comparableRows += 1;
-    if (normalizeLabel(rawValue) === normalizeLabel(leafLabel(rowPath))) {
-      matchedRows += 1;
-    }
-  }
-
-  return comparableRows > 0 && matchedRows / comparableRows >= 0.7;
-}
-
-function rowHeaderLabel(sheet: SheetEvaluation): string {
-  if (sheet.colLabels.length === 0) {
-    return "Line Item";
-  }
-  return shouldHideFirstDataColumn(sheet) ? sheet.colLabels[0] ?? "Line Item" : "Line Item";
-}
-
-function ToolbarIcon({ children }: { children: ReactNode }) {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      {children}
-    </svg>
-  );
-}
+const BLANK_RUNTIME_VALUE: RuntimeValue = { kind: "blank", value: null };
 
 function resolveInitialThemeMode(): ThemeMode {
   if (typeof window === "undefined") return "auto";
@@ -183,185 +58,65 @@ function resolveInitialThemeMode(): ThemeMode {
   return stored === "light" || stored === "dark" || stored === "auto" ? stored : "auto";
 }
 
-function ViewIcon() {
-  return (
-    <ToolbarIcon>
-      <rect x="2.5" y="4" width="15" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M7 4v12" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M4.5 8h1.7M4.5 10.7h1.7M4.5 13.4h1.7" fill="none" stroke="currentColor" strokeLinecap="round" />
-    </ToolbarIcon>
-  );
+function toColFieldId(colIndex: number): string {
+  return `col_${colIndex}`;
 }
 
-function InsertIcon() {
-  return (
-    <ToolbarIcon>
-      <rect x="3" y="4" width="14" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M10 6.8v6.4M6.8 10h6.4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M15.2 15.2h2.3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </ToolbarIcon>
-  );
+function parseColIndexFromField(colId: string): number {
+  if (!colId.startsWith("col_")) return -1;
+  const parsed = Number(colId.slice(4));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : -1;
 }
 
-function TableGlyph() {
-  return (
-    <ToolbarIcon>
-      <rect x="3" y="4" width="14" height="12" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M3 8h14M3 12h14M8 4v12M12 4v12" fill="none" stroke="currentColor" strokeWidth="1.2" />
-    </ToolbarIcon>
-  );
+function resolveHeaderColId(target: HTMLElement | null, colCount: number, colIndexLookup: Map<string, number>): string | null {
+  if (!target) return null;
+
+  const headerCell = target.closest<HTMLElement>(".ag-header-cell[col-id], .ag-header-group-cell[col-id]");
+  const rawColId = headerCell?.getAttribute("col-id");
+  if (rawColId && colIndexLookup.has(rawColId)) {
+    return rawColId;
+  }
+
+  const ariaColIndex = Number(headerCell?.getAttribute("aria-colindex"));
+  if (Number.isFinite(ariaColIndex)) {
+    const zeroBased = ariaColIndex - 1;
+    if (zeroBased >= 0 && zeroBased < colCount) {
+      return toColFieldId(zeroBased);
+    }
+  }
+
+  return null;
 }
 
-function ChartIcon() {
-  return (
-    <ToolbarIcon>
-      <path
-        d="M10 3.2a6.8 6.8 0 1 1-4.8 2"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.4"
-      />
-      <path d="M10 3.2V10l4.7 2.7" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
-    </ToolbarIcon>
-  );
+function resolveLeafHeaderColIdByClientX(
+  root: HTMLElement,
+  clientX: number,
+  colIndexLookup: Map<string, number>,
+): string | null {
+  const headerCells = Array.from(root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]"));
+  for (const cell of headerCells) {
+    const colId = cell.getAttribute("col-id");
+    if (!colId || !colIndexLookup.has(colId)) continue;
+    const rect = cell.getBoundingClientRect();
+    if (clientX >= rect.left && clientX <= rect.right) {
+      return colId;
+    }
+  }
+  return null;
 }
 
-function TextIcon() {
-  return (
-    <ToolbarIcon>
-      <rect x="2.8" y="4.2" width="14.4" height="11.6" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M7.1 13.2 9.8 6.8l2.7 6.4M8.1 11h3.3" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
-      <path d="M15.4 8.2h1.1" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.2" />
-    </ToolbarIcon>
-  );
+function overlayCellsEqual(previous: HeaderOverlayCell[], next: HeaderOverlayCell[]): boolean {
+  if (previous.length !== next.length) return false;
+  for (let index = 0; index < previous.length; index += 1) {
+    const a = previous[index];
+    const b = next[index];
+    if (a.key !== b.key) return false;
+    if (a.rowNumber !== b.rowNumber || a.label !== b.label) return false;
+    if (Math.abs(a.left - b.left) > 0.5) return false;
+    if (Math.abs(a.width - b.width) > 0.5) return false;
+  }
+  return true;
 }
-
-function ShapeIcon() {
-  return (
-    <ToolbarIcon>
-      <rect x="3" y="3.8" width="8.7" height="8.7" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3" />
-      <rect x="8.4" y="7.2" width="8.6" height="8.8" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3" />
-    </ToolbarIcon>
-  );
-}
-
-function CommentIcon() {
-  return (
-    <ToolbarIcon>
-      <path
-        d="M4.2 4.5h11.6a1.8 1.8 0 0 1 1.8 1.8v6.1a1.8 1.8 0 0 1-1.8 1.8H9l-3.6 2.4v-2.4H4.2a1.8 1.8 0 0 1-1.8-1.8V6.3a1.8 1.8 0 0 1 1.8-1.8Z"
-        fill="none"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-      <path d="M6.7 8.4h6.6M6.7 11h4.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.2" />
-    </ToolbarIcon>
-  );
-}
-
-function OrganizeIcon() {
-  return (
-    <ToolbarIcon>
-      <path d="M4 5.2h12M6.2 9.1h7.6M8 13h4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
-      <circle cx="15.4" cy="15.3" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.3" />
-    </ToolbarIcon>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <ToolbarIcon>
-      <path d="M10 4.4v11.2M4.4 10h11.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
-    </ToolbarIcon>
-  );
-}
-
-function MoreIcon() {
-  return (
-    <ToolbarIcon>
-      <circle cx="5" cy="10" r="1.2" fill="currentColor" />
-      <circle cx="10" cy="10" r="1.2" fill="currentColor" />
-      <circle cx="15" cy="10" r="1.2" fill="currentColor" />
-    </ToolbarIcon>
-  );
-}
-
-function CodeIcon() {
-  return (
-    <ToolbarIcon>
-      <path
-        d="M7.25 5.75 3.5 9.5l3.75 3.75M12.75 5.75 16.5 9.5l-3.75 3.75M11.1 4.5 8.9 14.5"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.7"
-      />
-    </ToolbarIcon>
-  );
-}
-
-function SunIcon() {
-  return (
-    <ToolbarIcon>
-      <circle cx="10" cy="10" r="3.1" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M10 2.5v2.1M10 15.4v2.1M2.5 10h2.1M15.4 10h2.1M4.6 4.6l1.5 1.5M13.9 13.9l1.5 1.5M15.4 4.6l-1.5 1.5M6.1 13.9l-1.5 1.5"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.5"
-      />
-    </ToolbarIcon>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <ToolbarIcon>
-      <path
-        d="M12.9 3.1a6.7 6.7 0 1 0 4 11.8A7.4 7.4 0 1 1 12.9 3.1Z"
-        fill="none"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-    </ToolbarIcon>
-  );
-}
-
-function AutoIcon() {
-  return (
-    <ToolbarIcon>
-      <path
-        d="M10 3.1a6.9 6.9 0 1 0 0 13.8V3.1Z"
-        fill="none"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M10 3.1a6.9 6.9 0 0 1 0 13.8"
-        fill="currentColor"
-        opacity="0.2"
-      />
-      <path d="M10 2.3v1.3M10 16.4v1.3" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
-    </ToolbarIcon>
-  );
-}
-
-const TOOLBAR_ITEMS: ToolSpec[] = [
-  { label: "View", icon: <ViewIcon /> },
-  { label: "Insert", icon: <InsertIcon /> },
-  { label: "Table", icon: <TableGlyph /> },
-  { label: "Chart", icon: <ChartIcon /> },
-  { label: "Text", icon: <TextIcon /> },
-  { label: "Shape", icon: <ShapeIcon /> },
-  { label: "Comment", icon: <CommentIcon /> },
-  { label: "Organize", icon: <OrganizeIcon /> },
-];
 
 export default function App() {
   const {
@@ -391,6 +146,8 @@ export default function App() {
   const [hasHorizontalOverlap, setHasHorizontalOverlap] = useState(false);
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
   const [rowIndexTrackHeight, setRowIndexTrackHeight] = useState(0);
+  const [headerOverlayCells, setHeaderOverlayCells] = useState<HeaderOverlayCell[]>([]);
+
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
   const columnTrackRef = useRef<HTMLDivElement | null>(null);
   const rowTrackRef = useRef<HTMLDivElement | null>(null);
@@ -398,6 +155,57 @@ export default function App() {
   const themeControlRef = useRef<HTMLDivElement | null>(null);
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const currentSheet = useMemo(() => {
+    if (!evaluation || !activeSheet) return null;
+    return evaluation.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
+  }, [evaluation, activeSheet]);
+
+  const currentSheetState = useMemo(() => {
+    if (!docState || !activeSheet) return null;
+    return docState.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
+  }, [docState, activeSheet]);
+
+  const sheetColCount = currentSheetState?.colCount ?? 0;
+  const headerRowCount = currentSheetState?.headerRowCount ?? 0;
+  const headerColCount = Math.min(currentSheetState?.headerColCount ?? 0, sheetColCount);
+  const headerOverlayRows = Math.max(0, headerRowCount - 1);
+  const headerOverlayHeight = headerOverlayRows * GRID_HEADER_HEIGHT;
+
+  const headerMatrix = useMemo(() => {
+    if (!currentSheetState || sheetColCount === 0) return [] as string[][];
+
+    const matrixDepth = Math.max(1, headerRowCount);
+    return Array.from({ length: matrixDepth }, (_, rowIndex) => {
+      const sourceRow = rowIndex < headerRowCount ? currentSheetState.cells[rowIndex] : null;
+      return Array.from({ length: sheetColCount }, (_, colIndex) => {
+        const raw = sourceRow?.[colIndex]?.text?.trim() ?? "";
+        if (raw.length > 0) return raw;
+        if (rowIndex === matrixDepth - 1) {
+          return currentSheetState.colLabels[colIndex] ?? currentSheet?.colLabels[colIndex] ?? `C${colIndex + 1}`;
+        }
+        return "";
+      });
+    });
+  }, [currentSheetState, currentSheet, sheetColCount, headerRowCount]);
+
+  const headerLeafLabels = useMemo(() => {
+    if (sheetColCount === 0) return [] as string[];
+    const leafRow = headerMatrix[headerMatrix.length - 1] ?? [];
+    return Array.from({ length: sheetColCount }, (_, colIndex) => {
+      const label = leafRow[colIndex] ?? currentSheetState?.colLabels[colIndex] ?? `C${colIndex + 1}`;
+      return compactColLabel(label);
+    });
+  }, [headerMatrix, currentSheetState, sheetColCount]);
+
+  const headerSemanticLabels = useMemo(() => {
+    if (sheetColCount === 0) return [] as string[];
+    return Array.from({ length: sheetColCount }, (_, colIndex) => {
+      const fromLabels = currentSheetState?.colLabels[colIndex];
+      if (fromLabels && fromLabels.length > 0) return fromLabels;
+      return headerLeafLabels[colIndex] ?? `C${colIndex + 1}`;
+    });
+  }, [currentSheetState, headerLeafLabels, sheetColCount]);
 
   const clearActiveSelection = useCallback(() => {
     setSelectedCell(null);
@@ -414,6 +222,12 @@ export default function App() {
   useEffect(() => {
     setSelectedCell(null);
   }, [activeSheet, mode]);
+
+  useEffect(() => {
+    if (mode === "source") {
+      setFormulaBarSnapshot(null);
+    }
+  }, [mode]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -482,21 +296,18 @@ export default function App() {
     };
   }, []);
 
-  const handleTabMouseEnter = useCallback(
-    (sheetName: string, target: HTMLButtonElement) => {
-      if (target.scrollWidth <= target.clientWidth + 1) {
-        setTabTooltip(null);
-        return;
-      }
-      const rect = target.getBoundingClientRect();
-      setTabTooltip({
-        text: sheetName,
-        top: rect.bottom + 8,
-        left: rect.left + rect.width / 2,
-      });
-    },
-    [],
-  );
+  const handleTabMouseEnter = useCallback((sheetName: string, target: HTMLButtonElement) => {
+    if (target.scrollWidth <= target.clientWidth + 1) {
+      setTabTooltip(null);
+      return;
+    }
+    const rect = target.getBoundingClientRect();
+    setTabTooltip({
+      text: sheetName,
+      top: rect.bottom + 8,
+      left: rect.left + rect.width / 2,
+    });
+  }, []);
 
   const syncRowIndexMetrics = useCallback((api: GridApi<GridRow> | null) => {
     if (!api) {
@@ -518,7 +329,7 @@ export default function App() {
 
       nextMetrics.push({
         rowPath: rowNode.data.__rowPath,
-        number: rowNode.data.__rowNumber,
+        number: rowNode.data.__absoluteRowNumber,
         top,
         height,
       });
@@ -549,23 +360,6 @@ export default function App() {
     },
     [syncRowIndexMetrics],
   );
-
-  useEffect(() => {
-    const root = gridWrapRef.current;
-    if (!root || mode === "source") return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      const headerCell = target?.closest<HTMLElement>(".ag-header-cell, .ag-header-group-cell");
-      if (!headerCell) return;
-      setSelectedCell(null);
-      headerCell.tabIndex = 0;
-      requestAnimationFrame(() => headerCell.focus());
-    };
-
-    root.addEventListener("mousedown", handlePointerDown);
-    return () => root.removeEventListener("mousedown", handlePointerDown);
-  }, [mode, activeSheet]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -632,103 +426,8 @@ export default function App() {
     });
   }, []);
 
-  const currentSheet = useMemo(() => {
-    if (!evaluation || !activeSheet) return null;
-    return evaluation.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
-  }, [evaluation, activeSheet]);
-
-  const currentSheetState = useMemo(() => {
-    if (!docState || !activeSheet) return null;
-    return docState.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
-  }, [docState, activeSheet]);
-
-  const hiddenFirstDataColumn = useMemo(
-    () => (currentSheet ? shouldHideFirstDataColumn(currentSheet) : false),
-    [currentSheet],
-  );
-
-  const visibleDataColumns = useMemo(() => {
-    if (!currentSheet) return [];
-    return currentSheet.colLabels
-      .map((colLabel, colIndex) => ({ colLabel, colIndex }))
-      .filter(({ colIndex }) => !(hiddenFirstDataColumn && colIndex === 0));
-  }, [currentSheet, hiddenFirstDataColumn]);
-
-  const renderedColumnCount = 1 + visibleDataColumns.length;
-  const gridTemplateColumns = useMemo(
-    () => `${LABEL_COLUMN_WIDTH}px repeat(${visibleDataColumns.length}, minmax(${DATA_COLUMN_MIN_WIDTH}px, 1fr))`,
-    [visibleDataColumns.length],
-  );
-
-  const columnDefs: ColDef<GridRow>[] = useMemo(() => {
-    if (!currentSheet) return [];
-
-    return [
-      {
-        field: "__label",
-        headerName: rowHeaderLabel(currentSheet),
-        pinned: "left",
-        width: LABEL_COLUMN_WIDTH,
-        suppressMovable: true,
-        headerClass: "line-item-header",
-        cellClass: "line-item-cell",
-        cellRenderer: (params: { data?: GridRow }) => {
-          const data = params.data;
-          if (!data) return null;
-
-          const showToggle = data.__hasChildren;
-          const showSpacer = !showToggle && data.__depth > 0;
-          const paddingLeft = Math.max(0, data.__depth - 1) * 12;
-          const isCollapsed = data.__collapsed;
-          const leadingSlot = showToggle ? (
-            <button
-              className={isCollapsed ? "tree-toggle is-collapsed" : "tree-toggle"}
-              onClick={(event) => {
-                event.stopPropagation();
-                toggleCollapse(data.__rowPath);
-              }}
-              aria-label={isCollapsed ? "Expand section" : "Collapse section"}
-              title={isCollapsed ? "Expand" : "Collapse"}
-            >
-              <svg className="tree-toggle-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-                <path d="M4 2.5 8.5 6 4 9.5Z" fill="currentColor" />
-              </svg>
-            </button>
-          ) : showSpacer ? (
-            <span className="tree-spacer" />
-          ) : (
-            <span className="tree-inline-pad" aria-hidden="true" />
-          );
-
-          return (
-            <div className="tree-cell" style={{ paddingLeft }}>
-              {leadingSlot}
-              <span className={data.__hasChildren ? "tree-label section" : "tree-label"}>{data.__label}</span>
-            </div>
-          );
-        },
-      },
-      ...visibleDataColumns.map(({ colLabel, colIndex }) => ({
-        field: `c_${colIndex}`,
-        headerName: compactColLabel(colLabel),
-        headerTooltip: colLabel,
-        minWidth: DATA_COLUMN_MIN_WIDTH,
-        flex: 1,
-        suppressMovable: true,
-        cellClass: (params: { data?: GridRow }) => {
-          const kind = params.data?.[`__kind_${colIndex}`];
-          const classes = ["data-cell"];
-          if (kind === "number") classes.push("is-numeric");
-          if (kind === "error") classes.push("is-error");
-          if (kind === "blank") classes.push("is-blank");
-          return classes.join(" ");
-        },
-      })),
-    ];
-  }, [currentSheet, toggleCollapse, visibleDataColumns]);
-
   const rowData: GridRow[] = useMemo(() => {
-    if (!currentSheet) return [];
+    if (!currentSheet || !currentSheetState) return [];
 
     return currentSheet.values
       .map((row, rowIndex) => {
@@ -737,31 +436,47 @@ export default function App() {
         const hasChildren = currentSheet.rowPaths.some(
           (candidate) => candidate !== rowPath && candidate.startsWith(`${rowPath}.`),
         );
+        const absoluteRowNumber = currentSheetState.bodyStart + rowIndex + 1;
+        const rowLeaf = leafLabel(rowPath);
 
         const item: GridRow = {
           __rowPath: rowPath,
-          __rowNumber: rowIndex + 1,
-          __label: leafLabel(rowPath),
+          __absoluteRowNumber: absoluteRowNumber,
           __depth: depth,
           __hasChildren: hasChildren,
           __isSection: hasChildren,
           __collapsed: collapsedPaths.has(rowPath),
+          __displayLabel: rowLeaf,
         };
 
-        visibleDataColumns.forEach(({ colIndex }) => {
-          const value = row[colIndex] as RuntimeValue;
-          item[`c_${colIndex}`] = runtimeValueToText(value);
-          item[`__kind_${colIndex}`] = value.kind;
-        });
+        for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
+          const field = toColFieldId(colIndex);
+          const rawCell = currentSheetState.cells[currentSheetState.bodyStart + rowIndex]?.[colIndex];
+          const runtimeValue = row[colIndex] as RuntimeValue | undefined;
+
+          if (colIndex < headerColCount) {
+            if (colIndex === 0) {
+              item[field] = rowLeaf;
+              item[`__kind_${colIndex}`] = "label";
+            } else {
+              const headerValue = rawCell?.text ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+              item[field] = headerValue;
+              item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
+            }
+          } else {
+            item[field] = runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+            item[`__kind_${colIndex}`] = runtimeValue?.kind ?? "blank";
+          }
+        }
 
         return item;
       })
       .filter((row) => isVisiblePath(row.__rowPath, collapsedPaths));
-  }, [currentSheet, collapsedPaths, visibleDataColumns]);
+  }, [currentSheet, currentSheetState, collapsedPaths, sheetColCount, headerColCount]);
 
   const rowIndexLookup = useMemo(() => {
     const map = new Map<string, number>();
-    rowData.forEach((row) => map.set(row.__rowPath, row.__rowNumber));
+    rowData.forEach((row) => map.set(row.__rowPath, row.__absoluteRowNumber));
     return map;
   }, [rowData]);
 
@@ -772,12 +487,268 @@ export default function App() {
 
   const colIndexLookup = useMemo(() => {
     const map = new Map<string, number>();
-    map.set("__label", 1);
-    visibleDataColumns.forEach(({ colIndex }, index) => {
-      map.set(`c_${colIndex}`, index + 2);
-    });
+    for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
+      map.set(toColFieldId(colIndex), colIndex + 1);
+    }
     return map;
-  }, [visibleDataColumns]);
+  }, [sheetColCount]);
+
+  const syncHeaderOverlayCells = useCallback(
+    (root: HTMLElement | null) => {
+      if (!root || mode === "source" || headerOverlayRows === 0 || sheetColCount === 0) {
+        setHeaderOverlayCells((current) => (current.length === 0 ? current : []));
+        return;
+      }
+
+      const rootRect = root.getBoundingClientRect();
+      const leafCells = Array.from(root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]"))
+        .map((cell) => {
+          const colId = cell.getAttribute("col-id");
+          if (!colId) return null;
+          const colNumber = colIndexLookup.get(colId);
+          if (!colNumber) return null;
+          const rect = cell.getBoundingClientRect();
+          return {
+            colId,
+            colIndex: colNumber - 1,
+            left: rect.left - rootRect.left,
+            right: rect.right - rootRect.left,
+          };
+        })
+        .filter((cell): cell is { colId: string; colIndex: number; left: number; right: number } => cell !== null)
+        .sort((a, b) => a.left - b.left);
+
+      if (leafCells.length === 0) {
+        setHeaderOverlayCells((current) => (current.length === 0 ? current : []));
+        return;
+      }
+
+      const nextCells: HeaderOverlayCell[] = [];
+
+      for (let rowOffset = 0; rowOffset < headerOverlayRows; rowOffset += 1) {
+        let cursor = 0;
+        while (cursor < leafCells.length) {
+          const start = leafCells[cursor];
+          const label = headerMatrix[rowOffset]?.[start.colIndex] ?? "";
+          let end = cursor;
+          while (end + 1 < leafCells.length) {
+            const current = leafCells[end];
+            const candidate = leafCells[end + 1];
+            if (candidate.colIndex !== current.colIndex + 1) break;
+            const candidateLabel = headerMatrix[rowOffset]?.[candidate.colIndex] ?? "";
+            if (candidateLabel !== label) break;
+            end += 1;
+          }
+
+          const left = start.left;
+          const width = Math.max(0, leafCells[end].right - left);
+          if (width > 0.5) {
+            const startCol = start.colIndex + 1;
+            const endCol = leafCells[end].colIndex + 1;
+            const rowNumber = rowOffset + 1;
+            nextCells.push({
+              key: `r${rowNumber}-c${startCol}-${endCol}`,
+              rowNumber,
+              label,
+              left,
+              width,
+              top: rowOffset * GRID_HEADER_HEIGHT,
+              height: GRID_HEADER_HEIGHT,
+            });
+          }
+
+          cursor = end + 1;
+        }
+      }
+
+      setHeaderOverlayCells((current) => (overlayCellsEqual(current, nextCells) ? current : nextCells));
+    },
+    [mode, headerOverlayRows, sheetColCount, colIndexLookup, headerMatrix],
+  );
+
+  const renderedColumnCount = sheetColCount;
+
+  const gridTemplateColumns = useMemo(() => {
+    if (sheetColCount === 0) return "";
+    const tracks = Array.from({ length: sheetColCount }, (_, colIndex) => {
+      if (colIndex < headerColCount) {
+        return colIndex === 0 ? `${LABEL_COLUMN_WIDTH}px` : `${HEADER_COLUMN_WIDTH}px`;
+      }
+      return `minmax(${DATA_COLUMN_MIN_WIDTH}px, 1fr)`;
+    });
+    return tracks.join(" ");
+  }, [sheetColCount, headerColCount]);
+
+  const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
+    if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
+
+    return Array.from({ length: sheetColCount }, (_, colIndex) => {
+      const field = toColFieldId(colIndex);
+      const isHeaderColumn = colIndex < headerColCount;
+      const leafHeader = headerLeafLabels[colIndex] ?? `C${colIndex + 1}`;
+      const semanticLabel = headerSemanticLabels[colIndex] ?? leafHeader;
+
+      const baseDef: ColDef<GridRow> = {
+        colId: field,
+        field,
+        headerName: leafHeader,
+        headerTooltip: semanticLabel,
+        suppressMovable: true,
+      };
+
+      if (isHeaderColumn) {
+        const withHeader: ColDef<GridRow> = {
+          ...baseDef,
+          pinned: "left",
+          width: colIndex === 0 ? LABEL_COLUMN_WIDTH : HEADER_COLUMN_WIDTH,
+          minWidth: colIndex === 0 ? LABEL_COLUMN_WIDTH : HEADER_COLUMN_WIDTH,
+          headerClass: "line-item-header",
+          cellClass: colIndex === 0 ? "line-item-cell" : "header-column-cell",
+        };
+
+        if (colIndex === 0) {
+          withHeader.cellRenderer = (params: { data?: GridRow }) => {
+            const data = params.data;
+            if (!data) return null;
+
+            const showToggle = data.__hasChildren;
+            const showSpacer = !showToggle && data.__depth > 0;
+            const paddingLeft = Math.max(0, data.__depth - 1) * 12;
+            const isCollapsed = data.__collapsed;
+            const leadingSlot = showToggle ? (
+              <button
+                className={isCollapsed ? "tree-toggle is-collapsed" : "tree-toggle"}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  toggleCollapse(data.__rowPath);
+                }}
+                aria-label={isCollapsed ? "Expand section" : "Collapse section"}
+                title={isCollapsed ? "Expand" : "Collapse"}
+              >
+                <svg className="tree-toggle-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                  <path d="M4 2.5 8.5 6 4 9.5Z" fill="currentColor" />
+                </svg>
+              </button>
+            ) : showSpacer ? (
+              <span className="tree-spacer" />
+            ) : (
+              <span className="tree-inline-pad" aria-hidden="true" />
+            );
+
+            return (
+              <div className="tree-cell" style={{ paddingLeft }}>
+                {leadingSlot}
+                <span className={data.__hasChildren ? "tree-label section" : "tree-label"}>
+                  {String(data.__displayLabel ?? data.__rowPath)}
+                </span>
+              </div>
+            );
+          };
+        }
+
+        return withHeader;
+      }
+
+      return {
+        ...baseDef,
+        minWidth: DATA_COLUMN_MIN_WIDTH,
+        flex: 1,
+        headerClass: "data-column-header",
+        cellClass: (params: { data?: GridRow }) => {
+          const kind = params.data?.[`__kind_${colIndex}`];
+          const classes = ["data-cell"];
+          if (kind === "number") classes.push("is-numeric");
+          if (kind === "error") classes.push("is-error");
+          if (kind === "blank") classes.push("is-blank");
+          return classes.join(" ");
+        },
+      } satisfies ColDef<GridRow>;
+    });
+  }, [
+    currentSheet,
+    currentSheetState,
+    sheetColCount,
+    headerColCount,
+    headerLeafLabels,
+    headerSemanticLabels,
+    toggleCollapse,
+  ]);
+
+  const headerIndexMetrics = useMemo<HeaderIndexMetric[]>(() => {
+    return Array.from({ length: headerRowCount }, (_, index) => ({
+      number: index + 1,
+      top: index * GRID_HEADER_HEIGHT,
+      height: GRID_HEADER_HEIGHT,
+    }));
+  }, [headerRowCount]);
+
+  const headerIndexTrackHeight = headerRowCount * GRID_HEADER_HEIGHT;
+
+  const handleHeaderOverlaySelect = useCallback(
+    (clientX: number, rowNumber: number) => {
+      const root = gridWrapRef.current;
+      if (!root) return;
+
+      const colId = resolveLeafHeaderColIdByClientX(root, clientX, colIndexLookup);
+      if (!colId) return;
+
+      const maxHeaderRow = Math.max(1, headerRowCount);
+      const clampedRowNumber = Math.max(1, Math.min(rowNumber, maxHeaderRow));
+      setSelectedCell({
+        kind: "header",
+        colId,
+        headerRowNumber: clampedRowNumber,
+      });
+
+      const matchingLeafCell = Array.from(root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]")).find(
+        (cell) => cell.getAttribute("col-id") === colId,
+      );
+      if (matchingLeafCell) {
+        matchingLeafCell.tabIndex = 0;
+        requestAnimationFrame(() => matchingLeafCell.focus());
+      }
+    },
+    [colIndexLookup, headerRowCount],
+  );
+
+  useEffect(() => {
+    const root = gridWrapRef.current;
+    if (!root || mode === "source") return;
+
+    const leafHeaderRowNumber = Math.max(1, headerRowCount);
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const headerCell = target?.closest<HTMLElement>(".ag-header-cell, .ag-header-group-cell");
+      if (!headerCell) return;
+
+      const colId =
+        resolveLeafHeaderColIdByClientX(root, event.clientX, colIndexLookup) ??
+        resolveHeaderColId(target, sheetColCount, colIndexLookup);
+      if (!colId) return;
+
+      setSelectedCell({
+        kind: "header",
+        colId,
+        headerRowNumber: leafHeaderRowNumber,
+      });
+
+      headerCell.tabIndex = 0;
+      requestAnimationFrame(() => headerCell.focus());
+    };
+
+    root.addEventListener("mousedown", handlePointerDown);
+    return () => root.removeEventListener("mousedown", handlePointerDown);
+  }, [mode, headerRowCount, sheetColCount, colIndexLookup]);
 
   useEffect(() => {
     if (mode === "source") return;
@@ -793,33 +764,58 @@ export default function App() {
       root.querySelector<HTMLElement>(".ag-body-horizontal-scroll-viewport") ??
       root.querySelector<HTMLElement>(".ag-center-cols-viewport");
 
-    const syncScroll = () => {
+    let rafId: number | null = null;
+    const applyScrollSync = () => {
+      rafId = null;
       const top = verticalViewport?.scrollTop ?? 0;
       const left = horizontalViewport?.scrollLeft ?? 0;
       rowTrack.style.transform = `translateY(${-top}px)`;
       columnTrack.style.transform = `translateX(${-left}px)`;
+      syncHeaderOverlayCells(root);
       const nextVertical = top > 0.5;
       const nextHorizontal = left > 0.5;
       setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
       setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
     };
 
-    syncScroll();
-    verticalViewport?.addEventListener("scroll", syncScroll);
-    horizontalViewport?.addEventListener("scroll", syncScroll);
-    window.addEventListener("resize", syncScroll);
+    const scheduleScrollSync = () => {
+      if (rafId != null) return;
+      rafId = window.requestAnimationFrame(applyScrollSync);
+    };
+
+    scheduleScrollSync();
+    verticalViewport?.addEventListener("scroll", scheduleScrollSync, { passive: true });
+    horizontalViewport?.addEventListener("scroll", scheduleScrollSync, { passive: true });
+    window.addEventListener("resize", scheduleScrollSync, { passive: true });
 
     return () => {
-      verticalViewport?.removeEventListener("scroll", syncScroll);
-      horizontalViewport?.removeEventListener("scroll", syncScroll);
-      window.removeEventListener("resize", syncScroll);
+      if (rafId != null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      verticalViewport?.removeEventListener("scroll", scheduleScrollSync);
+      horizontalViewport?.removeEventListener("scroll", scheduleScrollSync);
+      window.removeEventListener("resize", scheduleScrollSync);
     };
-  }, [mode, activeSheet, rowData.length, renderedColumnCount]);
+  }, [mode, activeSheet, rowData.length, renderedColumnCount, syncHeaderOverlayCells]);
 
   const handleCellFocused = useCallback(
     (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
-      if (event.rowIndex == null || !event.column) {
+      if (!event.column) {
         setSelectedCell(null);
+        return;
+      }
+
+      const rawColId = typeof event.column === "string" ? event.column : event.column.getColId();
+      if (!colIndexLookup.has(rawColId)) {
+        return;
+      }
+
+      if (event.rowIndex == null) {
+        setSelectedCell({
+          kind: "header",
+          colId: rawColId,
+          headerRowNumber: Math.max(1, headerRowCount),
+        });
         return;
       }
 
@@ -829,60 +825,90 @@ export default function App() {
         return;
       }
 
-      const colId = typeof event.column === "string" ? event.column : event.column.getColId();
       setSelectedCell({
+        kind: "body",
         rowPath: row.__rowPath,
-        colId,
+        colId: rawColId,
+        absoluteRowNumber: row.__absoluteRowNumber,
       });
     },
-    [rowData],
+    [rowData, colIndexLookup, headerRowCount],
   );
 
   const formulaBarData = useMemo<FormulaBarData | null>(() => {
     if (!currentSheet || !currentSheetState || !selectedCell) return null;
 
-    const rowRel = currentSheet.rowPaths.indexOf(selectedCell.rowPath);
-    if (rowRel < 0) return null;
-
-    const rowNumber = rowIndexLookup.get(selectedCell.rowPath);
     const colNumber = colIndexLookup.get(selectedCell.colId);
-    if (!rowNumber || !colNumber) return null;
+    if (!colNumber) return null;
 
-    const rAbs = currentSheetState.bodyStart + rowRel;
-    const rowLeaf = leafLabel(selectedCell.rowPath);
+    const colIndex = parseColIndexFromField(selectedCell.colId);
+    if (colIndex < 0 || colIndex >= sheetColCount) return null;
 
-    if (selectedCell.colId === "__label") {
-      const rawCell = hiddenFirstDataColumn ? currentSheetState.cells[rAbs]?.[0] : null;
-      const rawText = rawCell?.text?.trim() ? rawCell.text : rowLeaf;
+    const semanticColLabel = headerSemanticLabels[colIndex] ?? `C${colIndex + 1}`;
+
+    if (selectedCell.kind === "header") {
+      const maxHeaderRow = Math.max(1, headerRowCount);
+      const headerRowNumber = Math.max(1, Math.min(selectedCell.headerRowNumber, maxHeaderRow));
+      const headerAbsIndex = headerRowNumber - 1;
+      const sourceFromSheet = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex]?.text ?? "" : "";
+      const displayText =
+        headerMatrix[headerRowNumber - 1]?.[colIndex] ??
+        sourceFromSheet ??
+        semanticColLabel;
+      const sourceText = sourceFromSheet.length > 0 ? sourceFromSheet : displayText;
+
       return {
-        primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
-        secondaryAddress: `${rowHeaderLabel(currentSheet)} / ${rowLeaf}`,
-        chip: "Label",
-        displayText: rowLeaf,
-        sourceText: rawText,
+        primaryAddress: `Col ${colNumber} · Row ${headerRowNumber}`,
+        secondaryAddress: `${semanticColLabel} / Header`,
+        chip: "Header",
+        displayText: displayText.length > 0 ? displayText : "(blank)",
+        sourceText: sourceText.length > 0 ? sourceText : "(blank)",
       };
     }
 
-    if (!selectedCell.colId.startsWith("c_")) return null;
+    const rowRel = currentSheet.rowPaths.indexOf(selectedCell.rowPath);
+    if (rowRel < 0) return null;
 
-    const colIndex = Number(selectedCell.colId.slice(2));
-    if (!Number.isFinite(colIndex) || colIndex < 0 || colIndex >= currentSheet.colLabels.length) {
-      return null;
+    const rowLeaf = leafLabel(selectedCell.rowPath);
+    const rowNumber = rowIndexLookup.get(selectedCell.rowPath) ?? selectedCell.absoluteRowNumber;
+    const absoluteRowIndex = currentSheetState.bodyStart + rowRel;
+
+    if (colIndex < headerColCount) {
+      const sourceText = currentSheetState.cells[absoluteRowIndex]?.[colIndex]?.text ?? "";
+      const displayText = colIndex === 0 ? rowLeaf : sourceText;
+      return {
+        primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
+        secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
+        chip: colIndex === 0 ? "Label" : "Header Col",
+        displayText: displayText.length > 0 ? displayText : "(blank)",
+        sourceText: sourceText.length > 0 ? sourceText : displayText.length > 0 ? displayText : "(blank)",
+      };
     }
 
     const runtimeValue = currentSheet.values[rowRel]?.[colIndex] as RuntimeValue | undefined;
-    const rawCell = currentSheetState.cells[rAbs]?.[colIndex];
-    const sourceText = rawCell?.text ?? runtimeValueToText(runtimeValue ?? { kind: "blank", value: null });
+    const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
+    const sourceText = rawCell?.text ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
     const chip = rawCell?.parsed.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);
 
     return {
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
-      secondaryAddress: `${currentSheet.colLabels[colIndex]} / ${rowLeaf}`,
+      secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
       chip,
       displayText: runtimeValue ? runtimeValueToText(runtimeValue) : "",
       sourceText: sourceText.length > 0 ? sourceText : "(blank)",
     };
-  }, [currentSheet, currentSheetState, hiddenFirstDataColumn, selectedCell, rowIndexLookup, colIndexLookup]);
+  }, [
+    currentSheet,
+    currentSheetState,
+    selectedCell,
+    colIndexLookup,
+    sheetColCount,
+    headerSemanticLabels,
+    headerMatrix,
+    headerRowCount,
+    rowIndexLookup,
+    headerColCount,
+  ]);
 
   useEffect(() => {
     if (formulaBarData) {
@@ -890,127 +916,62 @@ export default function App() {
       return;
     }
 
-    const timeout = window.setTimeout(() => setFormulaBarSnapshot(null), 180);
+    const timeout = window.setTimeout(() => setFormulaBarSnapshot(null), CHROME_TRANSITION_MS);
     return () => window.clearTimeout(timeout);
   }, [formulaBarData]);
 
-  const rowIndexStripHeight = rowIndexTrackHeight + GRID_HEADER_HEIGHT;
+  const chromeVisibilityPhase: ChromeVisibilityPhase =
+    mode === "table" ? (formulaBarData ? "visible" : formulaBarSnapshot ? "hiding" : "hidden") : "hidden";
+
   const themeButtonLabel = themeMode === "auto" ? "Automatic appearance" : themeMode === "light" ? "Light mode" : "Dark mode";
-  const themeButtonIcon =
-    themeMode === "auto" ? <AutoIcon /> : themeMode === "light" ? <SunIcon /> : <MoonIcon />;
+  const themeButtonIcon = themeMode === "auto" ? <AutoIcon /> : themeMode === "light" ? <SunIcon /> : <MoonIcon />;
+
   const visibleToolCount = viewportWidth < 720 ? 3 : viewportWidth < 860 ? 4 : viewportWidth < 1040 ? 5 : TOOLBAR_ITEMS.length;
   const visibleTools = TOOLBAR_ITEMS.slice(0, visibleToolCount);
   const overflowTools = TOOLBAR_ITEMS.slice(visibleToolCount);
+
   const tableStageClassName = [
     "table-stage",
+    `index-rails-${chromeVisibilityPhase}`,
     hasVerticalOverlap ? "has-scroll-y" : "",
     hasHorizontalOverlap ? "has-scroll-x" : "",
   ]
     .join(" ")
     .trim();
+
   const tableStageStyle = useMemo<CSSProperties>(
-    () => ({
-      "--formula-bar-safe-space": `${FORMULA_BAR_SAFE_SPACE}px`,
-    }) as CSSProperties,
-    [],
+    () =>
+      ({
+        "--formula-bar-safe-space": `${FORMULA_BAR_SAFE_SPACE}px`,
+        "--header-overlay-height": `${headerOverlayHeight}px`,
+      }) as CSSProperties,
+    [headerOverlayHeight],
   );
 
   return (
     <div className="page">
       <div className={mode === "source" ? "app-window source-mode" : "app-window"}>
-        <header className={mode === "source" ? "app-chrome source-mode" : "app-chrome"}>
-          <div className="topbar">
-            <div className="brand-lockup">
-              <span className="brand-name">Ordinate</span>
-            </div>
-
-            <nav className="toolbar-tools" aria-label="Placeholder toolbar">
-              {visibleTools.map((item) => (
-                <button
-                  key={item.label}
-                  className="tool-button"
-                  type="button"
-                  tabIndex={-1}
-                  aria-label={item.label}
-                  title={item.label}
-                >
-                  <span className="tool-icon">{item.icon}</span>
-                </button>
-              ))}
-              {overflowTools.length > 0 ? (
-                <div className="tool-overflow-control">
-                  <button
-                    ref={toolButtonRef}
-                    className={toolMenuOpen ? "tool-button tool-more-button active" : "tool-button tool-more-button"}
-                    type="button"
-                    onClick={() => setToolMenuOpen((open) => !open)}
-                    aria-label="More tools"
-                    title="More tools"
-                    aria-haspopup="menu"
-                    aria-expanded={toolMenuOpen}
-                  >
-                    <span className="tool-icon">
-                      <MoreIcon />
-                    </span>
-                  </button>
-                </div>
-              ) : null}
-            </nav>
-
-            <div className="toolbar-actions">
-              <div className="theme-control" ref={themeControlRef}>
-                <button
-                  className={themeMenuOpen ? "tool-button theme-button active" : "tool-button theme-button"}
-                  type="button"
-                  onClick={() => setThemeMenuOpen((open) => !open)}
-                  ref={themeButtonRef}
-                  title={themeButtonLabel}
-                  aria-label={themeButtonLabel}
-                  aria-haspopup="menu"
-                  aria-expanded={themeMenuOpen}
-                >
-                  <span className="tool-icon">{themeButtonIcon}</span>
-                </button>
-              </div>
-
-              <button
-                className={mode === "source" ? "tool-button source-button active" : "tool-button source-button"}
-                onClick={mode === "source" ? exitSourceMode : enterSourceMode}
-                title={mode === "source" ? "Return to table view" : "Open source mode"}
-                aria-label={mode === "source" ? "Return to table view" : "Open source mode"}
-              >
-                <span className="tool-icon">
-                  <CodeIcon />
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div className="sheetbar-shell" aria-hidden={mode === "source"}>
-            <div className="sheetbar">
-              <button className="sheet-add" type="button" aria-label="Add sheet placeholder" tabIndex={-1}>
-                <PlusIcon />
-              </button>
-              <div className="sheet-tabs" role="tablist" aria-label="Sheets">
-                {evaluation?.sheets.map((sheet) => (
-                  <button
-                    key={sheet.name}
-                    className={sheet.name === activeSheet ? "sheet-tab active" : "sheet-tab"}
-                    onClick={() => setActiveSheet(sheet.name)}
-                    type="button"
-                    tabIndex={mode === "source" ? -1 : 0}
-                    onMouseEnter={(event) => handleTabMouseEnter(sheet.name, event.currentTarget)}
-                    onMouseLeave={() => setTabTooltip(null)}
-                    onFocus={(event) => handleTabMouseEnter(sheet.name, event.currentTarget)}
-                    onBlur={() => setTabTooltip(null)}
-                  >
-                    {sheet.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </header>
+        <AppChrome
+          mode={mode}
+          activeSheet={activeSheet}
+          sheetNames={evaluation?.sheets.map((sheet) => sheet.name) ?? []}
+          setActiveSheet={setActiveSheet}
+          visibleTools={visibleTools}
+          overflowTools={overflowTools}
+          toolMenuOpen={toolMenuOpen}
+          setToolMenuOpen={setToolMenuOpen}
+          themeMenuOpen={themeMenuOpen}
+          setThemeMenuOpen={setThemeMenuOpen}
+          themeButtonLabel={themeButtonLabel}
+          themeButtonIcon={themeButtonIcon}
+          themeControlRef={themeControlRef}
+          themeButtonRef={themeButtonRef}
+          toolButtonRef={toolButtonRef}
+          onEnterSourceMode={enterSourceMode}
+          onExitSourceMode={exitSourceMode}
+          onTabMouseEnter={handleTabMouseEnter}
+          onTabMouseLeave={() => setTabTooltip(null)}
+        />
 
         {error ? (
           <div className="error" role="alert">
@@ -1026,85 +987,29 @@ export default function App() {
         ) : (
           <section className="workspace-shell">
             {currentSheet ? (
-              <div className={tableStageClassName} style={tableStageStyle}>
-                <div className="table-corner">
-                  <button className="corner-button" type="button" tabIndex={-1} aria-label="Corner placeholder">
-                    <span className="corner-dot" />
-                  </button>
-                </div>
-
-                <div className="column-index-strip">
-                  <div
-                    ref={columnTrackRef}
-                    className="column-index-track"
-                    style={{ gridTemplateColumns }}
-                    aria-hidden="true"
-                  >
-                    {Array.from({ length: renderedColumnCount }, (_, index) => (
-                      <div key={`column-index-${index + 1}`} className="column-index-cell">
-                        {index + 1}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div
-                  className="row-index-strip"
-                  aria-hidden="true"
-                  style={rowIndexStripHeight > 0 ? { height: `${rowIndexStripHeight}px` } : undefined}
-                >
-                  <div className="row-index-spacer" />
-                  <div className="row-index-viewport">
-                    <div
-                      ref={rowTrackRef}
-                      className="row-index-track"
-                      style={rowIndexTrackHeight > 0 ? { height: `${rowIndexTrackHeight}px` } : undefined}
-                    >
-                      {rowIndexMetrics.map((row) => (
-                        <div
-                          key={`row-index-${row.rowPath}`}
-                          className="row-index-cell"
-                          style={{
-                            top: `${row.top}px`,
-                            height: `${row.height}px`,
-                          }}
-                        >
-                          {row.number}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid-shell">
-                  <div className="grid-wrap" ref={gridWrapRef}>
-                    <AgGridReact<GridRow>
-                      rowData={rowData}
-                      columnDefs={columnDefs}
-                      animateRows
-                      defaultColDef={{
-                        editable: false,
-                        sortable: false,
-                        filter: false,
-                        resizable: false,
-                        suppressMovable: true,
-                      }}
-                      getRowId={(params) => params.data.__rowPath}
-                      suppressMovableColumns
-                      suppressDragLeaveHidesColumns
-                      suppressContextMenu
-                      theme={themeQuartz}
-                      onGridReady={handleGridReady}
-                      onFirstDataRendered={handleFirstDataRendered}
-                      onModelUpdated={handleModelUpdated}
-                      onCellFocused={handleCellFocused}
-                      rowClassRules={{
-                        "section-row": (params) => Boolean(params.data?.__isSection),
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
+              <TableStage
+                tableStageClassName={tableStageClassName}
+                tableStageStyle={tableStageStyle}
+                gridTemplateColumns={gridTemplateColumns}
+                renderedColumnCount={renderedColumnCount}
+                headerIndexMetrics={headerIndexMetrics}
+                headerIndexTrackHeight={headerIndexTrackHeight}
+                headerOverlayHeight={headerOverlayHeight}
+                headerOverlayCells={headerOverlayCells}
+                rowIndexTrackHeight={rowIndexTrackHeight}
+                indexRailsPhase={chromeVisibilityPhase}
+                rowIndexMetrics={rowIndexMetrics}
+                columnTrackRef={columnTrackRef}
+                rowTrackRef={rowTrackRef}
+                gridWrapRef={gridWrapRef}
+                rowData={rowData}
+                columnDefs={columnDefs}
+                handleHeaderOverlaySelect={handleHeaderOverlaySelect}
+                handleGridReady={handleGridReady}
+                handleFirstDataRendered={handleFirstDataRendered}
+                handleModelUpdated={handleModelUpdated}
+                handleCellFocused={handleCellFocused}
+              />
             ) : (
               <div className="empty-state">
                 <h3>No sheet selected</h3>
@@ -1115,91 +1020,24 @@ export default function App() {
         )}
       </div>
 
-      {mode === "table" && formulaBarSnapshot ? (
-        <aside
-          className={formulaBarData ? "formula-bar-shell is-visible" : "formula-bar-shell is-hiding"}
-          aria-live="polite"
-          aria-hidden={formulaBarData ? undefined : true}
-        >
-          <div className="formula-bar">
-            <div className="formula-bar-meta">
-              <span className="formula-chip fx">=</span>
-              <span className="formula-address">{formulaBarSnapshot.primaryAddress}</span>
-              <span className="formula-subaddress">{formulaBarSnapshot.secondaryAddress}</span>
-              <span className="formula-chip">{formulaBarSnapshot.chip}</span>
-              <span className="formula-value-preview">{formulaBarSnapshot.displayText || " "}</span>
-            </div>
-            <div className="formula-source" title={formulaBarSnapshot.sourceText}>
-              {formulaBarSnapshot.sourceText}
-            </div>
-          </div>
-        </aside>
-      ) : null}
+      <FormulaBarOverlay
+        mode={mode}
+        phase={chromeVisibilityPhase}
+        formulaBarData={formulaBarData}
+        formulaBarSnapshot={formulaBarSnapshot}
+      />
 
-      {createPortal(
-        <div
-          className={themeMenuOpen ? "theme-menu open" : "theme-menu"}
-          role="menu"
-          aria-hidden={!themeMenuOpen}
-          style={{ top: `${themeMenuPosition.top}px`, left: `${themeMenuPosition.left}px` }}
-        >
-          {(
-            [
-              { mode: "auto", label: "Auto", icon: <AutoIcon /> },
-              { mode: "light", label: "Light", icon: <SunIcon /> },
-              { mode: "dark", label: "Dark", icon: <MoonIcon /> },
-            ] satisfies Array<{ mode: ThemeMode; label: string; icon: ReactNode }>
-          ).map((option) => (
-            <button
-              key={option.mode}
-              className={themeMode === option.mode ? "theme-option active" : "theme-option"}
-              type="button"
-              role="menuitemradio"
-              aria-checked={themeMode === option.mode}
-              onClick={() => {
-                setThemeMode(option.mode);
-                setThemeMenuOpen(false);
-              }}
-            >
-              <span className="tool-icon">{option.icon}</span>
-              <span>{option.label}</span>
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
-
-      {createPortal(
-        <div
-          className={toolMenuOpen ? "tool-menu open" : "tool-menu"}
-          role="menu"
-          aria-hidden={!toolMenuOpen}
-          style={{ top: `${toolMenuPosition.top}px`, left: `${toolMenuPosition.left}px` }}
-        >
-          {overflowTools.map((item) => (
-            <button key={item.label} className="tool-menu-option" type="button" role="menuitem" tabIndex={toolMenuOpen ? 0 : -1}>
-              <span className="tool-icon">{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
-
-      {createPortal(
-        <div
-          className={tabTooltip ? "tab-tooltip visible" : "tab-tooltip"}
-          role="tooltip"
-          aria-hidden={!tabTooltip}
-          style={{
-            top: `${tabTooltip?.top ?? 0}px`,
-            left: `${tabTooltip?.left ?? 0}px`,
-          }}
-        >
-          {tabTooltip?.text ?? ""}
-        </div>,
-        document.body,
-      )}
+      <OverlayPortals
+        themeMenuOpen={themeMenuOpen}
+        themeMenuPosition={themeMenuPosition}
+        themeMode={themeMode}
+        setThemeMode={setThemeMode}
+        setThemeMenuOpen={setThemeMenuOpen}
+        toolMenuOpen={toolMenuOpen}
+        toolMenuPosition={toolMenuPosition}
+        overflowTools={overflowTools}
+        tabTooltip={tabTooltip}
+      />
     </div>
   );
 }
