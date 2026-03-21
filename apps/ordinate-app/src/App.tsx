@@ -14,6 +14,7 @@ import AppChrome from "./components/AppChrome";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
 import TableStage from "./components/TableStage";
+import { createAgGridAdapter } from "./grid/agGridAdapter";
 import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
 import { useEditorStore } from "./store/editorStore";
 import type {
@@ -38,8 +39,6 @@ import {
   splitPath,
 } from "./utils/sheetView";
 
-import "ag-grid-community/styles/ag-grid.css";
-
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 const LABEL_COLUMN_WIDTH = 280;
@@ -51,6 +50,7 @@ const FORMULA_BAR_SAFE_SPACE = 136;
 const CHROME_TRANSITION_MS = 260;
 const THEME_STORAGE_KEY = "ordinate-theme-mode";
 const BLANK_RUNTIME_VALUE: RuntimeValue = { kind: "blank", value: null };
+const POSITION_EPSILON = 0.5;
 
 function resolveInitialThemeMode(): ThemeMode {
   if (typeof window === "undefined") return "auto";
@@ -60,49 +60,6 @@ function resolveInitialThemeMode(): ThemeMode {
 
 function toColFieldId(colIndex: number): string {
   return `col_${colIndex}`;
-}
-
-function parseColIndexFromField(colId: string): number {
-  if (!colId.startsWith("col_")) return -1;
-  const parsed = Number(colId.slice(4));
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : -1;
-}
-
-function resolveHeaderColId(target: HTMLElement | null, colCount: number, colIndexLookup: Map<string, number>): string | null {
-  if (!target) return null;
-
-  const headerCell = target.closest<HTMLElement>(".ag-header-cell[col-id], .ag-header-group-cell[col-id]");
-  const rawColId = headerCell?.getAttribute("col-id");
-  if (rawColId && colIndexLookup.has(rawColId)) {
-    return rawColId;
-  }
-
-  const ariaColIndex = Number(headerCell?.getAttribute("aria-colindex"));
-  if (Number.isFinite(ariaColIndex)) {
-    const zeroBased = ariaColIndex - 1;
-    if (zeroBased >= 0 && zeroBased < colCount) {
-      return toColFieldId(zeroBased);
-    }
-  }
-
-  return null;
-}
-
-function resolveLeafHeaderColIdByClientX(
-  root: HTMLElement,
-  clientX: number,
-  colIndexLookup: Map<string, number>,
-): string | null {
-  const headerCells = Array.from(root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]"));
-  for (const cell of headerCells) {
-    const colId = cell.getAttribute("col-id");
-    if (!colId || !colIndexLookup.has(colId)) continue;
-    const rect = cell.getBoundingClientRect();
-    if (clientX >= rect.left && clientX <= rect.right) {
-      return colId;
-    }
-  }
-  return null;
 }
 
 function overlayCellsEqual(previous: HeaderOverlayCell[], next: HeaderOverlayCell[]): boolean {
@@ -148,10 +105,13 @@ export default function App() {
   const [rowIndexTrackHeight, setRowIndexTrackHeight] = useState(0);
   const [headerOverlayCells, setHeaderOverlayCells] = useState<HeaderOverlayCell[]>([]);
 
+  const gridViewportAdapter = useMemo(() => createAgGridAdapter(), []);
+  const overlaySyncRafRef = useRef<number | null>(null);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
   const columnTrackRef = useRef<HTMLDivElement | null>(null);
   const rowTrackRef = useRef<HTMLDivElement | null>(null);
   const gridApiRef = useRef<GridApi<GridRow> | null>(null);
+  const pendingHeaderSelectionRef = useRef<{ colId: string; rAbs: number; expiresAt: number } | null>(null);
   const themeControlRef = useRef<HTMLDivElement | null>(null);
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -166,7 +126,45 @@ export default function App() {
     return docState.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
   }, [docState, activeSheet]);
 
-  const sheetColCount = currentSheetState?.colCount ?? 0;
+  const sheetColCount = useMemo(() => {
+    if (!currentSheetState) return 0;
+
+    let nextCount = currentSheetState.colCount;
+    if (nextCount <= 0) return 0;
+
+    while (nextCount > 0) {
+      const colIndex = nextCount - 1;
+      const headerLabel = currentSheetState.colLabels[colIndex]?.trim() ?? "";
+      if (headerLabel.length > 0) break;
+
+      let hasRawText = false;
+      for (let rowIndex = 0; rowIndex < currentSheetState.cells.length; rowIndex += 1) {
+        const rawText = currentSheetState.cells[rowIndex]?.[colIndex]?.text?.trim() ?? "";
+        if (rawText.length > 0) {
+          hasRawText = true;
+          break;
+        }
+      }
+      if (hasRawText) break;
+
+      let hasRuntimeContent = false;
+      if (currentSheet) {
+        for (let rowIndex = 0; rowIndex < currentSheet.values.length; rowIndex += 1) {
+          const value = currentSheet.values[rowIndex]?.[colIndex] as RuntimeValue | undefined;
+          const text = runtimeValueToText(value ?? BLANK_RUNTIME_VALUE).trim();
+          if (text.length > 0) {
+            hasRuntimeContent = true;
+            break;
+          }
+        }
+      }
+      if (hasRuntimeContent) break;
+
+      nextCount -= 1;
+    }
+
+    return nextCount;
+  }, [currentSheetState, currentSheet]);
   const headerRowCount = currentSheetState?.headerRowCount ?? 0;
   const headerColCount = Math.min(currentSheetState?.headerColCount ?? 0, sheetColCount);
   const headerOverlayRows = Math.max(0, headerRowCount - 1);
@@ -248,9 +246,19 @@ export default function App() {
       if (!button) return;
       const rect = button.getBoundingClientRect();
       const menuWidth = 148;
-      setThemeMenuPosition({
-        top: rect.bottom + 8,
-        left: Math.max(12, rect.right - menuWidth),
+      const nextTop = rect.bottom + 8;
+      const nextLeft = Math.max(12, rect.right - menuWidth);
+      setThemeMenuPosition((current) => {
+        if (
+          Math.abs(current.top - nextTop) < POSITION_EPSILON &&
+          Math.abs(current.left - nextLeft) < POSITION_EPSILON
+        ) {
+          return current;
+        }
+        return {
+          top: nextTop,
+          left: nextLeft,
+        };
       });
     };
 
@@ -271,9 +279,19 @@ export default function App() {
       if (!button) return;
       const rect = button.getBoundingClientRect();
       const menuWidth = 168;
-      setToolMenuPosition({
-        top: rect.bottom + 8,
-        left: Math.max(12, rect.right - menuWidth),
+      const nextTop = rect.bottom + 8;
+      const nextLeft = Math.max(12, rect.right - menuWidth);
+      setToolMenuPosition((current) => {
+        if (
+          Math.abs(current.top - nextTop) < POSITION_EPSILON &&
+          Math.abs(current.left - nextLeft) < POSITION_EPSILON
+        ) {
+          return current;
+        }
+        return {
+          top: nextTop,
+          left: nextLeft,
+        };
       });
     };
 
@@ -287,7 +305,11 @@ export default function App() {
   }, [toolMenuOpen]);
 
   useEffect(() => {
-    const dismissTooltip = () => setTabTooltip(null);
+    const dismissTooltip = () =>
+      setTabTooltip((current) => {
+        if (!current) return current;
+        return null;
+      });
     window.addEventListener("resize", dismissTooltip);
     window.addEventListener("scroll", dismissTooltip, true);
     return () => {
@@ -298,68 +320,36 @@ export default function App() {
 
   const handleTabMouseEnter = useCallback((sheetName: string, target: HTMLButtonElement) => {
     if (target.scrollWidth <= target.clientWidth + 1) {
-      setTabTooltip(null);
+      setTabTooltip((current) => {
+        if (!current) return current;
+        return null;
+      });
       return;
     }
     const rect = target.getBoundingClientRect();
-    setTabTooltip({
+    const next = {
       text: sheetName,
       top: rect.bottom + 8,
       left: rect.left + rect.width / 2,
+    };
+    setTabTooltip((current) => {
+      if (
+        current &&
+        current.text === next.text &&
+        Math.abs(current.top - next.top) < POSITION_EPSILON &&
+        Math.abs(current.left - next.left) < POSITION_EPSILON
+      ) {
+        return current;
+      }
+      return next;
     });
   }, []);
 
   const syncRowIndexMetrics = useCallback((api: GridApi<GridRow> | null) => {
-    if (!api) {
-      setRowIndexMetrics([]);
-      setRowIndexTrackHeight(0);
-      return;
-    }
-
-    const nextMetrics: RowIndexMetric[] = [];
-    let maxBottom = 0;
-
-    for (let index = 0; index < api.getDisplayedRowCount(); index += 1) {
-      const rowNode = api.getDisplayedRowAtIndex(index);
-      if (!rowNode?.data) continue;
-
-      const top = rowNode.rowTop ?? index * GRID_ROW_HEIGHT;
-      const height = rowNode.rowHeight ?? GRID_ROW_HEIGHT;
-      maxBottom = Math.max(maxBottom, top + height);
-
-      nextMetrics.push({
-        rowPath: rowNode.data.__rowPath,
-        number: rowNode.data.__absoluteRowNumber,
-        top,
-        height,
-      });
-    }
-
-    setRowIndexMetrics(nextMetrics);
-    setRowIndexTrackHeight(maxBottom);
-  }, []);
-
-  const handleGridReady = useCallback(
-    (event: GridReadyEvent<GridRow>) => {
-      gridApiRef.current = event.api;
-      syncRowIndexMetrics(event.api);
-    },
-    [syncRowIndexMetrics],
-  );
-
-  const handleFirstDataRendered = useCallback(
-    (event: FirstDataRenderedEvent<GridRow>) => {
-      syncRowIndexMetrics(event.api);
-    },
-    [syncRowIndexMetrics],
-  );
-
-  const handleModelUpdated = useCallback(
-    (event: ModelUpdatedEvent<GridRow>) => {
-      syncRowIndexMetrics(event.api);
-    },
-    [syncRowIndexMetrics],
-  );
+    const snapshot = gridViewportAdapter.collectRowMetrics(api, GRID_ROW_HEIGHT);
+    setRowIndexMetrics(snapshot.metrics);
+    setRowIndexTrackHeight(snapshot.trackHeight);
+  }, [gridViewportAdapter]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -474,9 +464,9 @@ export default function App() {
       .filter((row) => isVisiblePath(row.__rowPath, collapsedPaths));
   }, [currentSheet, currentSheetState, collapsedPaths, sheetColCount, headerColCount]);
 
-  const rowIndexLookup = useMemo(() => {
-    const map = new Map<string, number>();
-    rowData.forEach((row) => map.set(row.__rowPath, row.__absoluteRowNumber));
+  const absoluteRowPathLookup = useMemo(() => {
+    const map = new Map<number, string>();
+    rowData.forEach((row) => map.set(row.__absoluteRowNumber, row.__rowPath));
     return map;
   }, [rowData]);
 
@@ -500,28 +490,21 @@ export default function App() {
         return;
       }
 
-      const rootRect = root.getBoundingClientRect();
-      const leafCells = Array.from(root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]"))
-        .map((cell) => {
-          const colId = cell.getAttribute("col-id");
-          if (!colId) return null;
-          const colNumber = colIndexLookup.get(colId);
-          if (!colNumber) return null;
-          const rect = cell.getBoundingClientRect();
-          return {
-            colId,
-            colIndex: colNumber - 1,
-            left: rect.left - rootRect.left,
-            right: rect.right - rootRect.left,
-          };
-        })
-        .filter((cell): cell is { colId: string; colIndex: number; left: number; right: number } => cell !== null)
-        .sort((a, b) => a.left - b.left);
+      const leafCells = gridViewportAdapter.readLeafHeaderCells(root, colIndexLookup);
 
       if (leafCells.length === 0) {
         setHeaderOverlayCells((current) => (current.length === 0 ? current : []));
         return;
       }
+      if (leafCells.length < sheetColCount) {
+        // AG can transiently report a partial header DOM before final layout.
+        // Skip partial snapshots to prevent wrong merged group widths.
+        return;
+      }
+
+      const rootWidth = root.getBoundingClientRect().width;
+      const leafRightEdge = leafCells[leafCells.length - 1]?.right ?? 0;
+      const scrollbarGutter = Math.max(0, rootWidth - leafRightEdge);
 
       const nextCells: HeaderOverlayCell[] = [];
 
@@ -541,7 +524,10 @@ export default function App() {
           }
 
           const left = start.left;
-          const width = Math.max(0, leafCells[end].right - left);
+          const right = leafCells[end].right + (end === leafCells.length - 1 ? scrollbarGutter : 0);
+          const snappedLeft = Math.round(left);
+          const snappedRight = Math.round(right);
+          const width = Math.max(0, snappedRight - snappedLeft);
           if (width > 0.5) {
             const startCol = start.colIndex + 1;
             const endCol = leafCells[end].colIndex + 1;
@@ -550,7 +536,9 @@ export default function App() {
               key: `r${rowNumber}-c${startCol}-${endCol}`,
               rowNumber,
               label,
-              left,
+              startCol: start.colIndex,
+              endCol: leafCells[end].colIndex,
+              left: snappedLeft,
               width,
               top: rowOffset * GRID_HEADER_HEIGHT,
               height: GRID_HEADER_HEIGHT,
@@ -563,10 +551,68 @@ export default function App() {
 
       setHeaderOverlayCells((current) => (overlayCellsEqual(current, nextCells) ? current : nextCells));
     },
-    [mode, headerOverlayRows, sheetColCount, colIndexLookup, headerMatrix],
+    [mode, headerOverlayRows, sheetColCount, colIndexLookup, headerMatrix, gridViewportAdapter],
+  );
+
+  const scheduleHeaderOverlaySync = useCallback(
+    (passes = 2) => {
+      if (overlaySyncRafRef.current != null) {
+        window.cancelAnimationFrame(overlaySyncRafRef.current);
+      }
+
+      let remaining = Math.max(1, passes);
+      const tick = () => {
+        overlaySyncRafRef.current = null;
+        syncHeaderOverlayCells(gridWrapRef.current);
+        remaining -= 1;
+        if (remaining > 0) {
+          overlaySyncRafRef.current = window.requestAnimationFrame(tick);
+        }
+      };
+      overlaySyncRafRef.current = window.requestAnimationFrame(tick);
+    },
+    [syncHeaderOverlayCells],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (overlaySyncRafRef.current != null) {
+        window.cancelAnimationFrame(overlaySyncRafRef.current);
+      }
+    };
+  }, []);
+
+  const handleGridReady = useCallback(
+    (event: GridReadyEvent<GridRow>) => {
+      gridApiRef.current = event.api;
+      syncRowIndexMetrics(event.api);
+      scheduleHeaderOverlaySync(3);
+    },
+    [syncRowIndexMetrics, scheduleHeaderOverlaySync],
+  );
+
+  const handleFirstDataRendered = useCallback(
+    (event: FirstDataRenderedEvent<GridRow>) => {
+      syncRowIndexMetrics(event.api);
+      scheduleHeaderOverlaySync(3);
+    },
+    [syncRowIndexMetrics, scheduleHeaderOverlaySync],
+  );
+
+  const handleModelUpdated = useCallback(
+    (event: ModelUpdatedEvent<GridRow>) => {
+      syncRowIndexMetrics(event.api);
+      scheduleHeaderOverlaySync(2);
+    },
+    [syncRowIndexMetrics, scheduleHeaderOverlaySync],
   );
 
   const renderedColumnCount = sheetColCount;
+
+  useEffect(() => {
+    if (mode === "source") return;
+    scheduleHeaderOverlaySync(3);
+  }, [mode, activeSheet, rowData.length, renderedColumnCount, scheduleHeaderOverlaySync]);
 
   const gridTemplateColumns = useMemo(() => {
     if (sheetColCount === 0) return "";
@@ -694,30 +740,35 @@ export default function App() {
   const headerIndexTrackHeight = headerRowCount * GRID_HEADER_HEIGHT;
 
   const handleHeaderOverlaySelect = useCallback(
-    (clientX: number, rowNumber: number) => {
+    (rowNumber: number, colIndex: number) => {
       const root = gridWrapRef.current;
       if (!root) return;
 
-      const colId = resolveLeafHeaderColIdByClientX(root, clientX, colIndexLookup);
-      if (!colId) return;
-
+      if (colIndex < 0 || colIndex >= sheetColCount) return;
       const maxHeaderRow = Math.max(1, headerRowCount);
       const clampedRowNumber = Math.max(1, Math.min(rowNumber, maxHeaderRow));
-      setSelectedCell({
-        kind: "header",
+      const colId = toColFieldId(colIndex);
+      pendingHeaderSelectionRef.current = {
         colId,
-        headerRowNumber: clampedRowNumber,
-      });
+        rAbs: clampedRowNumber,
+        expiresAt: performance.now() + 420,
+      };
 
-      const matchingLeafCell = Array.from(root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]")).find(
-        (cell) => cell.getAttribute("col-id") === colId,
-      );
-      if (matchingLeafCell) {
-        matchingLeafCell.tabIndex = 0;
-        requestAnimationFrame(() => matchingLeafCell.focus());
+      setSelectedCell({
+        area: "header",
+        logical: {
+          rAbs: clampedRowNumber,
+          cAbs: colIndex,
+        },
+        colId,
+        rowPath: null,
+      });
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        active.blur();
       }
     },
-    [colIndexLookup, headerRowCount],
+    [headerRowCount, sheetColCount],
   );
 
   useEffect(() => {
@@ -732,14 +783,21 @@ export default function App() {
       if (!headerCell) return;
 
       const colId =
-        resolveLeafHeaderColIdByClientX(root, event.clientX, colIndexLookup) ??
-        resolveHeaderColId(target, sheetColCount, colIndexLookup);
+        gridViewportAdapter.resolveLeafHeaderColIdAtClientX(root, event.clientX, colIndexLookup) ??
+        gridViewportAdapter.resolveHeaderColIdFromTarget(target, sheetColCount, colIndexLookup);
       if (!colId) return;
 
+      const colNumber = colIndexLookup.get(colId);
+      if (!colNumber) return;
+
       setSelectedCell({
-        kind: "header",
+        area: "header",
+        logical: {
+          rAbs: leafHeaderRowNumber,
+          cAbs: colNumber - 1,
+        },
         colId,
-        headerRowNumber: leafHeaderRowNumber,
+        rowPath: null,
       });
 
       headerCell.tabIndex = 0;
@@ -748,7 +806,7 @@ export default function App() {
 
     root.addEventListener("mousedown", handlePointerDown);
     return () => root.removeEventListener("mousedown", handlePointerDown);
-  }, [mode, headerRowCount, sheetColCount, colIndexLookup]);
+  }, [mode, headerRowCount, sheetColCount, colIndexLookup, gridViewportAdapter]);
 
   useEffect(() => {
     if (mode === "source") return;
@@ -757,46 +815,14 @@ export default function App() {
     const rowTrack = rowTrackRef.current;
     if (!root || !columnTrack || !rowTrack) return;
 
-    const verticalViewport =
-      root.querySelector<HTMLElement>(".ag-body-viewport.ag-layout-normal") ??
-      root.querySelector<HTMLElement>(".ag-body-viewport");
-    const horizontalViewport =
-      root.querySelector<HTMLElement>(".ag-body-horizontal-scroll-viewport") ??
-      root.querySelector<HTMLElement>(".ag-center-cols-viewport");
-
-    let rafId: number | null = null;
-    const applyScrollSync = () => {
-      rafId = null;
-      const top = verticalViewport?.scrollTop ?? 0;
-      const left = horizontalViewport?.scrollLeft ?? 0;
+    return gridViewportAdapter.attachViewportSync(root, ({ top, left, hasVerticalOverlap: nextVertical, hasHorizontalOverlap: nextHorizontal }) => {
       rowTrack.style.transform = `translateY(${-top}px)`;
       columnTrack.style.transform = `translateX(${-left}px)`;
       syncHeaderOverlayCells(root);
-      const nextVertical = top > 0.5;
-      const nextHorizontal = left > 0.5;
       setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
       setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
-    };
-
-    const scheduleScrollSync = () => {
-      if (rafId != null) return;
-      rafId = window.requestAnimationFrame(applyScrollSync);
-    };
-
-    scheduleScrollSync();
-    verticalViewport?.addEventListener("scroll", scheduleScrollSync, { passive: true });
-    horizontalViewport?.addEventListener("scroll", scheduleScrollSync, { passive: true });
-    window.addEventListener("resize", scheduleScrollSync, { passive: true });
-
-    return () => {
-      if (rafId != null) {
-        window.cancelAnimationFrame(rafId);
-      }
-      verticalViewport?.removeEventListener("scroll", scheduleScrollSync);
-      horizontalViewport?.removeEventListener("scroll", scheduleScrollSync);
-      window.removeEventListener("resize", scheduleScrollSync);
-    };
-  }, [mode, activeSheet, rowData.length, renderedColumnCount, syncHeaderOverlayCells]);
+    });
+  }, [mode, activeSheet, rowData.length, renderedColumnCount, syncHeaderOverlayCells, gridViewportAdapter]);
 
   const handleCellFocused = useCallback(
     (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
@@ -809,12 +835,40 @@ export default function App() {
       if (!colIndexLookup.has(rawColId)) {
         return;
       }
+      const colNumber = colIndexLookup.get(rawColId);
+      if (!colNumber) return;
 
       if (event.rowIndex == null) {
-        setSelectedCell({
-          kind: "header",
-          colId: rawColId,
-          headerRowNumber: Math.max(1, headerRowCount),
+        const pending = pendingHeaderSelectionRef.current;
+        if (pending && performance.now() <= pending.expiresAt && pending.colId === rawColId) {
+          pendingHeaderSelectionRef.current = null;
+          setSelectedCell({
+            area: "header",
+            logical: {
+              rAbs: pending.rAbs,
+              cAbs: colNumber - 1,
+            },
+            colId: rawColId,
+            rowPath: null,
+          });
+          return;
+        }
+        if (pending && performance.now() > pending.expiresAt) {
+          pendingHeaderSelectionRef.current = null;
+        }
+        setSelectedCell((current) => {
+          if (current?.area === "header" && current.colId === rawColId) {
+            return current;
+          }
+          return {
+            area: "header",
+            logical: {
+              rAbs: Math.max(1, headerRowCount),
+              cAbs: colNumber - 1,
+            },
+            colId: rawColId,
+            rowPath: null,
+          };
         });
         return;
       }
@@ -826,10 +880,13 @@ export default function App() {
       }
 
       setSelectedCell({
-        kind: "body",
-        rowPath: row.__rowPath,
+        area: "body",
+        logical: {
+          rAbs: row.__absoluteRowNumber,
+          cAbs: colNumber - 1,
+        },
         colId: rawColId,
-        absoluteRowNumber: row.__absoluteRowNumber,
+        rowPath: row.__rowPath,
       });
     },
     [rowData, colIndexLookup, headerRowCount],
@@ -838,17 +895,15 @@ export default function App() {
   const formulaBarData = useMemo<FormulaBarData | null>(() => {
     if (!currentSheet || !currentSheetState || !selectedCell) return null;
 
-    const colNumber = colIndexLookup.get(selectedCell.colId);
-    if (!colNumber) return null;
-
-    const colIndex = parseColIndexFromField(selectedCell.colId);
+    const colIndex = selectedCell.logical.cAbs;
     if (colIndex < 0 || colIndex >= sheetColCount) return null;
+    const colNumber = colIndex + 1;
 
     const semanticColLabel = headerSemanticLabels[colIndex] ?? `C${colIndex + 1}`;
 
-    if (selectedCell.kind === "header") {
+    if (selectedCell.area === "header") {
       const maxHeaderRow = Math.max(1, headerRowCount);
-      const headerRowNumber = Math.max(1, Math.min(selectedCell.headerRowNumber, maxHeaderRow));
+      const headerRowNumber = Math.max(1, Math.min(selectedCell.logical.rAbs, maxHeaderRow));
       const headerAbsIndex = headerRowNumber - 1;
       const sourceFromSheet = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex]?.text ?? "" : "";
       const displayText =
@@ -866,12 +921,15 @@ export default function App() {
       };
     }
 
-    const rowRel = currentSheet.rowPaths.indexOf(selectedCell.rowPath);
+    const rowNumber = selectedCell.logical.rAbs;
+    const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(rowNumber);
+    if (!rowPath) return null;
+
+    const rowRel = currentSheet.rowPaths.indexOf(rowPath);
     if (rowRel < 0) return null;
 
-    const rowLeaf = leafLabel(selectedCell.rowPath);
-    const rowNumber = rowIndexLookup.get(selectedCell.rowPath) ?? selectedCell.absoluteRowNumber;
-    const absoluteRowIndex = currentSheetState.bodyStart + rowRel;
+    const rowLeaf = leafLabel(rowPath);
+    const absoluteRowIndex = rowNumber - 1;
 
     if (colIndex < headerColCount) {
       const sourceText = currentSheetState.cells[absoluteRowIndex]?.[colIndex]?.text ?? "";
@@ -901,12 +959,11 @@ export default function App() {
     currentSheet,
     currentSheetState,
     selectedCell,
-    colIndexLookup,
     sheetColCount,
     headerSemanticLabels,
     headerMatrix,
     headerRowCount,
-    rowIndexLookup,
+    absoluteRowPathLookup,
     headerColCount,
   ]);
 
@@ -938,6 +995,7 @@ export default function App() {
   ]
     .join(" ")
     .trim();
+  const suppressAgHeaderFocus = selectedCell?.area === "header" && selectedCell.logical.rAbs <= headerOverlayRows;
 
   const tableStageStyle = useMemo<CSSProperties>(
     () =>
@@ -1004,6 +1062,8 @@ export default function App() {
                 gridWrapRef={gridWrapRef}
                 rowData={rowData}
                 columnDefs={columnDefs}
+                selectedCell={selectedCell}
+                suppressAgHeaderFocus={Boolean(suppressAgHeaderFocus)}
                 handleHeaderOverlaySelect={handleHeaderOverlaySelect}
                 handleGridReady={handleGridReady}
                 handleFirstDataRendered={handleFirstDataRendered}

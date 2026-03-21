@@ -10,18 +10,23 @@ export type GridRow = {
   [key: string]: string | number | boolean;
 };
 
-export type SelectedCell =
-  | {
-      kind: "header";
-      colId: string;
-      headerRowNumber: number;
-    }
-  | {
-      kind: "body";
-      rowPath: string;
-      colId: string;
-      absoluteRowNumber: number;
-    };
+export type LogicalCell = {
+  rAbs: number;
+  cAbs: number;
+};
+
+export type SelectedCell = {
+  area: "header" | "body";
+  logical: LogicalCell;
+  colId: string;
+  rowPath: string | null;
+};
+
+export type HeaderOverlayHitResult = {
+  logical: LogicalCell;
+  colId: string;
+  headerRowNumber: number;
+};
 
 export type FormulaBarData = {
   primaryAddress: string;
@@ -50,6 +55,8 @@ export type HeaderOverlayCell = {
   key: string;
   rowNumber: number;
   label: string;
+  startCol: number;
+  endCol: number;
   left: number;
   width: number;
   top: number;

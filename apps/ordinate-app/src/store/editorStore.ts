@@ -71,6 +71,17 @@ const sampleDocument = `# Management Report
 |   Japan            || 44  | 50  |
 |   Australia        || 22  | 26  |
 | Grand Total        || 301 | 339 |
+
+# Quarterly Cube
+|             || 2024 | 2024 | 2024 | 2024 | 2025 | 2025 | 2025 | 2025 |
+| Line Item   || H1   | H1   | H2   | H2   | H1   | H1   | H2   | H2   |
+|             || Q1   | Q2   | Q3   | Q4   | Q1   | Q2   | Q3   | Q4   |
+| ----------- || ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| [Revenue]   ||      |      |      |      |      |      |      |      |
+|   Product A || 58   | 62   | 66   | 71   | 73   | 76   | 79   | 84   |
+|   Product B || 41   | 44   | 46   | 49   | 52   | 55   | 57   | 61   |
+| Revenue Total || = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] |
+| Gross Margin % || = @["Revenue Total",_] / 120 | = @["Revenue Total",_] / 130 | = @["Revenue Total",_] / 140 | = @["Revenue Total",_] / 150 | = @["Revenue Total",_] / 160 | = @["Revenue Total",_] / 170 | = @["Revenue Total",_] / 180 | = @["Revenue Total",_] / 190 |
 `;
 
 function toErrorMessage(error: unknown): string {
