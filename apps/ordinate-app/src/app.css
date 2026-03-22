@@ -14,6 +14,11 @@
   --index-row-height: 28px;
   --grid-header-height: 40px;
   --grid-row-height: 38px;
+  --selection-ring-color: var(--accent-strong);
+  --selection-ring-width: 2px;
+  --selection-ring-radius: 0.62rem;
+  --selection-ring-inset-header: -2px;
+  --selection-ring-inset-cell: -3px;
 
   --bg-page: oklch(97.2% 0.003 250);
   --bg-page-accent: oklch(95.6% 0.01 225);
@@ -869,7 +874,6 @@ textarea {
   margin: 0;
   padding: 0 0.64rem;
   border: 1px solid var(--sheet-grid);
-  border-bottom: 0;
   background: var(--sheet-header-row);
   color: var(--sheet-soft);
   font-size: 0.81rem;
@@ -883,6 +887,10 @@ textarea {
   pointer-events: auto;
 }
 
+.header-matrix-cell[data-row-number]:not([data-row-number="1"]) {
+  border-top: 0;
+}
+
 .header-matrix-cell > span {
   display: inline-block;
   min-width: 0;
@@ -892,6 +900,24 @@ textarea {
 
 .header-matrix-cell:hover {
   background: color-mix(in oklab, var(--sheet-header-row) 88%, oklch(100% 0 0 / 0.12));
+}
+
+.header-matrix-cell.has-slot-selection {
+  z-index: 2;
+}
+
+.header-matrix-cell.has-slot-selection::after {
+  top: var(--selection-ring-inset-header);
+  bottom: var(--selection-ring-inset-header);
+  left: calc((100% / var(--overlay-slot-count)) * var(--overlay-slot-index));
+  width: calc(100% / var(--overlay-slot-count));
+}
+
+.grid-wrap.suppress-header-focus .ag-header-cell:focus::after,
+.grid-wrap.suppress-header-focus .ag-header-cell:focus-visible::after,
+.grid-wrap.suppress-header-focus .ag-header-group-cell:focus::after,
+.grid-wrap.suppress-header-focus .ag-header-group-cell:focus-visible::after {
+  content: none !important;
 }
 
 .grid-wrap {
@@ -1009,6 +1035,29 @@ textarea {
   transition: background-color 160ms var(--ease-out-quart), color 160ms var(--ease-out-quart);
 }
 
+.data-cell,
+.data-cell .ag-cell-wrapper,
+.data-cell .ag-cell-value {
+  min-width: 0 !important;
+}
+
+.data-cell .ag-cell-wrapper {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  width: 100%;
+  overflow: hidden !important;
+}
+
+.data-cell .ag-cell-value {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
 .data-cell.is-numeric {
   font-variant-numeric: tabular-nums;
 }
@@ -1042,12 +1091,7 @@ textarea {
 .grid-wrap .ag-header-cell:focus-visible::after,
 .grid-wrap .ag-header-group-cell:focus::after,
 .grid-wrap .ag-header-group-cell:focus-visible::after {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border: 2px solid var(--accent-strong) !important;
-  border-radius: 0.55rem;
-  pointer-events: none;
+  inset: var(--selection-ring-inset-header);
 }
 
 .grid-wrap .ag-ltr .ag-cell-focus:not(.ag-cell-range-selected):focus-within,
@@ -1083,13 +1127,33 @@ textarea {
 .ag-theme-quartz .ag-cell-focus:not(.ag-cell-range-selected)::after,
 .ag-theme-quartz .ag-cell-range-single-cell::after,
 .ag-theme-quartz .ag-cell-range-single-cell.ag-cell-range-handle::after {
+  inset: var(--selection-ring-inset-cell);
+}
+
+.grid-wrap .ag-header-cell:focus::after,
+.grid-wrap .ag-header-cell:focus-visible::after,
+.grid-wrap .ag-header-group-cell:focus::after,
+.grid-wrap .ag-header-group-cell:focus-visible::after,
+.grid-wrap .ag-ltr .ag-cell-focus:not(.ag-cell-range-selected):focus-within::after,
+.grid-wrap .ag-ltr .ag-cell-range-single-cell::after,
+.grid-wrap .ag-ltr .ag-cell-range-single-cell.ag-cell-range-handle::after,
+.grid-wrap .ag-rtl .ag-cell-focus:not(.ag-cell-range-selected):focus-within::after,
+.grid-wrap .ag-rtl .ag-cell-range-single-cell::after,
+.grid-wrap .ag-rtl .ag-cell-range-single-cell.ag-cell-range-handle::after,
+.ag-theme-quartz .ag-cell:focus::after,
+.ag-theme-quartz .ag-cell:focus-visible::after,
+.ag-theme-quartz .ag-cell-focus::after,
+.ag-theme-quartz .ag-cell-focus:not(.ag-cell-range-selected)::after,
+.ag-theme-quartz .ag-cell-range-single-cell::after,
+.ag-theme-quartz .ag-cell-range-single-cell.ag-cell-range-handle::after,
+.header-matrix-cell.has-slot-selection::after {
   content: "";
   position: absolute;
-  inset: -3px;
-  border: 2px solid var(--accent-strong) !important;
-  border-radius: 0.65rem;
+  border: var(--selection-ring-width) solid var(--selection-ring-color) !important;
+  border-radius: var(--selection-ring-radius);
   animation: cell-selection-pulse 220ms var(--ease-out-quart) both;
   pointer-events: none;
+  box-sizing: border-box;
 }
 
 .ag-theme-quartz .ag-cell-focus .tree-cell,

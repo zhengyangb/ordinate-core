@@ -10,7 +10,7 @@ import {
   themeQuartz,
 } from "ag-grid-community";
 
-import type { ChromeVisibilityPhase, GridRow, HeaderIndexMetric, HeaderOverlayCell, RowIndexMetric } from "../types/ui";
+import type { ChromeVisibilityPhase, GridRow, HeaderIndexMetric, HeaderOverlayCell, RowIndexMetric, SelectedCell } from "../types/ui";
 
 type TableStageProps = {
   tableStageClassName: string;
@@ -29,7 +29,9 @@ type TableStageProps = {
   gridWrapRef: MutableRefObject<HTMLDivElement | null>;
   rowData: GridRow[];
   columnDefs: Array<ColDef<GridRow> | ColGroupDef<GridRow>>;
-  handleHeaderOverlaySelect: (clientX: number, rowNumber: number) => void;
+  selectedCell: SelectedCell | null;
+  suppressAgHeaderFocus: boolean;
+  handleHeaderOverlaySelect: (rowNumber: number, colIndex: number) => void;
   handleGridReady: (event: GridReadyEvent<GridRow>) => void;
   handleFirstDataRendered: (event: FirstDataRenderedEvent<GridRow>) => void;
   handleModelUpdated: (event: ModelUpdatedEvent<GridRow>) => void;
@@ -53,6 +55,8 @@ export default function TableStage({
   gridWrapRef,
   rowData,
   columnDefs,
+  selectedCell,
+  suppressAgHeaderFocus,
   handleHeaderOverlaySelect,
   handleGridReady,
   handleFirstDataRendered,
@@ -134,29 +138,57 @@ export default function TableStage({
             aria-hidden="true"
           >
             {headerOverlayCells.map((cell) => (
-              <button
-                key={cell.key}
-                className="header-matrix-cell"
-                type="button"
-                style={{
+              (() => {
+                const span = Math.max(1, cell.endCol - cell.startCol + 1);
+                const selectedSlot =
+                  selectedCell?.area === "header" &&
+                  selectedCell.logical.rAbs === cell.rowNumber &&
+                  selectedCell.logical.cAbs >= cell.startCol &&
+                  selectedCell.logical.cAbs <= cell.endCol
+                    ? selectedCell.logical.cAbs - cell.startCol
+                    : -1;
+                const style: CSSProperties & {
+                  "--overlay-slot-count"?: string;
+                  "--overlay-slot-index"?: string;
+                } = {
                   left: `${cell.left}px`,
                   top: `${cell.top}px`,
                   width: `${cell.width}px`,
                   height: `${cell.height}px`,
-                }}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  handleHeaderOverlaySelect(event.clientX, cell.rowNumber);
-                }}
-                title={cell.label}
-              >
-                <span>{cell.label}</span>
-              </button>
+                };
+                if (selectedSlot >= 0) {
+                  style["--overlay-slot-count"] = String(span);
+                  style["--overlay-slot-index"] = String(selectedSlot);
+                }
+
+                return (
+                  <button
+                    key={cell.key}
+                    className={selectedSlot >= 0 ? "header-matrix-cell has-slot-selection" : "header-matrix-cell"}
+                    data-row-number={cell.rowNumber}
+                    type="button"
+                    style={style}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const target = event.currentTarget;
+                      const rect = target.getBoundingClientRect();
+                      const localX = Math.min(Math.max(0, event.clientX - rect.left), Math.max(0, rect.width - 1));
+                      const ratio = rect.width > 0 ? localX / rect.width : 0;
+                      const slot = Math.min(span - 1, Math.floor(ratio * span));
+                      const colIndex = cell.startCol + slot;
+                      handleHeaderOverlaySelect(cell.rowNumber, colIndex);
+                    }}
+                    title={cell.label}
+                  >
+                    <span>{cell.label}</span>
+                  </button>
+                );
+              })()
             ))}
           </div>
         ) : null}
-        <div className="grid-wrap" ref={gridWrapRef}>
+        <div className={suppressAgHeaderFocus ? "grid-wrap suppress-header-focus" : "grid-wrap"} ref={gridWrapRef}>
           <AgGridReact<GridRow>
             rowData={rowData}
             columnDefs={columnDefs}
@@ -171,6 +203,7 @@ export default function TableStage({
             getRowId={(params) => params.data.__rowPath}
             suppressMovableColumns
             suppressDragLeaveHidesColumns
+            suppressColumnVirtualisation
             suppressContextMenu
             theme={themeQuartz}
             onGridReady={handleGridReady}
