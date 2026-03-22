@@ -8,12 +8,16 @@ export function formatDocument(text: string): string {
 
   sheets.forEach((sheet, idx) => {
     parts.push(`# ${sheet.name}`);
-    if (sheet.table) {
-      const parsed = sheet.table.rows.map((row) => parseTableRow(row));
-      const widths = columnWidths(parsed);
-      const boundary = commonBoundary(parsed);
-      for (const row of parsed) {
-        parts.push(renderRow(row, widths, boundary));
+    for (const block of sheet.blocks) {
+      if (block.kind === "table") {
+        const parsed = block.table.rows.map((row) => parseTableRow(row));
+        const widths = columnWidths(parsed);
+        const boundary = commonBoundary(parsed);
+        for (const row of parsed) {
+          parts.push(renderRow(row, widths, boundary));
+        }
+      } else {
+        parts.push(...block.lines);
       }
     }
     if (idx !== sheets.length - 1) {

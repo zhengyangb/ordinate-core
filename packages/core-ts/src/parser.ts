@@ -2,8 +2,21 @@ export interface Table {
   rows: string[];
 }
 
+export interface TableBlock {
+  kind: "table";
+  table: Table;
+}
+
+export interface UnparsedBlock {
+  kind: "unparsed";
+  lines: string[];
+}
+
+export type SheetBlock = TableBlock | UnparsedBlock;
+
 export interface Sheet {
   name: string;
+  blocks: SheetBlock[];
   table: Table | null;
   hasMultipleTables: boolean;
 }
@@ -22,10 +35,14 @@ export function parseDocument(text: string): Sheet[] {
 
   function flushSheet(): void {
     if (currentName === null) return;
-    const tables = splitTables(currentRows);
+    const blocks = splitBlocks(currentRows);
+    const tables = blocks
+      .filter((block): block is TableBlock => block.kind === "table")
+      .map((block) => block.table);
     const table = tables.length > 0 ? tables[0] : null;
     sheets.push({
       name: currentName,
+      blocks,
       table,
       hasMultipleTables: tables.length > 1,
     });
@@ -48,25 +65,41 @@ export function parseDocument(text: string): Sheet[] {
   return sheets;
 }
 
-function splitTables(lines: string[]): Table[] {
-  const tables: Table[] = [];
+function splitBlocks(lines: string[]): SheetBlock[] {
+  const blocks: SheetBlock[] = [];
+  let mode: "table" | "unparsed" | null = null;
   let current: string[] = [];
+
+  function flushCurrent(): void {
+    if (mode === null || current.length === 0) return;
+    if (mode === "table") {
+      blocks.push({ kind: "table", table: { rows: current } });
+    } else {
+      blocks.push({ kind: "unparsed", lines: current });
+    }
+    current = [];
+    mode = null;
+  }
 
   for (const line of lines) {
     const stripped = line.trim();
-    if (stripped.startsWith("|") && stripped.endsWith("|")) {
-      current.push(stripped);
-    } else if (current.length > 0) {
-      tables.push({ rows: current });
-      current = [];
+    const nextMode: "table" | "unparsed" =
+      stripped.startsWith("|") && stripped.endsWith("|") ? "table" : "unparsed";
+    const value = nextMode === "table" ? stripped : line;
+    if (mode === null) {
+      mode = nextMode;
+      current.push(value);
+      continue;
     }
+    if (mode !== nextMode) {
+      flushCurrent();
+      mode = nextMode;
+    }
+    current.push(value);
   }
 
-  if (current.length > 0) {
-    tables.push({ rows: current });
-  }
-
-  return tables;
+  flushCurrent();
+  return blocks;
 }
 
 export function parseTableRow(row: string): ParsedRow {

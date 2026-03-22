@@ -1,5 +1,5 @@
 import { formatDocument } from "./formatter";
-import { type DocumentState } from "./incremental";
+import { type DocumentState, type SheetState } from "./incremental";
 import { type ExprNode, type ReferenceExpr, type RefSelector, type RuntimeValue } from "./runtime/types";
 
 // Serialize a DocumentState to canonical .ord text.
@@ -8,39 +8,7 @@ export function serializeDocumentState(state: DocumentState): string {
 
   state.sheets.forEach((sheet, sheetIdx) => {
     lines.push(`# ${sheet.name}`);
-    if (sheet.rowCount > 0 && sheet.colCount > 0) {
-      const boundary = sheet.logicalRows.length > 0 ? sheet.logicalRows[0].boundary : null;
-      const headerCount = sheet.headerRowCount;
-      const rowIdToIndex = buildIdIndexMap(sheet.rowIds);
-      const colIdToIndex = buildIdIndexMap(sheet.colIds);
-
-      for (let rAbs = 0; rAbs < sheet.logicalRows.length; rAbs += 1) {
-        if (headerCount > 0 && rAbs === headerCount) {
-          const dividerCells = Array.from({ length: sheet.colCount }, () => "---");
-          lines.push(buildRow(dividerCells, boundary));
-        }
-
-        const row = sheet.logicalRows[rAbs];
-        const cells: string[] = [];
-        for (let c = 0; c < sheet.colCount; c += 1) {
-          const raw = c < row.rawCells.length ? row.rawCells[c] : "";
-          const cellState = sheet.cells[rAbs][c];
-          if (cellState.parsed.kind === "formula") {
-            const rhs = renderExpression(cellState.parsed.expression, rowIdToIndex, colIdToIndex)
-              ?? cellState.parsed.expressionText
-              ?? "";
-            if (!cellState.dirty && cellState.value !== null && cellState.value.kind !== "blank") {
-              cells.push(`${serializeValue(cellState.value)} = ${rhs}`);
-            } else {
-              cells.push(`= ${rhs}`);
-            }
-          } else {
-            cells.push(raw);
-          }
-        }
-        lines.push(buildRow(cells, row.boundary));
-      }
-    }
+    lines.push(...serializeSheetBodyLines(sheet));
     if (sheetIdx !== state.sheets.length - 1) {
       lines.push("");
     }
@@ -48,6 +16,81 @@ export function serializeDocumentState(state: DocumentState): string {
 
   const intermediate = `${lines.join("\n").replace(/\s+$/, "")}\n`;
   return formatDocument(intermediate);
+}
+
+function serializeSheetBodyLines(sheet: SheetState): string[] {
+  const tableLines = serializeCurrentTableLines(sheet);
+  if (sheet.sourceBlocks.length === 0) {
+    return tableLines;
+  }
+
+  if (sheet.primaryTableBlockIndex !== null) {
+    const output: string[] = [];
+    sheet.sourceBlocks.forEach((block, idx) => {
+      if (block.kind === "table" && idx === sheet.primaryTableBlockIndex) {
+        if (tableLines.length > 0) {
+          output.push(...tableLines);
+        } else {
+          output.push(...block.lines);
+        }
+      } else {
+        output.push(...block.lines);
+      }
+    });
+    return output;
+  }
+
+  if (tableLines.length === 0) {
+    return sheet.sourceBlocks.flatMap((block) => block.lines);
+  }
+
+  const output = sheet.sourceBlocks.flatMap((block) => block.lines);
+  if (output.length > 0 && output[output.length - 1] !== "") {
+    output.push("");
+  }
+  output.push(...tableLines);
+  return output;
+}
+
+function serializeCurrentTableLines(sheet: SheetState): string[] {
+  if (sheet.rowCount === 0 || sheet.colCount === 0) {
+    return [];
+  }
+
+  const boundary = sheet.logicalRows.length > 0 ? sheet.logicalRows[0].boundary : null;
+  const headerCount = sheet.headerRowCount;
+  const rowIdToIndex = buildIdIndexMap(sheet.rowIds);
+  const colIdToIndex = buildIdIndexMap(sheet.colIds);
+  const lines: string[] = [];
+
+  for (let rAbs = 0; rAbs < sheet.logicalRows.length; rAbs += 1) {
+    if (headerCount > 0 && rAbs === headerCount) {
+      const dividerCells = Array.from({ length: sheet.colCount }, () => "---");
+      lines.push(buildRow(dividerCells, boundary));
+    }
+
+    const row = sheet.logicalRows[rAbs];
+    const cells: string[] = [];
+    for (let c = 0; c < sheet.colCount; c += 1) {
+      const raw = c < row.rawCells.length ? row.rawCells[c] : "";
+      const cellState = sheet.cells[rAbs][c];
+      if (cellState.parsed.kind === "formula") {
+        const rhs = renderExpression(cellState.parsed.expression, rowIdToIndex, colIdToIndex)
+          ?? cellState.parsed.expressionText
+          ?? "";
+        if (!cellState.dirty && cellState.value !== null && cellState.value.kind !== "blank") {
+          cells.push(`${serializeValue(cellState.value)} = ${rhs}`);
+        } else {
+          cells.push(`= ${rhs}`);
+        }
+      } else {
+        cells.push(raw);
+      }
+    }
+    lines.push(buildRow(cells, row.boundary));
+  }
+
+  return lines;
 }
 
 function buildRow(cells: string[], boundary: number | null): string {
