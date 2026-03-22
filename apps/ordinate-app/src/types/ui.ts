@@ -85,3 +85,11 @@ export type ToolSpec = {
   label: string;
   icon: ReactNode;
 };
+
+export type SheetHealth = "ok" | "invalid";
+
+export type SheetIssueViewModel = {
+  message: string;
+  row?: number;
+  col?: number;
+};

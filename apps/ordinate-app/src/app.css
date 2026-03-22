@@ -46,6 +46,9 @@
   --danger-bg: oklch(95% 0.03 24);
   --danger-border: oklch(73% 0.12 24);
   --danger-ink: oklch(44% 0.12 24);
+  --warning-bg: oklch(95% 0.05 88);
+  --warning-border: oklch(76% 0.1 88);
+  --warning-ink: oklch(43% 0.08 88);
   --glass-bg: oklch(99.4% 0.002 250 / 0.76);
   --glass-border: oklch(100% 0 0 / 0.72);
   --glass-shadow: 0 24px 60px oklch(28% 0.01 245 / 0.14);
@@ -87,6 +90,9 @@
   --accent: oklch(68% 0.2 145);
   --accent-strong: oklch(58% 0.19 145);
   --accent-soft: oklch(91% 0.05 145);
+  --warning-bg: oklch(37% 0.03 90);
+  --warning-border: oklch(61% 0.09 92);
+  --warning-ink: oklch(84% 0.07 96);
   --glass-bg: oklch(31% 0.008 100 / 0.78);
   --glass-border: oklch(100% 0 0 / 0.1);
   --glass-shadow: 0 24px 60px oklch(10% 0.01 95 / 0.36);
@@ -126,6 +132,9 @@
     --accent: oklch(68% 0.2 145);
     --accent-strong: oklch(58% 0.19 145);
     --accent-soft: oklch(91% 0.05 145);
+    --warning-bg: oklch(37% 0.03 90);
+    --warning-border: oklch(61% 0.09 92);
+    --warning-ink: oklch(84% 0.07 96);
     --glass-bg: oklch(31% 0.008 100 / 0.78);
     --glass-border: oklch(100% 0 0 / 0.1);
     --glass-shadow: 0 24px 60px oklch(10% 0.01 95 / 0.36);
@@ -567,6 +576,10 @@ textarea {
   flex: 1 1 5.4rem;
   min-width: 0;
   max-width: 10.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.36rem;
   height: 1.56rem;
   padding: 0 0.74rem;
   border: 1px solid color-mix(in oklab, var(--chrome-border) 92%, transparent);
@@ -589,6 +602,32 @@ textarea {
   white-space: nowrap;
 }
 
+.sheet-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-tab-alert {
+  display: inline-grid;
+  place-items: center;
+  width: 0.88rem;
+  height: 0.88rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--warning-border) 70%, transparent);
+  background: color-mix(in oklab, var(--warning-bg) 78%, var(--sheet-surface));
+  color: var(--warning-ink);
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.sheet-tab.invalid {
+  border-color: color-mix(in oklab, var(--warning-border) 58%, var(--chrome-border));
+}
+
 .sheet-tab:hover {
   background: color-mix(in oklab, var(--toolbar-pill) 70%, oklch(100% 0 0 / 0.18));
   border-color: color-mix(in oklab, var(--chrome-border) 72%, oklch(100% 0 0 / 0.2));
@@ -605,6 +644,12 @@ textarea {
   background: var(--accent);
   border-color: color-mix(in oklab, var(--accent-strong) 75%, transparent);
   color: oklch(99.1% 0.003 95);
+}
+
+.sheet-tab.active .sheet-tab-alert {
+  border-color: color-mix(in oklab, var(--warning-border) 56%, transparent);
+  background: color-mix(in oklab, var(--warning-bg) 82%, var(--accent));
+  color: var(--warning-ink);
 }
 
 .error {
@@ -1373,6 +1418,63 @@ textarea {
   background:
     radial-gradient(circle at top, color-mix(in oklab, var(--accent-soft) 44%, white), transparent 42%),
     linear-gradient(180deg, color-mix(in oklab, var(--workspace-frame) 95%, white), var(--workspace-frame));
+}
+
+.sheet-parse-error {
+  display: grid;
+  gap: 0.62rem;
+  align-content: start;
+  margin: 1.05rem;
+  padding: 1rem 1.06rem;
+  border-radius: 0.95rem;
+  border: 1px solid color-mix(in oklab, var(--danger-border) 36%, transparent);
+  background:
+    linear-gradient(160deg, color-mix(in oklab, var(--danger-bg) 76%, var(--sheet-surface)), color-mix(in oklab, var(--sheet-surface) 90%, white));
+  color: var(--danger-ink);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--danger-border) 16%, transparent);
+}
+
+.sheet-parse-error h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.sheet-parse-error p {
+  margin: 0;
+  color: color-mix(in oklab, var(--danger-ink) 74%, var(--sheet-ink));
+}
+
+.sheet-parse-error-first {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.sheet-parse-error-list {
+  margin: 0;
+  padding: 0 0 0 1rem;
+  display: grid;
+  gap: 0.24rem;
+  max-height: min(40vh, 16rem);
+  overflow: auto;
+  font-size: 0.84rem;
+  color: color-mix(in oklab, var(--danger-ink) 84%, var(--sheet-ink));
+}
+
+.sheet-parse-error-more {
+  font-size: 0.78rem;
+  color: color-mix(in oklab, var(--danger-ink) 66%, var(--sheet-soft));
+}
+
+.sheet-parse-error-action {
+  justify-self: start;
+  border: 1px solid color-mix(in oklab, var(--danger-border) 56%, transparent);
+  border-radius: 999px;
+  padding: 0.34rem 0.78rem;
+  background: color-mix(in oklab, var(--danger-bg) 72%, var(--sheet-surface));
+  color: var(--danger-ink);
+  font-size: 0.78rem;
+  font-weight: 560;
 }
 
 .empty-state h3 {

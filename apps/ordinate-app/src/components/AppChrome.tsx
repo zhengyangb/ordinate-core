@@ -1,12 +1,13 @@
 import type { ReactNode, RefObject, SetStateAction } from "react";
 
 import { CodeIcon, MoreIcon, PlusIcon } from "../icons/uiIcons";
-import type { ToolSpec } from "../types/ui";
+import type { SheetHealth, ToolSpec } from "../types/ui";
 
 type AppChromeProps = {
   mode: "table" | "source";
   activeSheet: string | null;
   sheetNames: string[];
+  sheetHealthByName: Record<string, SheetHealth>;
   setActiveSheet: (name: string) => void;
   visibleTools: ToolSpec[];
   overflowTools: ToolSpec[];
@@ -29,6 +30,7 @@ export default function AppChrome({
   mode,
   activeSheet,
   sheetNames,
+  sheetHealthByName,
   setActiveSheet,
   visibleTools,
   overflowTools,
@@ -124,7 +126,11 @@ export default function AppChrome({
             {sheetNames.map((sheetName) => (
               <button
                 key={sheetName}
-                className={sheetName === activeSheet ? "sheet-tab active" : "sheet-tab"}
+                className={
+                  sheetName === activeSheet
+                    ? `sheet-tab active${sheetHealthByName[sheetName] === "invalid" ? " invalid" : ""}`
+                    : `sheet-tab${sheetHealthByName[sheetName] === "invalid" ? " invalid" : ""}`
+                }
                 onClick={() => setActiveSheet(sheetName)}
                 type="button"
                 tabIndex={mode === "source" ? -1 : 0}
@@ -132,8 +138,14 @@ export default function AppChrome({
                 onMouseLeave={onTabMouseLeave}
                 onFocus={(event) => onTabMouseEnter(sheetName, event.currentTarget)}
                 onBlur={onTabMouseLeave}
+                aria-invalid={sheetHealthByName[sheetName] === "invalid"}
               >
-                {sheetName}
+                <span className="sheet-tab-label">{sheetName}</span>
+                {sheetHealthByName[sheetName] === "invalid" ? (
+                  <span className="sheet-tab-alert" aria-hidden="true" title="Sheet has parse/validation issues">
+                    !
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
