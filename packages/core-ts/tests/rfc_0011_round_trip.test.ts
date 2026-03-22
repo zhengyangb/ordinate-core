@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { DocumentState, formatDocument, serializeDocumentState } from "../src";
+import { parseDocument } from "../src/parser";
 
 type RoundTripCase = {
   name: string;
@@ -75,5 +76,31 @@ describe("RFC-0011 serialization round-trip", () => {
       const expected = formatDocument(`${spec.expect}\n`);
       expect(output).toBe(expected);
     }
+  });
+
+  it("keeps later sheets parseable when an earlier sheet has unparsed content", () => {
+    const doc = `
+# Broken
+| Item || 2024 |
+| ---- || ---- |
+| A || 10 |
+this line is not parseable as table row
+| B || 20 |
+
+# Good
+| Item || 2024 | 2025 | Sum |
+| ---- || ---- | ---- | --- |
+| Rev  || 3    | 4    | = sum(@[Rev,2024:2025]) |
+`;
+    const state = DocumentState.fromText(doc);
+    state.evaluate();
+    const output = serializeDocumentState(state);
+
+    const parsed = parseDocument(output);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].blocks.some((b) => b.kind === "unparsed")).toBe(true);
+    expect(parsed[1].name).toBe("Good");
+    expect(parsed[1].table).not.toBeNull();
+    expect(parsed[1].table?.rows.some((row) => row.includes("7 = sum(@[Rev,2024:2025])"))).toBe(true);
   });
 });

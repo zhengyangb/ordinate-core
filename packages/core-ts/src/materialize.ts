@@ -11,11 +11,22 @@ export function evaluateAndFormatDocument(text: string): string {
   const lines: string[] = [];
   parsedSheets.forEach((sheet, sIdx) => {
     lines.push(`# ${sheet.name}`);
-    if (sheet.table) {
-      const parsedRows = sheet.table.rows.map((row) => parseTableRow(row));
-      const bodyStart = bodyStartIndex(parsedRows);
-      const evalRows = sIdx < evaluated.sheets.length ? evaluated.sheets[sIdx].values : [];
+    let usedPrimaryTable = false;
+    const evalRows = sIdx < evaluated.sheets.length ? evaluated.sheets[sIdx].values : [];
+    for (const block of sheet.blocks) {
+      if (block.kind === "unparsed") {
+        lines.push(...block.lines);
+        continue;
+      }
 
+      if (usedPrimaryTable) {
+        lines.push(...block.table.rows);
+        continue;
+      }
+      usedPrimaryTable = true;
+
+      const parsedRows = block.table.rows.map((row) => parseTableRow(row));
+      const bodyStart = bodyStartIndex(parsedRows);
       parsedRows.forEach((row, rIdx) => {
         let renderedCells: string[];
         if (rIdx < bodyStart) {

@@ -35,6 +35,10 @@ interface CellState {
   dirty: boolean;
 }
 
+export type PreservedSheetBlock =
+  | { kind: "table"; lines: string[] }
+  | { kind: "unparsed"; lines: string[] };
+
 export class SheetState {
   name: string;
   rowCount: number;
@@ -63,6 +67,8 @@ export class SheetState {
   viewColIndex: Map<number, Set<number>>;
   formulaViewIds: Map<string, Set<number>>;
   nextViewId: number;
+  sourceBlocks: PreservedSheetBlock[];
+  primaryTableBlockIndex: number | null;
 
   private constructor(
     name: string,
@@ -82,6 +88,8 @@ export class SheetState {
     dataColIndices: number[],
     logicalRows: ParsedRow[],
     cells: CellState[][],
+    sourceBlocks: PreservedSheetBlock[],
+    primaryTableBlockIndex: number | null,
   ) {
     this.name = name;
     this.rowCount = rowCount;
@@ -110,10 +118,25 @@ export class SheetState {
     this.viewColIndex = new Map();
     this.formulaViewIds = new Map();
     this.nextViewId = 1;
+    this.sourceBlocks = sourceBlocks;
+    this.primaryTableBlockIndex = primaryTableBlockIndex;
   }
 
   // Build a SheetState from raw table rows.
-  static fromTableRows(name: string, rows: string[]): SheetState {
+  static fromTableRows(
+    name: string,
+    rows: string[],
+    sourceBlocks?: PreservedSheetBlock[],
+    primaryTableBlockIndex?: number | null,
+  ): SheetState {
+    const normalizedBlocks: PreservedSheetBlock[] =
+      sourceBlocks && sourceBlocks.length > 0 ? sourceBlocks : [{ kind: "table", lines: [...rows] }];
+    const normalizedPrimary =
+      primaryTableBlockIndex !== undefined
+        ? primaryTableBlockIndex
+        : normalizedBlocks.findIndex((b) => b.kind === "table");
+    const primaryIndex = normalizedPrimary === -1 ? null : normalizedPrimary;
+
     const parsedRows = rows.map((r) => parseTableRow(r));
     const sepIndex = separatorRowIndex(parsedRows);
     const logicalRows = parsedRows.filter((_, idx) => idx !== sepIndex);
@@ -137,6 +160,8 @@ export class SheetState {
         [],
         [],
         [],
+        normalizedBlocks,
+        primaryIndex,
       );
     }
 
@@ -212,6 +237,8 @@ export class SheetState {
       dataColIndices,
       logicalRows,
       cells,
+      normalizedBlocks,
+      primaryIndex,
     );
     sheet.bindAllFormulas();
     sheet.rebuildDependencies();
@@ -836,11 +863,25 @@ export class DocumentState {
     const parsed = parseDocument(text);
     const sheets: SheetState[] = [];
     for (const sheet of parsed) {
-      if (sheet.table) {
-        sheets.push(SheetState.fromTableRows(sheet.name, sheet.table.rows));
-      } else {
-        sheets.push(SheetState.fromTableRows(sheet.name, []));
-      }
+      const sourceBlocks: PreservedSheetBlock[] = sheet.blocks.map((block) => {
+        if (block.kind === "table") {
+          return { kind: "table", lines: [...block.table.rows] };
+        }
+        return { kind: "unparsed", lines: [...block.lines] };
+      });
+      const primaryTableBlockIndex = sourceBlocks.findIndex((b) => b.kind === "table");
+      const primaryRows =
+        primaryTableBlockIndex >= 0 && primaryTableBlockIndex < sourceBlocks.length
+          ? [...sourceBlocks[primaryTableBlockIndex].lines]
+          : [];
+      sheets.push(
+        SheetState.fromTableRows(
+          sheet.name,
+          primaryRows,
+          sourceBlocks,
+          primaryTableBlockIndex === -1 ? null : primaryTableBlockIndex,
+        ),
+      );
     }
     return new DocumentState(sheets);
   }

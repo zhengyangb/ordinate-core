@@ -85,3 +85,84 @@ evaluate: true
 | ---- || ---- | ---- | ---- |
 | Rev  || 100  | 120  | 130  |
 [/expect]
+
+=== preserve_unparsed_lines_around_table
+[doc]
+# Sheet
+meta: source=erp-v2
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A || 1|2|
+note: this line should survive
+[/doc]
+[expect]
+# Sheet
+meta: source=erp-v2
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+note: this line should survive
+[/expect]
+
+=== preserve_unparsed_lines_with_evaluated_cache
+[doc]
+# Sheet
+! keep this block
+| Item || 2024 | 2025 | Sum |
+| ---- || ---- | ---- | --- |
+| A || 1 | 2 | = sum(@[A,2024:2025]) |
+[/doc]
+[expect]
+# Sheet
+! keep this block
+| Item || 2024 | 2025 | Sum |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | 3 = sum(@[A,2024:2025]) |
+[/expect]
+evaluate: true
+
+=== preserve_malformed_table_line
+[doc]
+# Sheet
+| Item || 2024 |
+| ---- || ---- |
+| A    || 10   |
+| broken || 20
+| B    || 30   |
+[/doc]
+[expect]
+# Sheet
+| Item || 2024 |
+| ---- || ---- |
+| A    || 10   |
+| broken || 20
+| B    || 30   |
+[/expect]
+
+=== multi_sheet_invalid_then_valid_still_parseable
+[doc]
+# Broken
+| Item || 2024 |
+| ---- || ---- |
+| A || 10 |
+this line is not parseable as table row
+| B || 20 |
+# Good
+| Item || 2024 | 2025 | Sum |
+| ---- || ---- | ---- | --- |
+| Rev  || 3    | 4    | = sum(@[Rev,2024:2025]) |
+[/doc]
+[expect]
+# Broken
+| Item || 2024 |
+| ---- || ---- |
+| A    || 10   |
+this line is not parseable as table row
+| B || 20 |
+
+# Good
+| Item || 2024 | 2025 | Sum |
+| ---- || ---- | ---- | --- |
+| Rev  || 3    | 4    | 7 = sum(@[Rev,2024:2025]) |
+[/expect]
+evaluate: true

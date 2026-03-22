@@ -2,7 +2,10 @@ import { create } from "zustand";
 
 import {
   DocumentState,
+  validateDocument,
   type EvaluationResult,
+  type ValidationError,
+  type ValidationResult,
   serializeDocumentState,
 } from "@ordinate/core";
 
@@ -13,6 +16,8 @@ interface EditorState {
   sourceText: string;
   docState: DocumentState | null;
   evaluation: EvaluationResult | null;
+  validation: ValidationResult | null;
+  sheetIssuesByName: Record<string, ValidationError[]>;
   activeSheet: string | null;
   error: string | null;
   setSourceText: (text: string) => void;
@@ -91,20 +96,41 @@ function toErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function groupSheetValidationErrors(
+  sheetNames: string[],
+  errors: ValidationError[],
+): Record<string, ValidationError[]> {
+  const grouped: Record<string, ValidationError[]> = Object.fromEntries(sheetNames.map((name) => [name, []]));
+  for (const issue of errors) {
+    if (!issue.sheet) continue;
+    if (!grouped[issue.sheet]) {
+      grouped[issue.sheet] = [];
+    }
+    grouped[issue.sheet].push(issue);
+  }
+  return grouped;
+}
+
 function bootstrapFromSource(sourceText: string): Pick<
   EditorState,
-  "mode" | "sourceText" | "docState" | "evaluation" | "activeSheet" | "error"
+  "mode" | "sourceText" | "docState" | "evaluation" | "validation" | "sheetIssuesByName" | "activeSheet" | "error"
 > {
   try {
     const docState = DocumentState.fromText(sourceText);
     const evaluation = docState.evaluate();
+    const validation = validateDocument(sourceText);
+    const sheetNames = docState.sheets.map((sheet) => sheet.name);
+    const sheetIssuesByName = groupSheetValidationErrors(sheetNames, validation.errors);
+    const firstGlobalIssue = validation.errors.find((issue) => !issue.sheet);
     return {
       mode: "table",
       sourceText,
       docState,
       evaluation,
-      activeSheet: evaluation.sheets[0]?.name ?? null,
-      error: null,
+      validation,
+      sheetIssuesByName,
+      activeSheet: docState.sheets[0]?.name ?? null,
+      error: firstGlobalIssue?.message ?? null,
     };
   } catch (error) {
     return {
@@ -112,6 +138,8 @@ function bootstrapFromSource(sourceText: string): Pick<
       sourceText,
       docState: null,
       evaluation: null,
+      validation: null,
+      sheetIssuesByName: {},
       activeSheet: null,
       error: toErrorMessage(error),
     };
@@ -122,20 +150,26 @@ const initialState = bootstrapFromSource(sampleDocument);
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   ...initialState,
-  setSourceText: (text) => set({ sourceText: text, error: null }),
+  setSourceText: (text) => set({ sourceText: text, validation: null, sheetIssuesByName: {}, error: null }),
   setActiveSheet: (sheetName) => set({ activeSheet: sheetName }),
   exitSourceMode: () => {
     try {
       const docState = DocumentState.fromText(get().sourceText);
       const evaluation = docState.evaluate();
-      const firstSheet = evaluation.sheets[0]?.name ?? null;
+      const validation = validateDocument(get().sourceText);
+      const sheetNames = docState.sheets.map((sheet) => sheet.name);
+      const sheetIssuesByName = groupSheetValidationErrors(sheetNames, validation.errors);
+      const firstGlobalIssue = validation.errors.find((issue) => !issue.sheet);
+      const firstSheet = docState.sheets[0]?.name ?? null;
 
       set({
         mode: "table",
         docState,
         evaluation,
+        validation,
+        sheetIssuesByName,
         activeSheet: firstSheet,
-        error: null,
+        error: firstGlobalIssue?.message ?? null,
       });
     } catch (error) {
       set({ error: toErrorMessage(error) });
