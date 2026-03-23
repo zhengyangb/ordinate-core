@@ -21,6 +21,7 @@ function renderIssue(issue: SheetIssueViewModel): string {
 
 export default function SheetParseErrorPanel({ sheetName, issues, onOpenSourceMode }: SheetParseErrorPanelProps) {
   const firstIssue = issues[0] ?? null;
+  const listedIssues = firstIssue ? issues.slice(1, 9) : issues.slice(0, 8);
   return (
     <div className="sheet-parse-error" role="alert">
       <h3>{`"${sheetName}" cannot be rendered as a table`}</h3>
@@ -29,11 +30,11 @@ export default function SheetParseErrorPanel({ sheetName, issues, onOpenSourceMo
         <p className="sheet-parse-error-first">{`First issue: ${renderIssue(firstIssue)}`}</p>
       ) : null}
       <ul className="sheet-parse-error-list">
-        {issues.slice(0, 8).map((issue, index) => (
+        {listedIssues.map((issue, index) => (
           <li key={`${index}-${issue.row ?? "na"}-${issue.col ?? "na"}-${issue.message}`}>{renderIssue(issue)}</li>
         ))}
       </ul>
-      {issues.length > 8 ? <p className="sheet-parse-error-more">{`+${issues.length - 8} more issue(s)`}</p> : null}
+      {issues.length > 9 ? <p className="sheet-parse-error-more">{`+${issues.length - 9} more issue(s)`}</p> : null}
       <button className="sheet-parse-error-action" type="button" onClick={onOpenSourceMode}>
         Open Source Mode
       </button>

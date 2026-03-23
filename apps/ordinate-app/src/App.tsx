@@ -78,6 +78,33 @@ function overlayCellsEqual(previous: HeaderOverlayCell[], next: HeaderOverlayCel
   return true;
 }
 
+const BLOCKING_SHEET_MESSAGE_FRAGMENTS = [
+  "sheet has no table",
+  "sheet contains multiple tables",
+  "table is not rectangular",
+  "table has inconsistent || boundary position",
+  "table has multiple separator rows",
+  "table separator row cannot be first row",
+  "row must start and end with '|'",
+  "multiple || boundary markers in one row",
+];
+
+function isBlockingSheetIssue(issue: { message: string; row?: number; col?: number }): boolean {
+  if (issue.col != null) return false;
+  const normalized = issue.message.trim().toLowerCase();
+  return BLOCKING_SHEET_MESSAGE_FRAGMENTS.some((fragment) => normalized.includes(fragment));
+}
+
+function normalizeIssueMessage(issue: { message: string; row?: number; col?: number }): string {
+  let message = issue.message.trim();
+  if (issue.row != null && issue.col != null) {
+    message = message.replace(/^Row\s+\d+\s*,\s*col\s+\d+\s*:\s*/i, "");
+  } else if (issue.row != null) {
+    message = message.replace(/^Row\s+\d+\s*:\s*/i, "");
+  }
+  return message;
+}
+
 export default function App() {
   const {
     mode,
@@ -137,23 +164,39 @@ export default function App() {
     return evaluation?.sheets.map((sheet) => sheet.name) ?? [];
   }, [docState, evaluation]);
 
-  const sheetHealthByName = useMemo<Record<string, SheetHealth>>(() => {
-    return sheetNames.reduce<Record<string, SheetHealth>>((acc, name) => {
-      acc[name] = (sheetIssuesByName[name]?.length ?? 0) > 0 ? "invalid" : "ok";
+  const sheetIssueBuckets = useMemo(() => {
+    return sheetNames.reduce<Record<string, { blocking: SheetIssueViewModel[] }>>((acc, name) => {
+      const issues = sheetIssuesByName[name] ?? [];
+      const blocking: SheetIssueViewModel[] = [];
+      for (const issue of issues) {
+        const viewIssue: SheetIssueViewModel = {
+          message: normalizeIssueMessage(issue),
+          row: issue.row,
+          col: issue.col,
+        };
+        if (isBlockingSheetIssue(issue)) {
+          blocking.push(viewIssue);
+        }
+      }
+      acc[name] = { blocking };
       return acc;
     }, {});
   }, [sheetNames, sheetIssuesByName]);
 
-  const activeSheetIssues = useMemo<SheetIssueViewModel[]>(() => {
-    if (!activeSheet) return [];
-    return (sheetIssuesByName[activeSheet] ?? []).map((issue) => ({
-      message: issue.message,
-      row: issue.row,
-      col: issue.col,
-    }));
-  }, [activeSheet, sheetIssuesByName]);
+  const sheetHealthByName = useMemo<Record<string, SheetHealth>>(() => {
+    return sheetNames.reduce<Record<string, SheetHealth>>((acc, name) => {
+      const bucket = sheetIssueBuckets[name];
+      acc[name] = (bucket?.blocking.length ?? 0) > 0 ? "invalid" : "ok";
+      return acc;
+    }, {});
+  }, [sheetNames, sheetIssueBuckets]);
 
-  const isActiveSheetInvalid = activeSheetIssues.length > 0;
+  const activeSheetBlockingIssues = useMemo<SheetIssueViewModel[]>(() => {
+    if (!activeSheet) return [];
+    return sheetIssueBuckets[activeSheet]?.blocking ?? [];
+  }, [activeSheet, sheetIssueBuckets]);
+
+  const isActiveSheetBlocked = activeSheetBlockingIssues.length > 0;
 
   const sheetColCount = useMemo(() => {
     if (!currentSheetState) return 0;
@@ -251,9 +294,9 @@ export default function App() {
   }, [activeSheet, mode]);
 
   useEffect(() => {
-    if (!isActiveSheetInvalid) return;
+    if (!isActiveSheetBlocked) return;
     setSelectedCell(null);
-  }, [isActiveSheetInvalid]);
+  }, [isActiveSheetBlocked]);
 
   useEffect(() => {
     if (mode === "source") {
@@ -412,17 +455,17 @@ export default function App() {
         setToolMenuOpen(false);
         return;
       }
-      if (mode === "source" || isActiveSheetInvalid) return;
+      if (mode === "source" || isActiveSheetBlocked) return;
       if (!selectedCell) return;
       clearActiveSelection();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, isActiveSheetInvalid, selectedCell, clearActiveSelection, themeMenuOpen, toolMenuOpen]);
+  }, [mode, isActiveSheetBlocked, selectedCell, clearActiveSelection, themeMenuOpen, toolMenuOpen]);
 
   useEffect(() => {
-    if (mode === "source" || isActiveSheetInvalid) return;
+    if (mode === "source" || isActiveSheetBlocked) return;
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
@@ -436,7 +479,7 @@ export default function App() {
 
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [mode, isActiveSheetInvalid, selectedCell, clearActiveSelection]);
+  }, [mode, isActiveSheetBlocked, selectedCell, clearActiveSelection]);
 
   const toggleCollapse = useCallback((rowPath: string) => {
     setCollapsedPaths((prev) => {
@@ -505,9 +548,9 @@ export default function App() {
   }, [rowData]);
 
   useEffect(() => {
-    if (mode === "source" || isActiveSheetInvalid) return;
+    if (mode === "source" || isActiveSheetBlocked) return;
     syncRowIndexMetrics(gridApiRef.current);
-  }, [mode, isActiveSheetInvalid, rowData, syncRowIndexMetrics]);
+  }, [mode, isActiveSheetBlocked, rowData, syncRowIndexMetrics]);
 
   const colIndexLookup = useMemo(() => {
     const map = new Map<string, number>();
@@ -519,7 +562,7 @@ export default function App() {
 
   const syncHeaderOverlayCells = useCallback(
     (root: HTMLElement | null) => {
-      if (!root || mode === "source" || isActiveSheetInvalid || headerOverlayRows === 0 || sheetColCount === 0) {
+      if (!root || mode === "source" || isActiveSheetBlocked || headerOverlayRows === 0 || sheetColCount === 0) {
         setHeaderOverlayCells((current) => (current.length === 0 ? current : []));
         return;
       }
@@ -585,7 +628,7 @@ export default function App() {
 
       setHeaderOverlayCells((current) => (overlayCellsEqual(current, nextCells) ? current : nextCells));
     },
-    [mode, isActiveSheetInvalid, headerOverlayRows, sheetColCount, colIndexLookup, headerMatrix, gridViewportAdapter],
+    [mode, isActiveSheetBlocked, headerOverlayRows, sheetColCount, colIndexLookup, headerMatrix, gridViewportAdapter],
   );
 
   const scheduleHeaderOverlaySync = useCallback(
@@ -644,9 +687,9 @@ export default function App() {
   const renderedColumnCount = sheetColCount;
 
   useEffect(() => {
-    if (mode === "source" || isActiveSheetInvalid) return;
+    if (mode === "source" || isActiveSheetBlocked) return;
     scheduleHeaderOverlaySync(3);
-  }, [mode, isActiveSheetInvalid, activeSheet, rowData.length, renderedColumnCount, scheduleHeaderOverlaySync]);
+  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, renderedColumnCount, scheduleHeaderOverlaySync]);
 
   const gridTemplateColumns = useMemo(() => {
     if (sheetColCount === 0) return "";
@@ -807,7 +850,7 @@ export default function App() {
 
   useEffect(() => {
     const root = gridWrapRef.current;
-    if (!root || mode === "source" || isActiveSheetInvalid) return;
+    if (!root || mode === "source" || isActiveSheetBlocked) return;
 
     const leafHeaderRowNumber = Math.max(1, headerRowCount);
 
@@ -840,10 +883,10 @@ export default function App() {
 
     root.addEventListener("mousedown", handlePointerDown);
     return () => root.removeEventListener("mousedown", handlePointerDown);
-  }, [mode, isActiveSheetInvalid, headerRowCount, sheetColCount, colIndexLookup, gridViewportAdapter]);
+  }, [mode, isActiveSheetBlocked, headerRowCount, sheetColCount, colIndexLookup, gridViewportAdapter]);
 
   useEffect(() => {
-    if (mode === "source" || isActiveSheetInvalid) return;
+    if (mode === "source" || isActiveSheetBlocked) return;
     const root = gridWrapRef.current;
     const columnTrack = columnTrackRef.current;
     const rowTrack = rowTrackRef.current;
@@ -856,7 +899,7 @@ export default function App() {
       setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
       setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
     });
-  }, [mode, isActiveSheetInvalid, activeSheet, rowData.length, renderedColumnCount, syncHeaderOverlayCells, gridViewportAdapter]);
+  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, renderedColumnCount, syncHeaderOverlayCells, gridViewportAdapter]);
 
   const handleCellFocused = useCallback(
     (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
@@ -927,7 +970,7 @@ export default function App() {
   );
 
   const formulaBarData = useMemo<FormulaBarData | null>(() => {
-    if (!currentSheet || !currentSheetState || !selectedCell || isActiveSheetInvalid) return null;
+    if (!currentSheet || !currentSheetState || !selectedCell || isActiveSheetBlocked) return null;
 
     const colIndex = selectedCell.logical.cAbs;
     if (colIndex < 0 || colIndex >= sheetColCount) return null;
@@ -993,7 +1036,7 @@ export default function App() {
     currentSheet,
     currentSheetState,
     selectedCell,
-    isActiveSheetInvalid,
+    isActiveSheetBlocked,
     sheetColCount,
     headerSemanticLabels,
     headerMatrix,
@@ -1040,7 +1083,7 @@ export default function App() {
       }) as CSSProperties,
     [headerOverlayHeight],
   );
-  const shouldRenderGrid = Boolean(currentSheet && currentSheetState && activeSheet && !isActiveSheetInvalid);
+  const shouldRenderGrid = Boolean(currentSheet && currentSheetState && activeSheet && !isActiveSheetBlocked);
 
   return (
     <div className="page">
@@ -1107,8 +1150,8 @@ export default function App() {
                 handleModelUpdated={handleModelUpdated}
                 handleCellFocused={handleCellFocused}
               />
-            ) : activeSheet && isActiveSheetInvalid ? (
-              <SheetParseErrorPanel sheetName={activeSheet} issues={activeSheetIssues} onOpenSourceMode={enterSourceMode} />
+            ) : activeSheet && isActiveSheetBlocked ? (
+              <SheetParseErrorPanel sheetName={activeSheet} issues={activeSheetBlockingIssues} onOpenSourceMode={enterSourceMode} />
             ) : (
               <div className="empty-state">
                 <h3>No sheet selected</h3>

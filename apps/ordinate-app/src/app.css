@@ -624,8 +624,18 @@ textarea {
   flex: 0 0 auto;
 }
 
-.sheet-tab.invalid {
+.sheet-tab.warning {
   border-color: color-mix(in oklab, var(--warning-border) 58%, var(--chrome-border));
+}
+
+.sheet-tab.invalid {
+  border-color: color-mix(in oklab, var(--danger-border) 44%, var(--chrome-border));
+}
+
+.sheet-tab-alert.invalid {
+  border-color: color-mix(in oklab, var(--danger-border) 66%, transparent);
+  background: color-mix(in oklab, var(--danger-bg) 68%, var(--sheet-surface));
+  color: var(--danger-ink);
 }
 
 .sheet-tab:hover {
@@ -650,6 +660,12 @@ textarea {
   border-color: color-mix(in oklab, var(--warning-border) 56%, transparent);
   background: color-mix(in oklab, var(--warning-bg) 82%, var(--accent));
   color: var(--warning-ink);
+}
+
+.sheet-tab.active .sheet-tab-alert.invalid {
+  border-color: color-mix(in oklab, var(--danger-border) 56%, transparent);
+  background: color-mix(in oklab, var(--danger-bg) 78%, var(--accent));
+  color: var(--danger-ink);
 }
 
 .error {

@@ -75,6 +75,12 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
       const raw = c < row.rawCells.length ? row.rawCells[c] : "";
       const cellState = sheet.cells[rAbs][c];
       if (cellState.parsed.kind === "formula") {
+        if (isParseErrorExpression(cellState.parsed.expression)) {
+          const exprText = cellState.parsed.expressionText?.trim() ?? "";
+          cells.push(`error = ${exprText}`);
+          continue;
+        }
+
         const rhs = renderExpression(cellState.parsed.expression, rowIdToIndex, colIdToIndex)
           ?? cellState.parsed.expressionText
           ?? "";
@@ -91,6 +97,12 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
   }
 
   return lines;
+}
+
+function isParseErrorExpression(node: ExprNode | null | undefined): boolean {
+  if (!node || node.kind !== "literal") return false;
+  const value = node.value as RuntimeValue;
+  return value.kind === "error" && value.value === "parse_error";
 }
 
 function buildRow(cells: string[], boundary: number | null): string {

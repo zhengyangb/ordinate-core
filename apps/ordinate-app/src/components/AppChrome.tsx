@@ -48,6 +48,14 @@ export default function AppChrome({
   onTabMouseEnter,
   onTabMouseLeave,
 }: AppChromeProps) {
+  const tabClassName = (sheetName: string): string => {
+    const health = sheetHealthByName[sheetName] ?? "ok";
+    const classes = ["sheet-tab"];
+    if (sheetName === activeSheet) classes.push("active");
+    if (health === "invalid") classes.push("invalid");
+    return classes.join(" ");
+  };
+
   return (
     <header className={mode === "source" ? "app-chrome source-mode" : "app-chrome"}>
       <div className="topbar">
@@ -126,11 +134,7 @@ export default function AppChrome({
             {sheetNames.map((sheetName) => (
               <button
                 key={sheetName}
-                className={
-                  sheetName === activeSheet
-                    ? `sheet-tab active${sheetHealthByName[sheetName] === "invalid" ? " invalid" : ""}`
-                    : `sheet-tab${sheetHealthByName[sheetName] === "invalid" ? " invalid" : ""}`
-                }
+                className={tabClassName(sheetName)}
                 onClick={() => setActiveSheet(sheetName)}
                 type="button"
                 tabIndex={mode === "source" ? -1 : 0}
@@ -141,9 +145,13 @@ export default function AppChrome({
                 aria-invalid={sheetHealthByName[sheetName] === "invalid"}
               >
                 <span className="sheet-tab-label">{sheetName}</span>
-                {sheetHealthByName[sheetName] === "invalid" ? (
-                  <span className="sheet-tab-alert" aria-hidden="true" title="Sheet has parse/validation issues">
-                    !
+                {sheetHealthByName[sheetName] !== "ok" ? (
+                  <span
+                    className="sheet-tab-alert invalid"
+                    aria-hidden="true"
+                    title="Sheet has blocking issues"
+                  >
+                    ×
                   </span>
                 ) : null}
               </button>
