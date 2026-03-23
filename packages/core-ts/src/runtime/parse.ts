@@ -11,6 +11,7 @@ const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
 const UNDERSCORE_OFFSET_RE = /^_([+-]?\d+)$/;
 const NUMBER_RE = /^-?\d+(?:\.\d+)?$/;
+const ABSOLUTE_FIXED_RE = /^#([1-9]\d*)!$/;
 const ABSOLUTE_RE = /^#([1-9]\d*)$/;
 const UNQUOTED_PATH_COMPONENT_RE = /^[A-Za-z0-9_]+$/;
 
@@ -133,6 +134,12 @@ function tokenizeExpr(text: string): [string, string][] {
       }
       out.push(["REF", text.slice(i, j + 1)]);
       i = j + 1;
+      continue;
+    }
+    const spreadsheetToken = scanSpreadsheetToken(text, i);
+    if (spreadsheetToken) {
+      out.push(["SPREF", spreadsheetToken.text]);
+      i = spreadsheetToken.next;
       continue;
     }
     if (/\d/.test(ch) || (ch === "-" && i + 1 < text.length && /\d/.test(text[i + 1]))) {
@@ -295,6 +302,10 @@ class ExprParser {
     if (str) {
       return { kind: "literal", value: { kind: "string", value: unescapeQuoted(str[1].slice(1, -1)) } };
     }
+    const spRef = this.match("SPREF");
+    if (spRef) {
+      return { kind: "reference", value: parseSpreadsheetReference(spRef[1]) };
+    }
     const ident = this.match("IDENT");
     if (ident) {
       const next = this.peek();
@@ -338,12 +349,89 @@ function parseReference(text: string): ReferenceExpr {
   const inner = text.slice(2, -1).trim();
   const parts = splitTopLevel(inner, ",");
   if (parts.length !== 2) {
-    return { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" } };
+    return { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "ordinate" };
   }
   return {
     rowSelector: parseSelector(parts[0].trim(), true),
     colSelector: parseSelector(parts[1].trim(), false),
+    style: "ordinate",
   };
+}
+
+// Parse a spreadsheet-style reference such as A1, A1:B5, A:A, or 1:1.
+function parseSpreadsheetReference(text: string): ReferenceExpr {
+  const trimmed = text.trim();
+  const parts = trimmed.split(":");
+  if (parts.length === 1) {
+    const cell = parseCellAddress(parts[0]);
+    if (!cell) {
+      return { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "spreadsheet" };
+    }
+    return {
+      rowSelector: { kind: "absolute", value: cell.row },
+      colSelector: { kind: "absolute", value: cell.col },
+      style: "spreadsheet",
+    };
+  }
+  if (parts.length !== 2) {
+    return { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "spreadsheet" };
+  }
+
+  const left = parts[0].trim();
+  const right = parts[1].trim();
+  const leftCell = parseCellAddress(left);
+  const rightCell = parseCellAddress(right);
+  if (leftCell && rightCell) {
+    return {
+      rowSelector: {
+        kind: "range",
+        value: [
+          { kind: "absolute", value: leftCell.row },
+          { kind: "absolute", value: rightCell.row },
+        ],
+      },
+      colSelector: {
+        kind: "range",
+        value: [
+          { kind: "absolute", value: leftCell.col },
+          { kind: "absolute", value: rightCell.col },
+        ],
+      },
+      style: "spreadsheet",
+    };
+  }
+
+  const leftCol = columnLabelToIndex(left);
+  const rightCol = columnLabelToIndex(right);
+  if (leftCol !== null && rightCol !== null) {
+    return {
+      rowSelector: { kind: "all" },
+      colSelector: {
+        kind: "range",
+        value: [
+          { kind: "absolute", value: leftCol },
+          { kind: "absolute", value: rightCol },
+        ],
+      },
+      style: "spreadsheet",
+    };
+  }
+
+  if (/^[1-9]\d*$/.test(left) && /^[1-9]\d*$/.test(right)) {
+    return {
+      rowSelector: {
+        kind: "range",
+        value: [
+          { kind: "absolute", value: Number(left) - 1 },
+          { kind: "absolute", value: Number(right) - 1 },
+        ],
+      },
+      colSelector: { kind: "all" },
+      style: "spreadsheet",
+    };
+  }
+
+  return { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "spreadsheet" };
 }
 
 // Parse a row/column selector, including ranges.
@@ -380,6 +468,9 @@ function parseScalarSelector(text: string, isRow: boolean): RefSelector {
     const m = THIS_COL_RE.exec(text);
     if (m) return { kind: "offset", value: Number(m[1]) };
   }
+
+  const fixed = ABSOLUTE_FIXED_RE.exec(text);
+  if (fixed) return { kind: "absolute_fixed", value: Number(fixed[1]) - 1 };
 
   const abs = ABSOLUTE_RE.exec(text);
   if (abs) return { kind: "absolute", value: Number(abs[1]) - 1 };
@@ -458,6 +549,53 @@ function splitTopLevel(text: string, delimiter: string): string[] {
 // Check if a literal is surrounded by quotes.
 function isQuoted(text: string): boolean {
   return text.length >= 2 && text.startsWith('"') && text.endsWith('"');
+}
+
+function scanSpreadsheetToken(text: string, start: number): { text: string; next: number } | null {
+  const source = text.slice(start);
+  const patterns = [
+    /^[A-Za-z]+[1-9]\d*:[A-Za-z]+[1-9]\d*/,
+    /^[A-Za-z]+:[A-Za-z]+/,
+    /^[1-9]\d*:[1-9]\d*/,
+    /^[A-Za-z]+[1-9]\d*/,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(source);
+    if (!match) continue;
+    const token = match[0];
+    const nextIndex = start + token.length;
+    if (!isSpreadsheetBoundary(text, nextIndex)) continue;
+    return { text: token, next: nextIndex };
+  }
+  return null;
+}
+
+function isSpreadsheetBoundary(text: string, nextIndex: number): boolean {
+  if (nextIndex >= text.length) return true;
+  const next = text[nextIndex];
+  return !/[A-Za-z0-9_]/.test(next);
+}
+
+function parseCellAddress(text: string): { row: number; col: number } | null {
+  const match = /^([A-Za-z]+)([1-9]\d*)$/.exec(text);
+  if (!match) return null;
+  const col = columnLabelToIndex(match[1]);
+  if (col === null) return null;
+  const row = Number(match[2]) - 1;
+  return { row, col };
+}
+
+function columnLabelToIndex(text: string): number | null {
+  if (!/^[A-Za-z]+$/.test(text)) return null;
+  let value = 0;
+  const upper = text.toUpperCase();
+  for (let i = 0; i < upper.length; i += 1) {
+    const code = upper.charCodeAt(i);
+    const digit = code - 64; // A -> 1
+    if (digit < 1 || digit > 26) return null;
+    value = value * 26 + digit;
+  }
+  return value - 1;
 }
 
 // Unescape a quoted string literal.

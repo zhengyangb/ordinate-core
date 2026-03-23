@@ -36,6 +36,9 @@ This RFC distinguishes the following reference kinds:
 - **positional reference**  
   for example `#1`, meaning an absolute position
 
+- **fixed positional reference**  
+  for example `#1!`, meaning a rebasing-exempt anchored position
+
 - **relative reference**  
   for example `_`, `_+1`, `_-1`
 
@@ -54,6 +57,17 @@ Current working direction:
 - `#n` refers to the current nth position on an axis
 - without stable row/column IDs, `#n` is not identity-based
 - after insertion or deletion, positional references shift naturally with the axis
+
+## 6.1 Fixed Positional Reference Semantics
+
+`#!` is fixed positional.
+
+Current working direction:
+
+- `#n!` denotes fixed positional selection on an axis
+- `#n!` is rebasing-exempt under row/column insertion and deletion
+- structural edits do not rewrite the fixed positional index itself
+- fixed positional remains anchored while ordinary `#n` continues to shift
 
 ## 7. Relative Reference Semantics
 
@@ -177,7 +191,6 @@ For hierarchical labels and multi-level headers:
 ## 15. Deferred Topics
 
 - stable row/column IDs
-- fixed reference semantics beyond the current `#`
 - user-configurable rebasing policies
 - exact empty-view semantics after total deletion
 - collaborative conflict handling

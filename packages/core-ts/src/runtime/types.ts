@@ -8,9 +8,12 @@ export interface RefSelector {
   value?: unknown;
 }
 
+export type ReferenceStyle = "ordinate" | "spreadsheet";
+
 export interface ReferenceExpr {
   rowSelector: RefSelector;
   colSelector: RefSelector;
+  style?: ReferenceStyle;
 }
 
 export interface ViewSelection {

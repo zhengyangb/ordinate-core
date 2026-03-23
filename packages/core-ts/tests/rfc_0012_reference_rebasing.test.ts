@@ -49,6 +49,41 @@ describe("RFC-0012 reference rebasing (tentative)", () => {
     );
   });
 
+  it("fixed positional #! does not rebase under row insertion", () => {
+    const doc = `
+# Sheet
+| Item || 2024 | Sum |
+| ---- || ---- | --- |
+| A    || 10   |     |
+| B    || 20   | = @[#2!,2024] |
+`.trim();
+
+    const state = DocumentState.fromText(doc);
+    const before = state.evaluate().sheets[0];
+    const colSum = before.colLabels.indexOf("Sum");
+    const rowB = before.rowPaths.indexOf("B");
+    expect(before.values[rowB][colSum].value).toBe(10);
+
+    const bodyStart = state.sheets[0].bodyStart;
+    state.insertRow("Sheet", bodyStart, true);
+
+    const after = state.evaluate().sheets[0];
+    const rowBAfter = after.rowPaths.indexOf("B");
+    expect(after.values[rowBAfter][colSum].kind).toBe("blank");
+
+    expectSerialized(
+      state,
+      `
+# Sheet
+| Item || 2024 | Sum |
+| ---- || ---- | --- |
+|      ||      |     |
+| A    || 10   |     |
+| B    || 20   | = @[#2!,2024] |
+`.trim(),
+    );
+  });
+
   it("renaming a label rebinds references when unique", () => {
     const doc = `
 # Sheet
