@@ -50,6 +50,8 @@ const DATA_COLUMN_MIN_WIDTH = 132;
 const GRID_HEADER_HEIGHT = 40;
 const GRID_ROW_HEIGHT = 38;
 const FORMULA_BAR_SAFE_SPACE = 136;
+const FORMULA_BAR_AUTO_PAN_CLEARANCE = 12;
+const FORMULA_BAR_AUTO_PAN_DURATION_MS = 280;
 const CHROME_TRANSITION_MS = 260;
 const THEME_STORAGE_KEY = "ordinate-theme-mode";
 const BLANK_RUNTIME_VALUE: RuntimeValue = { kind: "blank", value: null };
@@ -105,6 +107,17 @@ function normalizeIssueMessage(issue: { message: string; row?: number; col?: num
   return message;
 }
 
+function queryGridBodyViewport(root: HTMLElement): HTMLElement | null {
+  return (
+    root.querySelector<HTMLElement>(".ag-body-viewport.ag-layout-normal") ??
+    root.querySelector<HTMLElement>(".ag-body-viewport")
+  );
+}
+
+function easeOutQuint(progress: number): number {
+  return 1 - (1 - progress) ** 5;
+}
+
 export default function App() {
   const {
     mode,
@@ -138,6 +151,7 @@ export default function App() {
 
   const gridViewportAdapter = useMemo(() => createAgGridAdapter(), []);
   const overlaySyncRafRef = useRef<number | null>(null);
+  const autoPanRafRef = useRef<number | null>(null);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
   const columnTrackRef = useRef<HTMLDivElement | null>(null);
   const rowTrackRef = useRef<HTMLDivElement | null>(null);
@@ -547,6 +561,12 @@ export default function App() {
     return map;
   }, [rowData]);
 
+  const rowPathToDisplayedIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    rowData.forEach((row, index) => map.set(row.__rowPath, index));
+    return map;
+  }, [rowData]);
+
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
     syncRowIndexMetrics(gridApiRef.current);
@@ -655,6 +675,9 @@ export default function App() {
     return () => {
       if (overlaySyncRafRef.current != null) {
         window.cancelAnimationFrame(overlaySyncRafRef.current);
+      }
+      if (autoPanRafRef.current != null) {
+        window.cancelAnimationFrame(autoPanRafRef.current);
       }
     };
   }, []);
@@ -1054,6 +1077,82 @@ export default function App() {
     const timeout = window.setTimeout(() => setFormulaBarSnapshot(null), CHROME_TRANSITION_MS);
     return () => window.clearTimeout(timeout);
   }, [formulaBarData]);
+
+  useEffect(() => {
+    if (mode !== "table" || isActiveSheetBlocked || !formulaBarData || selectedCell?.area !== "body") return;
+
+    const root = gridWrapRef.current;
+    if (!root) return;
+
+    const viewport = queryGridBodyViewport(root);
+    if (!viewport) return;
+
+    const selectedRowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
+    if (!selectedRowPath) return;
+
+    const displayedRowIndex = rowPathToDisplayedIndex.get(selectedRowPath);
+    if (displayedRowIndex == null) return;
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let kickoffRaf: number | null = null;
+
+    const runAutoPan = () => {
+      const selectedCellElement = root.querySelector<HTMLElement>(
+        `.ag-row[row-index="${displayedRowIndex}"] .ag-cell[col-id="${selectedCell.colId}"]`,
+      );
+      const formulaElement = document.querySelector<HTMLElement>(".formula-bar-shell .formula-bar");
+      if (!selectedCellElement || !formulaElement) return;
+
+      const cellRect = selectedCellElement.getBoundingClientRect();
+      const formulaRect = formulaElement.getBoundingClientRect();
+      const overlap = cellRect.bottom + FORMULA_BAR_AUTO_PAN_CLEARANCE - formulaRect.top;
+      if (overlap <= 0) return;
+
+      const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+      const targetScrollTop = Math.min(maxScrollTop, viewport.scrollTop + overlap);
+      if (targetScrollTop <= viewport.scrollTop + 0.5) return;
+
+      if (reduceMotion) {
+        viewport.scrollTop = targetScrollTop;
+        return;
+      }
+
+      if (autoPanRafRef.current != null) {
+        window.cancelAnimationFrame(autoPanRafRef.current);
+      }
+
+      const startScrollTop = viewport.scrollTop;
+      const distance = targetScrollTop - startScrollTop;
+      const startTime = performance.now();
+
+      const animate = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.max(0, Math.min(1, elapsed / FORMULA_BAR_AUTO_PAN_DURATION_MS));
+        const eased = easeOutQuint(progress);
+        viewport.scrollTop = startScrollTop + distance * eased;
+
+        if (progress < 1) {
+          autoPanRafRef.current = window.requestAnimationFrame(animate);
+        } else {
+          autoPanRafRef.current = null;
+        }
+      };
+
+      autoPanRafRef.current = window.requestAnimationFrame(animate);
+    };
+
+    kickoffRaf = window.requestAnimationFrame(runAutoPan);
+
+    return () => {
+      if (kickoffRaf != null) {
+        window.cancelAnimationFrame(kickoffRaf);
+      }
+      if (autoPanRafRef.current != null) {
+        window.cancelAnimationFrame(autoPanRafRef.current);
+        autoPanRafRef.current = null;
+      }
+    };
+  }, [mode, isActiveSheetBlocked, formulaBarData, selectedCell, absoluteRowPathLookup, rowPathToDisplayedIndex]);
 
   const chromeVisibilityPhase: ChromeVisibilityPhase =
     mode === "table" ? (formulaBarData ? "visible" : formulaBarSnapshot ? "hiding" : "hidden") : "hidden";
