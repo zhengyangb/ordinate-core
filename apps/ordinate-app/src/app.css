@@ -952,8 +952,17 @@ textarea {
   position: absolute;
   inset-inline: 0;
   top: 0;
-  z-index: 5;
+  z-index: 4;
   pointer-events: none;
+}
+
+.header-matrix-overlay--center {
+  z-index: 4;
+  clip-path: inset(0 0 0 var(--header-overlay-pinned-width, 0px));
+}
+
+.header-matrix-overlay--pinned {
+  z-index: 6;
 }
 
 .header-matrix-cell {
@@ -1330,6 +1339,12 @@ textarea {
 .grid-wrap .ag-pinned-left-cols-container,
 .grid-wrap .ag-pinned-left-header {
   box-shadow: var(--sticky-col-shadow);
+}
+
+.table-stage.has-scroll-x .grid-wrap .ag-pinned-left-header,
+.table-stage.has-scroll-x .grid-wrap .ag-pinned-left-cols-container {
+  position: relative;
+  z-index: 6;
 }
 
 .formula-bar-shell {

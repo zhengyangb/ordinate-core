@@ -255,6 +255,12 @@ export default function App() {
   const headerColCount = Math.min(currentSheetState?.headerColCount ?? 0, sheetColCount);
   const headerOverlayRows = Math.max(0, headerRowCount - 1);
   const headerOverlayHeight = headerOverlayRows * GRID_HEADER_HEIGHT;
+  const pinnedHeaderWidth = useMemo(() => {
+    return Array.from({ length: headerColCount }, (_, colIndex) => (colIndex === 0 ? LABEL_COLUMN_WIDTH : HEADER_COLUMN_WIDTH)).reduce(
+      (sum, width) => sum + width,
+      0,
+    );
+  }, [headerColCount]);
 
   const headerMatrix = useMemo(() => {
     if (!currentSheetState || sheetColCount === 0) return [] as string[][];
@@ -615,6 +621,7 @@ export default function App() {
             const current = leafCells[end];
             const candidate = leafCells[end + 1];
             if (candidate.colIndex !== current.colIndex + 1) break;
+            if (current.colIndex < headerColCount && candidate.colIndex >= headerColCount) break;
             const candidateLabel = headerMatrix[rowOffset]?.[candidate.colIndex] ?? "";
             if (candidateLabel !== label) break;
             end += 1;
@@ -1233,6 +1240,8 @@ export default function App() {
                 headerIndexTrackHeight={headerIndexTrackHeight}
                 headerOverlayHeight={headerOverlayHeight}
                 headerOverlayCells={headerOverlayCells}
+                headerColCount={headerColCount}
+                pinnedHeaderWidth={pinnedHeaderWidth}
                 rowIndexTrackHeight={rowIndexTrackHeight}
                 indexRailsPhase={chromeVisibilityPhase}
                 rowIndexMetrics={rowIndexMetrics}
