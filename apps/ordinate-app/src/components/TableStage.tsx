@@ -38,6 +38,17 @@ type TableStageProps = {
   handleCellFocused: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
 };
 
+function toColumnLetters(colNumber: number): string {
+  let n = Math.max(1, Math.trunc(colNumber));
+  let label = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor((n - 1) / 26);
+  }
+  return label;
+}
+
 export default function TableStage({
   tableStageClassName,
   tableStageStyle,
@@ -81,9 +92,24 @@ export default function TableStage({
           aria-hidden="true"
         >
           {Array.from({ length: renderedColumnCount }, (_, index) => (
-            <div key={`column-index-${index + 1}`} className="column-index-cell">
-              {index + 1}
-            </div>
+            (() => {
+              const colNumber = index + 1;
+              const isActive = selectedCell?.logical.cAbs === index;
+              const letters = toColumnLetters(colNumber);
+              return (
+                <div
+                  key={`column-index-${colNumber}`}
+                  className={isActive ? "column-index-cell is-active" : "column-index-cell"}
+                >
+                  <span className="column-index-label">
+                    <span className="column-index-primary">{letters}</span>
+                    <sup className="column-index-secondary" aria-hidden="true">
+                      {colNumber}
+                    </sup>
+                  </span>
+                </div>
+              );
+            })()
           ))}
         </div>
       </div>

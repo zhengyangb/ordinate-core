@@ -826,10 +826,40 @@ textarea {
   min-width: 0;
   border-inline-end: 1px solid color-mix(in oklab, var(--index-rail-border) 78%, transparent);
   color: var(--sheet-soft);
-  font-size: 0.8rem;
-  font-weight: 500;
+  font-size: 0.76rem;
+  font-weight: 530;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.column-index-label {
+  display: inline-flex;
+  align-items: baseline;
+  line-height: 1;
+}
+
+.column-index-primary {
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+.column-index-secondary {
+  margin-inline-start: 0.08rem;
+  color: color-mix(in oklab, var(--accent-strong) 46%, var(--sheet-soft));
+  font-size: 0.58rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  opacity: 0.52;
+  vertical-align: 0.22em;
+}
+
+.column-index-cell.is-active .column-index-primary {
+  color: color-mix(in oklab, var(--sheet-ink) 78%, var(--accent-strong));
+}
+
+.column-index-cell.is-active .column-index-secondary {
+  color: color-mix(in oklab, var(--accent-strong) 86%, var(--sheet-soft));
+  opacity: 0.84;
 }
 
 .row-index-strip {
@@ -1591,6 +1621,10 @@ textarea:focus-visible,
     margin-left: 0;
     max-width: 100%;
     text-align: left;
+  }
+
+  .column-index-secondary {
+    display: none;
   }
 }
 
