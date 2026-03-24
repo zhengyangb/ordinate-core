@@ -87,6 +87,15 @@ const sampleDocument = `# Management Report
 |   Product B || 41   | 44   | 46   | 49   | 52   | 55   | 57   | 61   |
 | Revenue Total || = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] |
 | Gross Margin % || = @["Revenue Total",_] / 120 | = @["Revenue Total",_] / 130 | = @["Revenue Total",_] / 140 | = @["Revenue Total",_] / 150 | = @["Revenue Total",_] / 160 | = @["Revenue Total",_] / 170 | = @["Revenue Total",_] / 180 | = @["Revenue Total",_] / 190 |
+
+# A1 Style Demo
+| Item       || 2024 | 2025 | Calc |
+| ---------- || ---- | ---- | ---- |
+| Revenue    || 100  | 120  | = B2 + C2 |
+| Cost       || 40   | 55   | = sum(B2:C3) |
+| Column Sum || 0    | 0    | = sum(B:B) |
+| Row Sum    || 0    | 0    | = sum(2:2) |
+| Mixed      || 0    | 0    | = B2 + @[Cost,2024] |
 `;
 
 function toErrorMessage(error: unknown): string {

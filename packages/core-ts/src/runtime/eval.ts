@@ -530,6 +530,11 @@ function resolveScalarRendered(
     if (idx < 0 || idx >= totalCount) return null;
     return idx;
   }
+  if (selector.kind === "absolute_fixed") {
+    const idx = Number(selector.value);
+    if (idx < 0 || idx >= totalCount) return null;
+    return idx;
+  }
   if (selector.kind === "absolute_id") {
     if (!idToIndex) return null;
     const idx = idToIndex.get(Number(selector.value));

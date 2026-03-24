@@ -75,6 +75,12 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
       const raw = c < row.rawCells.length ? row.rawCells[c] : "";
       const cellState = sheet.cells[rAbs][c];
       if (cellState.parsed.kind === "formula") {
+        if (isParseErrorExpression(cellState.parsed.expression)) {
+          const exprText = cellState.parsed.expressionText?.trim() ?? "";
+          cells.push(`error = ${exprText}`);
+          continue;
+        }
+
         const rhs = renderExpression(cellState.parsed.expression, rowIdToIndex, colIdToIndex)
           ?? cellState.parsed.expressionText
           ?? "";
@@ -91,6 +97,12 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
   }
 
   return lines;
+}
+
+function isParseErrorExpression(node: ExprNode | null | undefined): boolean {
+  if (!node || node.kind !== "literal") return false;
+  const value = node.value as RuntimeValue;
+  return value.kind === "error" && value.value === "parse_error";
 }
 
 function buildRow(cells: string[], boundary: number | null): string {
@@ -170,6 +182,10 @@ function renderExpression(
   }
   if (node.kind === "reference") {
     const ref = node.value as ReferenceExpr;
+    if (ref.style === "spreadsheet") {
+      const spreadsheet = renderSpreadsheetReference(ref, rowIdToIndex, colIdToIndex);
+      if (spreadsheet) return spreadsheet;
+    }
     const rowSel = renderSelector(ref.rowSelector, rowIdToIndex);
     const colSel = renderSelector(ref.colSelector, colIdToIndex);
     return `@[${rowSel},${colSel}]`;
@@ -221,6 +237,10 @@ function renderScalarSelector(selector: RefSelector, idToIndex: Map<number, numb
     const offset = Number(selector.value ?? 0);
     return offset >= 0 ? `_${offset === 0 ? "" : `+${offset}`}` : `_${offset}`;
   }
+  if (selector.kind === "absolute_fixed") {
+    const idx = Number(selector.value ?? 0);
+    return `#${idx + 1}!`;
+  }
   if (selector.kind === "absolute") {
     const idx = Number(selector.value ?? 0);
     return `#${idx + 1}`;
@@ -242,4 +262,104 @@ function quotePathComponent(text: string): string {
     return text;
   }
   return serializeString(text);
+}
+
+type SpreadsheetAxis =
+  | { kind: "all" }
+  | { kind: "scalar"; index: number }
+  | { kind: "range"; start: number; end: number };
+
+function renderSpreadsheetReference(
+  ref: ReferenceExpr,
+  rowIdToIndex: Map<number, number>,
+  colIdToIndex: Map<number, number>,
+): string | null {
+  const rowAxis = spreadsheetAxis(ref.rowSelector, rowIdToIndex);
+  const colAxis = spreadsheetAxis(ref.colSelector, colIdToIndex);
+  if (!rowAxis || !colAxis) return null;
+
+  if (rowAxis.kind === "all" && colAxis.kind === "all") {
+    return null;
+  }
+
+  if (rowAxis.kind === "all") {
+    if (colAxis.kind === "scalar") {
+      const col = columnLabel(colAxis.index);
+      return `${col}:${col}`;
+    }
+    if (colAxis.kind === "range") {
+      const start = columnLabel(colAxis.start);
+      const end = columnLabel(colAxis.end);
+      return `${start}:${end}`;
+    }
+    return null;
+  }
+
+  if (colAxis.kind === "all") {
+    if (rowAxis.kind === "scalar") {
+      const row = rowAxis.index + 1;
+      return `${row}:${row}`;
+    }
+    if (rowAxis.kind === "range") {
+      const start = rowAxis.start + 1;
+      const end = rowAxis.end + 1;
+      return `${start}:${end}`;
+    }
+    return null;
+  }
+
+  const rowStart = rowAxis.kind === "scalar" ? rowAxis.index : rowAxis.start;
+  const rowEnd = rowAxis.kind === "scalar" ? rowAxis.index : rowAxis.end;
+  const colStart = colAxis.kind === "scalar" ? colAxis.index : colAxis.start;
+  const colEnd = colAxis.kind === "scalar" ? colAxis.index : colAxis.end;
+
+  const startCell = `${columnLabel(colStart)}${rowStart + 1}`;
+  const endCell = `${columnLabel(colEnd)}${rowEnd + 1}`;
+  if (rowStart === rowEnd && colStart === colEnd) return startCell;
+  return `${startCell}:${endCell}`;
+}
+
+function spreadsheetAxis(selector: RefSelector, idToIndex: Map<number, number>): SpreadsheetAxis | null {
+  if (selector.kind === "all") {
+    return { kind: "all" };
+  }
+  if (selector.kind === "absolute") {
+    return { kind: "scalar", index: Number(selector.value) };
+  }
+  if (selector.kind === "absolute_id") {
+    const idx = idToIndex.get(Number(selector.value));
+    if (idx === undefined) return null;
+    return { kind: "scalar", index: idx };
+  }
+  if (selector.kind === "range") {
+    const [startSel, endSel] = selector.value as [RefSelector | null, RefSelector | null];
+    if (!startSel || !endSel) return null;
+    const start = spreadsheetScalar(startSel, idToIndex);
+    const end = spreadsheetScalar(endSel, idToIndex);
+    if (start === null || end === null) return null;
+    return { kind: "range", start, end };
+  }
+  return null;
+}
+
+function spreadsheetScalar(selector: RefSelector, idToIndex: Map<number, number>): number | null {
+  if (selector.kind === "absolute") {
+    return Number(selector.value);
+  }
+  if (selector.kind === "absolute_id") {
+    const idx = idToIndex.get(Number(selector.value));
+    return idx === undefined ? null : idx;
+  }
+  return null;
+}
+
+function columnLabel(index: number): string {
+  let value = index + 1;
+  let out = "";
+  while (value > 0) {
+    const rem = (value - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    value = Math.floor((value - 1) / 26);
+  }
+  return out;
 }

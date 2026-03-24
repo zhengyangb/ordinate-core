@@ -340,6 +340,9 @@ export class SheetState {
         }
         return { kind: "absolute_id", value: ids[index] };
       }
+      if (selector.kind === "absolute_fixed") {
+        return selector;
+      }
       return selector;
     };
 

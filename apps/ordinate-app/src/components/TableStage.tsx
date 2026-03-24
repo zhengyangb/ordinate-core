@@ -21,6 +21,8 @@ type TableStageProps = {
   headerIndexTrackHeight: number;
   headerOverlayHeight: number;
   headerOverlayCells: HeaderOverlayCell[];
+  headerColCount: number;
+  pinnedHeaderWidth: number;
   rowIndexTrackHeight: number;
   indexRailsPhase: ChromeVisibilityPhase;
   rowIndexMetrics: RowIndexMetric[];
@@ -38,6 +40,17 @@ type TableStageProps = {
   handleCellFocused: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
 };
 
+function toColumnLetters(colNumber: number): string {
+  let n = Math.max(1, Math.trunc(colNumber));
+  let label = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor((n - 1) / 26);
+  }
+  return label;
+}
+
 export default function TableStage({
   tableStageClassName,
   tableStageStyle,
@@ -47,6 +60,8 @@ export default function TableStage({
   headerIndexTrackHeight,
   headerOverlayHeight,
   headerOverlayCells,
+  headerColCount,
+  pinnedHeaderWidth,
   rowIndexTrackHeight,
   indexRailsPhase,
   rowIndexMetrics,
@@ -64,6 +79,56 @@ export default function TableStage({
   handleCellFocused,
 }: TableStageProps) {
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
+  const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < headerColCount);
+  const centerOverlayCells = headerOverlayCells.filter((cell) => cell.startCol >= headerColCount);
+
+  const renderOverlayCell = (cell: HeaderOverlayCell) => {
+    const span = Math.max(1, cell.endCol - cell.startCol + 1);
+    const selectedSlot =
+      selectedCell?.area === "header" &&
+      selectedCell.logical.rAbs === cell.rowNumber &&
+      selectedCell.logical.cAbs >= cell.startCol &&
+      selectedCell.logical.cAbs <= cell.endCol
+        ? selectedCell.logical.cAbs - cell.startCol
+        : -1;
+    const style: CSSProperties & {
+      "--overlay-slot-count"?: string;
+      "--overlay-slot-index"?: string;
+    } = {
+      left: `${cell.left}px`,
+      top: `${cell.top}px`,
+      width: `${cell.width}px`,
+      height: `${cell.height}px`,
+    };
+    if (selectedSlot >= 0) {
+      style["--overlay-slot-count"] = String(span);
+      style["--overlay-slot-index"] = String(selectedSlot);
+    }
+
+    return (
+      <button
+        key={cell.key}
+        className={selectedSlot >= 0 ? "header-matrix-cell has-slot-selection" : "header-matrix-cell"}
+        data-row-number={cell.rowNumber}
+        type="button"
+        style={style}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const target = event.currentTarget;
+          const rect = target.getBoundingClientRect();
+          const localX = Math.min(Math.max(0, event.clientX - rect.left), Math.max(0, rect.width - 1));
+          const ratio = rect.width > 0 ? localX / rect.width : 0;
+          const slot = Math.min(span - 1, Math.floor(ratio * span));
+          const colIndex = cell.startCol + slot;
+          handleHeaderOverlaySelect(cell.rowNumber, colIndex);
+        }}
+        title={cell.label}
+      >
+        <span>{cell.label}</span>
+      </button>
+    );
+  };
 
   return (
     <div className={tableStageClassName} style={tableStageStyle}>
@@ -81,9 +146,24 @@ export default function TableStage({
           aria-hidden="true"
         >
           {Array.from({ length: renderedColumnCount }, (_, index) => (
-            <div key={`column-index-${index + 1}`} className="column-index-cell">
-              {index + 1}
-            </div>
+            (() => {
+              const colNumber = index + 1;
+              const isActive = selectedCell?.logical.cAbs === index;
+              const letters = toColumnLetters(colNumber);
+              return (
+                <div
+                  key={`column-index-${colNumber}`}
+                  className={isActive ? "column-index-cell is-active" : "column-index-cell"}
+                >
+                  <span className="column-index-label">
+                    <span className="column-index-primary">{letters}</span>
+                    <sup className="column-index-secondary" aria-hidden="true">
+                      {colNumber}
+                    </sup>
+                  </span>
+                </div>
+              );
+            })()
           ))}
         </div>
       </div>
@@ -132,61 +212,27 @@ export default function TableStage({
 
       <div className="grid-shell">
         {headerOverlayHeight > 0 ? (
-          <div
-            className="header-matrix-overlay"
-            style={{ height: `${headerOverlayHeight}px` }}
-            aria-hidden="true"
-          >
-            {headerOverlayCells.map((cell) => (
-              (() => {
-                const span = Math.max(1, cell.endCol - cell.startCol + 1);
-                const selectedSlot =
-                  selectedCell?.area === "header" &&
-                  selectedCell.logical.rAbs === cell.rowNumber &&
-                  selectedCell.logical.cAbs >= cell.startCol &&
-                  selectedCell.logical.cAbs <= cell.endCol
-                    ? selectedCell.logical.cAbs - cell.startCol
-                    : -1;
-                const style: CSSProperties & {
-                  "--overlay-slot-count"?: string;
-                  "--overlay-slot-index"?: string;
-                } = {
-                  left: `${cell.left}px`,
-                  top: `${cell.top}px`,
-                  width: `${cell.width}px`,
-                  height: `${cell.height}px`,
-                };
-                if (selectedSlot >= 0) {
-                  style["--overlay-slot-count"] = String(span);
-                  style["--overlay-slot-index"] = String(selectedSlot);
-                }
-
-                return (
-                  <button
-                    key={cell.key}
-                    className={selectedSlot >= 0 ? "header-matrix-cell has-slot-selection" : "header-matrix-cell"}
-                    data-row-number={cell.rowNumber}
-                    type="button"
-                    style={style}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      const target = event.currentTarget;
-                      const rect = target.getBoundingClientRect();
-                      const localX = Math.min(Math.max(0, event.clientX - rect.left), Math.max(0, rect.width - 1));
-                      const ratio = rect.width > 0 ? localX / rect.width : 0;
-                      const slot = Math.min(span - 1, Math.floor(ratio * span));
-                      const colIndex = cell.startCol + slot;
-                      handleHeaderOverlaySelect(cell.rowNumber, colIndex);
-                    }}
-                    title={cell.label}
-                  >
-                    <span>{cell.label}</span>
-                  </button>
-                );
-              })()
-            ))}
-          </div>
+          <>
+            <div
+              className="header-matrix-overlay header-matrix-overlay--center"
+              style={
+                {
+                  height: `${headerOverlayHeight}px`,
+                  "--header-overlay-pinned-width": `${Math.max(0, pinnedHeaderWidth)}px`,
+                } as CSSProperties
+              }
+              aria-hidden="true"
+            >
+              {centerOverlayCells.map(renderOverlayCell)}
+            </div>
+            <div
+              className="header-matrix-overlay header-matrix-overlay--pinned"
+              style={{ height: `${headerOverlayHeight}px` }}
+              aria-hidden="true"
+            >
+              {pinnedOverlayCells.map(renderOverlayCell)}
+            </div>
+          </>
         ) : null}
         <div className={suppressAgHeaderFocus ? "grid-wrap suppress-header-focus" : "grid-wrap"} ref={gridWrapRef}>
           <AgGridReact<GridRow>

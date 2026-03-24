@@ -166,3 +166,18 @@ this line is not parseable as table row
 | Rev  || 3    | 4    | 7 = sum(@[Rev,2024:2025]) |
 [/expect]
 evaluate: true
+
+=== invalid_formula_cell_keeps_source_text
+[doc]
+# Sheet
+| Item || 2024 | Sum |
+| ---- || ---- | --- |
+| A    || 10   | = sum(@[A,2024] |
+[/doc]
+[expect]
+# Sheet
+| Item || 2024 | Sum |
+| ---- || ---- | --- |
+| A    || 10   | error = sum(@[A,2024] |
+[/expect]
+evaluate: true
