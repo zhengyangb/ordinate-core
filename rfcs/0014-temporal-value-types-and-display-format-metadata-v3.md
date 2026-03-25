@@ -1,0 +1,263 @@
+# RFC-0014: Temporal Value Types and Display Format Metadata
+
+- Status: Draft
+- Project: Ordinate
+
+## Summary
+
+This RFC defines the current direction for temporal value types, inline display metadata, and column-level default display metadata in Ordinate.
+
+It introduces `datetime` and `duration` as value types, adopts native ISO 8601-oriented literal parsing for them, defines inline cell-level format and style syntax using `{: ... }`, and defines column display metadata as internal column metadata rather than row-like table content.
+
+## Goals
+
+This RFC defines:
+
+- the current value-type set, including `datetime` and `duration`
+- native literal parsing direction for `datetime` and `duration`
+- inline cell-level display metadata syntax
+- the supported first-version numeric format subset
+- the supported first-version style subset
+- column-level default display metadata semantics
+- precedence between cell-level and column-level display metadata
+- canonical serialization placement for column display metadata
+
+## Non-Goals
+
+This RFC does not define:
+
+- currency
+- validation and constraints
+- conditional styling
+- editor controls
+- locale policy
+- date/time arithmetic
+
+## Core Principle
+
+Value semantics, display formatting, style, and serialization layout are distinct concerns.
+
+Current working direction:
+
+- value types define runtime meaning
+- format defines how a value is rendered into display text
+- style defines how that display text is visually presented
+- column display defaults are stored as column metadata in the internal model
+- header-row placement of column display metadata is a serialization convention, not the primary semantic representation
+
+## Supported Value Types
+
+| Type | Example |
+|---|---|
+| `number` | `1234.5` |
+| `string` | `"Revenue: North"` |
+| `boolean` | `true` |
+| `blank` | `blank` |
+| `error` | `error` |
+| `datetime` | `2026-03-23T14:30:00Z` |
+| `duration` | `PT1H30M` |
+
+## Native Temporal Literals
+
+### `datetime`
+
+- valid unquoted ISO 8601 datetime forms are parsed as `datetime`
+- quoted equivalents remain strings
+
+Example: `2026-03-23T14:30:00Z`
+
+### `duration`
+
+- valid unquoted ISO 8601 duration forms are parsed as `duration`
+- quoted equivalents remain strings
+
+Example: `PT1H30M`
+
+## Inline Cell-Level Display Metadata Syntax
+
+Supported forms:
+
+| Syntax | Meaning | Example |
+|---|---|---|
+| `cell_expr` | no display metadata | `1234.5` |
+| `cell_expr {: format_spec}` | format only | `1234.5 {:,.2f}` |
+| `cell_expr {: : style_spec}` | style only | `42 {: :>}` |
+| `cell_expr {: format_spec : style_spec}` | format and style | `1234.5 {:,.2f:>,red}` |
+
+`cell_expr` may be either a literal or a formula expression.
+
+Example: `= sum(A:A) {:,.2f}`
+
+## Format vs Style
+
+### Format
+
+Format changes how a value is rendered into display text.
+
+Examples:
+
+- decimal precision
+- thousands separator
+- scientific notation
+- percentage
+- sign policy such as explicit plus or negative parentheses
+
+### Style
+
+Style does not change the display text itself. It changes how the display text is visually presented.
+
+Examples:
+
+- alignment
+- color
+- bold
+
+## Supported Numeric Format Subset
+
+Current grammar direction:
+
+```text
+[sign][0][width][,][.precision][type]
+```
+
+Supported components:
+
+| Component | Syntax | Meaning | Example |
+|---|---|---|---|
+| sign policy default | none | default sign behavior | `1234.5 {:,.2f}` |
+| sign policy plus | `+` | always show positive sign | `1234.5 {:+,.2f}` |
+| sign policy parentheses | `()` | show negatives with parentheses | `-1234.5 {:(),.2f}` |
+| zero padding | `0` | zero-pad to width | `42 {:06.2f}` |
+| width | digits | minimum width | `42 {:6.2f}` |
+| grouping | `,` | thousands separator | `1234.5 {:,.2f}` |
+| precision | `.N` | decimal precision | `0.125 {:.1%}` |
+| fixed-point type | `f` | fixed decimal format | `1234.5 {:,.2f}` |
+| scientific type | `e` | scientific notation | `1234.5 {:.3e}` |
+| percent type | `%` | percentage format | `0.125 {:.1%}` |
+| decimal integer type | `d` | decimal integer display | `12345 {:,d}` |
+
+## Supported Style Subset
+
+Current grammar direction:
+
+```text
+style_item ( "," style_item )*
+```
+
+Supported style items:
+
+| Style | Full Form | Shorthand | Example |
+|---|---|---|---|
+| left align | `align=left` | `<` | `42 {: :<}` |
+| right align | `align=right` | `>` | `42 {: :>}` |
+| center align | `align=center` | `^` | `42 {: :^}` |
+| bold | `bold=true` | `bold` | `42 {: :bold}` |
+| red text | `color=red` | `red` | `42 {: :red}` |
+| green text | `color=green` | `green` | `42 {: :green}` |
+| blue text | `color=blue` | `blue` | `42 {: :blue}` |
+
+## Column-Level Default Display Metadata
+
+Ordinate supports default display metadata for an entire column.
+
+Current working direction:
+
+- column-level display metadata is the recommended default mechanism
+- cell-level inline format or style remains supported as an override
+- the internal model stores column display metadata as column metadata
+
+This means column display metadata does **not** semantically belong to a particular header row, even if it is serialized there.
+
+## Precedence
+
+Current working precedence:
+
+| Priority | Source | Example |
+|---|---|---|
+| 1 | cell inline format/style | `999.9 {:.3f}` |
+| 2 | column display metadata | `Price {:,.1f:>}` |
+| 3 | UI / regional default | browser/app default |
+
+## Header-Row Serialization of Column Display Metadata
+
+Although column display metadata is internal column metadata, canonical serialization writes it inline in header cells.
+
+Current working direction:
+
+- column display metadata may only be serialized inline in header cells
+- canonical serialization places column display metadata in the **last header row** (leaf header row in multi-level headers)
+- canonical serialization must not create a dedicated metadata-only row
+- divider still appears once, below the entire header block
+
+## Cache and Display Metadata
+
+Current working direction:
+
+- caches store evaluated values, not rendered display strings
+- format and style do not become part of value cache
+- locale does not become part of value cache
+
+Formula caches store evaluated values, not formatted or styled display text.
+
+Future versions may consider optional display-text caching as an implementation optimization, but such cached display text would not be authoritative and would not replace value-cache semantics.
+
+## Full Example
+
+```text
+|      || 2025 | 2025 | 2025 | 2025 |
+| Item || Rev {:,.1f:>} | Cost {:(),.2f:red} | Margin {:.1%:^} | Total {:,.2f:>} |
+| ---- || ---- | ---- | ------ | ------ |
+| A    || 1234.5 | -456.7 | 0.125 | = sum(@[#1,#1:#2]) {:,.2f:>} |
+| B    || 999.9 {:.3f} | -88.1 {: :bold} | 0.314 {:.2%:^,blue} | = sum(@[#2,#1:#2]) |
+```
+
+Interpretation:
+
+- `Rev` column default format is `,.1f`
+- `Rev` column default style is `align=right`
+- `Cost` column default format is `(),.2f`
+- `Cost` column default style is `color=red`
+- `Margin` column default format is `.1%`
+- `Margin` column default style is `align=center`
+- `Total` column default format is `,.2f`
+- `Total` column default style is `align=right`
+
+Cell-level overrides:
+
+- `999.9 {:.3f}` overrides the `Rev` column format
+- `-88.1 {: :bold}` keeps the column format but adds cell-level style
+- `0.314 {:.2%:^,blue}` overrides both format and style
+- `= sum(@[#1,#1:#2]) {:,.2f:>}` shows that formulas may also carry display metadata
+
+Formula-cache note:
+
+- the cached value for `= sum(@[#1,#1:#2])` is the evaluated numeric value
+- the cache does not store the formatted text produced by `{:,.2f:>}`
+
+## Future Work
+
+- currency
+- validation and constraints
+- conditional styling
+- editor controls such as dropdown, slider, checkbox
+- richer style properties
+- locale customization policy
+- full datetime and duration arithmetic
+- extended format mini-language beyond the initial subset
+- header demotion and rebinding behavior
+
+## Current Working Assumptions
+
+- `datetime` and `duration` are value types
+- valid supported unquoted ISO 8601 forms are parsed natively before string fallback
+- quoted equivalents remain strings
+- inline cell format uses `cell_expr {: format_spec}`
+- inline cell style uses `cell_expr {: : style_spec}`
+- combined display metadata may use `cell_expr {: format_spec : style_spec}`
+- numeric format specs are inspired by a constrained Python-like mini-language
+- sign policy includes bare default, `+`, and `()`
+- style is separate from format
+- column display metadata is internal column metadata
+- cell inline display metadata overrides column display metadata
+- canonical serialization places column display definitions inline in the last header row
+- caches store values, not rendered strings

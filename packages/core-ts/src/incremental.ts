@@ -1,5 +1,5 @@
 import { parseDocument, parseTableRow, type ParsedRow } from "./parser";
-import { parseCellInput } from "./runtime/parse";
+import { parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
 import {
   buildBodyRows,
   buildRowKeys,
@@ -170,12 +170,18 @@ export class SheetState {
     const headerColCount = headerColCountFrom(logicalRows);
     const bodyStart = headerRowCount > 0 ? headerRowCount : 0;
 
-    const headerLabels = headerRowCount > 0 ? logicalRows[headerRowCount - 1].cells : [];
     const colLabels: string[] = [];
     for (let c = 0; c < colCount; c += 1) {
-      if (c < headerLabels.length && headerLabels[c] !== "") {
-        colLabels.push(headerLabels[c]);
-      } else {
+      if (headerRowCount > 0) {
+        const headerRow = logicalRows[headerRowCount - 1];
+        const rawHeader = c < headerRow.rawCells.length ? headerRow.rawCells[c] : "";
+        const label = stripCellDisplayMetadata(rawHeader).trim();
+        if (label !== "") {
+          colLabels.push(label);
+          continue;
+        }
+      }
+      {
         colLabels.push(`C${c + 1}`);
       }
     }
@@ -728,12 +734,18 @@ export class SheetState {
   private rebuildMetadata() {
     const colCount = this.logicalRows.reduce((m, r) => Math.max(m, r.cells.length), 0);
     this.colCount = colCount;
-    const headerLabels = this.headerRowCount > 0 ? this.logicalRows[this.headerRowCount - 1].cells : [];
     const colLabels: string[] = [];
     for (let c = 0; c < colCount; c += 1) {
-      if (c < headerLabels.length && headerLabels[c] !== "") {
-        colLabels.push(headerLabels[c]);
-      } else {
+      if (this.headerRowCount > 0) {
+        const headerRow = this.logicalRows[this.headerRowCount - 1];
+        const rawHeader = c < headerRow.rawCells.length ? headerRow.rawCells[c] : "";
+        const label = stripCellDisplayMetadata(rawHeader).trim();
+        if (label !== "") {
+          colLabels.push(label);
+          continue;
+        }
+      }
+      {
         colLabels.push(`C${c + 1}`);
       }
     }

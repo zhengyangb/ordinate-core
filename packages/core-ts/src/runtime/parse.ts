@@ -1,25 +1,40 @@
 import {
   type ExprNode,
+  type FormatSpec,
   type FunctionCall,
+  type ParsedDisplayMetadata,
   type ParsedCell,
   type RefSelector,
   type ReferenceExpr,
   type RuntimeValue,
+  type StyleSpec,
+  type TextAlign,
+  type TextColor,
 } from "./types";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
 const UNDERSCORE_OFFSET_RE = /^_([+-]?\d+)$/;
 const NUMBER_RE = /^-?\d+(?:\.\d+)?$/;
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const DURATION_RE = /^P(?!$)(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$/;
 const ABSOLUTE_FIXED_RE = /^#([1-9]\d*)!$/;
 const ABSOLUTE_RE = /^#([1-9]\d*)$/;
 const UNQUOTED_PATH_COMPONENT_RE = /^[A-Za-z0-9_]+$/;
 
 // Parse a raw cell into literal/formula/cached-formula data.
 export function parseCellInput(text: string): ParsedCell {
-  const raw = text.trim();
+  const extracted = extractTrailingDisplayMetadata(text);
+  const display = extracted.display;
+  const raw = extracted.expression.trim();
   if (raw === "") {
-    return { kind: "literal", literal: { kind: "blank", value: null }, expression: null, cached: null };
+    return {
+      kind: "literal",
+      literal: { kind: "blank", value: null },
+      expression: null,
+      cached: null,
+      display,
+    };
   }
 
   if (raw.startsWith("=")) {
@@ -30,6 +45,7 @@ export function parseCellInput(text: string): ParsedCell {
       expression: parseExpression(exprText),
       cached: null,
       expressionText: exprText,
+      display,
     };
   }
 
@@ -44,6 +60,7 @@ export function parseCellInput(text: string): ParsedCell {
       expression: parseExpression(exprText),
       cached,
       expressionText: exprText,
+      display,
     };
   }
 
@@ -52,7 +69,13 @@ export function parseCellInput(text: string): ParsedCell {
     literal: parseUserLiteral(raw),
     expression: null,
     cached: null,
+    display,
   };
+}
+
+// Return cell text with trailing display metadata block removed.
+export function stripCellDisplayMetadata(text: string): string {
+  return extractTrailingDisplayMetadata(text).expression.trim();
 }
 
 // Parse a formula expression into an AST node.
@@ -551,6 +574,352 @@ function isQuoted(text: string): boolean {
   return text.length >= 2 && text.startsWith('"') && text.endsWith('"');
 }
 
+function extractTrailingDisplayMetadata(text: string): {
+  expression: string;
+  display: ParsedDisplayMetadata | null;
+} {
+  const rightTrimmed = text.replace(/\s+$/, "");
+  const block = findTopLevelTrailingDisplayBlock(rightTrimmed);
+  if (!block) {
+    return { expression: text, display: null };
+  }
+  const rawBlock = rightTrimmed.slice(block.start, block.end + 1);
+  const content = rightTrimmed.slice(block.start + 2, block.end);
+  const display = parseDisplayMetadata(content, rawBlock);
+  const expression = rightTrimmed.slice(0, block.start);
+  return { expression, display };
+}
+
+function findTopLevelTrailingDisplayBlock(text: string): { start: number; end: number } | null {
+  const end = text.length - 1;
+  if (end < 0 || text[end] !== "}") return null;
+
+  let inQuote = false;
+  let escaped = false;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  const braceStack: number[] = [];
+  const topLevelBlocks: Array<{ start: number; end: number }> = [];
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (inQuote) continue;
+
+    if (ch === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (ch === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (ch === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (ch === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+
+    if (parenDepth !== 0 || bracketDepth !== 0) continue;
+
+    if (ch === "{") {
+      braceStack.push(i);
+      continue;
+    }
+    if (ch === "}") {
+      const start = braceStack.pop();
+      if (start !== undefined && braceStack.length === 0) {
+        topLevelBlocks.push({ start, end: i });
+      }
+    }
+  }
+
+  for (let i = topLevelBlocks.length - 1; i >= 0; i -= 1) {
+    const block = topLevelBlocks[i];
+    if (block.end !== end) continue;
+    if (!text.startsWith("{:", block.start)) continue;
+    return block;
+  }
+  return null;
+}
+
+function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMetadata {
+  const content = inner.trim();
+  if (content === "") {
+    return invalidDisplay(rawBlock, "empty_display_metadata");
+  }
+
+  if (content.startsWith(":")) {
+    const style = content.slice(1).trim();
+    if (style === "") {
+      return invalidDisplay(rawBlock, "empty_style_spec");
+    }
+    const styleSpec = parseStyleSpec(style);
+    if ("error" in styleSpec) {
+      return invalidDisplay(rawBlock, styleSpec.error, null, style);
+    }
+    return {
+      format: null,
+      style,
+      formatSpec: null,
+      styleSpec: styleSpec.value,
+      valid: true,
+      rawBlock,
+      errors: [],
+    };
+  }
+
+  const split = findTopLevelColon(content);
+  if (split === -1) {
+    const format = content.trim();
+    if (format === "") {
+      return invalidDisplay(rawBlock, "empty_format_spec");
+    }
+    const formatSpec = parseFormatSpec(format);
+    if ("error" in formatSpec) {
+      return invalidDisplay(rawBlock, formatSpec.error, format, null);
+    }
+    return {
+      format,
+      style: null,
+      formatSpec: formatSpec.value,
+      styleSpec: null,
+      valid: true,
+      rawBlock,
+      errors: [],
+    };
+  }
+
+  const format = content.slice(0, split).trim();
+  const style = content.slice(split + 1).trim();
+  if (format === "") {
+    return invalidDisplay(rawBlock, "empty_format_spec");
+  }
+  if (style === "") {
+    return invalidDisplay(rawBlock, "empty_style_spec");
+  }
+
+  const formatSpec = parseFormatSpec(format);
+  if ("error" in formatSpec) {
+    return invalidDisplay(rawBlock, formatSpec.error, format, style);
+  }
+  const styleSpec = parseStyleSpec(style);
+  if ("error" in styleSpec) {
+    return invalidDisplay(rawBlock, styleSpec.error, format, style);
+  }
+  return {
+    format,
+    style,
+    formatSpec: formatSpec.value,
+    styleSpec: styleSpec.value,
+    valid: true,
+    rawBlock,
+    errors: [],
+  };
+}
+
+function findTopLevelColon(text: string): number {
+  let inQuote = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (!inQuote && ch === ":") {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function invalidDisplay(
+  rawBlock: string,
+  error: string,
+  format: string | null = null,
+  style: string | null = null,
+): ParsedDisplayMetadata {
+  return {
+    format,
+    style,
+    formatSpec: null,
+    styleSpec: null,
+    valid: false,
+    rawBlock,
+    errors: [error],
+  };
+}
+
+function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string } {
+  const text = spec.trim();
+  if (text === "") return { error: "empty_format_spec" };
+  if (/\s/.test(text)) return { error: "format_spec_contains_whitespace" };
+
+  let i = 0;
+  let sign: FormatSpec["sign"] = "default";
+  if (text.startsWith("+")) {
+    sign = "plus";
+    i += 1;
+  } else if (text.startsWith("()")) {
+    sign = "parentheses";
+    i += 2;
+  }
+
+  let zeroPad = false;
+  if (i < text.length && text[i] === "0") {
+    zeroPad = true;
+    i += 1;
+  }
+
+  let width: number | null = null;
+  const widthStart = i;
+  while (i < text.length && /[0-9]/.test(text[i])) {
+    i += 1;
+  }
+  if (i > widthStart) {
+    width = Number(text.slice(widthStart, i));
+  }
+
+  if (zeroPad && width === null) {
+    return { error: "zero_padding_requires_width" };
+  }
+
+  let grouping = false;
+  if (i < text.length && text[i] === ",") {
+    grouping = true;
+    i += 1;
+  }
+
+  let precision: number | null = null;
+  if (i < text.length && text[i] === ".") {
+    i += 1;
+    const pStart = i;
+    while (i < text.length && /[0-9]/.test(text[i])) {
+      i += 1;
+    }
+    if (i === pStart) {
+      return { error: "precision_requires_digits" };
+    }
+    precision = Number(text.slice(pStart, i));
+  }
+
+  let type: FormatSpec["type"] = null;
+  if (i < text.length) {
+    const ch = text[i];
+    if (ch === "f" || ch === "e" || ch === "%" || ch === "d") {
+      type = ch;
+      i += 1;
+    } else {
+      return { error: `unsupported_format_type:${ch}` };
+    }
+  }
+
+  if (i !== text.length) {
+    return { error: "invalid_format_spec_trailing_chars" };
+  }
+  if (type === "d" && precision !== null) {
+    return { error: "integer_format_disallows_precision" };
+  }
+
+  return {
+    value: {
+      sign,
+      zeroPad,
+      width,
+      grouping,
+      precision,
+      type,
+      raw: text,
+    },
+  };
+}
+
+function parseStyleSpec(spec: string): { value: StyleSpec } | { error: string } {
+  const text = spec.trim();
+  if (text === "") return { error: "empty_style_spec" };
+
+  const items = text
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item !== "");
+  if (items.length === 0) return { error: "empty_style_spec" };
+
+  let align: TextAlign | null = null;
+  let bold = false;
+  let color: TextColor | null = null;
+
+  for (const item of items) {
+    if (item === "<" || item === "align=left") {
+      if (align !== null) return { error: "duplicate_align_style" };
+      align = "left";
+      continue;
+    }
+    if (item === ">" || item === "align=right") {
+      if (align !== null) return { error: "duplicate_align_style" };
+      align = "right";
+      continue;
+    }
+    if (item === "^" || item === "align=center") {
+      if (align !== null) return { error: "duplicate_align_style" };
+      align = "center";
+      continue;
+    }
+    if (item === "bold" || item === "bold=true") {
+      if (bold) return { error: "duplicate_bold_style" };
+      bold = true;
+      continue;
+    }
+    if (item === "red" || item === "color=red") {
+      if (color !== null) return { error: "duplicate_color_style" };
+      color = "red";
+      continue;
+    }
+    if (item === "green" || item === "color=green") {
+      if (color !== null) return { error: "duplicate_color_style" };
+      color = "green";
+      continue;
+    }
+    if (item === "blue" || item === "color=blue") {
+      if (color !== null) return { error: "duplicate_color_style" };
+      color = "blue";
+      continue;
+    }
+    return { error: `unsupported_style_item:${item}` };
+  }
+
+  return {
+    value: {
+      align,
+      bold,
+      color,
+      raw: text,
+    },
+  };
+}
+
 function scanSpreadsheetToken(text: string, start: number): { text: string; next: number } | null {
   const source = text.slice(start);
   const patterns = [
@@ -620,6 +989,8 @@ function parseUserLiteral(text: string): RuntimeValue {
   if (isQuoted(t)) {
     return { kind: "string", value: unescapeQuoted(t.slice(1, -1)) };
   }
+  if (DATETIME_RE.test(t)) return { kind: "datetime", value: t };
+  if (DURATION_RE.test(t)) return { kind: "duration", value: t };
   if (t === "null") return { kind: "null", value: null };
   if (t === "error") return { kind: "error", value: "error" };
   if (t === "true") return { kind: "boolean", value: true };
@@ -636,6 +1007,8 @@ function parseCacheLiteral(text: string): RuntimeValue {
   if (isQuoted(t)) {
     return { kind: "string", value: unescapeQuoted(t.slice(1, -1)) };
   }
+  if (DATETIME_RE.test(t)) return { kind: "datetime", value: t };
+  if (DURATION_RE.test(t)) return { kind: "duration", value: t };
   if (t === "null") return { kind: "null", value: null };
   if (t === "error") return { kind: "error", value: "error" };
   if (t === "true") return { kind: "boolean", value: true };

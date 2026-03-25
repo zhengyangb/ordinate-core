@@ -27,3 +27,11 @@ export {
 
 export { ChangeKind, DocumentState, SheetState } from "./incremental";
 export { serializeDocumentState } from "./serializer";
+export {
+  resolveDocumentPresentation,
+  resolvePresentationFromText,
+  type ColumnDisplayDefault,
+  type PresentedCell,
+  type SheetPresentation,
+  type PresentationResult,
+} from "./presentation";

@@ -1,5 +1,5 @@
 import { parseDocument, parseTableRow, type ParsedRow } from "../parser";
-import { parseCellInput } from "./parse";
+import { parseCellInput, stripCellDisplayMetadata } from "./parse";
 import {
   type EvaluationResult,
   type ExprNode,
@@ -55,12 +55,18 @@ function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
     allCells.push(cells);
   }
 
-  const headerLabels = headerRowCount > 0 ? logicalRows[headerRowCount - 1].cells : [];
   const colLabels: string[] = [];
   for (let c = 0; c < colCount; c += 1) {
-    if (c < headerLabels.length && headerLabels[c] !== "") {
-      colLabels.push(headerLabels[c]);
-    } else {
+    if (headerRowCount > 0) {
+      const headerRow = logicalRows[headerRowCount - 1];
+      const rawHeader = c < headerRow.rawCells.length ? headerRow.rawCells[c] : "";
+      const label = stripCellDisplayMetadata(rawHeader).trim();
+      if (label !== "") {
+        colLabels.push(label);
+        continue;
+      }
+    }
+    {
       colLabels.push(`C${c + 1}`);
     }
   }
