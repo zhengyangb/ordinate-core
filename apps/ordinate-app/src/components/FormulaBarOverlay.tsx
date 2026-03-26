@@ -10,6 +10,12 @@ type FormulaBarOverlayProps = {
 export default function FormulaBarOverlay({ mode, phase, formulaBarData, formulaBarSnapshot }: FormulaBarOverlayProps) {
   if (mode !== "table" || phase === "hidden" || !formulaBarSnapshot) return null;
 
+  const hasDisplayMeta =
+    Boolean(formulaBarSnapshot.displaySource) ||
+    Boolean(formulaBarSnapshot.displayFormatRaw) ||
+    Boolean(formulaBarSnapshot.displayStyleRaw) ||
+    Boolean(formulaBarSnapshot.displayErrors?.length);
+
   return (
     <aside
       className={`formula-bar-shell formula-bar-shell--${phase}`}
@@ -27,6 +33,20 @@ export default function FormulaBarOverlay({ mode, phase, formulaBarData, formula
         <div className="formula-source" title={formulaBarSnapshot.sourceText}>
           {formulaBarSnapshot.sourceText}
         </div>
+        {hasDisplayMeta ? (
+          <div className="formula-display-meta" aria-label="Display metadata">
+            {formulaBarSnapshot.displaySource ? <span className="formula-meta-chip">{`source:${formulaBarSnapshot.displaySource}`}</span> : null}
+            {formulaBarSnapshot.displayFormatRaw ? <span className="formula-meta-chip">{`fmt:${formulaBarSnapshot.displayFormatRaw}`}</span> : null}
+            {formulaBarSnapshot.displayStyleRaw ? <span className="formula-meta-chip">{`sty:${formulaBarSnapshot.displayStyleRaw}`}</span> : null}
+            {formulaBarSnapshot.displayErrors?.length
+              ? formulaBarSnapshot.displayErrors.map((issue, index) => (
+                  <span key={`display-error-${index}`} className="formula-meta-chip is-warning" title={issue}>
+                    {issue}
+                  </span>
+                ))
+              : null}
+          </div>
+        ) : null}
       </div>
     </aside>
   );

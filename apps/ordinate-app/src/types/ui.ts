@@ -34,6 +34,18 @@ export type FormulaBarData = {
   chip: string;
   displayText: string;
   sourceText: string;
+  displaySource?: "cell" | "column" | "default";
+  displayFormatRaw?: string | null;
+  displayStyleRaw?: string | null;
+  displayErrors?: string[];
+};
+
+export type DisplayCellView = {
+  displayText: string;
+  source: "cell" | "column" | "default";
+  formatRaw: string | null;
+  styleRaw: string | null;
+  errors: string[];
 };
 
 export type ChromeVisibilityPhase = "visible" | "hiding" | "hidden";

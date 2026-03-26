@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   DocumentState,
   evaluateDocument,
+  formatPresentedCell,
   formatDocument,
   resolveDocumentPresentation,
   resolvePresentationFromText,
@@ -164,6 +165,10 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     const presentation = resolvePresentationFromText(doc);
     const sheet = presentation.sheets[0];
 
+    expect(sheet.headerDisplayRows).toEqual([
+      ["Item", "Price", "Qty", "Total"],
+    ]);
+
     expect(sheet.columnDefaults[1].format).toMatchObject({ grouping: true, precision: 1, type: "f" });
     expect(sheet.columnDefaults[1].style).toMatchObject({ align: "right", color: null, bold: false });
     expect(sheet.columnDefaults[3].format).toMatchObject({ grouping: true, precision: 2, type: "f" });
@@ -173,11 +178,13 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(aPrice.source).toBe("column");
     expect(aPrice.format).toMatchObject({ grouping: true, precision: 1, type: "f" });
     expect(aPrice.style).toMatchObject({ align: "right", color: null, bold: false });
+    expect(aPrice.displayText).toBe("1,234.5");
 
     const bPrice = sheet.cells[1][1];
     expect(bPrice.source).toBe("cell");
     expect(bPrice.format).toMatchObject({ grouping: true, precision: 3, type: "f" });
     expect(bPrice.style).toMatchObject({ align: "right", color: null, bold: false });
+    expect(bPrice.displayText).toBe("9.900");
 
     const aTotal = sheet.cells[0][3];
     expect(aTotal.value?.kind).toBe("number");
@@ -185,6 +192,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(aTotal.source).toBe("column");
     expect(aTotal.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
     expect(aTotal.style).toMatchObject({ align: "right", color: "blue", bold: false });
+    expect(aTotal.displayText).toBe("2,469.00");
 
     const bTotal = sheet.cells[1][3];
     expect(bTotal.value?.kind).toBe("number");
@@ -192,6 +200,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(bTotal.source).toBe("cell");
     expect(bTotal.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
     expect(bTotal.style).toMatchObject({ align: "center", color: null, bold: false });
+    expect(bTotal.displayText).toBe("29.70");
   });
 
   it("reports invalid metadata without changing value semantics", () => {
@@ -210,6 +219,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(valCell.errors.length).toBeGreaterThan(0);
     expect(valCell.format).toBeNull();
     expect(valCell.style).toBeNull();
+    expect(valCell.displayText).toBe("12.5");
 
     const outCell = sheet.cells[0][2];
     expect(outCell.value?.kind).toBe("number");
@@ -217,6 +227,30 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(outCell.errors.length).toBeGreaterThan(0);
     expect(outCell.format).toBeNull();
     expect(outCell.style).toBeNull();
+    expect(outCell.displayText).toBe("13.5");
+  });
+
+  it("formats numeric display text via shared formatter", () => {
+    expect(
+      formatPresentedCell({
+        value: { kind: "number", value: -1234.5 },
+        format: { sign: "parentheses", zeroPad: false, width: null, grouping: true, precision: 2, type: "f", raw: "(),.2f" },
+      }),
+    ).toBe("(1,234.50)");
+
+    expect(
+      formatPresentedCell({
+        value: { kind: "number", value: 0.125 },
+        format: { sign: "plus", zeroPad: false, width: null, grouping: false, precision: 1, type: "%", raw: "+.1%" },
+      }),
+    ).toBe("+12.5%");
+
+    expect(
+      formatPresentedCell({
+        value: { kind: "number", value: 42 },
+        format: { sign: "default", zeroPad: true, width: 6, grouping: false, precision: null, type: "d", raw: "06d" },
+      }),
+    ).toBe("000042");
   });
 
   it("keeps formula metadata in serialization round-trip", () => {

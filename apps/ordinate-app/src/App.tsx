@@ -9,7 +9,7 @@ import {
   type ModelUpdatedEvent,
 } from "ag-grid-community";
 
-import { type RuntimeValue } from "@ordinate/core";
+import { type PresentedCell, type RuntimeValue } from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
@@ -124,6 +124,7 @@ export default function App() {
     sourceText,
     docState,
     evaluation,
+    presentation,
     sheetIssuesByName,
     activeSheet,
     error,
@@ -170,6 +171,11 @@ export default function App() {
     if (!docState || !activeSheet) return null;
     return docState.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
   }, [docState, activeSheet]);
+
+  const currentSheetPresentation = useMemo(() => {
+    if (!presentation || !activeSheet) return null;
+    return presentation.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
+  }, [presentation, activeSheet]);
 
   const sheetNames = useMemo(() => {
     if (docState?.sheets?.length) {
@@ -265,19 +271,23 @@ export default function App() {
   const headerMatrix = useMemo(() => {
     if (!currentSheetState || sheetColCount === 0) return [] as string[][];
 
+    const fromPresentation = currentSheetPresentation?.headerDisplayRows ?? [];
+    if (fromPresentation.length > 0) {
+      return fromPresentation.map((row) =>
+        Array.from({ length: sheetColCount }, (_, colIndex) => row[colIndex] ?? ""),
+      );
+    }
+
     const matrixDepth = Math.max(1, headerRowCount);
-    return Array.from({ length: matrixDepth }, (_, rowIndex) => {
-      const sourceRow = rowIndex < headerRowCount ? currentSheetState.cells[rowIndex] : null;
-      return Array.from({ length: sheetColCount }, (_, colIndex) => {
-        const raw = sourceRow?.[colIndex]?.text?.trim() ?? "";
-        if (raw.length > 0) return raw;
+    return Array.from({ length: matrixDepth }, (_, rowIndex) =>
+      Array.from({ length: sheetColCount }, (_, colIndex) => {
         if (rowIndex === matrixDepth - 1) {
           return currentSheetState.colLabels[colIndex] ?? currentSheet?.colLabels[colIndex] ?? `C${colIndex + 1}`;
         }
         return "";
-      });
-    });
-  }, [currentSheetState, currentSheet, sheetColCount, headerRowCount]);
+      }),
+    );
+  }, [currentSheetState, currentSheetPresentation, currentSheet, sheetColCount, headerRowCount]);
 
   const headerLeafLabels = useMemo(() => {
     if (sheetColCount === 0) return [] as string[];
@@ -538,28 +548,37 @@ export default function App() {
 
         for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
           const field = toColFieldId(colIndex);
+          const presentedCell = currentSheetPresentation?.cells[rowIndex]?.[colIndex] ?? null;
           const rawCell = currentSheetState.cells[currentSheetState.bodyStart + rowIndex]?.[colIndex];
           const runtimeValue = row[colIndex] as RuntimeValue | undefined;
+          const displayText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
 
           if (colIndex < headerColCount) {
             if (colIndex === 0) {
               item[field] = rowLeaf;
               item[`__kind_${colIndex}`] = "label";
             } else {
-              const headerValue = rawCell?.text ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+              const headerValue = displayText.length > 0 ? displayText : rawCell?.text ?? "";
               item[field] = headerValue;
               item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
             }
           } else {
-            item[field] = runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+            item[field] = displayText;
             item[`__kind_${colIndex}`] = runtimeValue?.kind ?? "blank";
+            item[`__align_${colIndex}`] = presentedCell?.style?.align ?? "";
+            item[`__bold_${colIndex}`] = presentedCell?.style?.bold ?? false;
+            item[`__color_${colIndex}`] = presentedCell?.style?.color ?? "";
+            item[`__display_has_errors_${colIndex}`] = (presentedCell?.errors.length ?? 0) > 0;
+            item[`__display_source_${colIndex}`] = presentedCell?.source ?? "default";
+            item[`__display_format_${colIndex}`] = presentedCell?.format?.raw ?? "";
+            item[`__display_style_${colIndex}`] = presentedCell?.style?.raw ?? "";
           }
         }
 
         return item;
       })
       .filter((row) => isVisiblePath(row.__rowPath, collapsedPaths));
-  }, [currentSheet, currentSheetState, collapsedPaths, sheetColCount, headerColCount]);
+  }, [currentSheet, currentSheetState, currentSheetPresentation, collapsedPaths, sheetColCount, headerColCount]);
 
   const absoluteRowPathLookup = useMemo(() => {
     const map = new Map<number, string>();
@@ -822,6 +841,20 @@ export default function App() {
           if (kind === "number") classes.push("is-numeric");
           if (kind === "error") classes.push("is-error");
           if (kind === "blank") classes.push("is-blank");
+          const align = params.data?.[`__align_${colIndex}`];
+          if (align === "left" || align === "right" || align === "center") {
+            classes.push(`align-${align}`);
+          }
+          if (params.data?.[`__bold_${colIndex}`] === true) {
+            classes.push("is-bold");
+          }
+          const color = params.data?.[`__color_${colIndex}`];
+          if (color === "red" || color === "green" || color === "blue") {
+            classes.push(`is-color-${color}`);
+          }
+          if (params.data?.[`__display_has_errors_${colIndex}`] === true) {
+            classes.push("has-display-errors");
+          }
           return classes.join(" ");
         },
       } satisfies ColDef<GridRow>;
@@ -1037,16 +1070,21 @@ export default function App() {
 
     const rowLeaf = leafLabel(rowPath);
     const absoluteRowIndex = rowNumber - 1;
+    const presentedCell = currentSheetPresentation?.cells[rowRel]?.[colIndex] as PresentedCell | undefined;
 
     if (colIndex < headerColCount) {
       const sourceText = currentSheetState.cells[absoluteRowIndex]?.[colIndex]?.text ?? "";
-      const displayText = colIndex === 0 ? rowLeaf : sourceText;
+      const displayText = colIndex === 0 ? rowLeaf : (presentedCell?.displayText ?? sourceText);
       return {
         primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
         secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
         chip: colIndex === 0 ? "Label" : "Header Col",
         displayText: displayText.length > 0 ? displayText : "(blank)",
         sourceText: sourceText.length > 0 ? sourceText : displayText.length > 0 ? displayText : "(blank)",
+        displaySource: presentedCell?.source,
+        displayFormatRaw: presentedCell?.format?.raw ?? null,
+        displayStyleRaw: presentedCell?.style?.raw ?? null,
+        displayErrors: presentedCell?.errors ?? [],
       };
     }
 
@@ -1059,12 +1097,17 @@ export default function App() {
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
       secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
       chip,
-      displayText: runtimeValue ? runtimeValueToText(runtimeValue) : "",
+      displayText: presentedCell?.displayText ?? (runtimeValue ? runtimeValueToText(runtimeValue) : ""),
       sourceText: sourceText.length > 0 ? sourceText : "(blank)",
+      displaySource: presentedCell?.source,
+      displayFormatRaw: presentedCell?.format?.raw ?? null,
+      displayStyleRaw: presentedCell?.style?.raw ?? null,
+      displayErrors: presentedCell?.errors ?? [],
     };
   }, [
     currentSheet,
     currentSheetState,
+    currentSheetPresentation,
     selectedCell,
     isActiveSheetBlocked,
     sheetColCount,

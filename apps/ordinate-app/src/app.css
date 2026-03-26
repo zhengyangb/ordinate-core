@@ -1144,6 +1144,7 @@ textarea {
 .data-cell .ag-cell-wrapper {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   flex: 1 1 auto;
   width: 100%;
   overflow: hidden !important;
@@ -1170,6 +1171,73 @@ textarea {
 
 .data-cell.is-blank {
   color: color-mix(in oklab, var(--sheet-soft) 72%, transparent);
+}
+
+.data-cell.align-left .ag-cell-value {
+  text-align: left;
+}
+
+.data-cell.align-right .ag-cell-value {
+  text-align: right;
+}
+
+.data-cell.align-center .ag-cell-value {
+  text-align: center;
+}
+
+.data-cell.align-left {
+  text-align: left;
+}
+
+.data-cell.align-right {
+  text-align: right;
+}
+
+.data-cell.align-center {
+  text-align: center;
+}
+
+.data-cell.align-left .ag-cell-wrapper {
+  justify-content: flex-start;
+}
+
+.data-cell.align-right .ag-cell-wrapper {
+  justify-content: flex-end;
+}
+
+.data-cell.align-center .ag-cell-wrapper {
+  justify-content: center;
+}
+
+.data-cell.is-bold .ag-cell-value {
+  font-weight: 660;
+}
+
+.data-cell.is-color-red:not(.is-error),
+.data-cell.is-color-red:not(.is-error) .ag-cell-value {
+  color: var(--danger-ink) !important;
+}
+
+.data-cell.is-color-green:not(.is-error),
+.data-cell.is-color-green:not(.is-error) .ag-cell-value {
+  color: color-mix(in oklab, var(--accent-strong) 80%, var(--sheet-ink)) !important;
+}
+
+.data-cell.is-color-blue:not(.is-error),
+.data-cell.is-color-blue:not(.is-error) .ag-cell-value {
+  color: oklch(43% 0.12 256) !important;
+}
+
+.data-cell.is-color-red .ag-cell-wrapper,
+.data-cell.is-color-green .ag-cell-wrapper,
+.data-cell.is-color-blue .ag-cell-wrapper {
+  color: inherit;
+}
+
+.data-cell.has-display-errors .ag-cell-value {
+  text-decoration: underline wavy color-mix(in oklab, var(--warning-border) 80%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.14rem;
 }
 
 .grid-wrap .ag-row:has(.ag-cell-range-single-cell),
@@ -1466,6 +1534,33 @@ textarea {
   font-family: var(--font-mono);
   font-size: 0.82rem;
   line-height: 1.35;
+}
+
+.formula-display-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.formula-meta-chip {
+  max-width: min(12rem, 34vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.12rem 0.44rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--sheet-header) 54%, transparent);
+  color: var(--sheet-soft);
+  font-size: 0.66rem;
+  font-weight: 560;
+  letter-spacing: 0.01em;
+}
+
+.formula-meta-chip.is-warning {
+  background: color-mix(in oklab, var(--warning-bg) 74%, transparent);
+  color: var(--warning-ink);
 }
 
 .empty-state {
