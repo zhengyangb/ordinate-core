@@ -62,9 +62,11 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
         const cellStyle = parsedDisplay && parsedDisplay.valid ? parsedDisplay.styleSpec : null;
         const colDefault = c < defaults.length ? defaults[c] : { format: null, style: null, valid: true, errors: [] };
         const format = cellFormat ?? colDefault.format;
-        const style = cellStyle ?? colDefault.style;
-        const hasCellOverride = cellFormat !== null || cellStyle !== null;
-        const hasColumnDefault = colDefault.format !== null || colDefault.style !== null;
+        const style = mergeStyleSpec(cellStyle, colDefault.style);
+        const hasCellStyleOverride = hasAnyStyleAxis(cellStyle);
+        const hasColumnStyleDefault = hasAnyStyleAxis(colDefault.style);
+        const hasCellOverride = cellFormat !== null || hasCellStyleOverride;
+        const hasColumnDefault = colDefault.format !== null || hasColumnStyleDefault;
         const source: "cell" | "column" | "default" = hasCellOverride
           ? "cell"
           : hasColumnDefault
@@ -102,6 +104,40 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
   });
 
   return { sheets };
+}
+
+function hasAnyStyleAxis(style: StyleSpec | null): boolean {
+  if (!style) return false;
+  return style.align !== null || style.weight !== null || style.color !== null;
+}
+
+function mergeStyleSpec(cellStyle: StyleSpec | null, columnStyle: StyleSpec | null): StyleSpec | null {
+  if (!cellStyle && !columnStyle) return null;
+  const align = cellStyle?.align ?? columnStyle?.align ?? null;
+  const weight = cellStyle?.weight ?? columnStyle?.weight ?? null;
+  const color = cellStyle?.color ?? columnStyle?.color ?? null;
+  if (align === null && weight === null && color === null) {
+    return null;
+  }
+  return {
+    align,
+    weight,
+    color,
+    raw: serializeStyleSpec({ align, weight, color, raw: "" }),
+  };
+}
+
+function serializeStyleSpec(spec: StyleSpec): string {
+  const parts: string[] = [];
+  if (spec.align === "left") parts.push("<");
+  if (spec.align === "right") parts.push(">");
+  if (spec.align === "center") parts.push("^");
+  if (spec.weight === "bold") parts.push("bold");
+  if (spec.weight === "normal") parts.push("normal");
+  if (spec.color === "red") parts.push("red");
+  if (spec.color === "green") parts.push("green");
+  if (spec.color === "blue") parts.push("blue");
+  return parts.join(",");
 }
 
 function computeHeaderDisplayRows(sheet: DocumentState["sheets"][number]): string[][] {

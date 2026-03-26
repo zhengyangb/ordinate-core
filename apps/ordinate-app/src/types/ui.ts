@@ -34,6 +34,7 @@ export type FormulaBarData = {
   chip: string;
   displayText: string;
   sourceText: string;
+  editableSourceText: string;
   displaySource?: "cell" | "column" | "default";
   displayFormatRaw?: string | null;
   displayStyleRaw?: string | null;

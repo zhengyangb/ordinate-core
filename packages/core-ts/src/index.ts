@@ -20,6 +20,7 @@ export {
 
 export {
   evaluateDocument,
+  splitCellDisplayMetadata,
   stripCellDisplayMetadata,
   type EvaluationResult,
   type SheetEvaluation,

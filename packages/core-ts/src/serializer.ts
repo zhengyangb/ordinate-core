@@ -311,7 +311,8 @@ function serializeStyleSpec(spec: NonNullable<ParsedDisplayMetadata["styleSpec"]
   if (spec.align === "left") parts.push("<");
   if (spec.align === "right") parts.push(">");
   if (spec.align === "center") parts.push("^");
-  if (spec.bold) parts.push("bold");
+  if (spec.weight === "bold") parts.push("bold");
+  if (spec.weight === "normal") parts.push("normal");
   if (spec.color === "red") parts.push("red");
   if (spec.color === "green") parts.push("green");
   if (spec.color === "blue") parts.push("blue");

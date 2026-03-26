@@ -11,7 +11,7 @@ import {
   resolvePresentationFromText,
   serializeDocumentState,
 } from "../src";
-import { parseCellInput } from "../src/runtime";
+import { parseCellInput, splitCellDisplayMetadata } from "../src/runtime";
 
 type DisplayCase = {
   name: string;
@@ -23,7 +23,7 @@ type DisplayCase = {
   expectSource?: "cell" | "column" | "default";
   expectAlign?: "left" | "right" | "center";
   expectColor?: "red" | "green" | "blue";
-  expectBold?: boolean;
+  expectWeight?: "bold" | "normal" | null;
   expectFormatType?: "f" | "e" | "%" | "d";
   expectFormatPrecision?: number;
   expectFormatGrouping?: boolean;
@@ -87,7 +87,12 @@ function loadDisplayCases(path: string): DisplayCase[] {
       expectSource: opt("expect_source") as DisplayCase["expectSource"],
       expectAlign: opt("expect_align") as DisplayCase["expectAlign"],
       expectColor: opt("expect_color") as DisplayCase["expectColor"],
-      expectBold: opt("expect_bold") === undefined ? undefined : opt("expect_bold") === "true",
+      expectWeight:
+        opt("expect_weight") === undefined
+          ? undefined
+          : opt("expect_weight") === "null"
+            ? null
+            : (opt("expect_weight") as "bold" | "normal"),
       expectFormatType: opt("expect_format_type") as DisplayCase["expectFormatType"],
       expectFormatPrecision:
         opt("expect_format_precision") === undefined ? undefined : Number(opt("expect_format_precision")),
@@ -127,7 +132,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     });
     expect(both.display?.styleSpec).toMatchObject({
       align: "right",
-      bold: false,
+      weight: null,
       color: "red",
     });
 
@@ -137,9 +142,21 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(styleOnly.display?.style).toBe("bold");
     expect(styleOnly.display?.styleSpec).toMatchObject({
       align: null,
-      bold: true,
+      weight: "bold",
       color: null,
     });
+
+    const longWeight = parseCellInput("42 {::weight=normal,color=blue,align=left}");
+    expect(longWeight.display?.valid).toBe(true);
+    expect(longWeight.display?.styleSpec).toMatchObject({
+      align: "left",
+      weight: "normal",
+      color: "blue",
+    });
+
+    const legacyBoldEquals = parseCellInput("1 {::bold=true}");
+    expect(legacyBoldEquals.display?.valid).toBe(false);
+    expect(legacyBoldEquals.display?.errors[0]).toBe("unsupported_style_item:bold=true");
 
     const conflict = parseCellInput("1 {:,.2fd}");
     expect(conflict.display?.valid).toBe(false);
@@ -149,17 +166,33 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(styleConflict.display?.valid).toBe(false);
     expect(styleConflict.display?.errors[0]).toBe("duplicate_align_style");
 
+    const weightConflict = parseCellInput("1 {::bold,weight=normal}");
+    expect(weightConflict.display?.valid).toBe(false);
+    expect(weightConflict.display?.errors[0]).toBe("duplicate_weight_style");
+
     const noMeta = parseCellInput("123");
     expect(noMeta.display).toBeNull();
+  });
+
+  it("splits editable content from trailing display metadata", () => {
+    expect(splitCellDisplayMetadata("= sum(B2:B9) {:,.2f:>,green}")).toEqual({
+      contentText: "= sum(B2:B9)",
+      displayMetaRaw: "{:,.2f:>,green}",
+    });
+
+    expect(splitCellDisplayMetadata("  42  ")).toEqual({
+      contentText: "42",
+      displayMetaRaw: null,
+    });
   });
 
   it("resolves effective presentation with cell > column > default precedence", () => {
     const doc = `
 # Sheet
-| Item || Price {:,.1f:>} | Qty {:d:>} | Total {:,.2f:>,blue} |
+| Item || Price {:,.1f:>,bold} | Qty {:d:>,bold} | Total {:,.2f:>,blue,bold} |
 | ---- || ---- | --- | ----- |
 | A    || 1234.5 | 2 | = B2 * C2 |
-| B    || 9.9 {:,.3f} | 3 | = B3 * C3 {: :^} |
+| B    || 9.9 {:,.3f} | 3 {::green} | = B3 * C3 {::^,normal} |
 `.trim();
 
     const presentation = resolvePresentationFromText(doc);
@@ -170,28 +203,33 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     ]);
 
     expect(sheet.columnDefaults[1].format).toMatchObject({ grouping: true, precision: 1, type: "f" });
-    expect(sheet.columnDefaults[1].style).toMatchObject({ align: "right", color: null, bold: false });
+    expect(sheet.columnDefaults[1].style).toMatchObject({ align: "right", color: null, weight: "bold" });
     expect(sheet.columnDefaults[3].format).toMatchObject({ grouping: true, precision: 2, type: "f" });
-    expect(sheet.columnDefaults[3].style).toMatchObject({ align: "right", color: "blue", bold: false });
+    expect(sheet.columnDefaults[3].style).toMatchObject({ align: "right", color: "blue", weight: "bold" });
 
     const aPrice = sheet.cells[0][1];
     expect(aPrice.source).toBe("column");
     expect(aPrice.format).toMatchObject({ grouping: true, precision: 1, type: "f" });
-    expect(aPrice.style).toMatchObject({ align: "right", color: null, bold: false });
+    expect(aPrice.style).toMatchObject({ align: "right", color: null, weight: "bold" });
     expect(aPrice.displayText).toBe("1,234.5");
 
     const bPrice = sheet.cells[1][1];
     expect(bPrice.source).toBe("cell");
     expect(bPrice.format).toMatchObject({ grouping: true, precision: 3, type: "f" });
-    expect(bPrice.style).toMatchObject({ align: "right", color: null, bold: false });
+    expect(bPrice.style).toMatchObject({ align: "right", color: null, weight: "bold" });
     expect(bPrice.displayText).toBe("9.900");
+
+    const bQty = sheet.cells[1][2];
+    expect(bQty.source).toBe("cell");
+    expect(bQty.style).toMatchObject({ align: "right", color: "green", weight: "bold" });
+    expect(bQty.displayText).toBe("3");
 
     const aTotal = sheet.cells[0][3];
     expect(aTotal.value?.kind).toBe("number");
     expect(aTotal.value?.value).toBe(2469);
     expect(aTotal.source).toBe("column");
     expect(aTotal.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
-    expect(aTotal.style).toMatchObject({ align: "right", color: "blue", bold: false });
+    expect(aTotal.style).toMatchObject({ align: "right", color: "blue", weight: "bold" });
     expect(aTotal.displayText).toBe("2,469.00");
 
     const bTotal = sheet.cells[1][3];
@@ -199,7 +237,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(bTotal.value?.value).toBeCloseTo(29.7, 10);
     expect(bTotal.source).toBe("cell");
     expect(bTotal.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
-    expect(bTotal.style).toMatchObject({ align: "center", color: null, bold: false });
+    expect(bTotal.style).toMatchObject({ align: "center", color: "blue", weight: "normal" });
     expect(bTotal.displayText).toBe("29.70");
   });
 
@@ -292,7 +330,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
         if (spec.expectSource) expect(cell.source).toBe(spec.expectSource);
         if (spec.expectAlign !== undefined) expect(cell.style?.align ?? null).toBe(spec.expectAlign ?? null);
         if (spec.expectColor !== undefined) expect(cell.style?.color ?? null).toBe(spec.expectColor ?? null);
-        if (spec.expectBold !== undefined) expect(cell.style?.bold ?? false).toBe(spec.expectBold);
+        if (spec.expectWeight !== undefined) expect(cell.style?.weight ?? null).toBe(spec.expectWeight);
         if (spec.expectFormatType !== undefined) expect(cell.format?.type ?? null).toBe(spec.expectFormatType ?? null);
         if (spec.expectFormatPrecision !== undefined) {
           expect(cell.format?.precision ?? null).toBe(spec.expectFormatPrecision);

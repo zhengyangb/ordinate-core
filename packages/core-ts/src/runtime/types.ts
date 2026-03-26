@@ -37,6 +37,7 @@ export type FormatSignPolicy = "default" | "plus" | "parentheses";
 export type NumericFormatType = "f" | "e" | "%" | "d";
 export type TextAlign = "left" | "right" | "center";
 export type TextColor = "red" | "green" | "blue";
+export type TextWeight = "bold" | "normal";
 
 export interface FormatSpec {
   sign: FormatSignPolicy;
@@ -50,7 +51,7 @@ export interface FormatSpec {
 
 export interface StyleSpec {
   align: TextAlign | null;
-  bold: boolean;
+  weight: TextWeight | null;
   color: TextColor | null;
   raw: string;
 }

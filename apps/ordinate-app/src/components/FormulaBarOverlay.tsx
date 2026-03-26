@@ -30,8 +30,8 @@ export default function FormulaBarOverlay({ mode, phase, formulaBarData, formula
           <span className="formula-chip">{formulaBarSnapshot.chip}</span>
           <span className="formula-value-preview">{formulaBarSnapshot.displayText || " "}</span>
         </div>
-        <div className="formula-source" title={formulaBarSnapshot.sourceText}>
-          {formulaBarSnapshot.sourceText}
+        <div className="formula-source" title={formulaBarSnapshot.editableSourceText}>
+          {formulaBarSnapshot.editableSourceText}
         </div>
         {hasDisplayMeta ? (
           <div className="formula-display-meta" aria-label="Display metadata">

@@ -17,7 +17,7 @@ target_col: Out
 expect_source: cell
 expect_align: right
 expect_color: red
-expect_bold: false
+expect_weight: null
 expect_format_type: f
 expect_format_precision: 2
 expect_format_grouping: true
@@ -41,7 +41,7 @@ target_col: Price
 expect_source: column
 expect_align: right
 expect_color:
-expect_bold: false
+expect_weight: null
 expect_format_type: f
 expect_format_precision: 1
 expect_format_grouping: true
@@ -65,7 +65,7 @@ target_col: Out
 expect_source: cell
 expect_align:
 expect_color: blue
-expect_bold: true
+expect_weight: bold
 expect_format_type:
 expect_format_precision:
 expect_format_grouping:
@@ -89,7 +89,7 @@ target_col: Out
 expect_source: cell
 expect_align:
 expect_color:
-expect_bold: false
+expect_weight: null
 expect_format_type: f
 expect_format_precision: 2
 expect_format_grouping: true
@@ -114,7 +114,7 @@ target_col: Out
 expect_source: column
 expect_align:
 expect_color:
-expect_bold: false
+expect_weight: null
 expect_format_type: f
 expect_format_precision: 2
 expect_format_grouping: true
@@ -139,7 +139,7 @@ target_col: Out
 expect_source: cell
 expect_align: right
 expect_color:
-expect_bold: false
+expect_weight: null
 expect_format_type: f
 expect_format_precision: 2
 expect_format_grouping: true
@@ -164,7 +164,7 @@ target_col: Out
 expect_source: default
 expect_align:
 expect_color:
-expect_bold: false
+expect_weight: null
 expect_format_type:
 expect_format_precision:
 expect_format_grouping:
@@ -189,7 +189,7 @@ target_col: Out
 expect_source: default
 expect_align:
 expect_color:
-expect_bold: false
+expect_weight: null
 expect_format_type:
 expect_format_precision:
 expect_format_grouping:
@@ -214,7 +214,84 @@ target_col: Start
 expect_source: cell
 expect_align:
 expect_color: blue
-expect_bold: false
+expect_weight: null
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+expect_has_errors: false
+
+=== long_form_style_canonicalized_to_short_ordered_tokens
+[doc]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 2 | = B2 {:,.1f:color=blue,weight=normal,align=right} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 2 | 2 = B2 {:,.1f:>,normal,blue} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align: right
+expect_color: blue
+expect_weight: normal
+expect_format_type: f
+expect_format_precision: 1
+expect_format_grouping: true
+expect_has_errors: false
+
+=== style_cascade_partial_and_normal_override
+[doc]
+# Sheet
+| Item || Val | Out {::>,bold,blue} |
+| ---- || --- | --- |
+| A    || 2 | = B2 {::green} |
+| B    || 3 | = B3 {::normal} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out {::>,bold,blue} |
+| ---- || --- | --- |
+| A    || 2 | 2 = B2 {::green} |
+| B    || 3 | 3 = B3 {::normal} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align: right
+expect_color: green
+expect_weight: bold
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+expect_has_errors: false
+
+=== style_cascade_normal_is_not_unspecified
+[doc]
+# Sheet
+| Item || Val | Out {::>,bold,blue} |
+| ---- || --- | --- |
+| A    || 3 | = B2 {::normal} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out {::>,bold,blue} |
+| ---- || --- | --- |
+| A    || 3 | 3 = B2 {::normal} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align: right
+expect_color: blue
+expect_weight: normal
 expect_format_type:
 expect_format_precision:
 expect_format_grouping:

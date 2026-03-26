@@ -151,10 +151,18 @@ Supported style items:
 | left align | `align=left` | `<` | `42 {: :<}` |
 | right align | `align=right` | `>` | `42 {: :>}` |
 | center align | `align=center` | `^` | `42 {: :^}` |
-| bold | `bold=true` | `bold` | `42 {: :bold}` |
+| bold weight | `weight=bold` | `bold` | `42 {: :bold}` |
+| normal weight | `weight=normal` | `normal` | `42 {: :normal}` |
 | red text | `color=red` | `red` | `42 {: :red}` |
 | green text | `color=green` | `green` | `42 {: :green}` |
 | blue text | `color=blue` | `blue` | `42 {: :blue}` |
+
+Current direction:
+
+- both full form and shorthand are accepted
+- canonical serialization rewrites style to shorthand tokens
+- canonical style token order is `align -> weight -> color`
+- `normal` is distinct from unspecified weight
 
 ## Column-Level Default Display Metadata
 
@@ -177,6 +185,8 @@ Current working precedence:
 | 1 | cell inline format/style | `999.9 {:.3f}` |
 | 2 | column display metadata | `Price {:,.1f:>}` |
 | 3 | UI / regional default | browser/app default |
+
+For style specifically, precedence is resolved per axis (`align`, `weight`, `color`) rather than as whole-object replacement.
 
 ## Header-Row Serialization of Column Display Metadata
 
@@ -257,7 +267,10 @@ Formula-cache note:
 - numeric format specs are inspired by a constrained Python-like mini-language
 - sign policy includes bare default, `+`, and `()`
 - style is separate from format
+- style uses axis-level cascading (`cell axis > column axis > UI default`)
+- style supports `weight` with `bold` and `normal`, and `normal` is distinct from unspecified
 - column display metadata is internal column metadata
 - cell inline display metadata overrides column display metadata
 - canonical serialization places column display definitions inline in the last header row
+- canonical style serialization uses shorthand tokens and may reorder style items
 - caches store values, not rendered strings

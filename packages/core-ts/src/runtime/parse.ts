@@ -10,6 +10,7 @@ import {
   type StyleSpec,
   type TextAlign,
   type TextColor,
+  type TextWeight,
 } from "./types";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
@@ -73,9 +74,20 @@ export function parseCellInput(text: string): ParsedCell {
   };
 }
 
+export function splitCellDisplayMetadata(text: string): {
+  contentText: string;
+  displayMetaRaw: string | null;
+} {
+  const extracted = extractTrailingDisplayMetadata(text);
+  return {
+    contentText: extracted.expression.trim(),
+    displayMetaRaw: extracted.display?.rawBlock ?? null,
+  };
+}
+
 // Return cell text with trailing display metadata block removed.
 export function stripCellDisplayMetadata(text: string): string {
-  return extractTrailingDisplayMetadata(text).expression.trim();
+  return splitCellDisplayMetadata(text).contentText;
 }
 
 // Parse a formula expression into an AST node.
@@ -868,7 +880,7 @@ function parseStyleSpec(spec: string): { value: StyleSpec } | { error: string } 
   if (items.length === 0) return { error: "empty_style_spec" };
 
   let align: TextAlign | null = null;
-  let bold = false;
+  let weight: TextWeight | null = null;
   let color: TextColor | null = null;
 
   for (const item of items) {
@@ -887,9 +899,14 @@ function parseStyleSpec(spec: string): { value: StyleSpec } | { error: string } 
       align = "center";
       continue;
     }
-    if (item === "bold" || item === "bold=true") {
-      if (bold) return { error: "duplicate_bold_style" };
-      bold = true;
+    if (item === "bold" || item === "weight=bold") {
+      if (weight !== null) return { error: "duplicate_weight_style" };
+      weight = "bold";
+      continue;
+    }
+    if (item === "normal" || item === "weight=normal") {
+      if (weight !== null) return { error: "duplicate_weight_style" };
+      weight = "normal";
       continue;
     }
     if (item === "red" || item === "color=red") {
@@ -913,7 +930,7 @@ function parseStyleSpec(spec: string): { value: StyleSpec } | { error: string } 
   return {
     value: {
       align,
-      bold,
+      weight,
       color,
       raw: text,
     },

@@ -13,8 +13,9 @@ export type {
   StyleSpec,
   TextAlign,
   TextColor,
+  TextWeight,
   ViewSelection,
 } from "./runtime/types";
 
-export { parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
+export { parseCellInput, splitCellDisplayMetadata, stripCellDisplayMetadata } from "./runtime/parse";
 export { evaluateDocument } from "./runtime/eval";

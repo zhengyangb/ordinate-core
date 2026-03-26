@@ -9,7 +9,7 @@ import {
   type ModelUpdatedEvent,
 } from "ag-grid-community";
 
-import { type PresentedCell, type RuntimeValue } from "@ordinate/core";
+import { splitCellDisplayMetadata, type PresentedCell, type RuntimeValue } from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
@@ -566,7 +566,7 @@ export default function App() {
             item[field] = displayText;
             item[`__kind_${colIndex}`] = runtimeValue?.kind ?? "blank";
             item[`__align_${colIndex}`] = presentedCell?.style?.align ?? "";
-            item[`__bold_${colIndex}`] = presentedCell?.style?.bold ?? false;
+            item[`__weight_${colIndex}`] = presentedCell?.style?.weight ?? "";
             item[`__color_${colIndex}`] = presentedCell?.style?.color ?? "";
             item[`__display_has_errors_${colIndex}`] = (presentedCell?.errors.length ?? 0) > 0;
             item[`__display_source_${colIndex}`] = presentedCell?.source ?? "default";
@@ -845,7 +845,7 @@ export default function App() {
           if (align === "left" || align === "right" || align === "center") {
             classes.push(`align-${align}`);
           }
-          if (params.data?.[`__bold_${colIndex}`] === true) {
+          if (params.data?.[`__weight_${colIndex}`] === "bold") {
             classes.push("is-bold");
           }
           const color = params.data?.[`__color_${colIndex}`];
@@ -1040,6 +1040,15 @@ export default function App() {
     const colNumber = colIndex + 1;
 
     const semanticColLabel = headerSemanticLabels[colIndex] ?? `C${colIndex + 1}`;
+    const resolveSourceView = (rawSource: string, fallbackSource: string) => {
+      const sourceText = rawSource.length > 0 ? rawSource : fallbackSource;
+      const split = splitCellDisplayMetadata(sourceText);
+      const editableSourceText = split.contentText.length > 0 ? split.contentText : sourceText;
+      return {
+        sourceText: sourceText.length > 0 ? sourceText : "(blank)",
+        editableSourceText: editableSourceText.length > 0 ? editableSourceText : "(blank)",
+      };
+    };
 
     if (selectedCell.area === "header") {
       const maxHeaderRow = Math.max(1, headerRowCount);
@@ -1050,14 +1059,15 @@ export default function App() {
         headerMatrix[headerRowNumber - 1]?.[colIndex] ??
         sourceFromSheet ??
         semanticColLabel;
-      const sourceText = sourceFromSheet.length > 0 ? sourceFromSheet : displayText;
+      const sourceView = resolveSourceView(sourceFromSheet, displayText);
 
       return {
         primaryAddress: `Col ${colNumber} · Row ${headerRowNumber}`,
         secondaryAddress: `${semanticColLabel} / Header`,
         chip: "Header",
         displayText: displayText.length > 0 ? displayText : "(blank)",
-        sourceText: sourceText.length > 0 ? sourceText : "(blank)",
+        sourceText: sourceView.sourceText,
+        editableSourceText: sourceView.editableSourceText,
       };
     }
 
@@ -1073,14 +1083,16 @@ export default function App() {
     const presentedCell = currentSheetPresentation?.cells[rowRel]?.[colIndex] as PresentedCell | undefined;
 
     if (colIndex < headerColCount) {
-      const sourceText = currentSheetState.cells[absoluteRowIndex]?.[colIndex]?.text ?? "";
-      const displayText = colIndex === 0 ? rowLeaf : (presentedCell?.displayText ?? sourceText);
+      const sourceRaw = currentSheetState.cells[absoluteRowIndex]?.[colIndex]?.text ?? "";
+      const displayText = colIndex === 0 ? rowLeaf : (presentedCell?.displayText ?? sourceRaw);
+      const sourceView = resolveSourceView(sourceRaw, displayText);
       return {
         primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
         secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
         chip: colIndex === 0 ? "Label" : "Header Col",
         displayText: displayText.length > 0 ? displayText : "(blank)",
-        sourceText: sourceText.length > 0 ? sourceText : displayText.length > 0 ? displayText : "(blank)",
+        sourceText: sourceView.sourceText,
+        editableSourceText: sourceView.editableSourceText,
         displaySource: presentedCell?.source,
         displayFormatRaw: presentedCell?.format?.raw ?? null,
         displayStyleRaw: presentedCell?.style?.raw ?? null,
@@ -1091,6 +1103,8 @@ export default function App() {
     const runtimeValue = currentSheet.values[rowRel]?.[colIndex] as RuntimeValue | undefined;
     const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
     const sourceText = rawCell?.text ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+    const fallbackSourceText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+    const sourceView = resolveSourceView(sourceText, fallbackSourceText);
     const chip = rawCell?.parsed.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);
 
     return {
@@ -1098,7 +1112,8 @@ export default function App() {
       secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
       chip,
       displayText: presentedCell?.displayText ?? (runtimeValue ? runtimeValueToText(runtimeValue) : ""),
-      sourceText: sourceText.length > 0 ? sourceText : "(blank)",
+      sourceText: sourceView.sourceText,
+      editableSourceText: sourceView.editableSourceText,
       displaySource: presentedCell?.source,
       displayFormatRaw: presentedCell?.format?.raw ?? null,
       displayStyleRaw: presentedCell?.style?.raw ?? null,
