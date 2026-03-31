@@ -9,7 +9,7 @@ import {
   type ModelUpdatedEvent,
 } from "ag-grid-community";
 
-import { type RuntimeValue } from "@ordinate/core";
+import { splitCellDisplayMetadata, type PresentedCell, type RuntimeValue } from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
@@ -21,6 +21,7 @@ import { useEditorStore } from "./store/editorStore";
 import type {
   ChromeVisibilityPhase,
   FloatingMenuPosition,
+  FloatingTooltip,
   FormulaBarData,
   GridRow,
   HeaderIndexMetric,
@@ -29,7 +30,6 @@ import type {
   SheetHealth,
   SheetIssueViewModel,
   SelectedCell,
-  TabTooltip,
   ThemeMenuPosition,
   ThemeMode,
 } from "./types/ui";
@@ -56,6 +56,12 @@ const CHROME_TRANSITION_MS = 260;
 const THEME_STORAGE_KEY = "ordinate-theme-mode";
 const BLANK_RUNTIME_VALUE: RuntimeValue = { kind: "blank", value: null };
 const POSITION_EPSILON = 0.5;
+const TAB_TOOLTIP_DELAY_MS = 40;
+const CONTROL_TOOLTIP_DELAY_MS = 220;
+const TOOLTIP_GAP = 8;
+const TOOLTIP_VIEWPORT_MARGIN = 10;
+const TOOLTIP_ESTIMATED_HEIGHT = 34;
+const TOOLTIP_ESTIMATED_WIDTH = 240;
 
 function resolveInitialThemeMode(): ThemeMode {
   if (typeof window === "undefined") return "auto";
@@ -124,6 +130,7 @@ export default function App() {
     sourceText,
     docState,
     evaluation,
+    presentation,
     sheetIssuesByName,
     activeSheet,
     error,
@@ -142,7 +149,7 @@ export default function App() {
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [toolMenuPosition, setToolMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
-  const [tabTooltip, setTabTooltip] = useState<TabTooltip | null>(null);
+  const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
   const [hasVerticalOverlap, setHasVerticalOverlap] = useState(false);
   const [hasHorizontalOverlap, setHasHorizontalOverlap] = useState(false);
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
@@ -160,6 +167,9 @@ export default function App() {
   const themeControlRef = useRef<HTMLDivElement | null>(null);
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolButtonRef = useRef<HTMLButtonElement | null>(null);
+  const tooltipTimerRef = useRef<number | null>(null);
+  const tooltipAnchorRef = useRef<HTMLElement | null>(null);
+  const suppressedTooltipTargetRef = useRef<HTMLElement | null>(null);
 
   const currentSheet = useMemo(() => {
     if (!evaluation || !activeSheet) return null;
@@ -170,6 +180,11 @@ export default function App() {
     if (!docState || !activeSheet) return null;
     return docState.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
   }, [docState, activeSheet]);
+
+  const currentSheetPresentation = useMemo(() => {
+    if (!presentation || !activeSheet) return null;
+    return presentation.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
+  }, [presentation, activeSheet]);
 
   const sheetNames = useMemo(() => {
     if (docState?.sheets?.length) {
@@ -265,19 +280,23 @@ export default function App() {
   const headerMatrix = useMemo(() => {
     if (!currentSheetState || sheetColCount === 0) return [] as string[][];
 
+    const fromPresentation = currentSheetPresentation?.headerDisplayRows ?? [];
+    if (fromPresentation.length > 0) {
+      return fromPresentation.map((row) =>
+        Array.from({ length: sheetColCount }, (_, colIndex) => row[colIndex] ?? ""),
+      );
+    }
+
     const matrixDepth = Math.max(1, headerRowCount);
-    return Array.from({ length: matrixDepth }, (_, rowIndex) => {
-      const sourceRow = rowIndex < headerRowCount ? currentSheetState.cells[rowIndex] : null;
-      return Array.from({ length: sheetColCount }, (_, colIndex) => {
-        const raw = sourceRow?.[colIndex]?.text?.trim() ?? "";
-        if (raw.length > 0) return raw;
+    return Array.from({ length: matrixDepth }, (_, rowIndex) =>
+      Array.from({ length: sheetColCount }, (_, colIndex) => {
         if (rowIndex === matrixDepth - 1) {
           return currentSheetState.colLabels[colIndex] ?? currentSheet?.colLabels[colIndex] ?? `C${colIndex + 1}`;
         }
         return "";
-      });
-    });
-  }, [currentSheetState, currentSheet, sheetColCount, headerRowCount]);
+      }),
+    );
+  }, [currentSheetState, currentSheetPresentation, currentSheet, sheetColCount, headerRowCount]);
 
   const headerLeafLabels = useMemo(() => {
     if (sheetColCount === 0) return [] as string[];
@@ -403,7 +422,7 @@ export default function App() {
 
   useEffect(() => {
     const dismissTooltip = () =>
-      setTabTooltip((current) => {
+      setTooltip((current) => {
         if (!current) return current;
         return null;
       });
@@ -415,32 +434,139 @@ export default function App() {
     };
   }, []);
 
-  const handleTabMouseEnter = useCallback((sheetName: string, target: HTMLButtonElement) => {
-    if (target.scrollWidth <= target.clientWidth + 1) {
-      setTabTooltip((current) => {
-        if (!current) return current;
-        return null;
-      });
-      return;
+  const clearTooltip = useCallback(() => {
+    if (tooltipTimerRef.current != null) {
+      window.clearTimeout(tooltipTimerRef.current);
+      tooltipTimerRef.current = null;
     }
-    const rect = target.getBoundingClientRect();
-    const next = {
-      text: sheetName,
-      top: rect.bottom + 8,
-      left: rect.left + rect.width / 2,
-    };
-    setTabTooltip((current) => {
-      if (
-        current &&
-        current.text === next.text &&
-        Math.abs(current.top - next.top) < POSITION_EPSILON &&
-        Math.abs(current.left - next.left) < POSITION_EPSILON
-      ) {
-        return current;
-      }
-      return next;
+    tooltipAnchorRef.current = null;
+    setTooltip((current) => {
+      if (!current) return current;
+      return null;
     });
   }, []);
+
+  const suppressTooltipForTarget = useCallback((target: HTMLElement) => {
+    suppressedTooltipTargetRef.current = target;
+    clearTooltip();
+  }, [clearTooltip]);
+
+  const releaseTooltipForTarget = useCallback((target: HTMLElement) => {
+    if (suppressedTooltipTargetRef.current === target) {
+      suppressedTooltipTargetRef.current = null;
+    }
+    clearTooltip();
+  }, [clearTooltip]);
+
+  useEffect(() => {
+    return () => {
+      if (tooltipTimerRef.current != null) {
+        window.clearTimeout(tooltipTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!tooltip) return;
+    let rafId: number | null = null;
+
+    const validateAnchor = () => {
+      const anchor = tooltipAnchorRef.current;
+      if (!anchor || !anchor.isConnected || anchor.getClientRects().length === 0) {
+        clearTooltip();
+        return;
+      }
+      rafId = window.requestAnimationFrame(validateAnchor);
+    };
+
+    rafId = window.requestAnimationFrame(validateAnchor);
+    return () => {
+      if (rafId != null) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [tooltip, clearTooltip]);
+
+  const buildTooltip = useCallback((text: string, target: HTMLElement): FloatingTooltip => {
+    const rect = target.getBoundingClientRect();
+    const belowTop = rect.bottom + TOOLTIP_GAP;
+    const aboveTop = rect.top - TOOLTIP_GAP;
+    const shouldPlaceAbove = belowTop + TOOLTIP_ESTIMATED_HEIGHT > window.innerHeight - TOOLTIP_VIEWPORT_MARGIN;
+    const centerLeft = rect.left + rect.width / 2;
+    const halfWidth = TOOLTIP_ESTIMATED_WIDTH / 2;
+    const shouldAlignLeft = centerLeft - halfWidth < TOOLTIP_VIEWPORT_MARGIN;
+    const shouldAlignRight = centerLeft + halfWidth > window.innerWidth - TOOLTIP_VIEWPORT_MARGIN;
+    const alignment = shouldAlignLeft ? "left" : shouldAlignRight ? "right" : "center";
+    const left = shouldAlignLeft
+      ? TOOLTIP_VIEWPORT_MARGIN
+      : shouldAlignRight
+        ? window.innerWidth - TOOLTIP_VIEWPORT_MARGIN
+        : centerLeft;
+    return {
+      text,
+      top: shouldPlaceAbove ? aboveTop : belowTop,
+      left,
+      placement: shouldPlaceAbove ? "above" : "below",
+      alignment,
+    };
+  }, []);
+
+  const handleTabMouseEnter = useCallback((sheetName: string, target: HTMLButtonElement) => {
+    if (target.scrollWidth <= target.clientWidth + 1) {
+      clearTooltip();
+      return;
+    }
+    if (tooltipTimerRef.current != null) {
+      window.clearTimeout(tooltipTimerRef.current);
+      tooltipTimerRef.current = null;
+    }
+    const next = buildTooltip(sheetName, target);
+    tooltipTimerRef.current = window.setTimeout(() => {
+      tooltipTimerRef.current = null;
+      tooltipAnchorRef.current = target;
+      setTooltip((current) => {
+        if (
+          current &&
+          current.text === next.text &&
+          current.placement === next.placement &&
+          current.alignment === next.alignment &&
+          Math.abs(current.top - next.top) < POSITION_EPSILON &&
+          Math.abs(current.left - next.left) < POSITION_EPSILON
+        ) {
+          return current;
+        }
+        return next;
+      });
+    }, TAB_TOOLTIP_DELAY_MS);
+  }, [buildTooltip, clearTooltip]);
+
+  const showTooltip = useCallback((text: string, target: HTMLElement, delayMs = CONTROL_TOOLTIP_DELAY_MS) => {
+    if (suppressedTooltipTargetRef.current === target) {
+      return;
+    }
+    if (tooltipTimerRef.current != null) {
+      window.clearTimeout(tooltipTimerRef.current);
+      tooltipTimerRef.current = null;
+    }
+    const next = buildTooltip(text, target);
+    tooltipTimerRef.current = window.setTimeout(() => {
+      tooltipTimerRef.current = null;
+      tooltipAnchorRef.current = target;
+      setTooltip((current) => {
+        if (
+          current &&
+          current.text === next.text &&
+          current.placement === next.placement &&
+          current.alignment === next.alignment &&
+          Math.abs(current.top - next.top) < POSITION_EPSILON &&
+          Math.abs(current.left - next.left) < POSITION_EPSILON
+        ) {
+          return current;
+        }
+        return next;
+      });
+    }, delayMs);
+  }, [buildTooltip]);
 
   const syncRowIndexMetrics = useCallback((api: GridApi<GridRow> | null) => {
     const snapshot = gridViewportAdapter.collectRowMetrics(api, GRID_ROW_HEIGHT);
@@ -451,7 +577,7 @@ export default function App() {
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
-      setTabTooltip(null);
+      setTooltip(null);
       if (!target?.closest(".theme-control") && !target?.closest(".theme-menu")) {
         setThemeMenuOpen(false);
       }
@@ -538,28 +664,37 @@ export default function App() {
 
         for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
           const field = toColFieldId(colIndex);
+          const presentedCell = currentSheetPresentation?.cells[rowIndex]?.[colIndex] ?? null;
           const rawCell = currentSheetState.cells[currentSheetState.bodyStart + rowIndex]?.[colIndex];
           const runtimeValue = row[colIndex] as RuntimeValue | undefined;
+          const displayText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
 
           if (colIndex < headerColCount) {
             if (colIndex === 0) {
               item[field] = rowLeaf;
               item[`__kind_${colIndex}`] = "label";
             } else {
-              const headerValue = rawCell?.text ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+              const headerValue = displayText.length > 0 ? displayText : rawCell?.text ?? "";
               item[field] = headerValue;
               item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
             }
           } else {
-            item[field] = runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+            item[field] = displayText;
             item[`__kind_${colIndex}`] = runtimeValue?.kind ?? "blank";
+            item[`__align_${colIndex}`] = presentedCell?.styleLayer.effective?.align ?? "";
+            item[`__weight_${colIndex}`] = presentedCell?.styleLayer.effective?.weight ?? "";
+            item[`__color_${colIndex}`] = presentedCell?.styleLayer.effective?.color ?? "";
+            item[`__display_has_errors_${colIndex}`] = (presentedCell?.errors.length ?? 0) > 0;
+            item[`__display_source_${colIndex}`] = presentedCell?.source ?? "default";
+            item[`__display_format_${colIndex}`] = presentedCell?.formatLayer.effective?.raw ?? "";
+            item[`__display_style_${colIndex}`] = presentedCell?.styleLayer.effective?.raw ?? "";
           }
         }
 
         return item;
       })
       .filter((row) => isVisiblePath(row.__rowPath, collapsedPaths));
-  }, [currentSheet, currentSheetState, collapsedPaths, sheetColCount, headerColCount]);
+  }, [currentSheet, currentSheetState, currentSheetPresentation, collapsedPaths, sheetColCount, headerColCount]);
 
   const absoluteRowPathLookup = useMemo(() => {
     const map = new Map<number, string>();
@@ -785,7 +920,6 @@ export default function App() {
                   toggleCollapse(data.__rowPath);
                 }}
                 aria-label={isCollapsed ? "Expand section" : "Collapse section"}
-                title={isCollapsed ? "Expand" : "Collapse"}
               >
                 <svg className="tree-toggle-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
                   <path d="M4 2.5 8.5 6 4 9.5Z" fill="currentColor" />
@@ -822,6 +956,20 @@ export default function App() {
           if (kind === "number") classes.push("is-numeric");
           if (kind === "error") classes.push("is-error");
           if (kind === "blank") classes.push("is-blank");
+          const align = params.data?.[`__align_${colIndex}`];
+          if (align === "left" || align === "right" || align === "center") {
+            classes.push(`align-${align}`);
+          }
+          if (params.data?.[`__weight_${colIndex}`] === "bold") {
+            classes.push("is-bold");
+          }
+          const color = params.data?.[`__color_${colIndex}`];
+          if (color === "red" || color === "green" || color === "blue") {
+            classes.push(`is-color-${color}`);
+          }
+          if (params.data?.[`__display_has_errors_${colIndex}`] === true) {
+            classes.push("has-display-errors");
+          }
           return classes.join(" ");
         },
       } satisfies ColDef<GridRow>;
@@ -1007,24 +1155,39 @@ export default function App() {
     const colNumber = colIndex + 1;
 
     const semanticColLabel = headerSemanticLabels[colIndex] ?? `C${colIndex + 1}`;
+    const resolveSourceView = (rawSource: string, fallbackSource: string) => {
+      const sourceText = rawSource.length > 0 ? rawSource : fallbackSource;
+      const split = splitCellDisplayMetadata(sourceText);
+      const editableSourceText = split.contentText.length > 0 ? split.contentText : sourceText;
+      return {
+        sourceText: sourceText.length > 0 ? sourceText : "(blank)",
+        editableSourceText: editableSourceText.length > 0 ? editableSourceText : "(blank)",
+      };
+    };
 
     if (selectedCell.area === "header") {
       const maxHeaderRow = Math.max(1, headerRowCount);
       const headerRowNumber = Math.max(1, Math.min(selectedCell.logical.rAbs, maxHeaderRow));
       const headerAbsIndex = headerRowNumber - 1;
-      const sourceFromSheet = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex]?.text ?? "" : "";
+      const rawHeaderCell = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex] : undefined;
+      const sourceFromSheet = rawHeaderCell?.text ?? "";
       const displayText =
         headerMatrix[headerRowNumber - 1]?.[colIndex] ??
         sourceFromSheet ??
         semanticColLabel;
-      const sourceText = sourceFromSheet.length > 0 ? sourceFromSheet : displayText;
+      const sourceView = resolveSourceView(sourceFromSheet, displayText);
 
       return {
         primaryAddress: `Col ${colNumber} · Row ${headerRowNumber}`,
         secondaryAddress: `${semanticColLabel} / Header`,
         chip: "Header",
         displayText: displayText.length > 0 ? displayText : "(blank)",
-        sourceText: sourceText.length > 0 ? sourceText : "(blank)",
+        sourceText: sourceView.sourceText,
+        editableSourceText: sourceView.editableSourceText,
+        hasCellFormatOverride: Boolean(rawHeaderCell?.parsed.display?.format),
+        cellFormatRaw: rawHeaderCell?.parsed.display?.format ?? null,
+        hasCellStyleOverride: Boolean(rawHeaderCell?.parsed.display?.style),
+        cellStyleRaw: rawHeaderCell?.parsed.display?.style ?? null,
       };
     }
 
@@ -1037,34 +1200,58 @@ export default function App() {
 
     const rowLeaf = leafLabel(rowPath);
     const absoluteRowIndex = rowNumber - 1;
+    const presentedCell = currentSheetPresentation?.cells[rowRel]?.[colIndex] as PresentedCell | undefined;
 
     if (colIndex < headerColCount) {
-      const sourceText = currentSheetState.cells[absoluteRowIndex]?.[colIndex]?.text ?? "";
-      const displayText = colIndex === 0 ? rowLeaf : sourceText;
+      const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
+      const sourceRaw = rawCell?.text ?? "";
+      const displayText = colIndex === 0 ? rowLeaf : (presentedCell?.displayText ?? sourceRaw);
+      const sourceView = resolveSourceView(sourceRaw, displayText);
       return {
         primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
         secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
         chip: colIndex === 0 ? "Label" : "Header Col",
         displayText: displayText.length > 0 ? displayText : "(blank)",
-        sourceText: sourceText.length > 0 ? sourceText : displayText.length > 0 ? displayText : "(blank)",
+        sourceText: sourceView.sourceText,
+        editableSourceText: sourceView.editableSourceText,
+        hasCellFormatOverride: Boolean(rawCell?.parsed.display?.format),
+        cellFormatRaw: rawCell?.parsed.display?.format ?? null,
+        hasCellStyleOverride: Boolean(rawCell?.parsed.display?.style),
+        cellStyleRaw: rawCell?.parsed.display?.style ?? null,
+        displaySource: presentedCell?.source,
+        displayFormatRaw: presentedCell?.formatLayer.effective?.raw ?? null,
+        displayStyleRaw: presentedCell?.styleLayer.effective?.raw ?? null,
+        displayErrors: presentedCell?.errors ?? [],
       };
     }
 
     const runtimeValue = currentSheet.values[rowRel]?.[colIndex] as RuntimeValue | undefined;
     const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
     const sourceText = rawCell?.text ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+    const fallbackSourceText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+    const sourceView = resolveSourceView(sourceText, fallbackSourceText);
     const chip = rawCell?.parsed.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);
 
     return {
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
       secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
       chip,
-      displayText: runtimeValue ? runtimeValueToText(runtimeValue) : "",
-      sourceText: sourceText.length > 0 ? sourceText : "(blank)",
+      displayText: presentedCell?.displayText ?? (runtimeValue ? runtimeValueToText(runtimeValue) : ""),
+      sourceText: sourceView.sourceText,
+      editableSourceText: sourceView.editableSourceText,
+      hasCellFormatOverride: Boolean(rawCell?.parsed.display?.format),
+      cellFormatRaw: rawCell?.parsed.display?.format ?? null,
+      hasCellStyleOverride: Boolean(rawCell?.parsed.display?.style),
+      cellStyleRaw: rawCell?.parsed.display?.style ?? null,
+      displaySource: presentedCell?.source,
+      displayFormatRaw: presentedCell?.formatLayer.effective?.raw ?? null,
+      displayStyleRaw: presentedCell?.styleLayer.effective?.raw ?? null,
+      displayErrors: presentedCell?.errors ?? [],
     };
   }, [
     currentSheet,
     currentSheetState,
+    currentSheetPresentation,
     selectedCell,
     isActiveSheetBlocked,
     sheetColCount,
@@ -1213,8 +1400,12 @@ export default function App() {
           toolButtonRef={toolButtonRef}
           onEnterSourceMode={enterSourceMode}
           onExitSourceMode={exitSourceMode}
+          onTooltipEnter={showTooltip}
+          onTooltipLeave={clearTooltip}
+          onTooltipSuppress={suppressTooltipForTarget}
+          onTooltipRelease={releaseTooltipForTarget}
           onTabMouseEnter={handleTabMouseEnter}
-          onTabMouseLeave={() => setTabTooltip(null)}
+          onTabMouseLeave={clearTooltip}
         />
 
         {error ? (
@@ -1275,6 +1466,10 @@ export default function App() {
         phase={chromeVisibilityPhase}
         formulaBarData={formulaBarData}
         formulaBarSnapshot={formulaBarSnapshot}
+        onTooltipEnter={showTooltip}
+        onTooltipLeave={clearTooltip}
+        onTooltipSuppress={suppressTooltipForTarget}
+        onTooltipRelease={releaseTooltipForTarget}
       />
 
       <OverlayPortals
@@ -1286,7 +1481,7 @@ export default function App() {
         toolMenuOpen={toolMenuOpen}
         toolMenuPosition={toolMenuPosition}
         overflowTools={overflowTools}
-        tabTooltip={tabTooltip}
+        tooltip={tooltip}
       />
     </div>
   );

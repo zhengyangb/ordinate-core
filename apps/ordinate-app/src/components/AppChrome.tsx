@@ -22,6 +22,10 @@ type AppChromeProps = {
   toolButtonRef: RefObject<HTMLButtonElement>;
   onEnterSourceMode: () => void;
   onExitSourceMode: () => void;
+  onTooltipEnter: (text: string, target: HTMLElement, delayMs?: number) => void;
+  onTooltipLeave: () => void;
+  onTooltipSuppress: (target: HTMLElement) => void;
+  onTooltipRelease: (target: HTMLElement) => void;
   onTabMouseEnter: (sheetName: string, target: HTMLButtonElement) => void;
   onTabMouseLeave: () => void;
 };
@@ -45,6 +49,10 @@ export default function AppChrome({
   toolButtonRef,
   onEnterSourceMode,
   onExitSourceMode,
+  onTooltipEnter,
+  onTooltipLeave,
+  onTooltipSuppress,
+  onTooltipRelease,
   onTabMouseEnter,
   onTabMouseLeave,
 }: AppChromeProps) {
@@ -71,7 +79,11 @@ export default function AppChrome({
               type="button"
               tabIndex={-1}
               aria-label={item.label}
-              title={item.label}
+              onMouseEnter={(event) => onTooltipEnter(item.label, event.currentTarget)}
+              onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+              onFocus={(event) => onTooltipEnter(item.label, event.currentTarget)}
+              onBlur={(event) => onTooltipRelease(event.currentTarget)}
+              onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
             >
               <span className="tool-icon">{item.icon}</span>
             </button>
@@ -84,9 +96,15 @@ export default function AppChrome({
                 type="button"
                 onClick={() => setToolMenuOpen((open) => !open)}
                 aria-label="More tools"
-                title="More tools"
                 aria-haspopup="menu"
                 aria-expanded={toolMenuOpen}
+                onMouseEnter={(event) => onTooltipEnter("More tools", event.currentTarget)}
+                onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+                onFocus={(event) => {
+                  if (!toolMenuOpen) onTooltipEnter("More tools", event.currentTarget);
+                }}
+                onBlur={(event) => onTooltipRelease(event.currentTarget)}
+                onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
               >
                 <span className="tool-icon">
                   <MoreIcon />
@@ -103,10 +121,16 @@ export default function AppChrome({
               type="button"
               onClick={() => setThemeMenuOpen((open) => !open)}
               ref={themeButtonRef}
-              title={themeButtonLabel}
               aria-label={themeButtonLabel}
               aria-haspopup="menu"
               aria-expanded={themeMenuOpen}
+              onMouseEnter={(event) => onTooltipEnter(themeButtonLabel, event.currentTarget)}
+              onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+              onFocus={(event) => {
+                if (!themeMenuOpen) onTooltipEnter(themeButtonLabel, event.currentTarget);
+              }}
+              onBlur={(event) => onTooltipRelease(event.currentTarget)}
+              onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
             >
               <span className="tool-icon">{themeButtonIcon}</span>
             </button>
@@ -115,8 +139,12 @@ export default function AppChrome({
           <button
             className={mode === "source" ? "tool-button source-button active" : "tool-button source-button"}
             onClick={mode === "source" ? onExitSourceMode : onEnterSourceMode}
-            title={mode === "source" ? "Return to table view" : "Open source mode"}
             aria-label={mode === "source" ? "Return to table view" : "Open source mode"}
+            onMouseEnter={(event) => onTooltipEnter(mode === "source" ? "Return to table view" : "Open source mode", event.currentTarget)}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => onTooltipEnter(mode === "source" ? "Return to table view" : "Open source mode", event.currentTarget)}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
           >
             <span className="tool-icon">
               <CodeIcon />
@@ -149,7 +177,6 @@ export default function AppChrome({
                   <span
                     className="sheet-tab-alert invalid"
                     aria-hidden="true"
-                    title="Sheet has blocking issues"
                   >
                     ×
                   </span>

@@ -1,6 +1,7 @@
 import { formatDocument } from "./formatter";
 import { type DocumentState, type SheetState } from "./incremental";
-import { type ExprNode, type ReferenceExpr, type RefSelector, type RuntimeValue } from "./runtime/types";
+import { stripCellDisplayMetadata } from "./runtime/parse";
+import { type ExprNode, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue } from "./runtime/types";
 
 // Serialize a DocumentState to canonical .ord text.
 export function serializeDocumentState(state: DocumentState): string {
@@ -75,9 +76,10 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
       const raw = c < row.rawCells.length ? row.rawCells[c] : "";
       const cellState = sheet.cells[rAbs][c];
       if (cellState.parsed.kind === "formula") {
+        const displaySuffix = renderDisplayBlock(cellState.parsed.display ?? null);
         if (isParseErrorExpression(cellState.parsed.expression)) {
           const exprText = cellState.parsed.expressionText?.trim() ?? "";
-          cells.push(`error = ${exprText}`);
+          cells.push(`= ${exprText}${displaySuffix}`);
           continue;
         }
 
@@ -85,12 +87,18 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
           ?? cellState.parsed.expressionText
           ?? "";
         if (!cellState.dirty && cellState.value !== null && cellState.value.kind !== "blank") {
-          cells.push(`${serializeValue(cellState.value)} = ${rhs}`);
+          cells.push(`${serializeValue(cellState.value)} = ${rhs}${displaySuffix}`);
         } else {
-          cells.push(`= ${rhs}`);
+          cells.push(`= ${rhs}${displaySuffix}`);
         }
       } else {
-        cells.push(raw);
+        const displaySuffix = renderDisplayBlock(cellState.parsed.display ?? null);
+        if (displaySuffix === "") {
+          cells.push(raw);
+        } else {
+          const base = stripCellDisplayMetadata(raw).trim();
+          cells.push(`${base}${displaySuffix}`);
+        }
       }
     }
     lines.push(buildRow(cells, row.boundary));
@@ -135,6 +143,9 @@ function serializeValue(value: RuntimeValue): string {
   if (value.kind === "null") {
     return "null";
   }
+  if (value.kind === "date" || value.kind === "time" || value.kind === "datetime" || value.kind === "duration") {
+    return String(value.value ?? "");
+  }
   if (value.kind === "error") {
     return "error";
   }
@@ -176,6 +187,9 @@ function renderExpression(
     if (value.kind === "number") return serializeNumber(value.value as number | null);
     if (value.kind === "boolean") return value.value ? "true" : "false";
     if (value.kind === "null") return "null";
+    if (value.kind === "date" || value.kind === "time" || value.kind === "datetime" || value.kind === "duration") {
+      return String(value.value ?? "");
+    }
     if (value.kind === "error") return "error";
     if (value.kind === "blank") return "";
     return "error";
@@ -262,6 +276,50 @@ function quotePathComponent(text: string): string {
     return text;
   }
   return serializeString(text);
+}
+
+function renderDisplayBlock(display: ParsedDisplayMetadata | null): string {
+  if (!display) return "";
+  if (!display.valid) {
+    return display.rawBlock ? ` ${display.rawBlock}` : "";
+  }
+  const format = display.formatSpec ? serializeFormatSpec(display.formatSpec) : "";
+  const style = display.styleSpec ? serializeStyleSpec(display.styleSpec) : "";
+  if (format === "" && style === "") {
+    return "";
+  }
+  if (style === "") {
+    return ` {:${format}}`;
+  }
+  if (format === "") {
+    return ` {::${style}}`;
+  }
+  return ` {:${format}:${style}}`;
+}
+
+function serializeFormatSpec(spec: NonNullable<ParsedDisplayMetadata["formatSpec"]>): string {
+  let out = "";
+  if (spec.sign === "plus") out += "+";
+  else if (spec.sign === "parentheses") out += "()";
+  if (spec.zeroPad) out += "0";
+  if (spec.width !== null) out += `${spec.width}`;
+  if (spec.grouping) out += ",";
+  if (spec.precision !== null) out += `.${spec.precision}`;
+  if (spec.type !== null) out += spec.type;
+  return out;
+}
+
+function serializeStyleSpec(spec: NonNullable<ParsedDisplayMetadata["styleSpec"]>): string {
+  const parts: string[] = [];
+  if (spec.align === "left") parts.push("<");
+  if (spec.align === "right") parts.push(">");
+  if (spec.align === "center") parts.push("^");
+  if (spec.weight === "bold") parts.push("bold");
+  if (spec.weight === "normal") parts.push("normal");
+  if (spec.color === "red") parts.push("red");
+  if (spec.color === "green") parts.push("green");
+  if (spec.color === "blue") parts.push("blue");
+  return parts.join(",");
 }
 
 type SpreadsheetAxis =

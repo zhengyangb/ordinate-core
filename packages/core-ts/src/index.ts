@@ -20,6 +20,8 @@ export {
 
 export {
   evaluateDocument,
+  splitCellDisplayMetadata,
+  stripCellDisplayMetadata,
   type EvaluationResult,
   type SheetEvaluation,
   type RuntimeValue,
@@ -27,3 +29,12 @@ export {
 
 export { ChangeKind, DocumentState, SheetState } from "./incremental";
 export { serializeDocumentState } from "./serializer";
+export {
+  formatPresentedCell,
+  resolveDocumentPresentation,
+  resolvePresentationFromText,
+  type ColumnDisplayDefault,
+  type PresentedCell,
+  type SheetPresentation,
+  type PresentationResult,
+} from "./presentation";

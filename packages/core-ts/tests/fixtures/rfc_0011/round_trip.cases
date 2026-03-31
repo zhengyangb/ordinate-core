@@ -178,6 +178,6 @@ evaluate: true
 # Sheet
 | Item || 2024 | Sum |
 | ---- || ---- | --- |
-| A    || 10   | error = sum(@[A,2024] |
+| A    || 10   | = sum(@[A,2024] |
 [/expect]
 evaluate: true

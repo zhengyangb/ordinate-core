@@ -1,6 +1,7 @@
 export interface RuntimeValue {
   kind: string;
   value?: unknown;
+  isOffsetQualified?: boolean;
 }
 
 export interface RefSelector {
@@ -33,12 +34,46 @@ export interface ExprNode {
   right?: ExprNode | null;
 }
 
+export type FormatSignPolicy = "default" | "plus" | "parentheses";
+export type NumericFormatType = "f" | "e" | "%" | "d";
+export type TextAlign = "left" | "right" | "center";
+export type TextColor = "red" | "green" | "blue";
+export type TextWeight = "bold" | "normal";
+
+export interface FormatSpec {
+  sign: FormatSignPolicy;
+  zeroPad: boolean;
+  width: number | null;
+  grouping: boolean;
+  precision: number | null;
+  type: NumericFormatType | null;
+  raw: string;
+}
+
+export interface StyleSpec {
+  align: TextAlign | null;
+  weight: TextWeight | null;
+  color: TextColor | null;
+  raw: string;
+}
+
+export interface ParsedDisplayMetadata {
+  format: string | null;
+  style: string | null;
+  formatSpec: FormatSpec | null;
+  styleSpec: StyleSpec | null;
+  valid: boolean;
+  rawBlock: string | null;
+  errors: string[];
+}
+
 export interface ParsedCell {
   kind: string;
   literal: RuntimeValue | null;
   expression: ExprNode | null;
   cached: RuntimeValue | null;
   expressionText?: string | null;
+  display?: ParsedDisplayMetadata | null;
 }
 
 export interface SheetEvaluation {

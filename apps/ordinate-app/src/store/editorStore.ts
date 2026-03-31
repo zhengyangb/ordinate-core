@@ -2,8 +2,10 @@ import { create } from "zustand";
 
 import {
   DocumentState,
+  resolveDocumentPresentation,
   validateDocument,
   type EvaluationResult,
+  type PresentationResult,
   type ValidationError,
   type ValidationResult,
   serializeDocumentState,
@@ -16,6 +18,7 @@ interface EditorState {
   sourceText: string;
   docState: DocumentState | null;
   evaluation: EvaluationResult | null;
+  presentation: PresentationResult | null;
   validation: ValidationResult | null;
   sheetIssuesByName: Record<string, ValidationError[]>;
   activeSheet: string | null;
@@ -89,13 +92,15 @@ const sampleDocument = `# Management Report
 | Gross Margin % || = @["Revenue Total",_] / 120 | = @["Revenue Total",_] / 130 | = @["Revenue Total",_] / 140 | = @["Revenue Total",_] / 150 | = @["Revenue Total",_] / 160 | = @["Revenue Total",_] / 170 | = @["Revenue Total",_] / 180 | = @["Revenue Total",_] / 190 |
 
 # A1 Style Demo
-| Item       || 2024 | 2025 | Calc |
-| ---------- || ---- | ---- | ---- |
-| Revenue    || 100  | 120  | = B2 + C2 |
-| Cost       || 40   | 55   | = sum(B2:C3) |
-| Column Sum || 0    | 0    | = sum(B:B) |
-| Row Sum    || 0    | 0    | = sum(2:2) |
-| Mixed      || 0    | 0    | = B2 + @[Cost,2024] |
+| Item         || Revenue {:,.1f:<,blue} | Cost {:(),.2f:<} | Margin {:.1%:<} | Notes {: :<} | Calc {:,.2f:<,blue,bold} |
+| ------------ || ---------------------- | ----------------- | -------------- | ------------ | --------------------------- |
+| Product A    || 1234.5 {::red}         | -456.7            | 0.125          | "color override" | = B2 + C2 {::red} |
+| Product B    || 999.9 {::>}            | -88.1             | 0.314          | "align override" | = B3 + C3 {::normal} |
+| Temporal     || 2026-03-24T14:30:00Z {::blue} | PT1H30M {::bold} | 0 | "time literals" | = B2 |
+| Column Sum   || 0                 | 0                  | 0               | ""           | = sum(B:B) |
+| Row Sum      || 0                 | 0                  | 0               | ""           | = sum(2:2) |
+| Mixed        || 0                 | 0                  | 0               | "a1 + ordinate" | = B2 + @[#2,#2] |
+| Invalid Meta || 12.5 {:bad fmt}   | 13 {:,.2f:purple}  | 0               | "non-blocking" | = B8 + C8 |
 `;
 
 function toErrorMessage(error: unknown): string {
@@ -122,11 +127,20 @@ function groupSheetValidationErrors(
 
 function bootstrapFromSource(sourceText: string): Pick<
   EditorState,
-  "mode" | "sourceText" | "docState" | "evaluation" | "validation" | "sheetIssuesByName" | "activeSheet" | "error"
+  | "mode"
+  | "sourceText"
+  | "docState"
+  | "evaluation"
+  | "presentation"
+  | "validation"
+  | "sheetIssuesByName"
+  | "activeSheet"
+  | "error"
 > {
   try {
     const docState = DocumentState.fromText(sourceText);
     const evaluation = docState.evaluate();
+    const presentation = resolveDocumentPresentation(docState);
     const validation = validateDocument(sourceText);
     const sheetNames = docState.sheets.map((sheet) => sheet.name);
     const sheetIssuesByName = groupSheetValidationErrors(sheetNames, validation.errors);
@@ -136,6 +150,7 @@ function bootstrapFromSource(sourceText: string): Pick<
       sourceText,
       docState,
       evaluation,
+      presentation,
       validation,
       sheetIssuesByName,
       activeSheet: docState.sheets[0]?.name ?? null,
@@ -147,6 +162,7 @@ function bootstrapFromSource(sourceText: string): Pick<
       sourceText,
       docState: null,
       evaluation: null,
+      presentation: null,
       validation: null,
       sheetIssuesByName: {},
       activeSheet: null,
@@ -159,12 +175,13 @@ const initialState = bootstrapFromSource(sampleDocument);
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   ...initialState,
-  setSourceText: (text) => set({ sourceText: text, validation: null, sheetIssuesByName: {}, error: null }),
+  setSourceText: (text) => set({ sourceText: text, presentation: null, validation: null, sheetIssuesByName: {}, error: null }),
   setActiveSheet: (sheetName) => set({ activeSheet: sheetName }),
   exitSourceMode: () => {
     try {
       const docState = DocumentState.fromText(get().sourceText);
       const evaluation = docState.evaluate();
+      const presentation = resolveDocumentPresentation(docState);
       const validation = validateDocument(get().sourceText);
       const sheetNames = docState.sheets.map((sheet) => sheet.name);
       const sheetIssuesByName = groupSheetValidationErrors(sheetNames, validation.errors);
@@ -175,6 +192,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         mode: "table",
         docState,
         evaluation,
+        presentation,
         validation,
         sheetIssuesByName,
         activeSheet: firstSheet,

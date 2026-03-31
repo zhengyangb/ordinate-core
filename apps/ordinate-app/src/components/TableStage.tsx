@@ -123,7 +123,6 @@ export default function TableStage({
           const colIndex = cell.startCol + slot;
           handleHeaderOverlaySelect(cell.rowNumber, colIndex);
         }}
-        title={cell.label}
       >
         <span>{cell.label}</span>
       </button>

@@ -1,0 +1,323 @@
+=== cell_metadata_spaces_canonicalized
+[doc]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 12.3 | = B2 {:,.2f : >, red } |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 12.3 | 12.3 = B2 {:,.2f:>,red} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align: right
+expect_color: red
+expect_weight: null
+expect_format_type: f
+expect_format_precision: 2
+expect_format_grouping: true
+
+=== column_inline_metadata_spaces_canonicalized
+[doc]
+# Sheet
+| Item || Price {:,.1f : > } | Qty {:d : >} | Total |
+| ---- || ----- | --- | ----- |
+| A    || 1234.5 | 2 | = B2 * C2 |
+[/doc]
+[expect]
+# Sheet
+| Item || Price {:,.1f:>} | Qty {:d:>} | Total |
+| ---- || ----- | --- | ----- |
+| A    || 1234.5 | 2 | 2469 = B2 * C2 |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Price
+expect_source: column
+expect_align: right
+expect_color:
+expect_weight: null
+expect_format_type: f
+expect_format_precision: 1
+expect_format_grouping: true
+
+=== style_only_spaces_canonicalized
+[doc]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 1 | = B2 {: : bold , blue } |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 1 | 1 = B2 {::bold,blue} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align:
+expect_color: blue
+expect_weight: bold
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+
+=== cache_not_rounded_by_cell_format
+[doc]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 12.345 | = B2 {:,.2f} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 12.345 | 12.345 = B2 {:,.2f} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align:
+expect_color:
+expect_weight: null
+expect_format_type: f
+expect_format_precision: 2
+expect_format_grouping: true
+expect_has_errors: false
+
+=== cache_not_rounded_by_column_format
+[doc]
+# Sheet
+| Item || Val | Out {:,.2f} |
+| ---- || --- | --- |
+| A    || 12.345 | = B2 |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out {:,.2f} |
+| ---- || --- | --- |
+| A    || 12.345 | 12.345 = B2 |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: column
+expect_align:
+expect_color:
+expect_weight: null
+expect_format_type: f
+expect_format_precision: 2
+expect_format_grouping: true
+expect_has_errors: false
+
+=== no_evaluate_keeps_no_cache_but_canonical_meta
+[doc]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 12.345 | = B2 {:,.2f : >} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 12.345 | = B2 {:,.2f:>} |
+[/expect]
+evaluate: false
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align: right
+expect_color:
+expect_weight: null
+expect_format_type: f
+expect_format_precision: 2
+expect_format_grouping: true
+expect_has_errors: false
+
+=== invalid_format_preserved_raw_and_not_applied
+[doc]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 12.3 | = B2 {:, .2f} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 12.3 | 12.3 = B2 {:, .2f} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: default
+expect_align:
+expect_color:
+expect_weight: null
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+expect_has_errors: true
+
+=== invalid_style_preserved_raw_and_not_applied
+[doc]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 1 | = B2 {:,.2f:>,^} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 1 | 1 = B2 {:,.2f:>,^} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: default
+expect_align:
+expect_color:
+expect_weight: null
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+expect_has_errors: true
+
+=== temporal_literals_with_display_metadata
+[doc]
+# Sheet
+| Item || Start | Duration | Out |
+| ---- || ----- | -------- | --- |
+| A    || 2026-03-24T14:30:00Z {::blue} | PT1H30M {::bold} | = B2 |
+[/doc]
+[expect]
+# Sheet
+| Item || Start | Duration | Out |
+| ---- || ----- | -------- | --- |
+| A    || 2026-03-24T14:30:00Z {::blue} | PT1H30M {::bold} | 2026-03-24T14:30:00Z = B2 |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Start
+expect_source: cell
+expect_align:
+expect_color: blue
+expect_weight: null
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+expect_has_errors: false
+
+=== date_time_datetime_literals_round_trip
+[doc]
+# Sheet
+| Item || Day | LocalTime | OffsetTime | Moment | Out |
+| ---- || --- | --------- | ---------- | ------ | --- |
+| A    || 2026-03-24 | 14:30 | 14:30:00-04:00 {::green} | 2026-03-24T14:30 | = E2 |
+[/doc]
+[expect]
+# Sheet
+| Item || Day | LocalTime | OffsetTime | Moment | Out |
+| ---- || --- | --------- | ---------- | ------ | --- |
+| A    || 2026-03-24 | 14:30 | 14:30:00-04:00 {::green} | 2026-03-24T14:30 | 2026-03-24T14:30 = E2 |
+[/expect]
+evaluate: true
+target_row: A
+target_col: OffsetTime
+expect_source: cell
+expect_align:
+expect_color: green
+expect_weight: null
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+expect_has_errors: false
+
+=== long_form_style_canonicalized_to_short_ordered_tokens
+[doc]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 2 | = B2 {:,.1f:color=blue,weight=normal,align=right} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out |
+| ---- || --- | --- |
+| A    || 2 | 2 = B2 {:,.1f:>,normal,blue} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align: right
+expect_color: blue
+expect_weight: normal
+expect_format_type: f
+expect_format_precision: 1
+expect_format_grouping: true
+expect_has_errors: false
+
+=== style_cascade_partial_and_normal_override
+[doc]
+# Sheet
+| Item || Val | Out {::>,bold,blue} |
+| ---- || --- | --- |
+| A    || 2 | = B2 {::green} |
+| B    || 3 | = B3 {::normal} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out {::>,bold,blue} |
+| ---- || --- | --- |
+| A    || 2 | 2 = B2 {::green} |
+| B    || 3 | 3 = B3 {::normal} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align: right
+expect_color: green
+expect_weight: bold
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+expect_has_errors: false
+
+=== style_cascade_normal_is_not_unspecified
+[doc]
+# Sheet
+| Item || Val | Out {::>,bold,blue} |
+| ---- || --- | --- |
+| A    || 3 | = B2 {::normal} |
+[/doc]
+[expect]
+# Sheet
+| Item || Val | Out {::>,bold,blue} |
+| ---- || --- | --- |
+| A    || 3 | 3 = B2 {::normal} |
+[/expect]
+evaluate: true
+target_row: A
+target_col: Out
+expect_source: cell
+expect_align: right
+expect_color: blue
+expect_weight: normal
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+expect_has_errors: false
