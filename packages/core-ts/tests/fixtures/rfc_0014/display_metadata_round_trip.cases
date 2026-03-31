@@ -220,6 +220,31 @@ expect_format_precision:
 expect_format_grouping:
 expect_has_errors: false
 
+=== date_time_datetime_literals_round_trip
+[doc]
+# Sheet
+| Item || Day | LocalTime | OffsetTime | Moment | Out |
+| ---- || --- | --------- | ---------- | ------ | --- |
+| A    || 2026-03-24 | 14:30 | 14:30:00-04:00 {::green} | 2026-03-24T14:30 | = E2 |
+[/doc]
+[expect]
+# Sheet
+| Item || Day | LocalTime | OffsetTime | Moment | Out |
+| ---- || --- | --------- | ---------- | ------ | --- |
+| A    || 2026-03-24 | 14:30 | 14:30:00-04:00 {::green} | 2026-03-24T14:30 | 2026-03-24T14:30 = E2 |
+[/expect]
+evaluate: true
+target_row: A
+target_col: OffsetTime
+expect_source: cell
+expect_align:
+expect_color: green
+expect_weight: null
+expect_format_type:
+expect_format_precision:
+expect_format_grouping:
+expect_has_errors: false
+
 === long_form_style_canonicalized_to_short_ordered_tokens
 [doc]
 # Sheet

@@ -35,6 +35,10 @@ export type FormulaBarData = {
   displayText: string;
   sourceText: string;
   editableSourceText: string;
+  hasCellFormatOverride?: boolean;
+  cellFormatRaw?: string | null;
+  hasCellStyleOverride?: boolean;
+  cellStyleRaw?: string | null;
   displaySource?: "cell" | "column" | "default";
   displayFormatRaw?: string | null;
   displayStyleRaw?: string | null;
@@ -88,10 +92,12 @@ export type FloatingMenuPosition = {
   left: number;
 };
 
-export type TabTooltip = {
+export type FloatingTooltip = {
   text: string;
   top: number;
   left: number;
+  placement: "above" | "below";
+  alignment: "center" | "left" | "right";
 };
 
 export type ToolSpec = {

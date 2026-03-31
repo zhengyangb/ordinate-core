@@ -107,13 +107,44 @@ function loadDisplayCases(path: string): DisplayCase[] {
 
 describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("parses cell-level display metadata blocks", () => {
+    const date = parseCellInput("2026-03-24");
+    expect(date.literal?.kind).toBe("date");
+    expect(date.literal?.value).toBe("2026-03-24");
+    expect(date.literal?.isOffsetQualified).toBe(false);
+
+    const timeNaive = parseCellInput("14:30");
+    expect(timeNaive.literal?.kind).toBe("time");
+    expect(timeNaive.literal?.value).toBe("14:30");
+    expect(timeNaive.literal?.isOffsetQualified).toBe(false);
+
+    const timeOffset = parseCellInput("14:30:00-04:00");
+    expect(timeOffset.literal?.kind).toBe("time");
+    expect(timeOffset.literal?.value).toBe("14:30:00-04:00");
+    expect(timeOffset.literal?.isOffsetQualified).toBe(true);
+
+    const datetimeNaive = parseCellInput("2026-03-24T14:30");
+    expect(datetimeNaive.literal?.kind).toBe("datetime");
+    expect(datetimeNaive.literal?.value).toBe("2026-03-24T14:30");
+    expect(datetimeNaive.literal?.isOffsetQualified).toBe(false);
+
     const datetime = parseCellInput("2026-03-24T14:30:00Z");
     expect(datetime.literal?.kind).toBe("datetime");
     expect(datetime.literal?.value).toBe("2026-03-24T14:30:00Z");
+    expect(datetime.literal?.isOffsetQualified).toBe(true);
 
     const duration = parseCellInput("PT1H30M");
     expect(duration.literal?.kind).toBe("duration");
     expect(duration.literal?.value).toBe("PT1H30M");
+
+    const cachedTime = parseCellInput("14:30 = B2");
+    expect(cachedTime.cached?.kind).toBe("time");
+    expect(cachedTime.cached?.value).toBe("14:30");
+    expect(cachedTime.cached?.isOffsetQualified).toBe(false);
+
+    const cachedDatetime = parseCellInput("2026-03-24T14:30:00+08:00 = B2");
+    expect(cachedDatetime.cached?.kind).toBe("datetime");
+    expect(cachedDatetime.cached?.value).toBe("2026-03-24T14:30:00+08:00");
+    expect(cachedDatetime.cached?.isOffsetQualified).toBe(true);
 
     const quotedDatetime = parseCellInput('"2026-03-24T14:30:00Z"');
     expect(quotedDatetime.literal?.kind).toBe("string");
@@ -202,42 +233,52 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       ["Item", "Price", "Qty", "Total"],
     ]);
 
-    expect(sheet.columnDefaults[1].format).toMatchObject({ grouping: true, precision: 1, type: "f" });
-    expect(sheet.columnDefaults[1].style).toMatchObject({ align: "right", color: null, weight: "bold" });
-    expect(sheet.columnDefaults[3].format).toMatchObject({ grouping: true, precision: 2, type: "f" });
-    expect(sheet.columnDefaults[3].style).toMatchObject({ align: "right", color: "blue", weight: "bold" });
+    expect(sheet.columnDefaults[1].formatLayer.effective).toMatchObject({ grouping: true, precision: 1, type: "f" });
+    expect(sheet.columnDefaults[1].styleLayer.effective).toMatchObject({ align: "right", color: null, weight: "bold" });
+    expect(sheet.columnDefaults[3].formatLayer.effective).toMatchObject({ grouping: true, precision: 2, type: "f" });
+    expect(sheet.columnDefaults[3].styleLayer.effective).toMatchObject({ align: "right", color: "blue", weight: "bold" });
 
     const aPrice = sheet.cells[0][1];
     expect(aPrice.source).toBe("column");
-    expect(aPrice.format).toMatchObject({ grouping: true, precision: 1, type: "f" });
-    expect(aPrice.style).toMatchObject({ align: "right", color: null, weight: "bold" });
+    expect(aPrice.formatLayer.local).toBeNull();
+    expect(aPrice.formatLayer.inherited).toMatchObject({ grouping: true, precision: 1, type: "f" });
+    expect(aPrice.formatLayer.effective).toMatchObject({ grouping: true, precision: 1, type: "f" });
+    expect(aPrice.styleLayer.local).toBeNull();
+    expect(aPrice.styleLayer.inherited).toMatchObject({ align: "right", color: null, weight: "bold" });
+    expect(aPrice.styleLayer.effective).toMatchObject({ align: "right", color: null, weight: "bold" });
     expect(aPrice.displayText).toBe("1,234.5");
 
     const bPrice = sheet.cells[1][1];
     expect(bPrice.source).toBe("cell");
-    expect(bPrice.format).toMatchObject({ grouping: true, precision: 3, type: "f" });
-    expect(bPrice.style).toMatchObject({ align: "right", color: null, weight: "bold" });
+    expect(bPrice.formatLayer.local).toMatchObject({ grouping: true, precision: 3, type: "f" });
+    expect(bPrice.formatLayer.inherited).toMatchObject({ grouping: true, precision: 1, type: "f" });
+    expect(bPrice.formatLayer.effective).toMatchObject({ grouping: true, precision: 3, type: "f" });
+    expect(bPrice.styleLayer.local).toBeNull();
+    expect(bPrice.styleLayer.inherited).toMatchObject({ align: "right", color: null, weight: "bold" });
+    expect(bPrice.styleLayer.effective).toMatchObject({ align: "right", color: null, weight: "bold" });
     expect(bPrice.displayText).toBe("9.900");
 
     const bQty = sheet.cells[1][2];
     expect(bQty.source).toBe("cell");
-    expect(bQty.style).toMatchObject({ align: "right", color: "green", weight: "bold" });
+    expect(bQty.styleLayer.local).toMatchObject({ align: null, color: "green", weight: null });
+    expect(bQty.styleLayer.inherited).toMatchObject({ align: "right", color: null, weight: "bold" });
+    expect(bQty.styleLayer.effective).toMatchObject({ align: "right", color: "green", weight: "bold" });
     expect(bQty.displayText).toBe("3");
 
     const aTotal = sheet.cells[0][3];
     expect(aTotal.value?.kind).toBe("number");
     expect(aTotal.value?.value).toBe(2469);
     expect(aTotal.source).toBe("column");
-    expect(aTotal.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
-    expect(aTotal.style).toMatchObject({ align: "right", color: "blue", weight: "bold" });
+    expect(aTotal.formatLayer.effective).toMatchObject({ grouping: true, precision: 2, type: "f" });
+    expect(aTotal.styleLayer.effective).toMatchObject({ align: "right", color: "blue", weight: "bold" });
     expect(aTotal.displayText).toBe("2,469.00");
 
     const bTotal = sheet.cells[1][3];
     expect(bTotal.value?.kind).toBe("number");
     expect(bTotal.value?.value).toBeCloseTo(29.7, 10);
     expect(bTotal.source).toBe("cell");
-    expect(bTotal.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
-    expect(bTotal.style).toMatchObject({ align: "center", color: "blue", weight: "normal" });
+    expect(bTotal.formatLayer.effective).toMatchObject({ grouping: true, precision: 2, type: "f" });
+    expect(bTotal.styleLayer.effective).toMatchObject({ align: "center", color: "blue", weight: "normal" });
     expect(bTotal.displayText).toBe("29.70");
   });
 
@@ -255,16 +296,16 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 
     const valCell = sheet.cells[0][1];
     expect(valCell.errors.length).toBeGreaterThan(0);
-    expect(valCell.format).toBeNull();
-    expect(valCell.style).toBeNull();
+    expect(valCell.formatLayer.effective).toBeNull();
+    expect(valCell.styleLayer.effective).toBeNull();
     expect(valCell.displayText).toBe("12.5");
 
     const outCell = sheet.cells[0][2];
     expect(outCell.value?.kind).toBe("number");
     expect(outCell.value?.value).toBe(13.5);
     expect(outCell.errors.length).toBeGreaterThan(0);
-    expect(outCell.format).toBeNull();
-    expect(outCell.style).toBeNull();
+    expect(outCell.formatLayer.effective).toBeNull();
+    expect(outCell.styleLayer.effective).toBeNull();
     expect(outCell.displayText).toBe("13.5");
   });
 
@@ -272,21 +313,33 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(
       formatPresentedCell({
         value: { kind: "number", value: -1234.5 },
-        format: { sign: "parentheses", zeroPad: false, width: null, grouping: true, precision: 2, type: "f", raw: "(),.2f" },
+        formatLayer: {
+          local: null,
+          inherited: null,
+          effective: { sign: "parentheses", zeroPad: false, width: null, grouping: true, precision: 2, type: "f", raw: "(),.2f" },
+        },
       }),
     ).toBe("(1,234.50)");
 
     expect(
       formatPresentedCell({
         value: { kind: "number", value: 0.125 },
-        format: { sign: "plus", zeroPad: false, width: null, grouping: false, precision: 1, type: "%", raw: "+.1%" },
+        formatLayer: {
+          local: null,
+          inherited: null,
+          effective: { sign: "plus", zeroPad: false, width: null, grouping: false, precision: 1, type: "%", raw: "+.1%" },
+        },
       }),
     ).toBe("+12.5%");
 
     expect(
       formatPresentedCell({
         value: { kind: "number", value: 42 },
-        format: { sign: "default", zeroPad: true, width: 6, grouping: false, precision: null, type: "d", raw: "06d" },
+        formatLayer: {
+          local: null,
+          inherited: null,
+          effective: { sign: "default", zeroPad: true, width: 6, grouping: false, precision: null, type: "d", raw: "06d" },
+        },
       }),
     ).toBe("000042");
   });
@@ -328,15 +381,15 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
         const row = sheet.cells[rowRel];
         const cell = row[colIndex];
         if (spec.expectSource) expect(cell.source).toBe(spec.expectSource);
-        if (spec.expectAlign !== undefined) expect(cell.style?.align ?? null).toBe(spec.expectAlign ?? null);
-        if (spec.expectColor !== undefined) expect(cell.style?.color ?? null).toBe(spec.expectColor ?? null);
-        if (spec.expectWeight !== undefined) expect(cell.style?.weight ?? null).toBe(spec.expectWeight);
-        if (spec.expectFormatType !== undefined) expect(cell.format?.type ?? null).toBe(spec.expectFormatType ?? null);
+        if (spec.expectAlign !== undefined) expect(cell.styleLayer.effective?.align ?? null).toBe(spec.expectAlign ?? null);
+        if (spec.expectColor !== undefined) expect(cell.styleLayer.effective?.color ?? null).toBe(spec.expectColor ?? null);
+        if (spec.expectWeight !== undefined) expect(cell.styleLayer.effective?.weight ?? null).toBe(spec.expectWeight);
+        if (spec.expectFormatType !== undefined) expect(cell.formatLayer.effective?.type ?? null).toBe(spec.expectFormatType ?? null);
         if (spec.expectFormatPrecision !== undefined) {
-          expect(cell.format?.precision ?? null).toBe(spec.expectFormatPrecision);
+          expect(cell.formatLayer.effective?.precision ?? null).toBe(spec.expectFormatPrecision);
         }
         if (spec.expectFormatGrouping !== undefined) {
-          expect(cell.format?.grouping ?? false).toBe(spec.expectFormatGrouping);
+          expect(cell.formatLayer.effective?.grouping ?? false).toBe(spec.expectFormatGrouping);
         }
         if (spec.expectHasErrors !== undefined) {
           if (spec.expectHasErrors) {

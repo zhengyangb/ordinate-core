@@ -12,6 +12,8 @@ export function runtimeValueToText(value: RuntimeValue): string {
       return "";
     case "null":
       return "null";
+    case "date":
+    case "time":
     case "datetime":
     case "duration":
       return String(value.value ?? "");
@@ -34,6 +36,10 @@ export function runtimeKindLabel(value: RuntimeValue | null | undefined): string
       return "Blank";
     case "null":
       return "Null";
+    case "date":
+      return "Date";
+    case "time":
+      return "Time";
     case "datetime":
       return "Datetime";
     case "duration":

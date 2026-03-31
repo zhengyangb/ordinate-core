@@ -119,7 +119,7 @@ function serializeValue(value: RuntimeValue): string {
   if (value.kind === "null") {
     return "null";
   }
-  if (value.kind === "datetime" || value.kind === "duration") {
+  if (value.kind === "date" || value.kind === "time" || value.kind === "datetime" || value.kind === "duration") {
     return String(value.value ?? "");
   }
   if (value.kind === "error") {

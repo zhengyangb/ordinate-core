@@ -1,6 +1,7 @@
 export interface RuntimeValue {
   kind: string;
   value?: unknown;
+  isOffsetQualified?: boolean;
 }
 
 export interface RefSelector {

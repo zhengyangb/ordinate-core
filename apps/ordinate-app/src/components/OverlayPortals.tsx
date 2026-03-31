@@ -2,7 +2,7 @@ import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 
 import { AutoIcon, MoonIcon, SunIcon } from "../icons/uiIcons";
-import type { FloatingMenuPosition, TabTooltip, ThemeMenuPosition, ThemeMode, ToolSpec } from "../types/ui";
+import type { FloatingMenuPosition, FloatingTooltip, ThemeMenuPosition, ThemeMode, ToolSpec } from "../types/ui";
 
 type OverlayPortalsProps = {
   themeMenuOpen: boolean;
@@ -13,7 +13,7 @@ type OverlayPortalsProps = {
   toolMenuOpen: boolean;
   toolMenuPosition: FloatingMenuPosition;
   overflowTools: ToolSpec[];
-  tabTooltip: TabTooltip | null;
+  tooltip: FloatingTooltip | null;
 };
 
 export default function OverlayPortals({
@@ -25,7 +25,7 @@ export default function OverlayPortals({
   toolMenuOpen,
   toolMenuPosition,
   overflowTools,
-  tabTooltip,
+  tooltip,
 }: OverlayPortalsProps) {
   return (
     <>
@@ -81,15 +81,17 @@ export default function OverlayPortals({
 
       {createPortal(
         <div
-          className={tabTooltip ? "tab-tooltip visible" : "tab-tooltip"}
+          className={tooltip ? "floating-tooltip visible" : "floating-tooltip"}
+          data-placement={tooltip?.placement ?? "below"}
+          data-alignment={tooltip?.alignment ?? "center"}
           role="tooltip"
-          aria-hidden={!tabTooltip}
+          aria-hidden={!tooltip}
           style={{
-            top: `${tabTooltip?.top ?? 0}px`,
-            left: `${tabTooltip?.left ?? 0}px`,
+            top: `${tooltip?.top ?? 0}px`,
+            left: `${tooltip?.left ?? 0}px`,
           }}
         >
-          {tabTooltip?.text ?? ""}
+          {tooltip?.text ?? ""}
         </div>,
         document.body,
       )}

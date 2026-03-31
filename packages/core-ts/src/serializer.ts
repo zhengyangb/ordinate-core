@@ -143,7 +143,7 @@ function serializeValue(value: RuntimeValue): string {
   if (value.kind === "null") {
     return "null";
   }
-  if (value.kind === "datetime" || value.kind === "duration") {
+  if (value.kind === "date" || value.kind === "time" || value.kind === "datetime" || value.kind === "duration") {
     return String(value.value ?? "");
   }
   if (value.kind === "error") {
@@ -187,6 +187,9 @@ function renderExpression(
     if (value.kind === "number") return serializeNumber(value.value as number | null);
     if (value.kind === "boolean") return value.value ? "true" : "false";
     if (value.kind === "null") return "null";
+    if (value.kind === "date" || value.kind === "time" || value.kind === "datetime" || value.kind === "duration") {
+      return String(value.value ?? "");
+    }
     if (value.kind === "error") return "error";
     if (value.kind === "blank") return "";
     return "error";

@@ -7,14 +7,15 @@
 
 This RFC defines the current direction for temporal value types, inline display metadata, and column-level default display metadata in Ordinate.
 
-It introduces `datetime` and `duration` as value types, adopts native ISO 8601-oriented literal parsing for them, defines inline cell-level format and style syntax using `{: ... }`, and defines column display metadata as internal column metadata rather than row-like table content.
+It introduces `date`, `time`, `datetime`, and `duration` value types, adopts native ISO 8601-oriented literal parsing for them, defines offset terminology (`offset-qualified` vs `offset-naive`) for temporal parsing, defines inline cell-level format and style syntax using `{: ... }`, and defines column display metadata as internal column metadata rather than row-like table content.
 
 ## Goals
 
 This RFC defines:
 
-- the current value-type set, including `datetime` and `duration`
-- native literal parsing direction for `datetime` and `duration`
+- the current value-type set, including `date`, `time`, `datetime`, and `duration`
+- native literal parsing direction for `date`, `time`, `datetime`, and `duration`
+- offset semantics terminology for temporal values
 - inline cell-level display metadata syntax
 - the supported first-version numeric format subset
 - the supported first-version style subset
@@ -54,17 +55,42 @@ Current working direction:
 | `boolean` | `true` |
 | `blank` | `blank` |
 | `error` | `error` |
+| `date` | `2026-03-23` |
+| `time` | `14:30` |
 | `datetime` | `2026-03-23T14:30:00Z` |
 | `duration` | `PT1H30M` |
 
 ## Native Temporal Literals
 
+### Offset Terminology
+
+- `offset-qualified`: temporal text with explicit offset suffix (`Z` or `±HH:MM`)
+- `offset-naive`: temporal text without explicit offset suffix
+- this RFC uses `offset` terminology only; it does not define IANA zone-database semantics
+
+### `date`
+
+- valid unquoted ISO 8601 date forms are parsed as `date`
+- `date` literals are always offset-naive
+- quoted equivalents remain strings
+
+Example: `2026-03-23`
+
+### `time`
+
+- valid unquoted ISO 8601 time forms are parsed as `time`
+- both offset-naive and offset-qualified forms are accepted
+- quoted equivalents remain strings
+
+Examples: `14:30`, `14:30:00-04:00`
+
 ### `datetime`
 
 - valid unquoted ISO 8601 datetime forms are parsed as `datetime`
+- both offset-naive and offset-qualified forms are accepted
 - quoted equivalents remain strings
 
-Example: `2026-03-23T14:30:00Z`
+Examples: `2026-03-23T14:30`, `2026-03-23T14:30:00Z`
 
 ### `duration`
 
@@ -252,13 +278,19 @@ Formula-cache note:
 - editor controls such as dropdown, slider, checkbox
 - richer style properties
 - locale customization policy
-- full datetime and duration arithmetic
+- structured internal temporal representation (keep parsed object + raw lexical form for round-trip stability)
+- temporal utility functions (for example `date(datetime)`, `time(datetime)`)
+- explicit temporal arithmetic semantics (for example `date + duration`)
+- full date/time/datetime/duration arithmetic
 - extended format mini-language beyond the initial subset
 - header demotion and rebinding behavior
 
 ## Current Working Assumptions
 
-- `datetime` and `duration` are value types
+- `date`, `time`, `datetime`, and `duration` are value types
+- `offset-qualified` means explicit `Z` or `±HH:MM`, and `offset-naive` means no offset suffix
+- `date` is offset-naive only
+- `time` and `datetime` may be offset-naive or offset-qualified
 - valid supported unquoted ISO 8601 forms are parsed natively before string fallback
 - quoted equivalents remain strings
 - inline cell format uses `cell_expr {: format_spec}`

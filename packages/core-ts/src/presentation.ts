@@ -2,9 +2,15 @@ import { DocumentState } from "./incremental";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import { type FormatSpec, type RuntimeValue, type StyleSpec } from "./runtime/types";
 
+export interface DisplayLayer<T> {
+  local: T | null;
+  inherited: T | null;
+  effective: T | null;
+}
+
 export interface ColumnDisplayDefault {
-  format: FormatSpec | null;
-  style: StyleSpec | null;
+  formatLayer: DisplayLayer<FormatSpec>;
+  styleLayer: DisplayLayer<StyleSpec>;
   valid: boolean;
   errors: string[];
 }
@@ -14,8 +20,8 @@ export interface PresentedCell {
   colIndex: number;
   value: RuntimeValue | null;
   displayText: string;
-  format: FormatSpec | null;
-  style: StyleSpec | null;
+  formatLayer: DisplayLayer<FormatSpec>;
+  styleLayer: DisplayLayer<StyleSpec>;
   source: "cell" | "column" | "default";
   errors: string[];
 }
@@ -32,8 +38,8 @@ export interface PresentationResult {
   sheets: SheetPresentation[];
 }
 
-export function formatPresentedCell(cell: Pick<PresentedCell, "value" | "format">): string {
-  return formatRuntimeValue(cell.value, cell.format);
+export function formatPresentedCell(cell: Pick<PresentedCell, "value" | "formatLayer">): string {
+  return formatRuntimeValue(cell.value, cell.formatLayer.effective);
 }
 
 export function resolvePresentationFromText(text: string): PresentationResult {
@@ -58,15 +64,32 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
       const rowCells: PresentedCell[] = [];
       for (let c = 0; c < sheet.colCount; c += 1) {
         const parsedDisplay = sheet.cells[rAbs][c].parsed.display ?? null;
-        const cellFormat = parsedDisplay && parsedDisplay.valid ? parsedDisplay.formatSpec : null;
-        const cellStyle = parsedDisplay && parsedDisplay.valid ? parsedDisplay.styleSpec : null;
-        const colDefault = c < defaults.length ? defaults[c] : { format: null, style: null, valid: true, errors: [] };
-        const format = cellFormat ?? colDefault.format;
-        const style = mergeStyleSpec(cellStyle, colDefault.style);
-        const hasCellStyleOverride = hasAnyStyleAxis(cellStyle);
-        const hasColumnStyleDefault = hasAnyStyleAxis(colDefault.style);
-        const hasCellOverride = cellFormat !== null || hasCellStyleOverride;
-        const hasColumnDefault = colDefault.format !== null || hasColumnStyleDefault;
+        const cellFormatLocal = parsedDisplay && parsedDisplay.valid ? parsedDisplay.formatSpec : null;
+        const cellStyleLocal = parsedDisplay && parsedDisplay.valid ? parsedDisplay.styleSpec : null;
+        const colDefault = c < defaults.length
+          ? defaults[c]
+          : {
+              formatLayer: { local: null, inherited: null, effective: null },
+              styleLayer: { local: null, inherited: null, effective: null },
+              valid: true,
+              errors: [],
+            };
+        // Format is all-or-nothing: local override replaces inherited format entirely.
+        const formatLayer: DisplayLayer<FormatSpec> = {
+          local: cellFormatLocal,
+          inherited: colDefault.formatLayer.effective,
+          effective: cellFormatLocal ?? colDefault.formatLayer.effective,
+        };
+        // Style is axis-level cascading: align/weight/color resolve independently.
+        const styleLayer: DisplayLayer<StyleSpec> = {
+          local: cellStyleLocal,
+          inherited: colDefault.styleLayer.effective,
+          effective: resolveStyleSpec(cellStyleLocal, colDefault.styleLayer.effective),
+        };
+        const hasCellStyleOverride = hasAnyStyleAxis(cellStyleLocal);
+        const hasColumnStyleDefault = hasAnyStyleAxis(colDefault.styleLayer.effective);
+        const hasCellOverride = cellFormatLocal !== null || hasCellStyleOverride;
+        const hasColumnDefault = colDefault.formatLayer.effective !== null || hasColumnStyleDefault;
         const source: "cell" | "column" | "default" = hasCellOverride
           ? "cell"
           : hasColumnDefault
@@ -84,9 +107,9 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
           rowIndex: rAbs,
           colIndex: c,
           value,
-          displayText: formatRuntimeValue(value, format),
-          format,
-          style,
+          displayText: formatRuntimeValue(value, formatLayer.effective),
+          formatLayer,
+          styleLayer,
           source,
           errors,
         });
@@ -111,11 +134,15 @@ function hasAnyStyleAxis(style: StyleSpec | null): boolean {
   return style.align !== null || style.weight !== null || style.color !== null;
 }
 
-function mergeStyleSpec(cellStyle: StyleSpec | null, columnStyle: StyleSpec | null): StyleSpec | null {
-  if (!cellStyle && !columnStyle) return null;
-  const align = cellStyle?.align ?? columnStyle?.align ?? null;
-  const weight = cellStyle?.weight ?? columnStyle?.weight ?? null;
-  const color = cellStyle?.color ?? columnStyle?.color ?? null;
+/**
+ * Resolve style axes with fallback.
+ * Each axis (align/weight/color) is resolved independently: local -> inherited.
+ */
+function resolveStyleSpec(localStyle: StyleSpec | null, inheritedStyle: StyleSpec | null): StyleSpec | null {
+  if (!localStyle && !inheritedStyle) return null;
+  const align = localStyle?.align ?? inheritedStyle?.align ?? null;
+  const weight = localStyle?.weight ?? inheritedStyle?.weight ?? null;
+  const color = localStyle?.color ?? inheritedStyle?.color ?? null;
   if (align === null && weight === null && color === null) {
     return null;
   }
@@ -169,8 +196,16 @@ function computeHeaderDisplayRows(sheet: DocumentState["sheets"][number]): strin
 
 function computeColumnDefaults(sheet: DocumentState["sheets"][number]): ColumnDisplayDefault[] {
   const defaults: ColumnDisplayDefault[] = Array.from({ length: sheet.colCount }, () => ({
-    format: null,
-    style: null,
+    formatLayer: {
+      local: null,
+      inherited: null,
+      effective: null,
+    },
+    styleLayer: {
+      local: null,
+      inherited: null,
+      effective: null,
+    },
     valid: true,
     errors: [],
   }));
@@ -190,8 +225,16 @@ function computeColumnDefaults(sheet: DocumentState["sheets"][number]): ColumnDi
       continue;
     }
     defaults[c] = {
-      format: parsedDisplay.valid ? parsedDisplay.formatSpec : null,
-      style: parsedDisplay.valid ? parsedDisplay.styleSpec : null,
+      formatLayer: {
+        local: parsedDisplay.valid ? parsedDisplay.formatSpec : null,
+        inherited: null,
+        effective: parsedDisplay.valid ? parsedDisplay.formatSpec : null,
+      },
+      styleLayer: {
+        local: parsedDisplay.valid ? parsedDisplay.styleSpec : null,
+        inherited: null,
+        effective: parsedDisplay.valid ? parsedDisplay.styleSpec : null,
+      },
       valid: parsedDisplay.valid,
       errors: [...parsedDisplay.errors],
     };
@@ -224,6 +267,8 @@ function runtimeValueToText(value: RuntimeValue | null): string {
       return "";
     case "null":
       return "null";
+    case "date":
+    case "time":
     case "datetime":
     case "duration":
       return String(value.value ?? "");
