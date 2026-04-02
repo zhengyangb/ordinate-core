@@ -1205,7 +1205,6 @@ export default function App() {
       const headerRowNumber = Math.max(1, Math.min(selectedCell.logical.rAbs, maxHeaderRow));
       const headerAbsIndex = headerRowNumber - 1;
       const rawHeaderCell = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex] : undefined;
-      const columnDefault = currentSheetPresentation?.columnDefaults[colIndex];
       const sourceFromSheet = rawHeaderCell?.text ?? "";
       const displayText =
         headerMatrix[headerRowNumber - 1]?.[colIndex] ??
@@ -1220,8 +1219,8 @@ export default function App() {
         displayText: displayText.length > 0 ? displayText : "(blank)",
         sourceText: sourceView.sourceText,
         editableSourceText: sourceView.editableSourceText,
-        ...formatLocalView(columnDefault?.formatLayer.local),
-        styleLocal: styleLocalView(columnDefault?.styleLayer.local),
+        ...formatLocalView(null),
+        styleLocal: styleLocalView(null),
       };
     }
 
@@ -1248,10 +1247,8 @@ export default function App() {
         displayText: displayText.length > 0 ? displayText : "(blank)",
         sourceText: sourceView.sourceText,
         editableSourceText: sourceView.editableSourceText,
-        ...formatLocalView(presentedCell?.formatLayer.local),
-        styleLocal: styleLocalView(presentedCell?.styleLayer.local),
-        displaySource: presentedCell?.source,
-        displayErrors: presentedCell?.errors ?? [],
+        ...formatLocalView(null),
+        styleLocal: styleLocalView(null),
       };
     }
 

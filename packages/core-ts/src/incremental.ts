@@ -14,6 +14,7 @@ import {
   type EvaluationResult,
   type ExprNode,
   type ParsedCell,
+  type ParsedDisplayMetadata,
   type ReferenceExpr,
   type RuntimeValue,
   type SheetEvaluation,
@@ -61,6 +62,7 @@ export class SheetState {
   dataColIndices: number[];
   logicalRows: ParsedRow[];
   cells: CellState[][];
+  columnDisplayMetadata: Array<ParsedDisplayMetadata | null>;
   viewDependencies: Map<number, ViewSelection>;
   viewFormulas: Map<number, [number, number]>;
   viewRowIndex: Map<number, Set<number>>;
@@ -88,6 +90,7 @@ export class SheetState {
     dataColIndices: number[],
     logicalRows: ParsedRow[],
     cells: CellState[][],
+    columnDisplayMetadata: Array<ParsedDisplayMetadata | null>,
     sourceBlocks: PreservedSheetBlock[],
     primaryTableBlockIndex: number | null,
   ) {
@@ -112,6 +115,7 @@ export class SheetState {
     this.dataColIndices = dataColIndices;
     this.logicalRows = logicalRows;
     this.cells = cells;
+    this.columnDisplayMetadata = columnDisplayMetadata;
     this.viewDependencies = new Map();
     this.viewFormulas = new Map();
     this.viewRowIndex = new Map();
@@ -160,6 +164,7 @@ export class SheetState {
         [],
         [],
         [],
+        [],
         normalizedBlocks,
         primaryIndex,
       );
@@ -169,6 +174,7 @@ export class SheetState {
     const headerRowCount = headerRowCountFrom(parsedRows);
     const headerColCount = headerColCountFrom(logicalRows);
     const bodyStart = headerRowCount > 0 ? headerRowCount : 0;
+    const columnDisplayMetadata = extractColumnDisplayMetadata(logicalRows, headerRowCount, headerColCount, colCount);
 
     const colLabels: string[] = [];
     for (let c = 0; c < colCount; c += 1) {
@@ -212,15 +218,18 @@ export class SheetState {
     const colIds = Array.from({ length: colCount }, (_, i) => i + 1);
 
     const cells: CellState[][] = [];
-    for (const row of logicalRows) {
+    for (let rAbs = 0; rAbs < logicalRows.length; rAbs += 1) {
+      const row = logicalRows[rAbs];
       const rowCells: CellState[] = [];
       const trimmed = [...row.cells];
       if (trimmed.length < colCount) {
         trimmed.push(...Array(colCount - trimmed.length).fill(""));
       }
-      for (const value of trimmed) {
-        const parsed = parseCellInput(value);
-        rowCells.push({ text: value, parsed, value: null, dirty: true });
+      for (let c = 0; c < trimmed.length; c += 1) {
+        const value = trimmed[c];
+        const normalizedText = normalizeCellTextForParsing(value, rAbs, c, headerRowCount, headerColCount);
+        const parsed = parseCellInput(normalizedText);
+        rowCells.push({ text: normalizedText, parsed, value: null, dirty: true });
       }
       cells.push(rowCells);
     }
@@ -243,6 +252,7 @@ export class SheetState {
       dataColIndices,
       logicalRows,
       cells,
+      columnDisplayMetadata,
       normalizedBlocks,
       primaryIndex,
     );
@@ -293,8 +303,9 @@ export class SheetState {
     }
 
     const cell = this.cells[rAbs][c];
-    cell.text = text;
-    cell.parsed = this.bindParsedCell(parseCellInput(text));
+    const normalizedText = normalizeCellTextForParsing(text, rAbs, c, this.headerRowCount, this.headerColCount);
+    cell.text = normalizedText;
+    cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
     cell.dirty = true;
     cell.value = null;
 
@@ -512,7 +523,8 @@ export class SheetState {
     const cellState = this.cells[rAbs]?.[0];
     if (cellState) {
       cellState.text = row.rawCells[0];
-      cellState.parsed = this.bindParsedCell(parseCellInput(row.rawCells[0]));
+      const normalized = normalizeCellTextForParsing(row.rawCells[0], rAbs, 0, this.headerRowCount, this.headerColCount);
+      cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
       cellState.value = null;
       cellState.dirty = true;
     }
@@ -545,7 +557,8 @@ export class SheetState {
     const cellState = this.cells[headerRowIndex]?.[colIndex];
     if (cellState) {
       cellState.text = newLabel;
-      cellState.parsed = this.bindParsedCell(parseCellInput(newLabel));
+      const normalized = normalizeCellTextForParsing(newLabel, headerRowIndex, colIndex, this.headerRowCount, this.headerColCount);
+      cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
       cellState.value = null;
       cellState.dirty = true;
     }
@@ -779,6 +792,7 @@ export class SheetState {
     this.bodyRowCount = this.rowCount - this.bodyStart;
     this.rowIdToIndex = buildIdIndexMap(this.rowIds);
     this.colIdToIndex = buildIdIndexMap(this.colIds);
+    this.columnDisplayMetadata = extractColumnDisplayMetadata(this.logicalRows, this.headerRowCount, this.headerColCount, this.colCount);
 
     this.rebuildDependencies();
   }
@@ -864,6 +878,42 @@ function buildIdIndexMap(ids: number[]): Map<number, number> {
   const map = new Map<number, number>();
   ids.forEach((id, idx) => map.set(id, idx));
   return map;
+}
+
+function normalizeCellTextForParsing(
+  text: string,
+  rAbs: number,
+  c: number,
+  headerRowCount: number,
+  headerColCount: number,
+): string {
+  if (rAbs < headerRowCount || c < headerColCount) {
+    return stripCellDisplayMetadata(text);
+  }
+  return text;
+}
+
+function extractColumnDisplayMetadata(
+  logicalRows: ParsedRow[],
+  headerRowCount: number,
+  headerColCount: number,
+  colCount: number,
+): Array<ParsedDisplayMetadata | null> {
+  const output: Array<ParsedDisplayMetadata | null> = Array.from({ length: colCount }, () => null);
+  if (headerRowCount <= 0 || headerRowCount > logicalRows.length) {
+    return output;
+  }
+
+  const metadataRow = logicalRows[headerRowCount - 1];
+  for (let c = headerColCount; c < colCount; c += 1) {
+    const raw = c < metadataRow.rawCells.length ? metadataRow.rawCells[c] : "";
+    if (raw.trim() === "") continue;
+    const label = stripCellDisplayMetadata(raw).trim();
+    if (label === "") continue;
+    const parsedDisplay = parseCellInput(raw).display ?? null;
+    output[c] = parsedDisplay;
+  }
+  return output;
 }
 
 export class DocumentState {

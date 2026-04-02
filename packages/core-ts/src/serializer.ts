@@ -71,10 +71,14 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
     }
 
     const row = sheet.logicalRows[rAbs];
+    const isHeaderMetadataRow = sheet.headerRowCount > 0 && rAbs === sheet.headerRowCount - 1;
     const cells: string[] = [];
     for (let c = 0; c < sheet.colCount; c += 1) {
       const raw = c < row.rawCells.length ? row.rawCells[c] : "";
       const cellState = sheet.cells[rAbs][c];
+      const columnDisplay = isHeaderMetadataRow && c >= sheet.headerColCount
+        ? sheet.columnDisplayMetadata[c] ?? null
+        : null;
       if (cellState.parsed.kind === "formula") {
         const displaySuffix = renderDisplayBlock(cellState.parsed.display ?? null);
         if (isParseErrorExpression(cellState.parsed.expression)) {
@@ -92,7 +96,7 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
           cells.push(`= ${rhs}${displaySuffix}`);
         }
       } else {
-        const displaySuffix = renderDisplayBlock(cellState.parsed.display ?? null);
+        const displaySuffix = renderDisplayBlock(columnDisplay ?? cellState.parsed.display ?? null);
         if (displaySuffix === "") {
           cells.push(raw);
         } else {

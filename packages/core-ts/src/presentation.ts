@@ -63,9 +63,10 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
         : [];
       const rowCells: PresentedCell[] = [];
       for (let c = 0; c < sheet.colCount; c += 1) {
+        const isHeaderColumn = c < sheet.headerColCount;
         const parsedDisplay = sheet.cells[rAbs][c].parsed.display ?? null;
-        const cellFormatLocal = parsedDisplay && parsedDisplay.valid ? parsedDisplay.formatSpec : null;
-        const cellStyleLocal = parsedDisplay && parsedDisplay.valid ? parsedDisplay.styleSpec : null;
+        const cellFormatLocal = !isHeaderColumn && parsedDisplay && parsedDisplay.valid ? parsedDisplay.formatSpec : null;
+        const cellStyleLocal = !isHeaderColumn && parsedDisplay && parsedDisplay.valid ? parsedDisplay.styleSpec : null;
         const colDefault = c < defaults.length
           ? defaults[c]
           : {
@@ -88,17 +89,19 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
         };
         const hasCellStyleOverride = hasAnyStyleAxis(cellStyleLocal);
         const hasColumnStyleDefault = hasAnyStyleAxis(colDefault.styleLayer.effective);
-        const hasCellOverride = cellFormatLocal !== null || hasCellStyleOverride;
+        const hasCellOverride = !isHeaderColumn && (cellFormatLocal !== null || hasCellStyleOverride);
         const hasColumnDefault = colDefault.formatLayer.effective !== null || hasColumnStyleDefault;
-        const source: "cell" | "column" | "default" = hasCellOverride
-          ? "cell"
-          : hasColumnDefault
-            ? "column"
-            : "default";
+        const source: "cell" | "column" | "default" = isHeaderColumn
+          ? "default"
+          : hasCellOverride
+            ? "cell"
+            : hasColumnDefault
+              ? "column"
+              : "default";
         const errors: string[] = [];
-        if (parsedDisplay && !parsedDisplay.valid) {
+        if (!isHeaderColumn && parsedDisplay && !parsedDisplay.valid) {
           errors.push(...parsedDisplay.errors);
-        } else if (colDefault.valid === false && colDefault.errors.length > 0) {
+        } else if (!isHeaderColumn && colDefault.valid === false && colDefault.errors.length > 0) {
           errors.push(...colDefault.errors);
         }
         const value = c < evalRow.length ? evalRow[c] : null;
@@ -213,17 +216,9 @@ function computeColumnDefaults(sheet: DocumentState["sheets"][number]): ColumnDi
     return defaults;
   }
 
-  const headerMetaRow = sheet.headerRowCount - 1;
   for (let c = 0; c < sheet.colCount; c += 1) {
-    const parsedDisplay = sheet.cells[headerMetaRow][c].parsed.display ?? null;
+    const parsedDisplay = c < sheet.columnDisplayMetadata.length ? sheet.columnDisplayMetadata[c] : null;
     if (!parsedDisplay) continue;
-    const rawHeader = c < sheet.logicalRows[headerMetaRow].rawCells.length
-      ? sheet.logicalRows[headerMetaRow].rawCells[c]
-      : "";
-    const label = stripCellDisplayMetadata(rawHeader).trim();
-    if (label === "") {
-      continue;
-    }
     defaults[c] = {
       formatLayer: {
         local: parsedDisplay.valid ? parsedDisplay.formatSpec : null,
