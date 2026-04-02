@@ -35,13 +35,20 @@ export type FormulaBarData = {
   displayText: string;
   sourceText: string;
   editableSourceText: string;
-  hasCellFormatOverride?: boolean;
-  cellFormatRaw?: string | null;
-  hasCellStyleOverride?: boolean;
-  cellStyleRaw?: string | null;
+  formatLocalKey?: "auto" | "integer" | "decimal" | "scientific" | "percent";
+  formatLocalOptions?: {
+    sign: "default" | "plus" | "parentheses";
+    zeroPad: boolean;
+    width: number | null;
+    grouping: boolean;
+    precision: number | null;
+  } | null;
+  styleLocal?: {
+    align: "auto" | "left" | "center" | "right";
+    weight: "auto" | "bold" | "normal";
+    color: "auto" | "red" | "green" | "blue";
+  } | null;
   displaySource?: "cell" | "column" | "default";
-  displayFormatRaw?: string | null;
-  displayStyleRaw?: string | null;
   displayErrors?: string[];
 };
 

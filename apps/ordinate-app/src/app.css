@@ -1614,6 +1614,7 @@ textarea {
 }
 
 .formula-format-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1631,6 +1632,7 @@ textarea {
 }
 
 .formula-style-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1667,26 +1669,45 @@ textarea {
   background: color-mix(in oklab, var(--accent-soft) 52%, transparent);
 }
 
+.formula-format-button.is-warning,
+.formula-style-button.is-warning {
+  color: color-mix(in oklab, var(--danger-ink) 88%, var(--sheet-ink));
+}
+
+.formula-format-button.is-warning:hover,
+.formula-style-button.is-warning:hover {
+  background: color-mix(in oklab, var(--danger-bg) 72%, transparent);
+}
+
+.formula-format-button.is-warning.active,
+.formula-style-button.is-warning.active {
+  background: color-mix(in oklab, var(--danger-bg) 78%, transparent);
+}
+
 .formula-format-icon {
   display: inline-flex;
   width: 0.92rem;
   height: 0.92rem;
+  overflow: visible;
 }
 
 .formula-style-icon {
   display: inline-flex;
   width: 0.92rem;
   height: 0.92rem;
+  overflow: visible;
 }
 
 .formula-format-icon svg {
   width: 100%;
   height: 100%;
+  overflow: visible;
 }
 
 .formula-style-icon svg {
   width: 100%;
   height: 100%;
+  overflow: visible;
 }
 
 .formula-format-icon.has-cell-format {
@@ -1703,6 +1724,48 @@ textarea {
     brightness(1.02)
     drop-shadow(0 0 5px color-mix(in oklab, var(--accent) 42%, transparent))
     drop-shadow(0 0 11px color-mix(in oklab, var(--accent) 18%, transparent));
+}
+
+.formula-format-icon.has-display-error,
+.formula-style-icon.has-display-error {
+  color: color-mix(in oklab, var(--danger-ink) 92%, var(--sheet-ink));
+  filter:
+    brightness(1.01)
+    drop-shadow(0 0 5px color-mix(in oklab, var(--danger-border) 52%, transparent))
+    drop-shadow(0 0 10px color-mix(in oklab, var(--danger-border) 26%, transparent));
+}
+
+.formula-format-icon .menu-icon-warning-triangle,
+.formula-style-icon .menu-icon-warning-triangle {
+  fill: color-mix(in oklab, var(--sheet-surface) 90%, transparent);
+  stroke: currentColor;
+  stroke-width: 1.02;
+  stroke-linejoin: round;
+  opacity: 0;
+}
+
+.formula-format-icon .menu-icon-warning-mark,
+.formula-style-icon .menu-icon-warning-mark {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.02;
+  stroke-linecap: round;
+  opacity: 0;
+}
+
+.formula-format-icon .menu-icon-warning-dot,
+.formula-style-icon .menu-icon-warning-dot {
+  fill: currentColor;
+  opacity: 0;
+}
+
+.formula-format-icon.has-display-error .menu-icon-warning-triangle,
+.formula-style-icon.has-display-error .menu-icon-warning-triangle,
+.formula-format-icon.has-display-error .menu-icon-warning-mark,
+.formula-style-icon.has-display-error .menu-icon-warning-mark,
+.formula-format-icon.has-display-error .menu-icon-warning-dot,
+.formula-style-icon.has-display-error .menu-icon-warning-dot {
+  opacity: 0.98;
 }
 
 .formula-format-menu {
@@ -1754,6 +1817,62 @@ textarea {
   pointer-events: auto;
 }
 
+.formula-menu-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.46rem;
+  padding: 0.42rem 0.5rem;
+  border: 0;
+  border-radius: calc(var(--menu-item-radius) + 0.06rem);
+  background:
+    linear-gradient(160deg, color-mix(in oklab, var(--danger-bg) 74%, var(--toolbar-pill)), color-mix(in oklab, var(--danger-bg) 62%, transparent));
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--sheet-surface) 26%, transparent),
+    0 8px 18px color-mix(in oklab, var(--danger-border) 6%, transparent);
+  color: var(--danger-ink);
+}
+
+.formula-menu-error-banner--full {
+  grid-column: 1 / -1;
+}
+
+.formula-menu-error-icon {
+  display: inline-flex;
+  width: 0.92rem;
+  height: 0.92rem;
+  flex: 0 0 auto;
+  color: color-mix(in oklab, var(--danger-border) 84%, var(--danger-ink));
+  margin-top: 0.02rem;
+}
+
+.formula-menu-error-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.formula-menu-error-copy {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.formula-menu-error-title {
+  font-size: 0.67rem;
+  font-weight: 680;
+  letter-spacing: 0.008em;
+}
+
+.formula-menu-error-detail {
+  font-size: 0.66rem;
+  line-height: 1.32;
+  color: color-mix(in oklab, var(--danger-ink) 90%, var(--sheet-ink));
+}
+
+.formula-menu-error-more {
+  font-size: 0.62rem;
+  color: color-mix(in oklab, var(--danger-ink) 68%, var(--sheet-soft));
+}
+
 .formula-format-menu-list {
   display: grid;
   gap: 0.16rem;
@@ -1795,7 +1914,7 @@ textarea {
 }
 
 .formula-format-option.is-inspecting {
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--chrome-border) 74%, transparent);
+  background: color-mix(in oklab, var(--menu-hover-bg) 88%, transparent);
 }
 
 .formula-format-menu-hint {
@@ -1871,9 +1990,9 @@ textarea {
   min-width: 0;
   min-height: 1.66rem;
   padding: var(--menu-item-padding-y) var(--menu-item-padding-x);
-  border: 1px solid color-mix(in oklab, var(--chrome-border) 72%, transparent);
+  border: 0;
   border-radius: 999px;
-  background: color-mix(in oklab, var(--toolbar-pill) 60%, transparent);
+  background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
   color: var(--chrome-soft);
   font-size: 0.7rem;
   font-weight: 560;
@@ -1898,8 +2017,7 @@ textarea {
 }
 
 .formula-style-segment.is-selected {
-  border-color: color-mix(in oklab, var(--chrome-border) 72%, transparent);
-  background: color-mix(in oklab, var(--accent-soft) 62%, var(--toolbar-pill));
+  background: color-mix(in oklab, var(--accent-soft) 70%, var(--toolbar-pill));
   color: var(--sheet-ink);
 }
 

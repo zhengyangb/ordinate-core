@@ -1,30 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { ChromeVisibilityPhase, FormulaBarData } from "../types/ui";
 
-type FormatMenuKey = "general" | "integer" | "decimal" | "scientific" | "percent";
-
-type ParsedFormatMeta = {
-  key: FormatMenuKey;
-  sign: "default" | "plus" | "parentheses";
-  zeroPad: boolean;
-  width: number | null;
-  grouping: boolean;
-  precision: number | null;
-  raw: string | null;
-};
-
-type LocalAlignState = "auto" | "left" | "center" | "right";
-type LocalWeightState = "auto" | "bold" | "normal";
-type LocalColorState = "auto" | "red" | "green" | "blue";
-
-type ParsedStyleMeta = {
-  align: LocalAlignState;
-  weight: LocalWeightState;
-  color: LocalColorState;
-  raw: string | null;
-};
+type FormatMenuKey = "auto" | "integer" | "decimal" | "scientific" | "percent";
 
 type FormatOption = {
   key: FormatMenuKey;
@@ -32,7 +11,23 @@ type FormatOption = {
   icon: JSX.Element;
 };
 
-function MenuIcon({ children }: { children: JSX.Element | JSX.Element[] }) {
+function classifyDisplayIssue(issue: string): "format" | "style" | "generic" {
+  const normalized = issue.trim().toLowerCase();
+  if (normalized.includes("style") || normalized.startsWith("unsupported_style_item")) {
+    return "style";
+  }
+  if (
+    normalized.includes("format")
+    || normalized.includes("zero_padding")
+    || normalized.includes("precision")
+    || normalized.includes("grouping")
+  ) {
+    return "format";
+  }
+  return "generic";
+}
+
+function MenuIcon({ children }: { children: ReactNode }) {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
       {children}
@@ -40,22 +35,36 @@ function MenuIcon({ children }: { children: JSX.Element | JSX.Element[] }) {
   );
 }
 
-function FormatGlyph() {
+function FormatGlyph({ warning = false }: { warning?: boolean }) {
   return (
     <MenuIcon>
       <path d="M3.8 5.4h12.4M3.8 10h12.4M3.8 14.6h12.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
       <circle cx="7.1" cy="5.4" r="1.35" fill="none" stroke="currentColor" strokeWidth="1.2" />
       <circle cx="12.7" cy="10" r="1.35" fill="none" stroke="currentColor" strokeWidth="1.2" />
       <circle cx="9.3" cy="14.6" r="1.35" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      {warning ? (
+        <g className="menu-icon-warning-badge">
+          <path className="menu-icon-warning-triangle" d="M17.15 14.75 21.05 20.95h-7.8z" />
+          <path className="menu-icon-warning-mark" d="M17.15 16.6v2.22" />
+          <circle className="menu-icon-warning-dot" cx="17.15" cy="19.55" r="0.36" />
+        </g>
+      ) : null}
     </MenuIcon>
   );
 }
 
-function StyleGlyph() {
+function StyleGlyph({ warning = false }: { warning?: boolean }) {
   return (
     <MenuIcon>
       <path d="M6.2 14.1 9.8 5.8l3.9 8.3M7.3 11.7h5.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.35" />
       <path d="M5.6 16.2h8.8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.35" opacity="0.92" />
+      {warning ? (
+        <g className="menu-icon-warning-badge">
+          <path className="menu-icon-warning-triangle" d="M17.15 14.75 21.05 20.95h-7.8z" />
+          <path className="menu-icon-warning-mark" d="M17.15 16.6v2.22" />
+          <circle className="menu-icon-warning-dot" cx="17.15" cy="19.55" r="0.36" />
+        </g>
+      ) : null}
     </MenuIcon>
   );
 }
@@ -84,11 +93,12 @@ function AlignRightGlyph() {
   );
 }
 
-function GeneralGlyph() {
+function AutoGlyph() {
   return (
     <MenuIcon>
-      <circle cx="10" cy="10" r="5.7" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M7.4 10h5.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
+      <path d="M10 4.6v2.2M10 13.2v2.2M4.6 10h2.2M13.2 10h2.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.35" />
+      <path d="m6.2 6.2 1.55 1.55m4.5 4.5 1.55 1.55m0-7.6-1.55 1.55m-4.5 4.5-1.55 1.55" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.35" />
+      <circle cx="10" cy="10" r="1.6" fill="currentColor" />
     </MenuIcon>
   );
 }
@@ -132,118 +142,22 @@ function PercentGlyph() {
   );
 }
 
+function BannerWarningGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path d="M10 2.4 18 16.2a1 1 0 0 1-.87 1.4H2.87A1 1 0 0 1 2 16.2L10 2.4z" fill="currentColor" />
+      <path d="M10 7.1v5.2M10 14.9h.01" fill="none" stroke="var(--sheet-surface)" strokeLinecap="round" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 const FORMAT_OPTIONS: FormatOption[] = [
-  { key: "general", label: "General", icon: <GeneralGlyph /> },
+  { key: "auto", label: "Auto", icon: <AutoGlyph /> },
   { key: "integer", label: "Integer", icon: <IntegerGlyph /> },
   { key: "decimal", label: "Decimal", icon: <DecimalGlyph /> },
   { key: "scientific", label: "Scientific", icon: <ScientificGlyph /> },
   { key: "percent", label: "Percent", icon: <PercentGlyph /> },
 ];
-
-function parseFormatMeta(raw: string | null | undefined): ParsedFormatMeta {
-  const text = (raw ?? "").trim();
-  if (!text) {
-    return {
-      key: "general",
-      sign: "default",
-      zeroPad: false,
-      width: null,
-      grouping: false,
-      precision: null,
-      raw: null,
-    };
-  }
-
-  let i = 0;
-  let sign: ParsedFormatMeta["sign"] = "default";
-  if (text.startsWith("()")) {
-    sign = "parentheses";
-    i += 2;
-  } else if (text.startsWith("+")) {
-    sign = "plus";
-    i += 1;
-  }
-
-  let zeroPad = false;
-  if (text[i] === "0") {
-    zeroPad = true;
-    i += 1;
-  }
-
-  let width: number | null = null;
-  let widthStart = i;
-  while (i < text.length && /\d/.test(text[i])) i += 1;
-  if (i > widthStart) {
-    width = Number(text.slice(widthStart, i));
-  }
-
-  let grouping = false;
-  if (text[i] === ",") {
-    grouping = true;
-    i += 1;
-  }
-
-  let precision: number | null = null;
-  if (text[i] === ".") {
-    i += 1;
-    const precisionStart = i;
-    while (i < text.length && /\d/.test(text[i])) i += 1;
-    if (i > precisionStart) {
-      precision = Number(text.slice(precisionStart, i));
-    }
-  }
-
-  let key: FormatMenuKey = "general";
-  const typeToken = text[i];
-  if (typeToken === "d") key = "integer";
-  if (typeToken === "f") key = "decimal";
-  if (typeToken === "e") key = "scientific";
-  if (typeToken === "%") key = "percent";
-
-  return {
-    key,
-    sign,
-    zeroPad,
-    width,
-    grouping,
-    precision,
-    raw: text,
-  };
-}
-
-function parseStyleMeta(raw: string | null | undefined): ParsedStyleMeta {
-  const text = (raw ?? "").trim();
-  if (!text) {
-    return {
-      align: "auto",
-      weight: "auto",
-      color: "auto",
-      raw: null,
-    };
-  }
-
-  let align: LocalAlignState = "auto";
-  let weight: LocalWeightState = "auto";
-  let color: LocalColorState = "auto";
-
-  for (const token of text.split(",").map((part) => part.trim()).filter(Boolean)) {
-    if (token === "<" || token === "align=left") align = "left";
-    if (token === "^" || token === "align=center") align = "center";
-    if (token === ">" || token === "align=right") align = "right";
-    if (token === "bold" || token === "weight=bold") weight = "bold";
-    if (token === "normal" || token === "weight=normal") weight = "normal";
-    if (token === "red" || token === "color=red") color = "red";
-    if (token === "green" || token === "color=green") color = "green";
-    if (token === "blue" || token === "color=blue") color = "blue";
-  }
-
-  return {
-    align,
-    weight,
-    color,
-    raw: text,
-  };
-}
 
 type FormulaBarOverlayProps = {
   mode: "table" | "source";
@@ -267,7 +181,7 @@ export default function FormulaBarOverlay({
   onTooltipRelease,
 }: FormulaBarOverlayProps) {
   const [formatMenuOpen, setFormatMenuOpen] = useState(false);
-  const [menuPanelKey, setMenuPanelKey] = useState<FormatMenuKey>("general");
+  const [menuPanelKey, setMenuPanelKey] = useState<FormatMenuKey>("auto");
   const [formatMenuPosition, setFormatMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const formatButtonRef = useRef<HTMLButtonElement | null>(null);
   const formatMenuRef = useRef<HTMLDivElement | null>(null);
@@ -276,24 +190,31 @@ export default function FormulaBarOverlay({
   const styleButtonRef = useRef<HTMLButtonElement | null>(null);
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const parsedFormat = useMemo(
-    () => parseFormatMeta(formulaBarSnapshot?.displayFormatRaw),
-    [formulaBarSnapshot?.displayFormatRaw],
-  );
-  const parsedCellFormat = useMemo(
-    () => parseFormatMeta(formulaBarSnapshot?.cellFormatRaw),
-    [formulaBarSnapshot?.cellFormatRaw],
-  );
-  const parsedCellStyle = useMemo(
-    () => parseStyleMeta(formulaBarSnapshot?.cellStyleRaw),
-    [formulaBarSnapshot?.cellStyleRaw],
-  );
-  const hasCellFormatOverride = Boolean(formulaBarSnapshot?.hasCellFormatOverride);
-  const hasCellStyleOverride = Boolean(formulaBarSnapshot?.hasCellStyleOverride);
+  const localFormatKey = formulaBarSnapshot?.formatLocalKey ?? "auto";
+  const localFormatOptions = formulaBarSnapshot?.formatLocalOptions ?? null;
+  const localStyle = formulaBarSnapshot?.styleLocal ?? {
+    align: "auto",
+    weight: "auto",
+    color: "auto",
+  };
+  const hasCellFormatOverride = localFormatKey !== "auto";
+  const hasCellStyleOverride =
+    localStyle.align !== "auto" || localStyle.weight !== "auto" || localStyle.color !== "auto";
+  const displayErrors = formulaBarSnapshot?.displayErrors ?? [];
+  const formatErrors = displayErrors.filter((issue) => {
+    const kind = classifyDisplayIssue(issue);
+    return kind === "format" || kind === "generic";
+  });
+  const styleErrors = displayErrors.filter((issue) => {
+    const kind = classifyDisplayIssue(issue);
+    return kind === "style" || kind === "generic";
+  });
+  const hasFormatDisplayError = formatErrors.length > 0;
+  const hasStyleDisplayError = styleErrors.length > 0;
 
   useEffect(() => {
-    setMenuPanelKey(hasCellFormatOverride ? parsedCellFormat.key : parsedFormat.key);
-  }, [hasCellFormatOverride, parsedCellFormat.key, parsedFormat.key, formulaBarSnapshot?.primaryAddress]);
+    setMenuPanelKey(localFormatKey);
+  }, [localFormatKey, formulaBarSnapshot?.primaryAddress]);
 
   useEffect(() => {
     if (!formatMenuOpen) return;
@@ -421,40 +342,39 @@ export default function FormulaBarOverlay({
 
   if (mode !== "table" || phase === "hidden" || !formulaBarSnapshot) return null;
 
-  const selectedOption = FORMAT_OPTIONS.find((option) => option.key === parsedFormat.key) ?? FORMAT_OPTIONS[0];
+  const selectedOption = FORMAT_OPTIONS.find((option) => option.key === localFormatKey) ?? FORMAT_OPTIONS[0];
   const inspectedOption = FORMAT_OPTIONS.find((option) => option.key === menuPanelKey) ?? selectedOption;
-  const overrideOption = FORMAT_OPTIONS.find((option) => option.key === parsedCellFormat.key) ?? FORMAT_OPTIONS[0];
 
   const formatFields: Array<{ label: string; value: string; isDefault: boolean }> = [
     {
       label: "Precision",
-      value: parsedCellFormat.precision == null ? "Default" : `${parsedCellFormat.precision}`,
-      isDefault: parsedCellFormat.precision == null,
+      value: localFormatOptions?.precision == null ? "Auto" : `${localFormatOptions.precision}`,
+      isDefault: localFormatOptions?.precision == null,
     },
     {
       label: "Grouping",
-      value: parsedCellFormat.grouping ? "On" : "Default",
-      isDefault: !parsedCellFormat.grouping,
+      value: localFormatOptions?.grouping ? "On" : "Auto",
+      isDefault: !localFormatOptions?.grouping,
     },
     {
       label: "Sign",
       value:
-        parsedCellFormat.sign === "default"
-          ? "Default"
-          : parsedCellFormat.sign === "plus"
+        localFormatOptions?.sign === "default" || localFormatOptions == null
+          ? "Auto"
+          : localFormatOptions.sign === "plus"
             ? "Plus"
             : "Parentheses",
-      isDefault: parsedCellFormat.sign === "default",
+      isDefault: localFormatOptions?.sign == null || localFormatOptions.sign === "default",
     },
     {
       label: "Width",
-      value: parsedCellFormat.width == null ? "Default" : `${parsedCellFormat.width}`,
-      isDefault: parsedCellFormat.width == null,
+      value: localFormatOptions?.width == null ? "Auto" : `${localFormatOptions.width}`,
+      isDefault: localFormatOptions?.width == null,
     },
     {
       label: "Zero Pad",
-      value: parsedCellFormat.zeroPad ? "On" : "Default",
-      isDefault: !parsedCellFormat.zeroPad,
+      value: localFormatOptions?.zeroPad ? "On" : "Auto",
+      isDefault: !localFormatOptions?.zeroPad,
     },
   ];
 
@@ -480,47 +400,59 @@ export default function FormulaBarOverlay({
             <div className="formula-format-control">
               <button
                 ref={formatButtonRef}
-                className={formatMenuOpen ? "formula-format-button active" : "formula-format-button"}
+                className={[
+                  "formula-format-button",
+                  formatMenuOpen ? "active" : "",
+                  hasFormatDisplayError ? "is-warning" : "",
+                ].join(" ").trim()}
                 type="button"
                 aria-label="Format options"
                 aria-haspopup="menu"
                 aria-expanded={formatMenuOpen}
                 onMouseEnter={(event) => {
-                  if (!formatMenuOpen) onTooltipEnter("Format options", event.currentTarget);
+                  if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? "Format metadata error" : "Format options", event.currentTarget);
                 }}
                 onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
                 onFocus={(event) => {
-                  if (!formatMenuOpen) onTooltipEnter("Format options", event.currentTarget);
+                  if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? "Format metadata error" : "Format options", event.currentTarget);
                 }}
                 onBlur={(event) => onTooltipRelease(event.currentTarget)}
                 onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
                 onClick={() => {
                   setStyleMenuOpen(false);
-                  setMenuPanelKey(hasCellFormatOverride ? parsedCellFormat.key : parsedFormat.key);
+                  setMenuPanelKey(localFormatKey);
                   setFormatMenuOpen((open) => !open);
                 }}
               >
                 <span
-                  className={hasCellFormatOverride ? "formula-format-icon has-cell-format" : "formula-format-icon"}
+                  className={[
+                    "formula-format-icon",
+                    hasCellFormatOverride ? "has-cell-format" : "",
+                    hasFormatDisplayError ? "has-display-error" : "",
+                  ].join(" ").trim()}
                 >
-                  <FormatGlyph />
+                  <FormatGlyph warning={hasFormatDisplayError} />
                 </span>
               </button>
             </div>
             <div className="formula-style-control">
               <button
                 ref={styleButtonRef}
-                className={styleMenuOpen ? "formula-style-button active" : "formula-style-button"}
+                className={[
+                  "formula-style-button",
+                  styleMenuOpen ? "active" : "",
+                  hasStyleDisplayError ? "is-warning" : "",
+                ].join(" ").trim()}
                 type="button"
                 aria-label="Style options"
                 aria-haspopup="menu"
                 aria-expanded={styleMenuOpen}
                 onMouseEnter={(event) => {
-                  if (!styleMenuOpen) onTooltipEnter("Style options", event.currentTarget);
+                  if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? "Style metadata error" : "Style options", event.currentTarget);
                 }}
                 onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
                 onFocus={(event) => {
-                  if (!styleMenuOpen) onTooltipEnter("Style options", event.currentTarget);
+                  if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? "Style metadata error" : "Style options", event.currentTarget);
                 }}
                 onBlur={(event) => onTooltipRelease(event.currentTarget)}
                 onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
@@ -529,24 +461,18 @@ export default function FormulaBarOverlay({
                   setStyleMenuOpen((open) => !open);
                 }}
               >
-                <span className={hasCellStyleOverride ? "formula-style-icon has-cell-style" : "formula-style-icon"}>
-                  <StyleGlyph />
+                <span
+                  className={[
+                    "formula-style-icon",
+                    hasCellStyleOverride ? "has-cell-style" : "",
+                    hasStyleDisplayError ? "has-display-error" : "",
+                  ].join(" ").trim()}
+                >
+                  <StyleGlyph warning={hasStyleDisplayError} />
                 </span>
               </button>
             </div>
             {formulaBarSnapshot.displaySource ? <span className="formula-meta-chip">{`source:${formulaBarSnapshot.displaySource}`}</span> : null}
-            {formulaBarSnapshot.displayErrors?.length
-              ? formulaBarSnapshot.displayErrors.map((issue, index) => (
-                  <span
-                    key={`display-error-${index}`}
-                    className="formula-meta-chip is-warning"
-                    onMouseEnter={(event) => onTooltipEnter(issue, event.currentTarget)}
-                    onMouseLeave={onTooltipLeave}
-                  >
-                    {issue}
-                  </span>
-                ))
-              : null}
           </div>
         </div>
       </aside>
@@ -561,19 +487,30 @@ export default function FormulaBarOverlay({
             left: `${formatMenuPosition.left}px`,
           }}
         >
+          {hasFormatDisplayError ? (
+            <div className="formula-menu-error-banner formula-menu-error-banner--full" role="status" aria-live="polite">
+              <span className="formula-menu-error-icon"><BannerWarningGlyph /></span>
+              <span className="formula-menu-error-copy">
+                <span className="formula-menu-error-title">Format metadata error</span>
+                <span className="formula-menu-error-detail">{formatErrors[0]}</span>
+                {formatErrors.length > 1 ? (
+                  <span className="formula-menu-error-more">{`+${formatErrors.length - 1} more`}</span>
+                ) : null}
+              </span>
+            </div>
+          ) : null}
           <div className="formula-format-menu-list">
             {FORMAT_OPTIONS.map((option) => (
               <button
                 key={option.key}
                 className={[
                   "formula-format-option",
-                  parsedFormat.key === option.key ? "is-selected" : "",
-                  hasCellFormatOverride && parsedCellFormat.key === option.key ? "is-override" : "",
+                  localFormatKey === option.key ? "is-selected" : "",
                   menuPanelKey === option.key ? "is-inspecting" : "",
                 ].join(" ").trim()}
                 type="button"
                 role="menuitemradio"
-                aria-checked={parsedFormat.key === option.key}
+                aria-checked={localFormatKey === option.key}
                 onClick={() => setMenuPanelKey(option.key)}
               >
                 <span className="formula-format-option-icon">{option.icon}</span>
@@ -582,23 +519,13 @@ export default function FormulaBarOverlay({
             ))}
             {!hasCellFormatOverride ? (
               <div className="formula-format-menu-hint">
-                Using inherited format from {formulaBarSnapshot.displaySource === "column" ? "column default" : "sheet default"}.
+                Using inherited format from {formulaBarSnapshot.displaySource === "column" ? "the column" : "the sheet"}.
               </div>
             ) : null}
           </div>
           {hasCellFormatOverride ? (
             <div className="formula-format-menu-panel">
               <div className="formula-format-panel-title">{inspectedOption.label}</div>
-              <div className="formula-format-summary">
-                <div className="formula-format-summary-row">
-                  <span className="formula-format-summary-label">Effective</span>
-                  <span className="formula-format-summary-value">{selectedOption.label}</span>
-                </div>
-                <div className="formula-format-summary-row">
-                  <span className="formula-format-summary-label">Cell Override</span>
-                  <span className="formula-format-summary-value">{overrideOption.label}</span>
-                </div>
-              </div>
               <div className="formula-format-field-list">
                 {formatFields.map((field) => (
                   <div key={field.label} className="formula-format-field">
@@ -627,6 +554,18 @@ export default function FormulaBarOverlay({
           }}
         >
           <div className="formula-style-menu-panel">
+            {hasStyleDisplayError ? (
+              <div className="formula-menu-error-banner" role="status" aria-live="polite">
+                <span className="formula-menu-error-icon"><BannerWarningGlyph /></span>
+                <span className="formula-menu-error-copy">
+                  <span className="formula-menu-error-title">Style metadata error</span>
+                  <span className="formula-menu-error-detail">{styleErrors[0]}</span>
+                  {styleErrors.length > 1 ? (
+                    <span className="formula-menu-error-more">{`+${styleErrors.length - 1} more`}</span>
+                  ) : null}
+                </span>
+              </div>
+            ) : null}
             <div className="formula-style-row">
               <span className="formula-style-row-label">Weight</span>
               <div className="formula-style-segmented" role="group" aria-label="Weight override">
@@ -640,11 +579,11 @@ export default function FormulaBarOverlay({
                     type="button"
                     className={[
                       "formula-style-segment",
-                      parsedCellStyle.weight === option.key ? "is-selected" : "",
+                      localStyle.weight === option.key ? "is-selected" : "",
                       option.key === "bold" ? "is-weight-bold" : "",
                       option.key === "normal" ? "is-weight-regular" : "",
                     ].join(" ").trim()}
-                    aria-pressed={parsedCellStyle.weight === option.key}
+                    aria-pressed={localStyle.weight === option.key}
                     onClick={(event) => event.preventDefault()}
                   >
                     {option.label}
@@ -664,8 +603,8 @@ export default function FormulaBarOverlay({
                   <button
                     key={option.key}
                     type="button"
-                    className={parsedCellStyle.align === option.key ? "formula-style-segment is-selected" : "formula-style-segment"}
-                    aria-pressed={parsedCellStyle.align === option.key}
+                    className={localStyle.align === option.key ? "formula-style-segment is-selected" : "formula-style-segment"}
+                    aria-pressed={localStyle.align === option.key}
                     onClick={(event) => event.preventDefault()}
                   >
                     {option.icon ? <span className="formula-style-segment-icon">{option.icon}</span> : option.label}
@@ -685,8 +624,8 @@ export default function FormulaBarOverlay({
                   <button
                     key={option.key}
                     type="button"
-                    className={parsedCellStyle.color === option.key ? "formula-style-segment is-selected" : "formula-style-segment"}
-                    aria-pressed={parsedCellStyle.color === option.key}
+                    className={localStyle.color === option.key ? "formula-style-segment is-selected" : "formula-style-segment"}
+                    aria-pressed={localStyle.color === option.key}
                     onClick={(event) => event.preventDefault()}
                   >
                     {option.tone ? (

@@ -124,6 +124,41 @@ function easeOutQuint(progress: number): number {
   return 1 - (1 - progress) ** 5;
 }
 
+function formatMenuKeyFromType(type: "f" | "e" | "%" | "d" | null | undefined): "auto" | "integer" | "decimal" | "scientific" | "percent" {
+  if (type === "d") return "integer";
+  if (type === "f") return "decimal";
+  if (type === "e") return "scientific";
+  if (type === "%") return "percent";
+  return "auto";
+}
+
+function styleLocalView(style: PresentedCell["styleLayer"]["local"] | null | undefined) {
+  return {
+    align: style?.align ?? "auto",
+    weight: style?.weight ?? "auto",
+    color: style?.color ?? "auto",
+  } as const;
+}
+
+function formatLocalView(format: PresentedCell["formatLayer"]["local"] | null | undefined) {
+  if (!format) {
+    return {
+      formatLocalKey: "auto" as const,
+      formatLocalOptions: null,
+    };
+  }
+  return {
+    formatLocalKey: formatMenuKeyFromType(format.type),
+    formatLocalOptions: {
+      sign: format.sign,
+      zeroPad: format.zeroPad,
+      width: format.width,
+      grouping: format.grouping,
+      precision: format.precision,
+    },
+  };
+}
+
 export default function App() {
   const {
     mode,
@@ -1170,6 +1205,7 @@ export default function App() {
       const headerRowNumber = Math.max(1, Math.min(selectedCell.logical.rAbs, maxHeaderRow));
       const headerAbsIndex = headerRowNumber - 1;
       const rawHeaderCell = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex] : undefined;
+      const columnDefault = currentSheetPresentation?.columnDefaults[colIndex];
       const sourceFromSheet = rawHeaderCell?.text ?? "";
       const displayText =
         headerMatrix[headerRowNumber - 1]?.[colIndex] ??
@@ -1184,10 +1220,8 @@ export default function App() {
         displayText: displayText.length > 0 ? displayText : "(blank)",
         sourceText: sourceView.sourceText,
         editableSourceText: sourceView.editableSourceText,
-        hasCellFormatOverride: Boolean(rawHeaderCell?.parsed.display?.format),
-        cellFormatRaw: rawHeaderCell?.parsed.display?.format ?? null,
-        hasCellStyleOverride: Boolean(rawHeaderCell?.parsed.display?.style),
-        cellStyleRaw: rawHeaderCell?.parsed.display?.style ?? null,
+        ...formatLocalView(columnDefault?.formatLayer.local),
+        styleLocal: styleLocalView(columnDefault?.styleLayer.local),
       };
     }
 
@@ -1214,13 +1248,9 @@ export default function App() {
         displayText: displayText.length > 0 ? displayText : "(blank)",
         sourceText: sourceView.sourceText,
         editableSourceText: sourceView.editableSourceText,
-        hasCellFormatOverride: Boolean(rawCell?.parsed.display?.format),
-        cellFormatRaw: rawCell?.parsed.display?.format ?? null,
-        hasCellStyleOverride: Boolean(rawCell?.parsed.display?.style),
-        cellStyleRaw: rawCell?.parsed.display?.style ?? null,
+        ...formatLocalView(presentedCell?.formatLayer.local),
+        styleLocal: styleLocalView(presentedCell?.styleLayer.local),
         displaySource: presentedCell?.source,
-        displayFormatRaw: presentedCell?.formatLayer.effective?.raw ?? null,
-        displayStyleRaw: presentedCell?.styleLayer.effective?.raw ?? null,
         displayErrors: presentedCell?.errors ?? [],
       };
     }
@@ -1239,13 +1269,9 @@ export default function App() {
       displayText: presentedCell?.displayText ?? (runtimeValue ? runtimeValueToText(runtimeValue) : ""),
       sourceText: sourceView.sourceText,
       editableSourceText: sourceView.editableSourceText,
-      hasCellFormatOverride: Boolean(rawCell?.parsed.display?.format),
-      cellFormatRaw: rawCell?.parsed.display?.format ?? null,
-      hasCellStyleOverride: Boolean(rawCell?.parsed.display?.style),
-      cellStyleRaw: rawCell?.parsed.display?.style ?? null,
+      ...formatLocalView(presentedCell?.formatLayer.local),
+      styleLocal: styleLocalView(presentedCell?.styleLayer.local),
       displaySource: presentedCell?.source,
-      displayFormatRaw: presentedCell?.formatLayer.effective?.raw ?? null,
-      displayStyleRaw: presentedCell?.styleLayer.effective?.raw ?? null,
       displayErrors: presentedCell?.errors ?? [],
     };
   }, [

@@ -95,7 +95,7 @@ const sampleDocument = `# Management Report
 | Item         || Revenue {:,.1f:<,blue} | Cost {:(),.2f:<} | Margin {:.1%:<} | Notes {: :<} | Calc {:,.2f:<,blue,bold} |
 | ------------ || ---------------------- | ----------------- | -------------- | ------------ | --------------------------- |
 | Product A    || 1234.5 {::red}         | -456.7            | 0.125          | "color override" | = B2 + C2 {::red} |
-| Product B    || 999.9 {::>}            | -88.1             | 0.314          | "align override" | = B3 + C3 {::normal} |
+| Product B    || 999.9 {:.3f:>}         | -88.1             | 0.314          | "align + format override" | = B3 + C3 {::normal} |
 | Temporal     || 2026-03-24T14:30:00Z {::blue} | PT1H30M {::bold} | 0 | "time literals" | = B2 |
 | Column Sum   || 0                 | 0                  | 0               | ""           | = sum(B:B) |
 | Row Sum      || 0                 | 0                  | 0               | ""           | = sum(2:2) |
