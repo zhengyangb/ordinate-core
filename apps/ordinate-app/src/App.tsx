@@ -19,6 +19,7 @@ import { createAgGridAdapter } from "./grid/agGridAdapter";
 import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
 import { useEditorStore } from "./store/editorStore";
 import type {
+  ColumnRailMenuView,
   ChromeVisibilityPhase,
   FloatingMenuPosition,
   FloatingTooltip,
@@ -62,6 +63,9 @@ const TOOLTIP_GAP = 8;
 const TOOLTIP_VIEWPORT_MARGIN = 10;
 const TOOLTIP_ESTIMATED_HEIGHT = 34;
 const TOOLTIP_ESTIMATED_WIDTH = 240;
+const FLOATING_MENU_VIEWPORT_MARGIN = 12;
+const FLOATING_MENU_GAP = 8;
+const COLUMN_RAIL_MENU_MAX_WIDTH_REM = 27;
 
 function resolveInitialThemeMode(): ThemeMode {
   if (typeof window === "undefined") return "auto";
@@ -71,6 +75,17 @@ function resolveInitialThemeMode(): ThemeMode {
 
 function toColFieldId(colIndex: number): string {
   return `col_${colIndex}`;
+}
+
+function toColumnLetters(colNumber: number): string {
+  let n = Math.max(1, Math.trunc(colNumber));
+  let label = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor((n - 1) / 26);
+  }
+  return label;
 }
 
 function overlayCellsEqual(previous: HeaderOverlayCell[], next: HeaderOverlayCell[]): boolean {
@@ -159,6 +174,25 @@ function formatLocalView(format: PresentedCell["formatLayer"]["local"] | null | 
   };
 }
 
+function resolveColumnRailMenuWidthPx(): number {
+  if (typeof window === "undefined") {
+    return COLUMN_RAIL_MENU_MAX_WIDTH_REM * 16;
+  }
+  const rootFontPx = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
+  const maxWidthPx = COLUMN_RAIL_MENU_MAX_WIDTH_REM * rootFontPx;
+  return Math.min(maxWidthPx, window.innerWidth - FLOATING_MENU_VIEWPORT_MARGIN * 2);
+}
+
+function resolveColumnRailMenuPosition(anchorRect: DOMRect): FloatingMenuPosition {
+  const menuWidth = resolveColumnRailMenuWidthPx();
+  const top = anchorRect.bottom + FLOATING_MENU_GAP;
+  const left = Math.max(
+    FLOATING_MENU_VIEWPORT_MARGIN,
+    Math.min(anchorRect.right - menuWidth, window.innerWidth - menuWidth - FLOATING_MENU_VIEWPORT_MARGIN),
+  );
+  return { top, left };
+}
+
 export default function App() {
   const {
     mode,
@@ -177,12 +211,16 @@ export default function App() {
 
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
+  const [selectedColumnIndex, setSelectedColumnIndex] = useState<number | null>(null);
   const [formulaBarSnapshot, setFormulaBarSnapshot] = useState<FormulaBarData | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [themeMenuPosition, setThemeMenuPosition] = useState<ThemeMenuPosition>({ top: 0, left: 0 });
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [toolMenuPosition, setToolMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
+  const [columnRailMenuOpen, setColumnRailMenuOpen] = useState(false);
+  const [columnRailMenuPosition, setColumnRailMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
+  const [openColumnMenuColIndex, setOpenColumnMenuColIndex] = useState<number | null>(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
   const [hasVerticalOverlap, setHasVerticalOverlap] = useState(false);
@@ -202,6 +240,7 @@ export default function App() {
   const themeControlRef = useRef<HTMLDivElement | null>(null);
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolButtonRef = useRef<HTMLButtonElement | null>(null);
+  const columnMenuAnchorRef = useRef<HTMLElement | null>(null);
   const tooltipTimerRef = useRef<number | null>(null);
   const tooltipAnchorRef = useRef<HTMLElement | null>(null);
   const suppressedTooltipTargetRef = useRef<HTMLElement | null>(null);
@@ -351,8 +390,53 @@ export default function App() {
     });
   }, [currentSheetState, headerLeafLabels, sheetColCount]);
 
+  const columnHasLocalConfig = useMemo<boolean[]>(() => {
+    return Array.from({ length: sheetColCount }, (_, colIndex) => {
+      const columnDefault = currentSheetPresentation?.columnDefaults[colIndex];
+      if (!columnDefault) return false;
+      const localStyle = columnDefault.styleLayer.local;
+      return Boolean(
+        columnDefault.formatLayer.local ||
+          localStyle?.align ||
+          localStyle?.weight ||
+          localStyle?.color,
+      );
+    });
+  }, [currentSheetPresentation, sheetColCount]);
+
+  const columnRailMenu = useMemo<ColumnRailMenuView | null>(() => {
+    if (openColumnMenuColIndex == null || openColumnMenuColIndex < 0 || openColumnMenuColIndex >= sheetColCount) {
+      return null;
+    }
+    const columnDefault = currentSheetPresentation?.columnDefaults[openColumnMenuColIndex];
+    const localStyle = columnDefault?.styleLayer.local;
+    const styleLocal = styleLocalView(localStyle);
+    return {
+      colIndex: openColumnMenuColIndex,
+      colLabel: toColumnLetters(openColumnMenuColIndex + 1),
+      hasLocalConfig: columnHasLocalConfig[openColumnMenuColIndex] === true,
+      ...formatLocalView(columnDefault?.formatLayer.local),
+      styleLocal,
+    };
+  }, [openColumnMenuColIndex, sheetColCount, currentSheetPresentation, columnHasLocalConfig]);
+
+  useEffect(() => {
+    if (selectedColumnIndex == null) return;
+    if (selectedColumnIndex >= 0 && selectedColumnIndex < sheetColCount) return;
+    setSelectedColumnIndex(null);
+  }, [selectedColumnIndex, sheetColCount]);
+
+  useEffect(() => {
+    if (openColumnMenuColIndex == null) return;
+    if (openColumnMenuColIndex >= 0 && openColumnMenuColIndex < sheetColCount) return;
+    setColumnRailMenuOpen(false);
+    setOpenColumnMenuColIndex(null);
+    columnMenuAnchorRef.current = null;
+  }, [openColumnMenuColIndex, sheetColCount]);
+
   const clearActiveSelection = useCallback(() => {
     setSelectedCell(null);
+    setSelectedColumnIndex(null);
     const active = document.activeElement;
     if (active instanceof HTMLElement) {
       active.blur();
@@ -365,11 +449,19 @@ export default function App() {
 
   useEffect(() => {
     setSelectedCell(null);
+    setSelectedColumnIndex(null);
+    setColumnRailMenuOpen(false);
+    setOpenColumnMenuColIndex(null);
+    columnMenuAnchorRef.current = null;
   }, [activeSheet, mode]);
 
   useEffect(() => {
     if (!isActiveSheetBlocked) return;
     setSelectedCell(null);
+    setSelectedColumnIndex(null);
+    setColumnRailMenuOpen(false);
+    setOpenColumnMenuColIndex(null);
+    columnMenuAnchorRef.current = null;
   }, [isActiveSheetBlocked]);
 
   useEffect(() => {
@@ -454,6 +546,33 @@ export default function App() {
       window.removeEventListener("scroll", updatePosition, true);
     };
   }, [toolMenuOpen]);
+
+  useEffect(() => {
+    if (!columnRailMenuOpen) return;
+
+    const updatePosition = () => {
+      const anchor = columnMenuAnchorRef.current;
+      if (!anchor) return;
+      const nextPosition = resolveColumnRailMenuPosition(anchor.getBoundingClientRect());
+      setColumnRailMenuPosition((current) => {
+        if (
+          Math.abs(current.top - nextPosition.top) < POSITION_EPSILON &&
+          Math.abs(current.left - nextPosition.left) < POSITION_EPSILON
+        ) {
+          return current;
+        }
+        return nextPosition;
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [columnRailMenuOpen, openColumnMenuColIndex]);
 
   useEffect(() => {
     const dismissTooltip = () =>
@@ -619,6 +738,11 @@ export default function App() {
       if (!target?.closest(".tool-overflow-control") && !target?.closest(".tool-menu")) {
         setToolMenuOpen(false);
       }
+      if (!target?.closest(".column-index-menu-trigger") && !target?.closest(".column-rail-menu")) {
+        setColumnRailMenuOpen(false);
+        setOpenColumnMenuColIndex(null);
+        columnMenuAnchorRef.current = null;
+      }
     };
 
     document.addEventListener("mousedown", handlePointerDown);
@@ -636,23 +760,29 @@ export default function App() {
         setToolMenuOpen(false);
         return;
       }
+      if (columnRailMenuOpen) {
+        setColumnRailMenuOpen(false);
+        setOpenColumnMenuColIndex(null);
+        columnMenuAnchorRef.current = null;
+        return;
+      }
       if (mode === "source" || isActiveSheetBlocked) return;
-      if (!selectedCell) return;
+      if (!selectedCell && selectedColumnIndex == null) return;
       clearActiveSelection();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, isActiveSheetBlocked, selectedCell, clearActiveSelection, themeMenuOpen, toolMenuOpen]);
+  }, [mode, isActiveSheetBlocked, selectedCell, selectedColumnIndex, clearActiveSelection, themeMenuOpen, toolMenuOpen, columnRailMenuOpen]);
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
-      if (!selectedCell) return;
+      if (!selectedCell && selectedColumnIndex == null) return;
       const interactiveRoot = target?.closest(
-        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, textarea",
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, .column-index-main, .column-index-menu-trigger, .column-rail-menu, textarea",
       );
       if (interactiveRoot) return;
       clearActiveSelection();
@@ -660,7 +790,7 @@ export default function App() {
 
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [mode, isActiveSheetBlocked, selectedCell, clearActiveSelection]);
+  }, [mode, isActiveSheetBlocked, selectedCell, selectedColumnIndex, clearActiveSelection]);
 
   const toggleCollapse = useCallback((rowPath: string) => {
     setCollapsedPaths((prev) => {
@@ -1053,12 +1183,74 @@ export default function App() {
         colId,
         rowPath: null,
       });
+      setSelectedColumnIndex(null);
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
         active.blur();
       }
     },
     [headerRowCount, sheetColCount],
+  );
+
+  const handleColumnRailSelect = useCallback(
+    (colIndex: number) => {
+      if (mode === "source" || isActiveSheetBlocked) return;
+      if (colIndex < 0 || colIndex >= sheetColCount) return;
+      setSelectedColumnIndex(colIndex);
+      setSelectedCell(null);
+      setFormulaBarSnapshot(null);
+    },
+    [mode, isActiveSheetBlocked, sheetColCount],
+  );
+
+  const handleColumnRailMenuOpen = useCallback(
+    (colIndex: number, anchorEl: HTMLElement) => {
+      if (mode === "source" || isActiveSheetBlocked) return;
+      if (colIndex < 0 || colIndex >= sheetColCount) return;
+      columnMenuAnchorRef.current = anchorEl;
+      setColumnRailMenuPosition(resolveColumnRailMenuPosition(anchorEl.getBoundingClientRect()));
+      setOpenColumnMenuColIndex(colIndex);
+      setColumnRailMenuOpen(true);
+      setFormulaBarSnapshot(null);
+    },
+    [mode, isActiveSheetBlocked, sheetColCount],
+  );
+
+  const handleRowRailSelect = useCallback(
+    (rowNumber: number, rowPath: string | null) => {
+      if (mode === "source" || isActiveSheetBlocked) return;
+      if (sheetColCount <= 0) return;
+      const targetCol = Math.min(Math.max(headerColCount, 0), sheetColCount - 1);
+      const colId = toColFieldId(targetCol);
+      if (rowPath == null) {
+        const clampedHeaderRow = Math.max(1, Math.min(rowNumber, Math.max(1, headerRowCount)));
+        setSelectedCell({
+          area: "header",
+          logical: {
+            rAbs: clampedHeaderRow,
+            cAbs: targetCol,
+          },
+          colId,
+          rowPath: null,
+        });
+      } else {
+        setSelectedCell({
+          area: "body",
+          logical: {
+            rAbs: rowNumber,
+            cAbs: targetCol,
+          },
+          colId,
+          rowPath,
+        });
+      }
+      setSelectedColumnIndex(null);
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        active.blur();
+      }
+    },
+    [mode, isActiveSheetBlocked, sheetColCount, headerColCount, headerRowCount],
   );
 
   useEffect(() => {
@@ -1089,6 +1281,7 @@ export default function App() {
         colId,
         rowPath: null,
       });
+      setSelectedColumnIndex(null);
 
       headerCell.tabIndex = 0;
       requestAnimationFrame(() => headerCell.focus());
@@ -1118,6 +1311,7 @@ export default function App() {
     (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
       if (!event.column) {
         setSelectedCell(null);
+        setSelectedColumnIndex(null);
         return;
       }
 
@@ -1141,6 +1335,7 @@ export default function App() {
             colId: rawColId,
             rowPath: null,
           });
+          setSelectedColumnIndex(null);
           return;
         }
         if (pending && performance.now() > pending.expiresAt) {
@@ -1160,12 +1355,14 @@ export default function App() {
             rowPath: null,
           };
         });
+        setSelectedColumnIndex(null);
         return;
       }
 
       const row = rowData[event.rowIndex];
       if (!row) {
         setSelectedCell(null);
+        setSelectedColumnIndex(null);
         return;
       }
 
@@ -1178,6 +1375,7 @@ export default function App() {
         colId: rawColId,
         rowPath: row.__rowPath,
       });
+      setSelectedColumnIndex(null);
     },
     [rowData, colIndexLookup, headerRowCount],
   );
@@ -1372,7 +1570,15 @@ export default function App() {
   }, [mode, isActiveSheetBlocked, formulaBarData, selectedCell, absoluteRowPathLookup, rowPathToDisplayedIndex]);
 
   const chromeVisibilityPhase: ChromeVisibilityPhase =
-    mode === "table" ? (formulaBarData ? "visible" : formulaBarSnapshot ? "hiding" : "hidden") : "hidden";
+    mode === "table"
+      ? selectedColumnIndex != null
+        ? "visible"
+        : formulaBarData
+          ? "visible"
+          : formulaBarSnapshot
+            ? "hiding"
+            : "hidden"
+      : "hidden";
 
   const themeButtonLabel = themeMode === "auto" ? "Automatic appearance" : themeMode === "light" ? "Light mode" : "Dark mode";
   const themeButtonIcon = themeMode === "auto" ? <AutoIcon /> : themeMode === "light" ? <SunIcon /> : <MoonIcon />;
@@ -1465,8 +1671,13 @@ export default function App() {
                 rowData={rowData}
                 columnDefs={columnDefs}
                 selectedCell={selectedCell}
+                selectedColumnIndex={selectedColumnIndex}
+                columnHasLocalConfig={columnHasLocalConfig}
                 suppressAgHeaderFocus={Boolean(suppressAgHeaderFocus)}
                 handleHeaderOverlaySelect={handleHeaderOverlaySelect}
+                handleColumnRailSelect={handleColumnRailSelect}
+                handleColumnRailMenuOpen={handleColumnRailMenuOpen}
+                handleRowRailSelect={handleRowRailSelect}
                 handleGridReady={handleGridReady}
                 handleFirstDataRendered={handleFirstDataRendered}
                 handleModelUpdated={handleModelUpdated}
@@ -1504,6 +1715,9 @@ export default function App() {
         toolMenuOpen={toolMenuOpen}
         toolMenuPosition={toolMenuPosition}
         overflowTools={overflowTools}
+        columnRailMenuOpen={columnRailMenuOpen}
+        columnRailMenuPosition={columnRailMenuPosition}
+        columnRailMenu={columnRailMenu}
         tooltip={tooltip}
       />
     </div>
