@@ -32,8 +32,13 @@ type TableStageProps = {
   rowData: GridRow[];
   columnDefs: Array<ColDef<GridRow> | ColGroupDef<GridRow>>;
   selectedCell: SelectedCell | null;
+  selectedColumnIndex: number | null;
+  columnHasLocalConfig: boolean[];
   suppressAgHeaderFocus: boolean;
   handleHeaderOverlaySelect: (rowNumber: number, colIndex: number) => void;
+  handleColumnRailSelect: (colIndex: number) => void;
+  handleColumnRailMenuOpen: (colIndex: number, anchorEl: HTMLElement) => void;
+  handleRowRailSelect: (rowNumber: number, rowPath: string | null) => void;
   handleGridReady: (event: GridReadyEvent<GridRow>) => void;
   handleFirstDataRendered: (event: FirstDataRenderedEvent<GridRow>) => void;
   handleModelUpdated: (event: ModelUpdatedEvent<GridRow>) => void;
@@ -49,6 +54,17 @@ function toColumnLetters(colNumber: number): string {
     n = Math.floor((n - 1) / 26);
   }
   return label;
+}
+
+function ColumnConfigGlyph() {
+  return (
+    <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      <path d="M2 3.1h8M2 6h8M2 8.9h8" />
+      <circle cx="4" cy="3.1" r="1" />
+      <circle cx="7.5" cy="6" r="1" />
+      <circle cx="5.6" cy="8.9" r="1" />
+    </svg>
+  );
 }
 
 export default function TableStage({
@@ -71,14 +87,20 @@ export default function TableStage({
   rowData,
   columnDefs,
   selectedCell,
+  selectedColumnIndex,
+  columnHasLocalConfig,
   suppressAgHeaderFocus,
   handleHeaderOverlaySelect,
+  handleColumnRailSelect,
+  handleColumnRailMenuOpen,
+  handleRowRailSelect,
   handleGridReady,
   handleFirstDataRendered,
   handleModelUpdated,
   handleCellFocused,
 }: TableStageProps) {
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
+  const selectedRowNumber = selectedCell?.logical.rAbs ?? null;
   const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < headerColCount);
   const centerOverlayCells = headerOverlayCells.filter((cell) => cell.startCol >= headerColCount);
 
@@ -147,19 +169,46 @@ export default function TableStage({
           {Array.from({ length: renderedColumnCount }, (_, index) => (
             (() => {
               const colNumber = index + 1;
-              const isActive = selectedCell?.logical.cAbs === index;
+              const isActive = selectedColumnIndex === index;
               const letters = toColumnLetters(colNumber);
+              const hasLocalConfig = columnHasLocalConfig[index] === true;
               return (
                 <div
                   key={`column-index-${colNumber}`}
                   className={isActive ? "column-index-cell is-active" : "column-index-cell"}
                 >
-                  <span className="column-index-label">
-                    <span className="column-index-primary">{letters}</span>
-                    <sup className="column-index-secondary" aria-hidden="true">
-                      {colNumber}
-                    </sup>
-                  </span>
+                  <span className="column-index-left-pad" aria-hidden="true" />
+                  <button
+                    className="column-index-main"
+                    type="button"
+                    onClick={() => handleColumnRailSelect(index)}
+                    aria-label={`Select column ${letters}`}
+                  >
+                    <span className="column-index-label">
+                      <span className="column-index-primary">{letters}</span>
+                      <sup className="column-index-secondary" aria-hidden="true">
+                        {colNumber}
+                      </sup>
+                    </span>
+                    {hasLocalConfig ? (
+                      <span className="column-index-config-badge" aria-hidden="true">
+                        <ColumnConfigGlyph />
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    className="column-index-menu-trigger"
+                    type="button"
+                    aria-label={`Open column ${letters} menu`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleColumnRailMenuOpen(index, event.currentTarget);
+                    }}
+                  >
+                    <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                      <path d="M3.2 4.6 6 7.4l2.8-2.8" />
+                    </svg>
+                  </button>
                 </div>
               );
             })()
@@ -174,16 +223,18 @@ export default function TableStage({
             style={headerIndexTrackHeight > 0 ? { height: `${headerIndexTrackHeight}px` } : undefined}
           >
             {headerIndexMetrics.map((row) => (
-              <div
+              <button
                 key={`row-index-header-${row.number}`}
-                className="row-index-cell is-header"
+                className={selectedRowNumber === row.number ? "row-index-cell is-header is-active" : "row-index-cell is-header"}
                 style={{
                   top: `${row.top}px`,
                   height: `${row.height}px`,
                 }}
+                type="button"
+                onClick={() => handleRowRailSelect(row.number, null)}
               >
                 {row.number}
-              </div>
+              </button>
             ))}
           </div>
           <div className="row-index-viewport">
@@ -193,16 +244,18 @@ export default function TableStage({
               style={rowIndexTrackHeight > 0 ? { height: `${rowIndexTrackHeight}px` } : undefined}
             >
               {rowIndexMetrics.map((row) => (
-                <div
+                <button
                   key={`row-index-${row.rowPath}`}
-                  className="row-index-cell"
+                  className={selectedRowNumber === row.number ? "row-index-cell is-active" : "row-index-cell"}
                   style={{
                     top: `${row.top}px`,
                     height: `${row.height}px`,
                   }}
+                  type="button"
+                  onClick={() => handleRowRailSelect(row.number, row.rowPath)}
                 >
                   {row.number}
-                </div>
+                </button>
               ))}
             </div>
           </div>

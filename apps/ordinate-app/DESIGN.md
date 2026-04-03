@@ -19,6 +19,7 @@
 - Ghost buttons stay visually quiet at rest.
 - Menus should be compact and stable.
 - Segmented controls should use soft filled selection, not aggressive outlines.
+- Menu item selection should be borderless; distinguish states with fill and contrast, not stroke.
 
 ## Formula Bar
 - The central field should feel like one calm pill-shaped input.

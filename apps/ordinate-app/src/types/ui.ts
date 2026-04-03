@@ -35,13 +35,10 @@ export type FormulaBarData = {
   displayText: string;
   sourceText: string;
   editableSourceText: string;
-  hasCellFormatOverride?: boolean;
-  cellFormatRaw?: string | null;
-  hasCellStyleOverride?: boolean;
-  cellStyleRaw?: string | null;
+  formatLocalKey?: FormatLocalKey;
+  formatLocalOptions?: FormatLocalOptions | null;
+  styleLocal?: StyleLocalView | null;
   displaySource?: "cell" | "column" | "default";
-  displayFormatRaw?: string | null;
-  displayStyleRaw?: string | null;
   displayErrors?: string[];
 };
 
@@ -90,6 +87,31 @@ export type ThemeMenuPosition = {
 export type FloatingMenuPosition = {
   top: number;
   left: number;
+};
+
+export type FormatLocalKey = "auto" | "integer" | "decimal" | "scientific" | "percent";
+
+export type FormatLocalOptions = {
+  sign: "default" | "plus" | "parentheses";
+  zeroPad: boolean;
+  width: number | null;
+  grouping: boolean;
+  precision: number | null;
+};
+
+export type StyleLocalView = {
+  align: "auto" | "left" | "center" | "right";
+  weight: "auto" | "bold" | "normal";
+  color: "auto" | "red" | "green" | "blue";
+};
+
+export type ColumnRailMenuView = {
+  colIndex: number;
+  colLabel: string;
+  hasLocalConfig: boolean;
+  formatLocalKey: FormatLocalKey;
+  formatLocalOptions: FormatLocalOptions | null;
+  styleLocal: StyleLocalView;
 };
 
 export type FloatingTooltip = {
