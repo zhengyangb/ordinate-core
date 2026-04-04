@@ -1659,9 +1659,57 @@ textarea {
 }
 
 .data-cell.is-error {
-  background: linear-gradient(135deg, oklch(95.5% 0.02 24), oklch(92% 0.03 24)) !important;
   color: var(--danger-ink);
-  font-weight: 700;
+}
+
+.error-cell-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  max-width: 100%;
+  padding: 0.2rem 0.46rem 0.22rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--danger-border) 54%, transparent);
+  background: color-mix(in oklab, var(--danger-bg) 56%, var(--sheet-surface));
+  color: var(--danger-ink);
+  font-size: 0.74rem;
+  font-weight: 660;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.error-cell-chip-icon {
+  width: 0.84rem;
+  height: 0.84rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.error-cell-chip-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.error-cell-chip-icon svg path:first-child {
+  fill: color-mix(in oklab, var(--danger-ink) 84%, transparent);
+}
+
+.error-cell-chip-icon svg path:last-child {
+  fill: none;
+  stroke: var(--sheet-surface);
+  stroke-width: 1.38;
+  stroke-linecap: round;
+}
+
+.error-cell-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .data-cell.is-blank {

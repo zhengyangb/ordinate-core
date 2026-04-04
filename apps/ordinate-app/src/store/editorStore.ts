@@ -101,6 +101,10 @@ const sampleDocument = `# Management Report
 | Row Sum      || 0                 | 0                  | 0               | ""           | = sum(2:2) |
 | Mixed        || 0                 | 0                  | 0               | "a1 + ordinate" | = B2 + @[#2,#2] |
 | Invalid Meta || 12.5 {:bad fmt}   | 13 {:,.2f:purple}  | 0               | "non-blocking" | = B8 + C8 |
+| Div Zero     || 10                | 0                  | 0               | "runtime error" | = B10 / C10 |
+| Type Clash   || 4                 | 2                  | 0               | "text operand" | = B11 + E11 |
+| Cycle Ref    || 0                 | 0                  | 0               | "self ref" | = @["Cycle Ref",Calc] |
+| Parse Crash  || 0                 | 0                  | 0               | "formula parse" | = sum(B2 |
 `;
 
 function toErrorMessage(error: unknown): string {
