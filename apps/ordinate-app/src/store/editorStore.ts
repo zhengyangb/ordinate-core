@@ -50,13 +50,11 @@ const sampleDocument = `# Management Report
 | Margin Ratio || = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] |
 
 # Executive Notes
-| Topic                    || Note |
-| ------------------------ || ---- |
-| Summary                  || "Revenue momentum stayed healthy in both product lines." |
-| Commentary               || "Cost mix improved in 2025 H2 due to procurement renegotiation." |
-| Key Risk                 || "Supplier lead time volatility remains high for chip components." |
-| Decision                 || "Prioritize margin quality and controlled hiring in Q4." |
-| Owner                    || "Finance + Operations" |
+| Summary | "Revenue momentum stayed healthy in both product lines." |
+| Commentary | "Cost mix improved in 2025 H2 due to procurement renegotiation." |
+| Key Risk | "Supplier lead time volatility remains high for chip components." |
+| Decision | "Prioritize margin quality and controlled hiring in Q4." |
+| Owner | "Finance + Operations" |
 
 # Error Playground
 | Line Item             || 2024 | 2025 |

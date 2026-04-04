@@ -21,6 +21,16 @@ describe("RFC-0002 requirements", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("valid table with no header row and no header column", () => {
+    const result = validateDocument(readFixture("valid_no_header_rows_and_cols.ord"));
+    expect(result.ok).toBe(true);
+    expect(result.summary.sheetCount).toBe(1);
+    expect(result.summary.sheets[0].headerRowCount).toBe(0);
+    expect(result.summary.sheets[0].headerColumnCount).toBe(0);
+    expect(result.summary.sheets[0].rowCount).toBe(2);
+    expect(result.summary.sheets[0].columnCount).toBe(2);
+  });
+
   it("valid multiple sheets", () => {
     const result = validateDocument(readFixture("valid_multiple_sheets.ord"));
     expect(result.ok).toBe(true);

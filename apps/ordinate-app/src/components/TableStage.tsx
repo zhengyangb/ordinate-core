@@ -22,6 +22,7 @@ type TableStageProps = {
   headerOverlayHeight: number;
   headerOverlayCells: HeaderOverlayCell[];
   headerColCount: number;
+  showGridHeader: boolean;
   pinnedHeaderWidth: number;
   rowIndexTrackHeight: number;
   indexRailsPhase: ChromeVisibilityPhase;
@@ -77,6 +78,7 @@ export default function TableStage({
   headerOverlayHeight,
   headerOverlayCells,
   headerColCount,
+  showGridHeader,
   pinnedHeaderWidth,
   rowIndexTrackHeight,
   indexRailsPhase,
@@ -291,6 +293,8 @@ export default function TableStage({
             rowData={rowData}
             columnDefs={columnDefs}
             animateRows
+            headerHeight={showGridHeader ? undefined : 0}
+            groupHeaderHeight={showGridHeader ? undefined : 0}
             defaultColDef={{
               editable: false,
               sortable: false,

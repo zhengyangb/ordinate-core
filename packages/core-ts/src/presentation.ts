@@ -171,8 +171,8 @@ function serializeStyleSpec(spec: StyleSpec): string {
 }
 
 function computeHeaderDisplayRows(sheet: DocumentState["sheets"][number]): string[][] {
-  if (sheet.colCount <= 0) return [];
-  const depth = Math.max(1, sheet.headerRowCount);
+  if (sheet.colCount <= 0 || sheet.headerRowCount <= 0) return [];
+  const depth = sheet.headerRowCount;
   const matrix: string[][] = [];
 
   for (let rowIndex = 0; rowIndex < depth; rowIndex += 1) {

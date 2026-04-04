@@ -356,6 +356,7 @@ export default function App() {
 
   const headerMatrix = useMemo(() => {
     if (!currentSheetState || sheetColCount === 0) return [] as string[][];
+    if (headerRowCount === 0) return [] as string[][];
 
     const fromPresentation = currentSheetPresentation?.headerDisplayRows ?? [];
     if (fromPresentation.length > 0) {
@@ -364,7 +365,7 @@ export default function App() {
       );
     }
 
-    const matrixDepth = Math.max(1, headerRowCount);
+    const matrixDepth = headerRowCount;
     return Array.from({ length: matrixDepth }, (_, rowIndex) =>
       Array.from({ length: sheetColCount }, (_, colIndex) => {
         if (rowIndex === matrixDepth - 1) {
@@ -1196,11 +1197,12 @@ export default function App() {
 
   const handleHeaderOverlaySelect = useCallback(
     (rowNumber: number, colIndex: number) => {
+      if (headerRowCount === 0) return;
       const root = gridWrapRef.current;
       if (!root) return;
 
       if (colIndex < 0 || colIndex >= sheetColCount) return;
-      const maxHeaderRow = Math.max(1, headerRowCount);
+      const maxHeaderRow = headerRowCount;
       const clampedRowNumber = Math.max(1, Math.min(rowNumber, maxHeaderRow));
       const colId = toColFieldId(colIndex);
       pendingHeaderSelectionRef.current = {
@@ -1258,7 +1260,8 @@ export default function App() {
       const targetCol = Math.min(Math.max(headerColCount, 0), sheetColCount - 1);
       const colId = toColFieldId(targetCol);
       if (rowPath == null) {
-        const clampedHeaderRow = Math.max(1, Math.min(rowNumber, Math.max(1, headerRowCount)));
+        if (headerRowCount === 0) return;
+        const clampedHeaderRow = Math.max(1, Math.min(rowNumber, headerRowCount));
         setSelectedCell({
           area: "header",
           logical: {
@@ -1290,9 +1293,9 @@ export default function App() {
 
   useEffect(() => {
     const root = gridWrapRef.current;
-    if (!root || mode === "source" || isActiveSheetBlocked) return;
+    if (!root || mode === "source" || isActiveSheetBlocked || headerRowCount === 0) return;
 
-    const leafHeaderRowNumber = Math.max(1, headerRowCount);
+    const leafHeaderRowNumber = headerRowCount;
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
@@ -1358,6 +1361,11 @@ export default function App() {
       if (!colNumber) return;
 
       if (event.rowIndex == null) {
+        if (headerRowCount === 0) {
+          setSelectedCell(null);
+          setSelectedColumnIndex(null);
+          return;
+        }
         const pending = pendingHeaderSelectionRef.current;
         if (pending && performance.now() <= pending.expiresAt && pending.colId === rawColId) {
           pendingHeaderSelectionRef.current = null;
@@ -1383,7 +1391,7 @@ export default function App() {
           return {
             area: "header",
             logical: {
-              rAbs: Math.max(1, headerRowCount),
+              rAbs: headerRowCount,
               cAbs: colNumber - 1,
             },
             colId: rawColId,
@@ -1434,7 +1442,8 @@ export default function App() {
     };
 
     if (selectedCell.area === "header") {
-      const maxHeaderRow = Math.max(1, headerRowCount);
+      if (headerRowCount === 0) return null;
+      const maxHeaderRow = headerRowCount;
       const headerRowNumber = Math.max(1, Math.min(selectedCell.logical.rAbs, maxHeaderRow));
       const headerAbsIndex = headerRowNumber - 1;
       const rawHeaderCell = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex] : undefined;
@@ -1641,6 +1650,7 @@ export default function App() {
     [headerOverlayHeight],
   );
   const shouldRenderGrid = Boolean(currentSheet && currentSheetState && activeSheet && !isActiveSheetBlocked);
+  const showGridHeader = headerRowCount > 0;
 
   return (
     <div className="page">
@@ -1696,6 +1706,7 @@ export default function App() {
                 headerOverlayHeight={headerOverlayHeight}
                 headerOverlayCells={headerOverlayCells}
                 headerColCount={headerColCount}
+                showGridHeader={showGridHeader}
                 pinnedHeaderWidth={pinnedHeaderWidth}
                 rowIndexTrackHeight={rowIndexTrackHeight}
                 indexRailsPhase={chromeVisibilityPhase}
