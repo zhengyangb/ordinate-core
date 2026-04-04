@@ -2,6 +2,7 @@ import { formatDocument } from "./formatter";
 import { parseDocument, parseTableRow, type ParsedRow } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import { parseCellInput, type ParsedDisplayMetadata, type RuntimeValue, evaluateDocument } from "./runtime";
+import { isError, isValidExternalErrorKind, makeInternalError } from "./runtime/errors";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 
@@ -41,7 +42,7 @@ export function evaluateAndFormatDocument(text: string): string {
             const parsedCell = parseCellInput(cellText);
             if (parsedCell.kind === "formula") {
               const rhs = parsedCell.expressionText ?? "";
-              const value = cIdx < evalRow.length ? evalRow[cIdx] : { kind: "error", value: "internal" };
+              const value = cIdx < evalRow.length ? evalRow[cIdx] : makeInternalError("internal_missing_eval_value");
               const displaySuffix = renderDisplayBlock(parsedCell.display ?? null);
               if (value.kind === "blank") {
                 renderedCells.push(`= ${rhs}${displaySuffix}`);
@@ -123,14 +124,14 @@ function serializeValue(value: RuntimeValue): string {
     return String(value.value ?? "");
   }
   if (value.kind === "error") {
-    return "error";
+    return serializeErrorValue(value);
   }
-  return "error";
+  return "error[generic]";
 }
 
 function serializeNumber(value: number | null): string {
   if (value === null || Number.isNaN(value)) {
-    return "error";
+    return "error[generic]";
   }
   if (Number.isInteger(value)) {
     return `${value}`;
@@ -142,6 +143,17 @@ function serializeNumber(value: number | null): string {
 function serializeString(text: string): string {
   const escaped = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   return `"${escaped}"`;
+}
+
+function serializeErrorValue(value: RuntimeValue): string {
+  if (!isError(value)) {
+    return "error[generic]";
+  }
+  const externalKind = String(value.errorKind ?? "generic");
+  if (!isValidExternalErrorKind(externalKind)) {
+    throw new Error(`invalid error kind during materialize serialization: '${externalKind}'`);
+  }
+  return `error[${externalKind}]`;
 }
 
 function renderDisplayBlock(display: ParsedDisplayMetadata | null): string {

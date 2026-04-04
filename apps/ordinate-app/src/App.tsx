@@ -11,12 +11,14 @@ import {
 
 import { splitCellDisplayMetadata, type PresentedCell, type RuntimeValue } from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
+import ErrorCellChip from "./components/ErrorCellChip";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
 import SheetParseErrorPanel from "./components/SheetParseErrorPanel";
 import TableStage from "./components/TableStage";
 import { createAgGridAdapter } from "./grid/agGridAdapter";
 import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
+import { resolveUiLocale } from "./i18n/messages";
 import { useEditorStore } from "./store/editorStore";
 import type {
   ColumnRailMenuView,
@@ -194,6 +196,7 @@ function resolveColumnRailMenuPosition(anchorRect: DOMRect): FloatingMenuPositio
 }
 
 export default function App() {
+  const uiLocale = useMemo(() => resolveUiLocale(window.navigator.language), []);
   const {
     mode,
     sourceText,
@@ -853,6 +856,11 @@ export default function App() {
             item[`__display_source_${colIndex}`] = presentedCell?.source ?? "default";
             item[`__display_format_${colIndex}`] = presentedCell?.formatLayer.effective?.raw ?? "";
             item[`__display_style_${colIndex}`] = presentedCell?.styleLayer.effective?.raw ?? "";
+            if (runtimeValue?.kind === "error") {
+              item[`__error_external_${colIndex}`] = runtimeValue.errorKind;
+              item[`__error_internal_${colIndex}`] = runtimeValue.internalKind;
+              item[`__error_context_${colIndex}`] = JSON.stringify(runtimeValue.context);
+            }
           }
         }
 
@@ -1115,6 +1123,30 @@ export default function App() {
         minWidth: DATA_COLUMN_MIN_WIDTH,
         flex: 1,
         headerClass: "data-column-header",
+        cellRenderer: (params: { data?: GridRow; value?: unknown }) => {
+          const kind = params.data?.[`__kind_${colIndex}`];
+          if (kind !== "error") {
+            return params.value;
+          }
+
+          const externalKind = params.data?.[`__error_external_${colIndex}`];
+          const internalKind = params.data?.[`__error_internal_${colIndex}`];
+          const context = params.data?.[`__error_context_${colIndex}`];
+          if (typeof externalKind !== "string" || typeof internalKind !== "string" || typeof context !== "string") {
+            throw new Error(`missing error metadata for column ${colIndex}`);
+          }
+
+          return (
+            <ErrorCellChip
+              locale={uiLocale}
+              externalKind={externalKind}
+              internalKind={internalKind}
+              context={context}
+              onTooltipEnter={showTooltip}
+              onTooltipLeave={clearTooltip}
+            />
+          );
+        },
         cellClass: (params: { data?: GridRow }) => {
           const kind = params.data?.[`__kind_${colIndex}`];
           const classes = ["data-cell"];
@@ -1147,6 +1179,9 @@ export default function App() {
     headerLeafLabels,
     headerSemanticLabels,
     toggleCollapse,
+    uiLocale,
+    showTooltip,
+    clearTooltip,
   ]);
 
   const headerIndexMetrics = useMemo<HeaderIndexMetric[]>(() => {

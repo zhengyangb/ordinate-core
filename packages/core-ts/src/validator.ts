@@ -1,5 +1,6 @@
 import { parseDocument, parseTableRow, type ParsedRow, type Table } from "./parser";
 import { parseCellInput, type ExprNode, type FunctionCall, type RuntimeValue } from "./runtime";
+import { isError } from "./runtime/errors";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 const SECTION_RE = /^(\[+)([^\[\]]+)(\]+)$/;
@@ -212,8 +213,8 @@ function semanticCellChecks(result: ValidationResult, sheet: string, parsedRows:
       if (parsed.kind !== "formula") return;
       if (
         parsed.cached &&
-        parsed.cached.kind === "error" &&
-        parsed.cached.value === "invalid_cached_literal"
+        isError(parsed.cached) &&
+        parsed.cached.internalKind === "invalid_cached_literal"
       ) {
         result.errors.push({
           message: `Row ${rowIdx}, col ${colIdx + 1}: invalid cached literal format.`,
@@ -244,7 +245,7 @@ function isParseErrorExpr(expr: ExprNode | null): boolean {
   if (!expr) return false;
   if (expr.kind === "literal") {
     const value = expr.value as RuntimeValue;
-    return value.kind === "error" && value.value === "parse_error";
+    return isError(value) && value.errorKind === "parse_error";
   }
   if (expr.kind === "call") {
     const call = expr.value as FunctionCall;

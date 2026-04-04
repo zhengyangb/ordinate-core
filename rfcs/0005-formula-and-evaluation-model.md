@@ -212,7 +212,12 @@ Examples of future error causes may include:
 - cyclic dependency
 - invalid operation
 
-This RFC does not yet define structured error subtypes.
+Structured error kind modeling is defined later in RFC-0015.
+
+Current cross-RFC direction:
+
+- runtime category remains `error`
+- stable error kind codes use RFC-0015 syntax and semantics
 
 ## References Inside Formulas
 

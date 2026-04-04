@@ -20,7 +20,7 @@ export function runtimeValueToText(value: RuntimeValue): string {
     case "error":
       return "#ERROR";
     default:
-      return String(value.value ?? "");
+      return "";
   }
 }
 

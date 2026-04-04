@@ -1,5 +1,7 @@
 export type {
+  ErrorRuntimeValue,
   EvaluationResult,
+  ExternalErrorKind,
   ExprNode,
   FormatSpec,
   FunctionCall,
@@ -19,3 +21,4 @@ export type {
 
 export { parseCellInput, splitCellDisplayMetadata, stripCellDisplayMetadata } from "./runtime/parse";
 export { evaluateDocument } from "./runtime/eval";
+export { isError, isValidExternalErrorKind, makeError, makeInternalError, projectExternalKind } from "./runtime/errors";

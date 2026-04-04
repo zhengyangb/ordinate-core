@@ -12,6 +12,7 @@ import {
   type TextColor,
   type TextWeight,
 } from "./types";
+import { makeError, makeInternalError } from "./errors";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
@@ -25,6 +26,7 @@ const OFFSET_SUFFIX_RE = /(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)$/;
 const ABSOLUTE_FIXED_RE = /^#([1-9]\d*)!$/;
 const ABSOLUTE_RE = /^#([1-9]\d*)$/;
 const UNQUOTED_PATH_COMPONENT_RE = /^[A-Za-z0-9_]+$/;
+const ERROR_LITERAL_RE = /^error\[([a-z][a-z0-9_]*)\]$/;
 
 // Parse a raw cell into literal/formula/cached-formula data.
 export function parseCellInput(text: string): ParsedCell {
@@ -98,7 +100,7 @@ function parseExpression(text: string): ExprNode {
   const parser = new ExprParser(tokenizeExpr(text));
   const node = parser.parseExpression();
   if (!parser.atEnd()) {
-    return { kind: "literal", value: { kind: "error", value: "parse_error" } };
+    return { kind: "literal", value: makeInternalError("parse_expression_trailing_tokens") };
   }
   return node;
 }
@@ -174,6 +176,22 @@ function tokenizeExpr(text: string): [string, string][] {
       i = j + 1;
       continue;
     }
+    if (text.startsWith("error[", i)) {
+      const match = /^error\[([a-z][a-z0-9_]*)\]/.exec(text.slice(i));
+      if (!match) {
+        out.push(["ERR", "malformed_error_literal"]);
+        return out;
+      }
+      const token = match[0];
+      const nextIndex = i + token.length;
+      if (!isExprTokenBoundary(text, nextIndex)) {
+        out.push(["ERR", "malformed_error_literal"]);
+        return out;
+      }
+      out.push(["ERROR_LITERAL", match[1]]);
+      i = nextIndex;
+      continue;
+    }
     const spreadsheetToken = scanSpreadsheetToken(text, i);
     if (spreadsheetToken) {
       out.push(["SPREF", spreadsheetToken.text]);
@@ -198,6 +216,11 @@ function tokenizeExpr(text: string): [string, string][] {
     return out;
   }
   return out;
+}
+
+function isExprTokenBoundary(text: string, nextIndex: number): boolean {
+  if (nextIndex >= text.length) return true;
+  return !/[A-Za-z0-9_\[]/.test(text[nextIndex]);
 }
 
 // Scan to the end of a reference token, respecting nesting and quotes.
@@ -322,12 +345,12 @@ class ExprParser {
   private parsePrimary(): ExprNode {
     const tk = this.peek();
     if (!tk) {
-      return { kind: "literal", value: { kind: "error", value: "parse_error" } };
+      return { kind: "literal", value: makeInternalError("parse_expression_unexpected_eof") };
     }
     if (this.match("(")) {
       const node = this.parseExpression();
       if (!this.match(")")) {
-        return { kind: "literal", value: { kind: "error", value: "parse_error" } };
+        return { kind: "literal", value: makeInternalError("parse_expression_missing_closing_paren") };
       }
       return node;
     }
@@ -339,6 +362,10 @@ class ExprParser {
     const str = this.match("STRING");
     if (str) {
       return { kind: "literal", value: { kind: "string", value: unescapeQuoted(str[1].slice(1, -1)) } };
+    }
+    const errLit = this.match("ERROR_LITERAL");
+    if (errLit) {
+      return { kind: "literal", value: makeError(errLit[1], "literal_error_literal", { source: "formula" }) };
     }
     const spRef = this.match("SPREF");
     if (spRef) {
@@ -353,7 +380,6 @@ class ExprParser {
       if (ident[1] === "true") return { kind: "literal", value: { kind: "boolean", value: true } };
       if (ident[1] === "false") return { kind: "literal", value: { kind: "boolean", value: false } };
       if (ident[1] === "null") return { kind: "literal", value: { kind: "null", value: null } };
-      if (ident[1] === "error") return { kind: "literal", value: { kind: "error", value: "error" } };
       return { kind: "literal", value: { kind: "string", value: ident[1] } };
     }
     const ref = this.match("REF");
@@ -361,22 +387,22 @@ class ExprParser {
       return { kind: "reference", value: parseReference(ref[1]) };
     }
     this.pos += 1;
-    return { kind: "literal", value: { kind: "error", value: "parse_error" } };
+    return { kind: "literal", value: makeInternalError("parse_expression_unexpected_token", { token: tk[0] }) };
   }
 
   private parseFunctionCall(name: string): ExprNode {
     if (!this.match("(")) {
-      return { kind: "literal", value: { kind: "error", value: "parse_error" } };
+      return { kind: "literal", value: makeInternalError("parse_function_call_missing_open_paren", { name }) };
     }
     if (this.match(")")) {
-      return { kind: "literal", value: { kind: "error", value: "parse_error" } };
+      return { kind: "literal", value: makeInternalError("parse_function_call_empty_args", { name }) };
     }
     const args: ExprNode[] = [this.parseExpression()];
     while (this.match(",")) {
       args.push(this.parseExpression());
     }
     if (!this.match(")")) {
-      return { kind: "literal", value: { kind: "error", value: "parse_error" } };
+      return { kind: "literal", value: makeInternalError("parse_function_call_missing_closing_paren", { name }) };
     }
     return { kind: "call", value: { name, args } as FunctionCall };
   }
@@ -1003,18 +1029,28 @@ function unescapeQuoted(text: string): string {
   return out.join("");
 }
 
+function parseErrorLiteral(text: string, source: "literal" | "cache"): RuntimeValue | null {
+  const match = ERROR_LITERAL_RE.exec(text.trim());
+  if (!match) return null;
+  return makeError(match[1], "literal_error_literal", { source });
+}
+
 // Parse a user-entered literal (string/number/boolean/null/error/blank).
 function parseUserLiteral(text: string): RuntimeValue {
   const t = text.trim();
   if (isQuoted(t)) {
     return { kind: "string", value: unescapeQuoted(t.slice(1, -1)) };
   }
+  if (t.startsWith("error[")) {
+    const parsedError = parseErrorLiteral(t, "literal");
+    if (parsedError) return parsedError;
+    return makeInternalError("parse_error_literal_invalid_syntax", { literal: t });
+  }
   if (DATE_RE.test(t)) return { kind: "date", value: t, isOffsetQualified: false };
   if (TIME_RE.test(t)) return { kind: "time", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
   if (DATETIME_RE.test(t)) return { kind: "datetime", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
   if (DURATION_RE.test(t)) return { kind: "duration", value: t };
   if (t === "null") return { kind: "null", value: null };
-  if (t === "error") return { kind: "error", value: "error" };
   if (t === "true") return { kind: "boolean", value: true };
   if (t === "false") return { kind: "boolean", value: false };
   if (NUMBER_RE.test(t)) {
@@ -1029,18 +1065,22 @@ function parseCacheLiteral(text: string): RuntimeValue {
   if (isQuoted(t)) {
     return { kind: "string", value: unescapeQuoted(t.slice(1, -1)) };
   }
+  if (t.startsWith("error[")) {
+    const parsedError = parseErrorLiteral(t, "cache");
+    if (parsedError) return parsedError;
+    return makeInternalError("parse_error_literal_invalid_syntax", { literal: t });
+  }
   if (DATE_RE.test(t)) return { kind: "date", value: t, isOffsetQualified: false };
   if (TIME_RE.test(t)) return { kind: "time", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
   if (DATETIME_RE.test(t)) return { kind: "datetime", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
   if (DURATION_RE.test(t)) return { kind: "duration", value: t };
   if (t === "null") return { kind: "null", value: null };
-  if (t === "error") return { kind: "error", value: "error" };
   if (t === "true") return { kind: "boolean", value: true };
   if (t === "false") return { kind: "boolean", value: false };
   if (NUMBER_RE.test(t)) {
     return { kind: "number", value: t.includes(".") ? Number.parseFloat(t) : Number.parseInt(t, 10) };
   }
-  return { kind: "error", value: "invalid_cached_literal" };
+  return makeInternalError("invalid_cached_literal", { literal: t });
 }
 
 // Find the '=' that splits cached value and expression.
