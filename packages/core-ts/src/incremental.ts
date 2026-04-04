@@ -20,6 +20,7 @@ import {
   type SheetEvaluation,
   type ViewSelection,
 } from "./runtime/types";
+import { makeInternalError } from "./runtime/errors";
 
 export enum ChangeKind {
   VALUE = "value",
@@ -588,7 +589,7 @@ export class SheetState {
     const key = `${rAbs},${c}`;
     const state = states.get(key);
     if (state === "visiting") {
-      return { kind: "error", value: "cycle" };
+      return makeInternalError("cycle");
     }
     const cell = this.cells[rAbs][c];
     if (state === "done") {

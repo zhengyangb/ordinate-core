@@ -139,7 +139,7 @@ describe("RFC-0012 reference rebasing (tentative)", () => {
 | ---- || ---- | --- |
 | B    || 5    |     |
 | B    || 3    |     |
-| C    || 0    | error = @[A,2024] |
+| C    || 0    | error[unresolved_reference] = @[A,2024] |
 `.trim(),
     );
   });

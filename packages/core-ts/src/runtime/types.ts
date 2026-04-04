@@ -1,8 +1,78 @@
-export interface RuntimeValue {
-  kind: string;
-  value?: unknown;
-  isOffsetQualified?: boolean;
+export type ExternalErrorKind =
+  | "generic"
+  | "parse_error"
+  | "type_error"
+  | "div_by_zero"
+  | "unresolved_reference"
+  | "ambiguous_reference"
+  | "cycle";
+
+export interface ErrorRuntimeValue {
+  kind: "error";
+  errorKind: ExternalErrorKind | string;
+  internalKind: string;
+  context: Record<string, unknown>;
 }
+
+export interface BlankRuntimeValue {
+  kind: "blank";
+  value: null;
+}
+
+export interface NullRuntimeValue {
+  kind: "null";
+  value: null;
+}
+
+export interface NumberRuntimeValue {
+  kind: "number";
+  value: number;
+}
+
+export interface StringRuntimeValue {
+  kind: "string";
+  value: string;
+}
+
+export interface BooleanRuntimeValue {
+  kind: "boolean";
+  value: boolean;
+}
+
+export interface DateRuntimeValue {
+  kind: "date";
+  value: string;
+  isOffsetQualified: false;
+}
+
+export interface TimeRuntimeValue {
+  kind: "time";
+  value: string;
+  isOffsetQualified: boolean;
+}
+
+export interface DatetimeRuntimeValue {
+  kind: "datetime";
+  value: string;
+  isOffsetQualified: boolean;
+}
+
+export interface DurationRuntimeValue {
+  kind: "duration";
+  value: string;
+}
+
+export type RuntimeValue =
+  | BlankRuntimeValue
+  | NullRuntimeValue
+  | NumberRuntimeValue
+  | StringRuntimeValue
+  | BooleanRuntimeValue
+  | DateRuntimeValue
+  | TimeRuntimeValue
+  | DatetimeRuntimeValue
+  | DurationRuntimeValue
+  | ErrorRuntimeValue;
 
 export interface RefSelector {
   kind: string;

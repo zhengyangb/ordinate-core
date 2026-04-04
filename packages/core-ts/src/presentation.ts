@@ -270,7 +270,7 @@ function runtimeValueToText(value: RuntimeValue | null): string {
     case "error":
       return "#ERROR";
     default:
-      return String(value.value ?? "");
+      return "";
   }
 }
 

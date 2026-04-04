@@ -17,6 +17,7 @@ This RFC defines:
 - the expected round-trip guarantees
 - canonical serialization direction
 - formula and cache serialization behavior
+- error value serialization behavior
 - label and path serialization rules
 - header and divider serialization rules
 
@@ -89,6 +90,17 @@ Formula cells are serialized in one of two forms:
 A clean formula cell with a valid cache may be serialized using the cached form.
 
 A formula cell whose cache is not authoritative must be serialized without a cache.
+
+## Error Serialization
+
+Error serialization follows RFC-0015.
+
+Current working direction:
+
+- canonical error literal is `error[kind]`
+- compatibility input bare `error` canonicalizes to `error[generic]`
+- only stable external error kind is serialized
+- runtime diagnostics/internal error details are not serialized
 
 ## Dirty and Stale Cache Serialization
 

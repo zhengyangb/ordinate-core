@@ -20,9 +20,15 @@ export {
 
 export {
   evaluateDocument,
+  isError,
+  makeError,
+  makeInternalError,
+  projectExternalKind,
   splitCellDisplayMetadata,
   stripCellDisplayMetadata,
+  type ErrorRuntimeValue,
   type EvaluationResult,
+  type ExternalErrorKind,
   type SheetEvaluation,
   type RuntimeValue,
 } from "./runtime";

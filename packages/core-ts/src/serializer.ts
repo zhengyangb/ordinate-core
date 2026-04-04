@@ -2,6 +2,7 @@ import { formatDocument } from "./formatter";
 import { type DocumentState, type SheetState } from "./incremental";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import { type ExprNode, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue } from "./runtime/types";
+import { isError, isValidExternalErrorKind } from "./runtime/errors";
 
 // Serialize a DocumentState to canonical .ord text.
 export function serializeDocumentState(state: DocumentState): string {
@@ -114,7 +115,7 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
 function isParseErrorExpression(node: ExprNode | null | undefined): boolean {
   if (!node || node.kind !== "literal") return false;
   const value = node.value as RuntimeValue;
-  return value.kind === "error" && value.value === "parse_error";
+  return isError(value) && value.errorKind === "parse_error";
 }
 
 function buildRow(cells: string[], boundary: number | null): string {
@@ -151,14 +152,14 @@ function serializeValue(value: RuntimeValue): string {
     return String(value.value ?? "");
   }
   if (value.kind === "error") {
-    return "error";
+    return serializeErrorValue(value);
   }
-  return "error";
+  return "error[generic]";
 }
 
 function serializeNumber(value: number | null): string {
   if (value === null || Number.isNaN(value)) {
-    return "error";
+    return "error[generic]";
   }
   if (Number.isInteger(value)) {
     return `${value}`;
@@ -170,6 +171,17 @@ function serializeNumber(value: number | null): string {
 function serializeString(text: string): string {
   const escaped = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   return `"${escaped}"`;
+}
+
+function serializeErrorValue(value: RuntimeValue): string {
+  if (!isError(value)) {
+    return "error[generic]";
+  }
+  const externalKind = String(value.errorKind ?? "generic");
+  if (!isValidExternalErrorKind(externalKind)) {
+    throw new Error(`invalid error kind during serialization: '${externalKind}'`);
+  }
+  return `error[${externalKind}]`;
 }
 
 function buildIdIndexMap(ids: number[]): Map<number, number> {
@@ -194,9 +206,9 @@ function renderExpression(
     if (value.kind === "date" || value.kind === "time" || value.kind === "datetime" || value.kind === "duration") {
       return String(value.value ?? "");
     }
-    if (value.kind === "error") return "error";
+    if (value.kind === "error") return serializeErrorValue(value);
     if (value.kind === "blank") return "";
-    return "error";
+    return "error[generic]";
   }
   if (node.kind === "reference") {
     const ref = node.value as ReferenceExpr;
@@ -210,19 +222,19 @@ function renderExpression(
   }
   if (node.kind === "call") {
     const call = node.value as { name: string; args: ExprNode[] };
-    const args = call.args.map((arg) => renderExpression(arg, rowIdToIndex, colIdToIndex) ?? "error");
+    const args = call.args.map((arg) => renderExpression(arg, rowIdToIndex, colIdToIndex) ?? "error[generic]");
     return `${call.name}(${args.join(", ")})`;
   }
   if (node.kind === "unary") {
-    const inner = renderExpression(node.right ?? null, rowIdToIndex, colIdToIndex, precedence("unary")) ?? "error";
+    const inner = renderExpression(node.right ?? null, rowIdToIndex, colIdToIndex, precedence("unary")) ?? "error[generic]";
     const text = `-${inner}`;
     return parentPrec > precedence("unary") ? `(${text})` : text;
   }
   if (node.kind === "binary") {
     const op = String(node.value ?? "");
     const prec = precedence(op);
-    const left = renderExpression(node.left ?? null, rowIdToIndex, colIdToIndex, prec) ?? "error";
-    const right = renderExpression(node.right ?? null, rowIdToIndex, colIdToIndex, prec + 1) ?? "error";
+    const left = renderExpression(node.left ?? null, rowIdToIndex, colIdToIndex, prec) ?? "error[generic]";
+    const right = renderExpression(node.right ?? null, rowIdToIndex, colIdToIndex, prec + 1) ?? "error[generic]";
     const text = `${left} ${op} ${right}`;
     return parentPrec > prec ? `(${text})` : text;
   }
