@@ -1700,6 +1700,7 @@ export default function App() {
         phase={chromeVisibilityPhase}
         formulaBarData={formulaBarData}
         formulaBarSnapshot={formulaBarSnapshot}
+        onDismiss={clearActiveSelection}
         onTooltipEnter={showTooltip}
         onTooltipLeave={clearTooltip}
         onTooltipSuppress={suppressTooltipForTarget}

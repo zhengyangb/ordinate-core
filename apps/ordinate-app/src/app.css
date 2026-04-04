@@ -67,6 +67,21 @@
   --menu-item-radius: 0.62rem;
   --menu-item-padding-y: 0.28rem;
   --menu-item-padding-x: 0.48rem;
+  --formula-meta-ink-primary: oklch(43% 0.01 245);
+  --formula-meta-ink-secondary: oklch(51% 0.008 242);
+  --formula-tool-ink: oklch(46% 0.008 242);
+  --formula-shell-bg: oklch(99.5% 0.002 250 / 0.58);
+  --formula-shell-border: oklch(100% 0 0 / 0.64);
+  --formula-shell-topline: oklch(100% 0 0 / 0.34);
+  --formula-input-bg: oklch(98.8% 0.002 250 / 0.72);
+  --formula-input-border: oklch(100% 0 0 / 0.52);
+  --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.12) 72%, transparent);
+  --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.1) 42%, transparent);
+  --formula-input-inset-bottom: color-mix(in oklab, var(--chrome-border) 42%, transparent);
+  --formula-dismiss-bg: color-mix(in oklab, var(--accent-soft) 46%, transparent);
+  --formula-dismiss-bg-hover: color-mix(in oklab, var(--accent-soft) 58%, transparent);
+  --formula-glass-gloss-top: oklch(100% 0 0 / 0.2);
+  --formula-glass-gloss-spot: oklch(100% 0 0 / 0.12);
 }
 
 :root[data-theme="light"] {
@@ -113,6 +128,21 @@
   --menu-hover-ink: var(--chrome-ink);
   --menu-active-bg: color-mix(in oklab, var(--accent-soft) 32%, var(--toolbar-pill));
   --menu-active-ink: oklch(92% 0.03 145);
+  --formula-meta-ink-primary: oklch(86% 0.006 104);
+  --formula-meta-ink-secondary: oklch(76% 0.006 104);
+  --formula-tool-ink: oklch(74% 0.006 104);
+  --formula-shell-bg: oklch(30% 0.008 100 / 0.46);
+  --formula-shell-border: oklch(100% 0 0 / 0.22);
+  --formula-shell-topline: oklch(100% 0 0 / 0.14);
+  --formula-input-bg: oklch(97.2% 0.003 95 / 0.38);
+  --formula-input-border: oklch(100% 0 0 / 0.34);
+  --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.08) 66%, transparent);
+  --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.04) 34%, transparent);
+  --formula-input-inset-bottom: color-mix(in oklab, oklch(100% 0 0 / 0.1) 54%, transparent);
+  --formula-dismiss-bg: color-mix(in oklab, var(--accent-soft) 72%, var(--sheet-surface));
+  --formula-dismiss-bg-hover: color-mix(in oklab, var(--accent-soft) 82%, var(--sheet-surface));
+  --formula-glass-gloss-top: oklch(100% 0 0 / 0.1);
+  --formula-glass-gloss-spot: oklch(100% 0 0 / 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -150,6 +180,21 @@
     --menu-hover-ink: var(--chrome-ink);
     --menu-active-bg: color-mix(in oklab, var(--accent-soft) 32%, var(--toolbar-pill));
     --menu-active-ink: oklch(92% 0.03 145);
+    --formula-meta-ink-primary: oklch(86% 0.006 104);
+    --formula-meta-ink-secondary: oklch(76% 0.006 104);
+    --formula-tool-ink: oklch(74% 0.006 104);
+    --formula-shell-bg: oklch(30% 0.008 100 / 0.46);
+    --formula-shell-border: oklch(100% 0 0 / 0.22);
+    --formula-shell-topline: oklch(100% 0 0 / 0.14);
+    --formula-input-bg: oklch(97.2% 0.003 95 / 0.38);
+    --formula-input-border: oklch(100% 0 0 / 0.34);
+    --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.08) 66%, transparent);
+    --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.04) 34%, transparent);
+    --formula-input-inset-bottom: color-mix(in oklab, oklch(100% 0 0 / 0.1) 54%, transparent);
+    --formula-dismiss-bg: color-mix(in oklab, var(--accent-soft) 72%, var(--sheet-surface));
+    --formula-dismiss-bg-hover: color-mix(in oklab, var(--accent-soft) 82%, var(--sheet-surface));
+    --formula-glass-gloss-top: oklch(100% 0 0 / 0.1);
+    --formula-glass-gloss-spot: oklch(100% 0 0 / 0.06);
   }
 }
 
@@ -1867,50 +1912,95 @@ textarea {
 
 .formula-bar-shell {
   position: fixed;
-  left: 50%;
-  bottom: 1rem;
+  left: 0;
+  right: 0;
+  bottom: 0.72rem;
+  margin-inline: auto;
   z-index: 24;
   width: min(52rem, calc(100vw - 2rem));
-  transform: translateX(-50%) translateY(18px) scale(0.985);
+  border: 1px solid var(--formula-shell-border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--formula-shell-bg);
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 var(--formula-shell-topline);
+  -webkit-backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
+  backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
   opacity: 0;
   pointer-events: none;
-  will-change: transform, opacity;
+  will-change: opacity, bottom;
   transition:
-    transform 260ms var(--ease-out-quint),
+    bottom 260ms var(--ease-out-quint),
     opacity 220ms var(--ease-out-quint);
+}
+
+.formula-bar-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 72% at 50% -14%, var(--formula-glass-gloss-spot), transparent 58%),
+    linear-gradient(180deg, var(--formula-glass-gloss-top) 0%, transparent 46%);
+  opacity: 0.34;
+  z-index: 0;
 }
 
 .formula-bar-shell--visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(0) scale(1);
+  bottom: 2rem;
 }
 
 .formula-bar-shell--hiding {
   opacity: 0;
-  transform: translateX(-50%) translateY(12px) scale(0.99);
+  bottom: 0.78rem;
 }
 
 .formula-bar {
+  --formula-control-height: 2.18rem;
   display: grid;
-  gap: 0.42rem;
-  padding: 0.56rem 0.62rem 0.62rem;
-  border: 1px solid color-mix(in oklab, var(--glass-border) 84%, transparent);
-  border-radius: 1.35rem;
-  background: color-mix(in oklab, var(--glass-bg) 90%, transparent);
-  box-shadow:
-    var(--glass-shadow),
-    inset 0 1px 0 oklch(100% 0 0 / 0.22);
-  backdrop-filter: blur(22px) saturate(1.08);
+  grid-template-columns: minmax(9.4rem, 24%) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.42rem 0.34rem 1.28rem;
+  position: relative;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
   pointer-events: auto;
+  z-index: 1;
+}
+
+.formula-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.formula-meta-stack {
+  display: grid;
+  gap: 0.14rem;
+  min-width: 0;
 }
 
 .formula-bar-meta {
   display: flex;
   align-items: center;
-  gap: 0.38rem;
+  gap: 0.28rem;
+  min-height: 1.12rem;
   min-width: 0;
+  white-space: nowrap;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.formula-meta-lower {
+  display: flex;
+  align-items: center;
+  gap: 0.22rem;
+  min-width: 0;
 }
 
 .formula-chip,
@@ -1923,50 +2013,53 @@ textarea {
 }
 
 .formula-chip {
-  padding: 0.2rem 0.52rem;
+  padding: 0.12rem 0.42rem;
   background: color-mix(in oklab, var(--accent-soft) 70%, transparent);
   color: color-mix(in oklab, var(--sheet-ink) 76%, var(--accent-strong));
-  font-size: 0.64rem;
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
-.formula-chip.fx {
-  min-width: 1.55rem;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  font-weight: 500;
+.formula-chip--inline {
+  max-width: min(6.2rem, 18vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .formula-address {
-  padding: 0.22rem 0.58rem;
-  background: color-mix(in oklab, var(--sheet-header) 72%, transparent);
-  color: var(--sheet-ink);
-  font-size: 0.72rem;
-  font-weight: 650;
+  max-width: min(7.2rem, 14vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0.08rem 0.12rem;
+  background: transparent;
+  color: var(--formula-meta-ink-primary);
+  font-size: 0.67rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .formula-subaddress {
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 0.22rem 0.58rem;
-  background: color-mix(in oklab, var(--sheet-header) 46%, transparent);
-  color: var(--sheet-soft);
-  font-size: 0.7rem;
-  font-weight: 600;
+  padding: 0.08rem 0.12rem;
+  background: transparent;
+  color: var(--formula-meta-ink-secondary);
+  font-size: 0.64rem;
+  font-weight: 540;
+  max-width: min(8.8rem, 16vw);
 }
 
 .formula-value-preview {
-  margin-left: auto;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: min(14rem, 30vw);
-  padding: 0.22rem 0.58rem;
+  max-width: min(9.5rem, 22vw);
+  margin-left: auto;
+  padding: 0.14rem 0.46rem;
   background: color-mix(in oklab, var(--accent-soft) 56%, transparent);
   color: var(--sheet-ink);
-  font-size: 0.72rem;
+  font-size: 0.63rem;
   font-weight: 650;
   text-align: right;
 }
@@ -1976,23 +2069,96 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-height: 2.7rem;
+  min-height: var(--formula-control-height);
   display: flex;
   align-items: center;
-  padding: 0.56rem 1rem;
-  border: 1px solid color-mix(in oklab, var(--glass-border) 54%, transparent);
+  padding: 0 0.9rem;
+  border: 1px solid var(--formula-input-border);
   border-radius: 999px;
-  background: color-mix(in oklab, var(--sheet-surface) 58%, transparent);
+  background: var(--formula-input-bg);
+  box-shadow:
+    inset 0 1px 0 var(--formula-input-inset-top),
+    inset 0 2px 6px var(--formula-input-inset-depth),
+    inset 0 -1px 0 var(--formula-input-inset-bottom);
+  -webkit-backdrop-filter: blur(8px) saturate(1.02);
+  backdrop-filter: blur(8px) saturate(1.02);
   color: var(--sheet-ink);
   font-family: var(--font-mono);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   line-height: 1.2;
+}
+
+.formula-source-row {
+  display: flex;
+  align-items: center;
+  gap: 0.24rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.formula-source-row .formula-source {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.formula-dismiss-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--formula-control-height);
+  min-width: var(--formula-control-height);
+  height: var(--formula-control-height);
+  border: 1px solid color-mix(in oklab, var(--glass-border) 74%, transparent);
+  border-radius: 999px;
+  background: var(--formula-dismiss-bg);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, oklch(100% 0 0 / 0.34) 84%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, var(--chrome-border) 32%, transparent);
+  backdrop-filter: blur(18px) saturate(1.06);
+  color: color-mix(in oklab, var(--accent-strong) 86%, var(--sheet-ink));
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ease-out-quart),
+    color 140ms var(--ease-out-quart),
+    box-shadow 140ms var(--ease-out-quart),
+    filter 140ms var(--ease-out-quart),
+    transform 140ms var(--ease-out-quart);
+}
+
+.formula-dismiss-button:hover {
+  background: var(--formula-dismiss-bg-hover);
+  color: color-mix(in oklab, var(--accent-strong) 92%, var(--sheet-ink));
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, oklch(100% 0 0 / 0.38) 86%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, var(--accent) 34%, transparent);
+  filter: saturate(1.04);
+}
+
+.formula-dismiss-button:active {
+  transform: scale(0.97);
+}
+
+.formula-dismiss-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 50%, transparent);
+}
+
+.formula-dismiss-icon {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+}
+
+.formula-dismiss-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .formula-display-meta {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.2rem;
   min-width: 0;
   overflow: visible;
 }
@@ -2012,13 +2178,13 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
-  min-width: 1.7rem;
-  height: 1.7rem;
+  width: 1.58rem;
+  min-width: 1.58rem;
+  height: 1.58rem;
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--chrome-soft);
+  color: var(--formula-tool-ink);
   cursor: pointer;
   transition:
     color 140ms var(--ease-out-quart),
@@ -2030,13 +2196,13 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
-  min-width: 1.7rem;
-  height: 1.7rem;
+  width: 1.58rem;
+  min-width: 1.58rem;
+  height: 1.58rem;
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--chrome-soft);
+  color: var(--formula-tool-ink);
   cursor: pointer;
   transition:
     color 140ms var(--ease-out-quart),
@@ -2706,18 +2872,33 @@ textarea:focus-visible,
     width: calc(100vw - 1rem);
   }
 
-  .formula-bar-meta {
-    flex-wrap: wrap;
-  }
-
-  .formula-value-preview {
-    margin-left: 0;
-    max-width: 100%;
-    text-align: left;
-  }
-
   .column-index-secondary {
     display: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .formula-bar-shell {
+    width: calc(100vw - 1rem);
+    border-radius: 1.02rem;
+  }
+
+  .formula-bar {
+    grid-template-columns: 1fr;
+    gap: 0.42rem;
+    padding: 0.42rem 0.48rem;
+  }
+
+  .formula-meta-stack {
+    gap: 0.16rem;
+  }
+
+  .formula-source-row {
+    width: 100%;
+  }
+
+  .formula-subaddress {
+    max-width: 42vw;
   }
 }
 
@@ -2753,8 +2934,8 @@ textarea:focus-visible,
     min-height: 22rem;
   }
 
-  .formula-bar {
-    border-radius: 1.3rem;
+  .formula-bar-shell {
+    border-radius: 0.96rem;
   }
 
   .formula-source {

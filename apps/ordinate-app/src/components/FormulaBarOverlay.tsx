@@ -76,6 +76,7 @@ type FormulaBarOverlayProps = {
   phase: ChromeVisibilityPhase;
   formulaBarData: FormulaBarData | null;
   formulaBarSnapshot: FormulaBarData | null;
+  onDismiss: () => void;
   onTooltipEnter: (text: string, target: HTMLElement, delayMs?: number) => void;
   onTooltipLeave: () => void;
   onTooltipSuppress: (target: HTMLElement) => void;
@@ -87,6 +88,7 @@ export default function FormulaBarOverlay({
   phase,
   formulaBarData,
   formulaBarSnapshot,
+  onDismiss,
   onTooltipEnter,
   onTooltipLeave,
   onTooltipSuppress,
@@ -104,6 +106,7 @@ export default function FormulaBarOverlay({
 
   const localFormatKey = formulaBarSnapshot?.formatLocalKey ?? "auto";
   const localFormatOptions = formulaBarSnapshot?.formatLocalOptions ?? null;
+  const chipText = formulaBarSnapshot?.chip ?? "";
   const localStyle: StyleLocalView = formulaBarSnapshot?.styleLocal ?? {
     align: "auto",
     weight: "auto",
@@ -262,92 +265,117 @@ export default function FormulaBarOverlay({
         aria-hidden={formulaBarData ? undefined : true}
       >
         <div className="formula-bar">
-          <div className="formula-bar-meta">
-            <span className="formula-chip fx">=</span>
-            <span className="formula-address">{formulaBarSnapshot.primaryAddress}</span>
-            <span className="formula-subaddress">{formulaBarSnapshot.secondaryAddress}</span>
-            <span className="formula-chip">{formulaBarSnapshot.chip}</span>
-            <span className="formula-value-preview">{formulaBarSnapshot.displayText || " "}</span>
-          </div>
-          <div className="formula-source">
-            {formulaBarSnapshot.editableSourceText}
-          </div>
-          <div className="formula-display-meta" aria-label="Display metadata">
-            <div className="formula-format-control">
-              <button
-                ref={formatButtonRef}
-                className={[
-                  "formula-format-button",
-                  formatMenuOpen ? "active" : "",
-                  hasFormatDisplayError ? "is-warning" : "",
-                ].join(" ").trim()}
-                type="button"
-                aria-label="Format options"
-                aria-haspopup="menu"
-                aria-expanded={formatMenuOpen}
-                onMouseEnter={(event) => {
-                  if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? "Format metadata error" : "Format options", event.currentTarget);
-                }}
-                onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-                onFocus={(event) => {
-                  if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? "Format metadata error" : "Format options", event.currentTarget);
-                }}
-                onBlur={(event) => onTooltipRelease(event.currentTarget)}
-                onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
-                onClick={() => {
-                  setStyleMenuOpen(false);
-                  setMenuPanelKey(localFormatKey);
-                  setFormatMenuOpen((open) => !open);
-                }}
-              >
-                <span
-                  className={[
-                    "formula-format-icon",
-                    hasCellFormatOverride ? "has-cell-format" : "",
-                    hasFormatDisplayError ? "has-display-error" : "",
-                  ].join(" ").trim()}
-                >
-                  <FormatGlyph warning={hasFormatDisplayError} />
-                </span>
-              </button>
+          <div className="formula-meta-stack">
+            <div className="formula-bar-meta">
+              <span className="formula-address">{formulaBarSnapshot.primaryAddress}</span>
+              <span className="formula-subaddress">{formulaBarSnapshot.secondaryAddress}</span>
             </div>
-            <div className="formula-style-control">
-              <button
-                ref={styleButtonRef}
-                className={[
-                  "formula-style-button",
-                  styleMenuOpen ? "active" : "",
-                  hasStyleDisplayError ? "is-warning" : "",
-                ].join(" ").trim()}
-                type="button"
-                aria-label="Style options"
-                aria-haspopup="menu"
-                aria-expanded={styleMenuOpen}
-                onMouseEnter={(event) => {
-                  if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? "Style metadata error" : "Style options", event.currentTarget);
-                }}
-                onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-                onFocus={(event) => {
-                  if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? "Style metadata error" : "Style options", event.currentTarget);
-                }}
-                onBlur={(event) => onTooltipRelease(event.currentTarget)}
-                onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
-                onClick={() => {
-                  setFormatMenuOpen(false);
-                  setStyleMenuOpen((open) => !open);
-                }}
-              >
-                <span
-                  className={[
-                    "formula-style-icon",
-                    hasCellStyleOverride ? "has-cell-style" : "",
-                    hasStyleDisplayError ? "has-display-error" : "",
-                  ].join(" ").trim()}
-                >
-                  <StyleGlyph warning={hasStyleDisplayError} />
-                </span>
-              </button>
+            <div className="formula-meta-lower">
+              <span className="formula-chip formula-chip--inline" title={chipText}>{chipText}</span>
+              <div className="formula-display-meta" aria-label="Display metadata">
+                <div className="formula-format-control">
+                  <button
+                    ref={formatButtonRef}
+                    className={[
+                      "formula-format-button",
+                      formatMenuOpen ? "active" : "",
+                      hasFormatDisplayError ? "is-warning" : "",
+                    ].join(" ").trim()}
+                    type="button"
+                    aria-label="Format options"
+                    aria-haspopup="menu"
+                    aria-expanded={formatMenuOpen}
+                    onMouseEnter={(event) => {
+                      if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? "Format metadata error" : "Format options", event.currentTarget);
+                    }}
+                    onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+                    onFocus={(event) => {
+                      if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? "Format metadata error" : "Format options", event.currentTarget);
+                    }}
+                    onBlur={(event) => onTooltipRelease(event.currentTarget)}
+                    onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+                    onClick={() => {
+                      setStyleMenuOpen(false);
+                      setMenuPanelKey(localFormatKey);
+                      setFormatMenuOpen((open) => !open);
+                    }}
+                  >
+                    <span
+                      className={[
+                        "formula-format-icon",
+                        hasCellFormatOverride ? "has-cell-format" : "",
+                        hasFormatDisplayError ? "has-display-error" : "",
+                      ].join(" ").trim()}
+                    >
+                      <FormatGlyph warning={hasFormatDisplayError} />
+                    </span>
+                  </button>
+                </div>
+                <div className="formula-style-control">
+                  <button
+                    ref={styleButtonRef}
+                    className={[
+                      "formula-style-button",
+                      styleMenuOpen ? "active" : "",
+                      hasStyleDisplayError ? "is-warning" : "",
+                    ].join(" ").trim()}
+                    type="button"
+                    aria-label="Style options"
+                    aria-haspopup="menu"
+                    aria-expanded={styleMenuOpen}
+                    onMouseEnter={(event) => {
+                      if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? "Style metadata error" : "Style options", event.currentTarget);
+                    }}
+                    onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+                    onFocus={(event) => {
+                      if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? "Style metadata error" : "Style options", event.currentTarget);
+                    }}
+                    onBlur={(event) => onTooltipRelease(event.currentTarget)}
+                    onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+                    onClick={() => {
+                      setFormatMenuOpen(false);
+                      setStyleMenuOpen((open) => !open);
+                    }}
+                  >
+                    <span
+                      className={[
+                        "formula-style-icon",
+                        hasCellStyleOverride ? "has-cell-style" : "",
+                        hasStyleDisplayError ? "has-display-error" : "",
+                      ].join(" ").trim()}
+                    >
+                      <StyleGlyph warning={hasStyleDisplayError} />
+                    </span>
+                  </button>
+                </div>
+              </div>
             </div>
+          </div>
+          <div className="formula-source-row">
+            <div className="formula-source">
+              {formulaBarSnapshot.editableSourceText}
+            </div>
+            <button
+              className="formula-dismiss-button"
+              type="button"
+              aria-label="Done"
+              onMouseEnter={(event) => onTooltipEnter("Done", event.currentTarget)}
+              onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+              onFocus={(event) => onTooltipEnter("Done", event.currentTarget)}
+              onBlur={(event) => onTooltipRelease(event.currentTarget)}
+              onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+              onClick={() => {
+                setFormatMenuOpen(false);
+                setStyleMenuOpen(false);
+                onDismiss();
+              }}
+            >
+              <span className="formula-dismiss-icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20" focusable="false">
+                  <path d="M5 10.4 8.4 13.7 15 7" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                </svg>
+              </span>
+            </button>
           </div>
         </div>
       </aside>
