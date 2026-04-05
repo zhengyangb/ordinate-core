@@ -15,6 +15,8 @@ import {
   type ExprNode,
   type ParsedCell,
   type ParsedDisplayMetadata,
+  type FormatSpec,
+  type StyleSpec,
   type ReferenceExpr,
   type RuntimeValue,
   type SheetEvaluation,
@@ -33,7 +35,7 @@ export enum ChangeKind {
 interface CellState {
   text: string;
   parsed: ParsedCell;
-  value: RuntimeValue | null;
+  cachedValue: RuntimeValue | null;
   dirty: boolean;
 }
 
@@ -232,7 +234,7 @@ export class SheetState {
         const value = trimmed[c];
         const normalizedText = normalizeCellTextForParsing(value, rAbs, c, headerRowCount, headerColCount);
         const parsed = parseCellInput(normalizedText);
-        rowCells.push({ text: normalizedText, parsed, value: null, dirty: true });
+        rowCells.push({ text: normalizedText, parsed, cachedValue: null, dirty: true });
       }
       cells.push(rowCells);
     }
@@ -305,14 +307,15 @@ export class SheetState {
       throw new Error("cell index out of range");
     }
 
+    const rawText = kind === ChangeKind.CLEAR && text === "" ? " " : text;
     const cell = this.cells[rAbs][c];
-    const normalizedText = normalizeCellTextForParsing(text, rAbs, c, this.headerRowCount, this.headerColCount);
+    const normalizedText = normalizeCellTextForParsing(rawText, rAbs, c, this.headerRowCount, this.headerColCount);
     cell.text = normalizedText;
     cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
     cell.dirty = true;
-    cell.value = null;
+    cell.cachedValue = null;
 
-    this.updateRowText(rAbs, c, text);
+    this.updateRowText(rAbs, c, rawText);
 
     if (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) {
       this.updateDependenciesForCell(rAbs, c);
@@ -332,6 +335,55 @@ export class SheetState {
   // Clear a cell by absolute indices.
   clearCellByIndex(rAbs: number, c: number, eager = true) {
     this.setCellByIndex(rAbs, c, "", ChangeKind.CLEAR, eager);
+  }
+
+  // Set cell-local format metadata while preserving current local style metadata.
+  setCellLocalFormatByIndex(rAbs: number, c: number, formatRaw: string | null) {
+    if (rAbs < 0 || rAbs >= this.rowCount || c < 0 || c >= this.colCount) {
+      throw new Error("cell index out of range");
+    }
+    const existing = this.cells[rAbs][c].parsed.display;
+    const styleRaw = displayStyleRaw(existing);
+    this.setCellLocalDisplayByIndex(rAbs, c, formatRaw, styleRaw);
+  }
+
+  // Clear cell-local format metadata while preserving current local style metadata.
+  clearCellLocalFormatByIndex(rAbs: number, c: number) {
+    this.setCellLocalFormatByIndex(rAbs, c, null);
+  }
+
+  // Set cell-local style metadata while preserving current local format metadata.
+  setCellLocalStyleByIndex(rAbs: number, c: number, styleRaw: string | null) {
+    if (rAbs < 0 || rAbs >= this.rowCount || c < 0 || c >= this.colCount) {
+      throw new Error("cell index out of range");
+    }
+    const existing = this.cells[rAbs][c].parsed.display;
+    const formatRaw = displayFormatRaw(existing);
+    this.setCellLocalDisplayByIndex(rAbs, c, formatRaw, styleRaw);
+  }
+
+  // Clear cell-local style metadata while preserving current local format metadata.
+  clearCellLocalStyleByIndex(rAbs: number, c: number) {
+    this.setCellLocalStyleByIndex(rAbs, c, null);
+  }
+
+  // Update local display metadata without mutating formula/value dependency state.
+  private setCellLocalDisplayByIndex(
+    rAbs: number,
+    c: number,
+    formatRaw: string | null,
+    styleRaw: string | null,
+  ) {
+    const nextDisplay = parseDisplayFromSpecs(formatRaw, styleRaw);
+    const row = this.logicalRows[rAbs];
+    const currentRaw = c < row.rawCells.length ? row.rawCells[c] : "";
+    const contentText = stripCellDisplayMetadata(currentRaw).trim();
+    const nextRaw = composeCellRawWithDisplay(contentText, nextDisplay);
+    const normalizedText = normalizeCellTextForParsing(nextRaw, rAbs, c, this.headerRowCount, this.headerColCount);
+    const cell = this.cells[rAbs][c];
+    cell.text = normalizedText;
+    cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
+    this.updateRowText(rAbs, c, nextRaw);
   }
 
   // Bind absolute selectors to stable IDs (tentative RFC-0012 behavior).
@@ -421,7 +473,7 @@ export class SheetState {
     const newCellStates: CellState[] = rawCells.map((text) => ({
       text,
       parsed: this.bindParsedCell(parseCellInput(text)),
-      value: null,
+      cachedValue: null,
       dirty: true,
     }));
     this.cells.splice(rowIndex, 0, newCellStates);
@@ -470,7 +522,7 @@ export class SheetState {
       rowCells.splice(colIndex, 0, {
         text: " ",
         parsed: this.bindParsedCell(parseCellInput(" ")),
-        value: null,
+        cachedValue: null,
         dirty: true,
       });
     }
@@ -530,7 +582,7 @@ export class SheetState {
       cellState.text = row.rawCells[0];
       const normalized = normalizeCellTextForParsing(row.rawCells[0], rAbs, 0, this.headerRowCount, this.headerColCount);
       cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
-      cellState.value = null;
+      cellState.cachedValue = null;
       cellState.dirty = true;
     }
 
@@ -564,7 +616,7 @@ export class SheetState {
       cellState.text = newLabel;
       const normalized = normalizeCellTextForParsing(newLabel, headerRowIndex, colIndex, this.headerRowCount, this.headerColCount);
       cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
-      cellState.value = null;
+      cellState.cachedValue = null;
       cellState.dirty = true;
     }
 
@@ -597,10 +649,10 @@ export class SheetState {
     }
     const cell = this.cells[rAbs][c];
     if (state === "done") {
-      return cell.value ?? { kind: "blank", value: null };
+      return cell.cachedValue ?? { kind: "blank", value: null };
     }
-    if (!cell.dirty && cell.value !== null) {
-      return cell.value;
+    if (!cell.dirty && cell.cachedValue !== null) {
+      return cell.cachedValue;
     }
 
     states.set(key, "visiting");
@@ -628,7 +680,7 @@ export class SheetState {
       );
     }
 
-    cell.value = value;
+    cell.cachedValue = value;
     cell.dirty = false;
     states.set(key, "done");
     return value;
@@ -873,7 +925,7 @@ export class SheetState {
     for (let rAbs = 0; rAbs < this.rowCount; rAbs += 1) {
       for (let c = 0; c < this.colCount; c += 1) {
         this.cells[rAbs][c].dirty = true;
-        this.cells[rAbs][c].value = null;
+        this.cells[rAbs][c].cachedValue = null;
       }
     }
   }
@@ -936,6 +988,87 @@ function resizeColumnDisplayMetadata(
   if (metadata.length === colCount) return metadata;
   if (metadata.length > colCount) return metadata.slice(0, colCount);
   return [...metadata, ...Array(colCount - metadata.length).fill(null)];
+}
+
+function displayFormatRaw(display: ParsedDisplayMetadata | null | undefined): string | null {
+  if (!display || !display.valid || !display.formatSpec) return null;
+  return serializeFormatSpec(display.formatSpec);
+}
+
+function displayStyleRaw(display: ParsedDisplayMetadata | null | undefined): string | null {
+  if (!display || !display.valid || !display.styleSpec) return null;
+  return serializeStyleSpec(display.styleSpec);
+}
+
+function parseDisplayFromSpecs(formatRaw: string | null, styleRaw: string | null): ParsedDisplayMetadata | null {
+  const normalizedFormat = normalizeDisplaySpecInput(formatRaw, "format");
+  const normalizedStyle = normalizeDisplaySpecInput(styleRaw, "style");
+  if (normalizedFormat === null && normalizedStyle === null) {
+    return null;
+  }
+
+  const rawBlock = buildDisplayRawBlock(normalizedFormat, normalizedStyle);
+  const parsed = parseCellInput(`0 ${rawBlock}`);
+  const display = parsed.display;
+  if (!display) {
+    throw new Error("invalid display metadata");
+  }
+  if (!display.valid) {
+    const detail = display.errors.join(", ");
+    throw new Error(detail.length > 0 ? `invalid display metadata: ${detail}` : "invalid display metadata");
+  }
+  return display;
+}
+
+function normalizeDisplaySpecInput(raw: string | null, axis: "format" | "style"): string | null {
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    throw new Error(`${axis} spec cannot be empty`);
+  }
+  return trimmed;
+}
+
+function buildDisplayRawBlock(formatRaw: string | null, styleRaw: string | null): string {
+  if (formatRaw && styleRaw) return `{:${formatRaw}:${styleRaw}}`;
+  if (formatRaw) return `{:${formatRaw}}`;
+  if (styleRaw) return `{::${styleRaw}}`;
+  return "";
+}
+
+function composeCellRawWithDisplay(contentText: string, display: ParsedDisplayMetadata | null): string {
+  if (!display) return contentText;
+  const rawBlock = display.rawBlock;
+  if (!rawBlock) {
+    throw new Error("display metadata missing raw block");
+  }
+  if (contentText.length === 0) return rawBlock;
+  return `${contentText} ${rawBlock}`;
+}
+
+function serializeFormatSpec(spec: FormatSpec): string {
+  let out = "";
+  if (spec.sign === "plus") out += "+";
+  else if (spec.sign === "parentheses") out += "()";
+  if (spec.zeroPad) out += "0";
+  if (spec.width !== null) out += `${spec.width}`;
+  if (spec.grouping) out += ",";
+  if (spec.precision !== null) out += `.${spec.precision}`;
+  if (spec.type !== null) out += spec.type;
+  return out;
+}
+
+function serializeStyleSpec(spec: StyleSpec): string {
+  const parts: string[] = [];
+  if (spec.align === "left") parts.push("<");
+  if (spec.align === "right") parts.push(">");
+  if (spec.align === "center") parts.push("^");
+  if (spec.weight === "bold") parts.push("bold");
+  if (spec.weight === "normal") parts.push("normal");
+  if (spec.color === "red") parts.push("red");
+  if (spec.color === "green") parts.push("green");
+  if (spec.color === "blue") parts.push("blue");
+  return parts.join(",");
 }
 
 export class DocumentState {

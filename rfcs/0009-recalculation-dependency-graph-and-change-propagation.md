@@ -51,7 +51,7 @@ Current working direction:
 
 ## Semantic Change Categories
 
-This RFC defines semantic categories of change rather than a concrete CRUD API.
+This RFC defines semantic categories of change rather than a concrete core-edit API.
 
 ### Value Edit
 

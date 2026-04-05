@@ -175,6 +175,7 @@ Current working direction:
 - control frame starts with a row whose first cell is `@display`
 - control row remaining cells map 1:1 to semantic columns and carry metadata-only blocks (or blank)
 - semantic rows are serialized with a leading reserved control-column cell
+- when a header divider row is present, divider dashes must span all serialized columns, including the reserved control column
 - this control frame is serialization scaffolding and is stripped before semantic table processing
 
 ## Hierarchy and Internal Paths

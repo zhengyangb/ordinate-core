@@ -1,0 +1,395 @@
+set_cell_input_and_local_display_success
+[doc]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 |
+| B    || 3    | 4    | = B3 + C3 |
+[/doc]
+[ops]
+[
+  {
+    "op": "set_cell_input",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "2024" },
+    "input": "10"
+  },
+  {
+    "op": "set_cell_local_format",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Out" },
+    "format": ",.2f"
+  },
+  {
+    "op": "set_cell_local_style",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Out" },
+    "style": "green"
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 10   | 2    | = B2 + C2 {:,.2f:green} |
+| B    || 3    | 4    | = B3 + C3 |
+[/expect]
+expect_ok: true
+
+===
+clear_cell_success
+[doc]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 |
+| B    || 3    | 4    | = B3 + C3 |
+[/doc]
+[ops]
+[
+  {
+    "op": "clear_cell",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "2024" }
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    ||      | 2    | = B2 + C2 |
+| B    || 3    | 4    | = B3 + C3 |
+[/expect]
+expect_ok: true
+
+===
+clear_cell_local_format_success
+[doc]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 {:,.2f:green} |
+[/doc]
+[ops]
+[
+  {
+    "op": "clear_cell_local_format",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Out" }
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 {::green} |
+[/expect]
+expect_ok: true
+
+===
+clear_cell_local_style_success
+[doc]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 {:,.2f:green} |
+[/doc]
+[ops]
+[
+  {
+    "op": "clear_cell_local_style",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Out" }
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 {:,.2f} |
+[/expect]
+expect_ok: true
+
+===
+rename_sheet_success
+[doc]
+# Sheet
+| Item || 2024 |
+| ---- || ---- |
+| A    || 1    |
+[/doc]
+[ops]
+[
+  {
+    "op": "rename_sheet",
+    "sheet": "Sheet",
+    "newName": "Renamed"
+  }
+]
+[/ops]
+[expect]
+# Renamed
+| Item || 2024 |
+| ---- || ---- |
+| A    || 1    |
+[/expect]
+expect_ok: true
+
+===
+insert_row_success
+[doc]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| B    || 3    | 4    |
+[/doc]
+[ops]
+[
+  {
+    "op": "insert_row",
+    "sheet": "Sheet",
+    "rowIndex": 3
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| B    || 3    | 4    |
+|      ||      |      |
+[/expect]
+expect_ok: true
+
+===
+delete_row_success
+[doc]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| B    || 3    | 4    |
+[/doc]
+[ops]
+[
+  {
+    "op": "delete_row",
+    "sheet": "Sheet",
+    "rowIndex": 2
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+[/expect]
+expect_ok: true
+
+===
+insert_column_success
+[doc]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| B    || 3    | 4    |
+[/doc]
+[ops]
+[
+  {
+    "op": "insert_column",
+    "sheet": "Sheet",
+    "colIndex": 3
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 |     |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    |     |
+| B    || 3    | 4    |     |
+[/expect]
+expect_ok: true
+
+===
+delete_column_success
+[doc]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| B    || 3    | 4    |
+[/doc]
+[ops]
+[
+  {
+    "op": "delete_column",
+    "sheet": "Sheet",
+    "colIndex": 2
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 |
+| ---- || ---- |
+| A    || 1    |
+| B    || 3    |
+[/expect]
+expect_ok: true
+
+===
+atomic_failure_rolls_back_on_unresolved_target
+[doc]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 |
+| B    || 3    | 4    | = B3 + C3 |
+[/doc]
+[ops]
+[
+  {
+    "op": "set_cell_input",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "2024" },
+    "input": "10"
+  },
+  {
+    "op": "set_cell_input",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["Missing"], "colLabel": "2024" },
+    "input": "999"
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 |
+| B    || 3    | 4    | = B3 + C3 |
+[/expect]
+expect_ok: false
+expect_error_category: invalid_target
+
+===
+ambiguous_label_target_fails
+[doc]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| A    || 3    | 4    |
+[/doc]
+[ops]
+[
+  {
+    "op": "set_cell_input",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "2024" },
+    "input": "9"
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| A    || 3    | 4    |
+[/expect]
+expect_ok: false
+expect_error_category: ambiguous_target
+
+===
+invalid_structural_scope_insert_header_row
+[doc]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| B    || 3    | 4    |
+[/doc]
+[ops]
+[
+  {
+    "op": "insert_row",
+    "sheet": "Sheet",
+    "rowIndex": 0
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| B    || 3    | 4    |
+[/expect]
+expect_ok: false
+expect_error_category: invalid_operation
+
+===
+rename_sheet_duplicate_name_fails
+[doc]
+# Main
+| Item || 2024 |
+| ---- || ---- |
+| A    || 1    |
+
+# Existing
+| Item || 2024 |
+| ---- || ---- |
+| B    || 2    |
+[/doc]
+[ops]
+[
+  {
+    "op": "rename_sheet",
+    "sheet": "Main",
+    "newName": "Existing"
+  }
+]
+[/ops]
+[expect]
+# Main
+| Item || 2024 |
+| ---- || ---- |
+| A    || 1    |
+
+
+# Existing
+| Item || 2024 |
+| ---- || ---- |
+| B    || 2    |
+[/expect]
+expect_ok: false
+expect_error_category: invalid_operation
+
+===
+set_cell_input_parse_failure_preserves_raw
+[doc]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 |
+| B    || 3    | 4    | = B3 + C3 |
+[/doc]
+[ops]
+[
+  {
+    "op": "set_cell_input",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["B"], "colLabel": "Out" },
+    "input": "= sum(B2"
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || 2024 | 2025 | Out |
+| ---- || ---- | ---- | --- |
+| A    || 1    | 2    | = B2 + C2 |
+| B    || 3    | 4    | = sum(B2 |
+[/expect]
+expect_ok: true

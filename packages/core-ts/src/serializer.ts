@@ -100,8 +100,8 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
         const rhs = renderExpression(cellState.parsed.expression, rowIdToIndex, colIdToIndex)
           ?? cellState.parsed.expressionText
           ?? "";
-        if (!cellState.dirty && cellState.value !== null && cellState.value.kind !== "blank") {
-          cells.push(`${serializeValue(cellState.value)} = ${rhs}${displaySuffix}`);
+        if (!cellState.dirty && cellState.cachedValue !== null && cellState.cachedValue.kind !== "blank") {
+          cells.push(`${serializeValue(cellState.cachedValue)} = ${rhs}${displaySuffix}`);
         } else {
           cells.push(`= ${rhs}${displaySuffix}`);
         }

@@ -187,7 +187,7 @@ evaluate: true
 # Sheet
 | @display |      || {:,.1f:>} | {::>,blue} |
 |          | Item || Val       | Out        |
-|          | ---- || ---       | ---        |
+| -------- | ---- || ---       | ---        |
 |          | A    || 12.3      | = B2       |
 [/doc]
 [expect]

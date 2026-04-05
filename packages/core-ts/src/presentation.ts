@@ -18,7 +18,6 @@ export interface ColumnDisplayDefault {
 export interface PresentedCell {
   rowIndex: number;
   colIndex: number;
-  value: RuntimeValue | null;
   displayText: string;
   formatLayer: DisplayLayer<FormatSpec>;
   styleLayer: DisplayLayer<StyleSpec>;
@@ -38,7 +37,10 @@ export interface PresentationResult {
   sheets: SheetPresentation[];
 }
 
-export function formatPresentedCell(cell: Pick<PresentedCell, "value" | "formatLayer">): string {
+export function formatPresentedCell(cell: {
+  value: RuntimeValue | null;
+  formatLayer: { effective: FormatSpec | null };
+}): string {
   return formatRuntimeValue(cell.value, cell.formatLayer.effective);
 }
 
@@ -109,7 +111,6 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
         rowCells.push({
           rowIndex: rAbs,
           colIndex: c,
-          value,
           displayText: formatRuntimeValue(value, formatLayer.effective),
           formatLayer,
           styleLayer,
