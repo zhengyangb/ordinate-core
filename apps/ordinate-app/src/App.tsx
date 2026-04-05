@@ -261,6 +261,9 @@ export default function App() {
   const tooltipTimerRef = useRef<number | null>(null);
   const tooltipAnchorRef = useRef<HTMLElement | null>(null);
   const suppressedTooltipTargetRef = useRef<HTMLElement | null>(null);
+  const isGridApiAlive = useCallback((api: GridApi<GridRow> | null): api is GridApi<GridRow> => {
+    return Boolean(api && !api.isDestroyed());
+  }, []);
 
   const currentSheet = useMemo(() => {
     if (!evaluation || !activeSheet) return null;
@@ -742,10 +745,10 @@ export default function App() {
   }, [buildTooltip]);
 
   const syncRowIndexMetrics = useCallback((api: GridApi<GridRow> | null) => {
-    const snapshot = gridViewportAdapter.collectRowMetrics(api, GRID_ROW_HEIGHT);
+    const snapshot = gridViewportAdapter.collectRowMetrics(isGridApiAlive(api) ? api : null, GRID_ROW_HEIGHT);
     setRowIndexMetrics(snapshot.metrics);
     setRowIndexTrackHeight(snapshot.trackHeight);
-  }, [gridViewportAdapter]);
+  }, [gridViewportAdapter, isGridApiAlive]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -911,13 +914,13 @@ export default function App() {
   }, [sheetColCount]);
 
   const syncColumnMetrics = useCallback((api: GridApi<GridRow> | null) => {
-    if (!api || sheetColCount === 0) {
+    if (!isGridApiAlive(api) || sheetColCount === 0) {
       setColumnMetrics((current) => (current.length === 0 ? current : []));
       return;
     }
     const snapshot = gridViewportAdapter.collectColumnMetrics(api, colIndexLookup, sheetColCount);
     setColumnMetrics((current) => (columnMetricsEqual(current, snapshot) ? current : snapshot));
-  }, [gridViewportAdapter, colIndexLookup, sheetColCount]);
+  }, [gridViewportAdapter, colIndexLookup, sheetColCount, isGridApiAlive]);
 
   const syncHeaderOverlayCells = useCallback(
     (root: HTMLElement | null) => {
@@ -1022,6 +1025,12 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (mode === "source") {
+      gridApiRef.current = null;
+    }
+  }, [mode]);
+
   const handleGridReady = useCallback(
     (event: GridReadyEvent<GridRow>) => {
       gridApiRef.current = event.api;
@@ -1052,9 +1061,10 @@ export default function App() {
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
+    if (!isGridApiAlive(gridApiRef.current)) return;
     syncColumnMetrics(gridApiRef.current);
     scheduleHeaderOverlaySync(3);
-  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, scheduleHeaderOverlaySync, syncColumnMetrics]);
+  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, scheduleHeaderOverlaySync, syncColumnMetrics, isGridApiAlive]);
 
   const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
     if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
