@@ -245,6 +245,7 @@ textarea {
 }
 
 .app-window {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: calc(100dvh - 1.5rem);
@@ -1147,7 +1148,8 @@ textarea {
 }
 
 .column-index-track {
-  display: grid;
+  position: relative;
+  display: block;
   min-width: 100%;
   height: var(--index-rail-height-active);
   border: 1px solid var(--index-rail-border);
@@ -1157,10 +1159,26 @@ textarea {
     inset 0 1px 0 var(--index-rail-highlight),
     var(--sticky-row-shadow);
   overflow: hidden;
+}
+
+.column-index-center-track {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.column-index-center-scroll-layer {
+  position: absolute;
+  inset: 0;
   will-change: transform;
 }
 
 .column-index-cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
   display: grid;
   grid-template-columns: 1.02rem minmax(0, 1fr) 1.02rem;
   align-items: center;
@@ -1176,6 +1194,10 @@ textarea {
   transition:
     background-color 140ms var(--ease-out-quart),
     color 140ms var(--ease-out-quart);
+}
+
+.column-index-cell.is-pinned {
+  z-index: 2;
 }
 
 .column-index-cell:hover,
@@ -1959,13 +1981,13 @@ textarea {
 }
 
 .formula-bar-shell {
-  position: fixed;
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0.72rem;
   margin-inline: auto;
   z-index: 24;
-  width: min(52rem, calc(100vw - 2rem));
+  width: min(52rem, calc(100% - 2rem));
   border: 1px solid var(--formula-shell-border);
   border-radius: 999px;
   overflow: hidden;

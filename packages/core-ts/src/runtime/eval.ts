@@ -1,4 +1,4 @@
-import { parseDocument, parseTableRow, type ParsedRow } from "../parser";
+import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "../parser";
 import { parseCellInput, stripCellDisplayMetadata } from "./parse";
 import {
   type EvaluationResult,
@@ -33,18 +33,19 @@ export function evaluateDocument(text: string): EvaluationResult {
 // Evaluate a single sheet (table rows only).
 function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
   const parsedRows: ParsedRow[] = rows.map((r) => parseTableRow(r));
-  if (parsedRows.length === 0) {
+  const semanticRows = stripDisplayControlFrame(parsedRows).rows;
+  if (semanticRows.length === 0) {
     return { name, rowPaths: [], colLabels: [], values: [] };
   }
 
-  const separatorIndex = separatorRowIndex(parsedRows);
-  const logicalRows: ParsedRow[] = parsedRows.filter((_, idx) => idx !== separatorIndex);
+  const separatorIndex = separatorRowIndex(semanticRows);
+  const logicalRows: ParsedRow[] = semanticRows.filter((_, idx) => idx !== separatorIndex);
   if (logicalRows.length === 0) {
     return { name, rowPaths: [], colLabels: [], values: [] };
   }
 
   const colCount = logicalRows.reduce((m, r) => Math.max(m, r.cells.length), 0);
-  const headerRowCount = headerRowCountFrom(parsedRows);
+  const headerRowCount = headerRowCountFrom(semanticRows);
   const headerColCount = headerColCountFrom(logicalRows);
   const bodyStart = headerRowCount > 0 ? headerRowCount : 0;
 

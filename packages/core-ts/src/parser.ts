@@ -28,6 +28,12 @@ export interface ParsedRow {
   errors: string[];
 }
 
+export interface DisplayControlFrameResult {
+  hasControlFrame: boolean;
+  controlRow: ParsedRow | null;
+  rows: ParsedRow[];
+}
+
 export function parseDocument(text: string): Sheet[] {
   const sheets: Sheet[] = [];
   let currentName: string | null = null;
@@ -130,6 +136,49 @@ export function parseTableRow(row: string): ParsedRow {
   }
 
   return { rawCells, cells, boundary, errors };
+}
+
+// Strip serialization-only display control frame when top-left marker is "@display".
+// Control frame consists of:
+// - first row: column display defaults (top-left marker cell + per-column display cells)
+// - first column: reserved control column (future row defaults)
+// Returned rows are semantic table rows used by evaluation/validation/runtime.
+export function stripDisplayControlFrame(rows: ParsedRow[]): DisplayControlFrameResult {
+  if (rows.length === 0) {
+    return { hasControlFrame: false, controlRow: null, rows: [] };
+  }
+  const first = rows[0];
+  if (first.cells.length === 0 || first.cells[0] !== "@display") {
+    return { hasControlFrame: false, controlRow: null, rows };
+  }
+
+  const stripped: ParsedRow[] = [];
+  for (let i = 1; i < rows.length; i += 1) {
+    const row = rows[i];
+    const nextRaw = row.rawCells.length > 0 ? row.rawCells.slice(1) : [];
+    const nextCells = row.cells.length > 0 ? row.cells.slice(1) : [];
+    let nextBoundary = row.boundary;
+    const nextErrors = [...row.errors];
+    if (nextBoundary !== null) {
+      nextBoundary -= 1;
+      if (nextBoundary < 0) {
+        nextErrors.push("display control frame boundary underflow");
+        nextBoundary = null;
+      }
+    }
+    stripped.push({
+      rawCells: nextRaw,
+      cells: nextCells,
+      boundary: nextBoundary,
+      errors: nextErrors,
+    });
+  }
+
+  return {
+    hasControlFrame: true,
+    controlRow: first,
+    rows: stripped,
+  };
 }
 
 export function escapeCellText(value: string): string {

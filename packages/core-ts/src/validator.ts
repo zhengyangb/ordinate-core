@@ -1,5 +1,5 @@
-import { parseDocument, parseTableRow, type ParsedRow, type Table } from "./parser";
-import { parseCellInput, type ExprNode, type FunctionCall, type RuntimeValue } from "./runtime";
+import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow, type Table } from "./parser";
+import { parseCellInput, stripCellDisplayMetadata, type ExprNode, type FunctionCall, type RuntimeValue } from "./runtime";
 import { isError } from "./runtime/errors";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
@@ -78,7 +78,27 @@ export function validateDocument(text: string): ValidationResult {
 }
 
 function validateTable(result: ValidationResult, sheet: string, table: Table): SheetSummary {
-  const parsedRows: ParsedRow[] = table.rows.map((r) => parseTableRow(r));
+  const parsedRowsAll: ParsedRow[] = table.rows.map((r) => parseTableRow(r));
+  const controlFrame = stripDisplayControlFrame(parsedRowsAll);
+  const parsedRows = controlFrame.rows;
+
+  if (controlFrame.hasControlFrame) {
+    validateDisplayControlFrame(result, sheet, controlFrame.controlRow);
+  }
+
+  if (parsedRows.length === 0) {
+    result.errors.push({ message: "Table has no semantic rows after stripping display control frame.", sheet });
+    return {
+      name: sheet,
+      rowCount: 0,
+      columnCount: null,
+      headerRowCount: 0,
+      headerColumnCount: 0,
+      sectionCount: 0,
+      maxSectionLevel: 0,
+    };
+  }
+
   parsedRows.forEach((row, idx) => {
     const rowIndex = idx + 1;
     row.errors.forEach((err) => {
@@ -132,6 +152,32 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
     sectionCount,
     maxSectionLevel: maxLevel,
   };
+}
+
+function validateDisplayControlFrame(
+  result: ValidationResult,
+  sheet: string,
+  controlRow: ParsedRow | null,
+): void {
+  if (!controlRow) return;
+  if (controlRow.cells.length === 0 || controlRow.cells[0] !== "@display") {
+    result.errors.push({ message: "Invalid display control frame marker.", sheet, row: 1, col: 1 });
+    return;
+  }
+  for (let c = 1; c < controlRow.rawCells.length; c += 1) {
+    const raw = controlRow.rawCells[c];
+    if (raw.trim() === "") continue;
+    const parsed = parseCellInput(raw);
+    const content = stripCellDisplayMetadata(raw).trim();
+    if (content !== "" || parsed.display === null) {
+      result.errors.push({
+        message: `Row 1, col ${c + 1}: display control cell must contain only display metadata.`,
+        sheet,
+        row: 1,
+        col: c + 1,
+      });
+    }
+  }
 }
 
 function isSeparatorRow(cells: string[]): boolean {
@@ -240,6 +286,7 @@ function semanticCellChecks(result: ValidationResult, sheet: string, parsedRows:
     });
   });
 }
+
 
 function isParseErrorExpr(expr: ExprNode | null): boolean {
   if (!expr) return false;

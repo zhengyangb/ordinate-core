@@ -10,6 +10,7 @@ import {
   resolveDocumentPresentation,
   resolvePresentationFromText,
   serializeDocumentState,
+  validateDocument,
 } from "../src";
 import { parseCellInput, splitCellDisplayMetadata } from "../src/runtime";
 
@@ -220,10 +221,11 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("resolves effective presentation with cell > column > default precedence", () => {
     const doc = `
 # Sheet
-| Item || Price {:,.1f:>,bold} | Qty {:d:>,bold} | Total {:,.2f:>,blue,bold} |
-| ---- || ---- | --- | ----- |
-| A    || 1234.5 | 2 | = B2 * C2 |
-| B    || 9.9 {:,.3f} | 3 {::green} | = B3 * C3 {::^,normal} |
+| @display |      || {:,.1f:>,bold} | {:d:>,bold} | {:,.2f:>,blue,bold} |
+|          | Item || Price          | Qty         | Total                |
+|          | ---- || ----           | ---         | -----                |
+|          | A    || 1234.5         | 2           | = B2 * C2            |
+|          | B    || 9.9 {:,.3f}    | 3 {::green} | = B3 * C3 {::^,normal} |
 `.trim();
 
     const presentation = resolvePresentationFromText(doc);
@@ -356,6 +358,68 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     state.evaluate();
     const output = serializeDocumentState(state);
     expect(output).toContain('12.3 = B2 {:,.2f:>}');
+  });
+
+  it("applies column defaults from control frame without header rows", () => {
+    const doc = `
+# Raw
+| @display |        | {:,.2f} | {::>} |
+|          | A      | 12.3    | 7     |
+|          | B      | 45      | 9     |
+`.trim();
+
+    const presentation = resolvePresentationFromText(doc);
+    const sheet = presentation.sheets[0];
+    expect(sheet.headerDisplayRows).toEqual([]);
+
+    const val = sheet.cells[0][1];
+    expect(val.source).toBe("column");
+    expect(val.formatLayer.effective).toMatchObject({ grouping: true, precision: 2, type: "f" });
+    expect(val.displayText).toBe("12.30");
+
+    const out = sheet.cells[0][2];
+    expect(out.source).toBe("column");
+    expect(out.styleLayer.effective).toMatchObject({ align: "right", weight: null, color: null });
+    expect(out.displayText).toBe("7");
+  });
+
+  it("applies column defaults from control frame without header row and header column", () => {
+    const doc = `
+# Raw
+| @display | {:,.2f} | {::>} |
+|          | 12.3    | 7     |
+|          | 45      | 9     |
+`.trim();
+
+    const presentation = resolvePresentationFromText(doc);
+    const sheet = presentation.sheets[0];
+    expect(sheet.headerDisplayRows).toEqual([]);
+
+    const first = sheet.cells[0][0];
+    expect(first.source).toBe("column");
+    expect(first.formatLayer.effective).toMatchObject({ grouping: true, precision: 2, type: "f" });
+    expect(first.displayText).toBe("12.30");
+
+    const second = sheet.cells[0][1];
+    expect(second.source).toBe("column");
+    expect(second.styleLayer.effective).toMatchObject({ align: "right", weight: null, color: null });
+    expect(second.displayText).toBe("7");
+  });
+
+  it("fails validation when a control-frame cell is not metadata-only", () => {
+    const doc = `
+# Sheet
+| @display | oops || {:,.2f} |
+|          | Item || Val     |
+|          | ---- || ---     |
+|          | A    || 12.3    |
+`.trim();
+
+    const result = validateDocument(doc);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.message.includes("display control cell must contain only display metadata"))).toBe(
+      true,
+    );
   });
 
   it("fixture cases: read + serialize canonicalization", () => {

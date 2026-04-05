@@ -1,4 +1,4 @@
-import { parseDocument, parseTableRow, type ParsedRow } from "./parser";
+import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
 import { parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
 import {
   buildBodyRows,
@@ -143,8 +143,10 @@ export class SheetState {
     const primaryIndex = normalizedPrimary === -1 ? null : normalizedPrimary;
 
     const parsedRows = rows.map((r) => parseTableRow(r));
-    const sepIndex = separatorRowIndex(parsedRows);
-    const logicalRows = parsedRows.filter((_, idx) => idx !== sepIndex);
+    const controlFrame = stripDisplayControlFrame(parsedRows);
+    const semanticRows = controlFrame.rows;
+    const sepIndex = separatorRowIndex(semanticRows);
+    const logicalRows = semanticRows.filter((_, idx) => idx !== sepIndex);
 
     if (logicalRows.length === 0) {
       return new SheetState(
@@ -172,10 +174,10 @@ export class SheetState {
     }
 
     const colCount = logicalRows.reduce((m, r) => Math.max(m, r.cells.length), 0);
-    const headerRowCount = headerRowCountFrom(parsedRows);
+    const headerRowCount = headerRowCountFrom(semanticRows);
     const headerColCount = headerColCountFrom(logicalRows);
     const bodyStart = headerRowCount > 0 ? headerRowCount : 0;
-    const columnDisplayMetadata = extractColumnDisplayMetadata(logicalRows, headerRowCount, headerColCount, colCount);
+    const columnDisplayMetadata = extractColumnDisplayMetadataFromControlRow(controlFrame.controlRow, colCount);
 
     const colLabels: string[] = [];
     for (let c = 0; c < colCount; c += 1) {
@@ -473,6 +475,7 @@ export class SheetState {
       });
     }
     this.colIds.splice(colIndex, 0, this.nextColId);
+    this.columnDisplayMetadata.splice(colIndex, 0, null);
     this.nextColId += 1;
 
     this.rebuildMetadata();
@@ -498,6 +501,7 @@ export class SheetState {
       rowCells.splice(colIndex, 1);
     }
     this.colIds.splice(colIndex, 1);
+    this.columnDisplayMetadata.splice(colIndex, 1);
 
     this.rebuildMetadata();
     this.markAllDirty();
@@ -793,7 +797,7 @@ export class SheetState {
     this.bodyRowCount = this.rowCount - this.bodyStart;
     this.rowIdToIndex = buildIdIndexMap(this.rowIds);
     this.colIdToIndex = buildIdIndexMap(this.colIds);
-    this.columnDisplayMetadata = extractColumnDisplayMetadata(this.logicalRows, this.headerRowCount, this.headerColCount, this.colCount);
+    this.columnDisplayMetadata = resizeColumnDisplayMetadata(this.columnDisplayMetadata, this.colCount);
 
     this.rebuildDependencies();
   }
@@ -894,27 +898,44 @@ function normalizeCellTextForParsing(
   return text;
 }
 
-function extractColumnDisplayMetadata(
-  logicalRows: ParsedRow[],
-  headerRowCount: number,
-  headerColCount: number,
+function extractColumnDisplayMetadataFromControlRow(
+  controlRow: ParsedRow | null,
   colCount: number,
 ): Array<ParsedDisplayMetadata | null> {
   const output: Array<ParsedDisplayMetadata | null> = Array.from({ length: colCount }, () => null);
-  if (headerRowCount <= 0 || headerRowCount > logicalRows.length) {
+  if (!controlRow) {
     return output;
   }
 
-  const metadataRow = logicalRows[headerRowCount - 1];
-  for (let c = headerColCount; c < colCount; c += 1) {
-    const raw = c < metadataRow.rawCells.length ? metadataRow.rawCells[c] : "";
+  for (let c = 0; c < colCount; c += 1) {
+    const raw = c + 1 < controlRow.rawCells.length ? controlRow.rawCells[c + 1] : "";
     if (raw.trim() === "") continue;
-    const label = stripCellDisplayMetadata(raw).trim();
-    if (label === "") continue;
-    const parsedDisplay = parseCellInput(raw).display ?? null;
-    output[c] = parsedDisplay;
+    const parsed = parseCellInput(raw);
+    const content = stripCellDisplayMetadata(raw).trim();
+    if (content !== "" || !parsed.display) {
+      output[c] = {
+        format: null,
+        style: null,
+        formatSpec: null,
+        styleSpec: null,
+        valid: false,
+        rawBlock: raw.trim(),
+        errors: ["display_control_cell_requires_metadata_only"],
+      };
+      continue;
+    }
+    output[c] = parsed.display;
   }
   return output;
+}
+
+function resizeColumnDisplayMetadata(
+  metadata: Array<ParsedDisplayMetadata | null>,
+  colCount: number,
+): Array<ParsedDisplayMetadata | null> {
+  if (metadata.length === colCount) return metadata;
+  if (metadata.length > colCount) return metadata.slice(0, colCount);
+  return [...metadata, ...Array(colCount - metadata.length).fill(null)];
 }
 
 export class DocumentState {

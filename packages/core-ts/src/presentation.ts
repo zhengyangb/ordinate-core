@@ -212,7 +212,7 @@ function computeColumnDefaults(sheet: DocumentState["sheets"][number]): ColumnDi
     valid: true,
     errors: [],
   }));
-  if (sheet.headerRowCount <= 0 || sheet.headerRowCount > sheet.cells.length) {
+  if (sheet.colCount <= 0) {
     return defaults;
   }
 
