@@ -5,9 +5,9 @@
 
 ## Summary
 
-This RFC defines the current direction for temporal value types, inline display metadata, and column-level default display metadata in Ordinate.
+This RFC defines the current direction for temporal value types, inline display metadata, and table-level default display metadata in Ordinate.
 
-It introduces `date`, `time`, `datetime`, and `duration` value types, adopts native ISO 8601-oriented literal parsing for them, defines offset terminology (`offset-qualified` vs `offset-naive`) for temporal parsing, defines inline cell-level format and style syntax using `{: ... }`, and defines column display metadata as internal column metadata rather than row-like table content.
+It introduces `date`, `time`, `datetime`, and `duration` value types, adopts native ISO 8601-oriented literal parsing for them, defines offset terminology (`offset-qualified` vs `offset-naive`) for temporal parsing, defines inline cell-level format and style syntax using `{: ... }`, and defines canonical metadata serialization via a display control frame (`@display`) that is stripped from semantic table content.
 
 ## Goals
 
@@ -21,7 +21,7 @@ This RFC defines:
 - the supported first-version style subset
 - column-level default display metadata semantics
 - precedence between cell-level and column-level display metadata
-- canonical serialization placement for column display metadata
+- canonical serialization layout for display metadata
 
 ## Non-Goals
 
@@ -44,7 +44,7 @@ Current working direction:
 - format defines how a value is rendered into display text
 - style defines how that display text is visually presented
 - column display defaults are stored as column metadata in the internal model
-- header-row placement of column display metadata is a serialization convention, not the primary semantic representation
+- display control frame is a serialization convention, not semantic table content
 
 ## Supported Value Types
 
@@ -54,7 +54,7 @@ Current working direction:
 | `string` | `"Revenue: North"` |
 | `boolean` | `true` |
 | `blank` | `blank` |
-| `error` | `error` |
+| `error` | `error[type_error]` |
 | `date` | `2026-03-23` |
 | `time` | `14:30` |
 | `datetime` | `2026-03-23T14:30:00Z` |
@@ -200,7 +200,22 @@ Current working direction:
 - cell-level inline format or style remains supported as an override
 - the internal model stores column display metadata as column metadata
 
-This means column display metadata does **not** semantically belong to a particular header row, even if it is serialized there.
+This means column display metadata does **not** semantically belong to ordinary table rows, even though canonical `.ord` may carry it in serialization-only control frame cells.
+
+## Display Control Frame Serialization
+
+Canonical serialization uses a display control frame when any column default metadata is present.
+
+Current working direction:
+
+- first row is a control row
+- first cell in that row is `@display`
+- remaining cells in that row correspond to semantic columns and carry metadata-only blocks such as `{:,.2f}` or `{::>}`
+- every semantic row is serialized with a leading reserved control column cell
+- parser/runtime strips this control frame before semantic validation, evaluation, and selector resolution
+- control-frame cells (except top-left marker) must be metadata-only or blank
+
+The control frame is serialization-only scaffolding. It is not part of semantic row/column addressing.
 
 ## Precedence
 
@@ -213,17 +228,6 @@ Current working precedence:
 | 3 | UI / regional default | browser/app default |
 
 For style specifically, precedence is resolved per axis (`align`, `weight`, `color`) rather than as whole-object replacement.
-
-## Header-Row Serialization of Column Display Metadata
-
-Although column display metadata is internal column metadata, canonical serialization writes it inline in header cells.
-
-Current working direction:
-
-- column display metadata may only be serialized inline in header cells
-- canonical serialization places column display metadata in the **last header row** (leaf header row in multi-level headers)
-- canonical serialization must not create a dedicated metadata-only row
-- divider still appears once, below the entire header block
 
 ## Cache and Display Metadata
 
@@ -240,11 +244,11 @@ Future versions may consider optional display-text caching as an implementation 
 ## Full Example
 
 ```text
-|      || 2025 | 2025 | 2025 | 2025 |
-| Item || Rev {:,.1f:>} | Cost {:(),.2f:red} | Margin {:.1%:^} | Total {:,.2f:>} |
-| ---- || ---- | ---- | ------ | ------ |
-| A    || 1234.5 | -456.7 | 0.125 | = sum(@[#1,#1:#2]) {:,.2f:>} |
-| B    || 999.9 {:.3f} | -88.1 {: :bold} | 0.314 {:.2%:^,blue} | = sum(@[#2,#1:#2]) |
+| @display |      || {:,.1f:>} | {:(),.2f:red} | {:.1%:^} | {:,.2f:>} |
+|          | Item || Rev       | Cost          | Margin   | Total      |
+| -------- | ---- || --------- | ------------- | -------- | ---------- |
+|          | A    || 1234.5    | -456.7        | 0.125    | = sum(@[#1,#1:#2]) {:,.2f:>} |
+|          | B    || 999.9 {:.3f} | -88.1 {: :bold} | 0.314 {:.2%:^,blue} | = sum(@[#2,#1:#2]) |
 ```
 
 Interpretation:
@@ -277,6 +281,7 @@ Formula-cache note:
 - conditional styling
 - editor controls such as dropdown, slider, checkbox
 - richer style properties
+- row-level default display metadata (reserved control column; future extension)
 - locale customization policy
 - structured internal temporal representation (keep parsed object + raw lexical form for round-trip stability)
 - temporal utility functions (for example `date(datetime)`, `time(datetime)`)
@@ -303,6 +308,7 @@ Formula-cache note:
 - style supports `weight` with `bold` and `normal`, and `normal` is distinct from unspecified
 - column display metadata is internal column metadata
 - cell inline display metadata overrides column display metadata
-- canonical serialization places column display definitions inline in the last header row
+- canonical serialization emits display defaults through an `@display` control frame (control row + reserved control column)
+- control frame is stripped before semantic table processing
 - canonical style serialization uses shorthand tokens and may reorder style items
 - caches store values, not rendered strings

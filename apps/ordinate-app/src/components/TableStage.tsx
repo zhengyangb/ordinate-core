@@ -10,18 +10,18 @@ import {
   themeQuartz,
 } from "ag-grid-community";
 
-import type { ChromeVisibilityPhase, GridRow, HeaderIndexMetric, HeaderOverlayCell, RowIndexMetric, SelectedCell } from "../types/ui";
+import type { ChromeVisibilityPhase, ColumnMetric, GridRow, HeaderIndexMetric, HeaderOverlayCell, RowIndexMetric, SelectedCell } from "../types/ui";
 
 type TableStageProps = {
   tableStageClassName: string;
   tableStageStyle: CSSProperties;
-  gridTemplateColumns: string;
-  renderedColumnCount: number;
+  columnMetrics: ColumnMetric[];
   headerIndexMetrics: HeaderIndexMetric[];
   headerIndexTrackHeight: number;
   headerOverlayHeight: number;
   headerOverlayCells: HeaderOverlayCell[];
   headerColCount: number;
+  showGridHeader: boolean;
   pinnedHeaderWidth: number;
   rowIndexTrackHeight: number;
   indexRailsPhase: ChromeVisibilityPhase;
@@ -70,13 +70,13 @@ function ColumnConfigGlyph() {
 export default function TableStage({
   tableStageClassName,
   tableStageStyle,
-  gridTemplateColumns,
-  renderedColumnCount,
+  columnMetrics,
   headerIndexMetrics,
   headerIndexTrackHeight,
   headerOverlayHeight,
   headerOverlayCells,
   headerColCount,
+  showGridHeader,
   pinnedHeaderWidth,
   rowIndexTrackHeight,
   indexRailsPhase,
@@ -103,6 +103,60 @@ export default function TableStage({
   const selectedRowNumber = selectedCell?.logical.rAbs ?? null;
   const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < headerColCount);
   const centerOverlayCells = headerOverlayCells.filter((cell) => cell.startCol >= headerColCount);
+  const columnTrackWidth = columnMetrics.length === 0 ? 0 : Math.max(...columnMetrics.map((metric) => metric.left + metric.width));
+  const centerTrackWidth = Math.max(0, columnTrackWidth - pinnedHeaderWidth);
+  const pinnedColumnMetrics = columnMetrics.filter((metric) => metric.colIndex < headerColCount);
+  const centerColumnMetrics = columnMetrics.filter((metric) => metric.colIndex >= headerColCount);
+
+  const renderColumnRailCell = (metric: ColumnMetric, left: number, pinned: boolean) => {
+    const colNumber = metric.colIndex + 1;
+    const isActive = selectedColumnIndex === metric.colIndex;
+    const letters = toColumnLetters(colNumber);
+    const hasLocalConfig = columnHasLocalConfig[metric.colIndex] === true;
+    return (
+      <div
+        key={`column-index-${colNumber}`}
+        className={isActive ? `column-index-cell${pinned ? " is-pinned" : ""} is-active` : `column-index-cell${pinned ? " is-pinned" : ""}`}
+        style={{
+          left: `${left}px`,
+          width: `${metric.width}px`,
+        }}
+      >
+        <span className="column-index-left-pad" aria-hidden="true" />
+        <button
+          className="column-index-main"
+          type="button"
+          onClick={() => handleColumnRailSelect(metric.colIndex)}
+          aria-label={`Select column ${letters}`}
+        >
+          <span className="column-index-label">
+            <span className="column-index-primary">{letters}</span>
+            <sup className="column-index-secondary" aria-hidden="true">
+              {colNumber}
+            </sup>
+          </span>
+          {hasLocalConfig ? (
+            <span className="column-index-config-badge" aria-hidden="true">
+              <ColumnConfigGlyph />
+            </span>
+          ) : null}
+        </button>
+        <button
+          className="column-index-menu-trigger"
+          type="button"
+          aria-label={`Open column ${letters} menu`}
+          onClick={(event) => {
+            event.stopPropagation();
+            handleColumnRailMenuOpen(metric.colIndex, event.currentTarget);
+          }}
+        >
+          <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+            <path d="M3.2 4.6 6 7.4l2.8-2.8" />
+          </svg>
+        </button>
+      </div>
+    );
+  };
 
   const renderOverlayCell = (cell: HeaderOverlayCell) => {
     const span = Math.max(1, cell.endCol - cell.startCol + 1);
@@ -161,58 +215,22 @@ export default function TableStage({
 
       <div className={`column-index-strip ${railsPhaseClass}`}>
         <div
-          ref={columnTrackRef}
           className="column-index-track"
-          style={{ gridTemplateColumns }}
+          style={columnTrackWidth > 0 ? { width: `${columnTrackWidth}px` } : undefined}
           aria-hidden="true"
         >
-          {Array.from({ length: renderedColumnCount }, (_, index) => (
-            (() => {
-              const colNumber = index + 1;
-              const isActive = selectedColumnIndex === index;
-              const letters = toColumnLetters(colNumber);
-              const hasLocalConfig = columnHasLocalConfig[index] === true;
-              return (
-                <div
-                  key={`column-index-${colNumber}`}
-                  className={isActive ? "column-index-cell is-active" : "column-index-cell"}
-                >
-                  <span className="column-index-left-pad" aria-hidden="true" />
-                  <button
-                    className="column-index-main"
-                    type="button"
-                    onClick={() => handleColumnRailSelect(index)}
-                    aria-label={`Select column ${letters}`}
-                  >
-                    <span className="column-index-label">
-                      <span className="column-index-primary">{letters}</span>
-                      <sup className="column-index-secondary" aria-hidden="true">
-                        {colNumber}
-                      </sup>
-                    </span>
-                    {hasLocalConfig ? (
-                      <span className="column-index-config-badge" aria-hidden="true">
-                        <ColumnConfigGlyph />
-                      </span>
-                    ) : null}
-                  </button>
-                  <button
-                    className="column-index-menu-trigger"
-                    type="button"
-                    aria-label={`Open column ${letters} menu`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleColumnRailMenuOpen(index, event.currentTarget);
-                    }}
-                  >
-                    <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-                      <path d="M3.2 4.6 6 7.4l2.8-2.8" />
-                    </svg>
-                  </button>
-                </div>
-              );
-            })()
-          ))}
+          {pinnedColumnMetrics.map((metric) => renderColumnRailCell(metric, metric.left, true))}
+          <div
+            className="column-index-center-track"
+            style={{
+              left: `${pinnedHeaderWidth}px`,
+              width: `${centerTrackWidth}px`,
+            }}
+          >
+            <div ref={columnTrackRef} className="column-index-center-scroll-layer">
+              {centerColumnMetrics.map((metric) => renderColumnRailCell(metric, metric.left - pinnedHeaderWidth, false))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -291,6 +309,8 @@ export default function TableStage({
             rowData={rowData}
             columnDefs={columnDefs}
             animateRows
+            headerHeight={showGridHeader ? undefined : 0}
+            groupHeaderHeight={showGridHeader ? undefined : 0}
             defaultColDef={{
               editable: false,
               sortable: false,

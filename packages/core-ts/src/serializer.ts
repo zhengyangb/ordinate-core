@@ -61,25 +61,34 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
 
   const boundary = sheet.logicalRows.length > 0 ? sheet.logicalRows[0].boundary : null;
   const headerCount = sheet.headerRowCount;
+  const includeDisplayControlFrame = sheet.columnDisplayMetadata.some((meta) => meta !== null);
   const rowIdToIndex = buildIdIndexMap(sheet.rowIds);
   const colIdToIndex = buildIdIndexMap(sheet.colIds);
   const lines: string[] = [];
 
+  if (includeDisplayControlFrame) {
+    const controlCells = ["@display"];
+    for (let c = 0; c < sheet.colCount; c += 1) {
+      const meta = sheet.columnDisplayMetadata[c] ?? null;
+      controlCells.push(meta ? renderDisplayControlCell(meta) : " ");
+    }
+    const controlBoundary = boundary === null ? null : boundary + 1;
+    lines.push(buildRow(controlCells, controlBoundary));
+  }
+
   for (let rAbs = 0; rAbs < sheet.logicalRows.length; rAbs += 1) {
     if (headerCount > 0 && rAbs === headerCount) {
-      const dividerCells = Array.from({ length: sheet.colCount }, () => "---");
-      lines.push(buildRow(dividerCells, boundary));
+      const dividerCells = Array.from({ length: sheet.colCount + (includeDisplayControlFrame ? 1 : 0) }, () => "---");
+      const dividerBoundary = boundary === null ? null : boundary + (includeDisplayControlFrame ? 1 : 0);
+      lines.push(buildRow(dividerCells, dividerBoundary));
     }
 
     const row = sheet.logicalRows[rAbs];
-    const isHeaderMetadataRow = sheet.headerRowCount > 0 && rAbs === sheet.headerRowCount - 1;
-    const cells: string[] = [];
+    const rowBoundary = row.boundary === null ? null : row.boundary + (includeDisplayControlFrame ? 1 : 0);
+    const cells: string[] = includeDisplayControlFrame ? [" "] : [];
     for (let c = 0; c < sheet.colCount; c += 1) {
       const raw = c < row.rawCells.length ? row.rawCells[c] : "";
       const cellState = sheet.cells[rAbs][c];
-      const columnDisplay = isHeaderMetadataRow && c >= sheet.headerColCount
-        ? sheet.columnDisplayMetadata[c] ?? null
-        : null;
       if (cellState.parsed.kind === "formula") {
         const displaySuffix = renderDisplayBlock(cellState.parsed.display ?? null);
         if (isParseErrorExpression(cellState.parsed.expression)) {
@@ -97,7 +106,7 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
           cells.push(`= ${rhs}${displaySuffix}`);
         }
       } else {
-        const displaySuffix = renderDisplayBlock(columnDisplay ?? cellState.parsed.display ?? null);
+        const displaySuffix = renderDisplayBlock(cellState.parsed.display ?? null);
         if (displaySuffix === "") {
           cells.push(raw);
         } else {
@@ -106,7 +115,7 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
         }
       }
     }
-    lines.push(buildRow(cells, row.boundary));
+    lines.push(buildRow(cells, rowBoundary));
   }
 
   return lines;
@@ -311,6 +320,18 @@ function renderDisplayBlock(display: ParsedDisplayMetadata | null): string {
     return ` {::${style}}`;
   }
   return ` {:${format}:${style}}`;
+}
+
+function renderDisplayControlCell(display: ParsedDisplayMetadata): string {
+  if (!display.valid) {
+    return display.rawBlock ?? "";
+  }
+  const format = display.formatSpec ? serializeFormatSpec(display.formatSpec) : "";
+  const style = display.styleSpec ? serializeStyleSpec(display.styleSpec) : "";
+  if (format === "" && style === "") return "";
+  if (style === "") return `{:${format}}`;
+  if (format === "") return `{::${style}}`;
+  return `{:${format}:${style}}`;
 }
 
 function serializeFormatSpec(spec: NonNullable<ParsedDisplayMetadata["formatSpec"]>): string {

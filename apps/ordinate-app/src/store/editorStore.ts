@@ -50,13 +50,11 @@ const sampleDocument = `# Management Report
 | Margin Ratio || = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] |
 
 # Executive Notes
-| Topic                    || Note |
-| ------------------------ || ---- |
-| Summary                  || "Revenue momentum stayed healthy in both product lines." |
-| Commentary               || "Cost mix improved in 2025 H2 due to procurement renegotiation." |
-| Key Risk                 || "Supplier lead time volatility remains high for chip components." |
-| Decision                 || "Prioritize margin quality and controlled hiring in Q4." |
-| Owner                    || "Finance + Operations" |
+| Summary | "Revenue momentum stayed healthy in both product lines." |
+| Commentary | "Cost mix improved in 2025 H2 due to procurement renegotiation." |
+| Key Risk | "Supplier lead time volatility remains high for chip components." |
+| Decision | "Prioritize margin quality and controlled hiring in Q4." |
+| Owner | "Finance + Operations" |
 
 # Error Playground
 | Line Item             || 2024 | 2025 |
@@ -92,19 +90,20 @@ const sampleDocument = `# Management Report
 | Gross Margin % || = @["Revenue Total",_] / 120 | = @["Revenue Total",_] / 130 | = @["Revenue Total",_] / 140 | = @["Revenue Total",_] / 150 | = @["Revenue Total",_] / 160 | = @["Revenue Total",_] / 170 | = @["Revenue Total",_] / 180 | = @["Revenue Total",_] / 190 |
 
 # A1 Style Demo
-| Item         || Revenue {:,.1f:<,blue} | Cost {:(),.2f:<} | Margin {:.1%:<} | Notes {: :<} | Calc {:,.2f:<,blue,bold} |
-| ------------ || ---------------------- | ----------------- | -------------- | ------------ | --------------------------- |
-| Product A    || 1234.5 {::red}         | -456.7            | 0.125          | "color override" | = B2 + C2 {::red} |
-| Product B    || 999.9 {:.3f:>}         | -88.1             | 0.314          | "align + format override" | = B3 + C3 {::normal} |
-| Temporal     || 2026-03-24T14:30:00Z {::blue} | PT1H30M {::bold} | 0 | "time literals" | = B2 |
-| Column Sum   || 0                 | 0                  | 0               | ""           | = sum(B:B) |
-| Row Sum      || 0                 | 0                  | 0               | ""           | = sum(2:2) |
-| Mixed        || 0                 | 0                  | 0               | "a1 + ordinate" | = B2 + @[#2,#2] |
-| Invalid Meta || 12.5 {:bad fmt}   | 13 {:,.2f:purple}  | 0               | "non-blocking" | = B8 + C8 |
-| Div Zero     || 10                | 0                  | 0               | "runtime error" | = B10 / C10 |
-| Type Clash   || 4                 | 2                  | 0               | "text operand" | = B11 + E11 |
-| Cycle Ref    || 0                 | 0                  | 0               | "self ref" | = @["Cycle Ref",Calc] |
-| Parse Crash  || 0                 | 0                  | 0               | "formula parse" | = sum(B2 |
+| @display     |      || {:,.1f:<,blue} | {:(),.2f:<} | {:.1%:<} | {::<} | {:,.2f:<,blue,bold} |
+|              | Item || Revenue         | Cost        | Margin   | Notes | Calc                |
+|              | ---- || -------         | ----        | ------   | ----- | ----                |
+|              | Product A    || 1234.5 {::red}         | -456.7            | 0.125          | "color override" | = B2 + C2 {::red} |
+|              | Product B    || 999.9 {:.3f:>}         | -88.1             | 0.314          | "align + format override" | = B3 + C3 {::normal} |
+|              | Temporal     || 2026-03-24T14:30:00Z {::blue} | PT1H30M {::bold} | 0 | "time literals" | = B2 |
+|              | Column Sum   || 0                 | 0                  | 0               | ""           | = sum(B:B) |
+|              | Row Sum      || 0                 | 0                  | 0               | ""           | = sum(2:2) |
+|              | Mixed        || 0                 | 0                  | 0               | "a1 + ordinate" | = B2 + @[#2,#2] |
+|              | Invalid Meta || 12.5 {:bad fmt}   | 13 {:,.2f:purple}  | 0               | "non-blocking" | = B8 + C8 |
+|              | Div Zero     || 10                | 0                  | 0               | "runtime error" | = B10 / C10 |
+|              | Type Clash   || 4                 | 2                  | 0               | "text operand" | = B11 + E11 |
+|              | Cycle Ref    || 0                 | 0                  | 0               | "self ref" | = @["Cycle Ref",Calc] |
+|              | Parse Crash  || 0                 | 0                  | 0               | "formula parse" | = sum(B2 |
 `;
 
 function toErrorMessage(error: unknown): string {

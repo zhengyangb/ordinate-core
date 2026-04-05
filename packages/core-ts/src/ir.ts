@@ -1,4 +1,4 @@
-import { parseDocument, parseTableRow, type ParsedRow } from "./parser";
+import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 const SECTION_RE = /^(\[+)([^\[\]]+)(\]+)$/;
@@ -49,7 +49,9 @@ export function parseDocumentModel(text: string): DocumentIR {
       irSheets.push({ name: sheet.name, table: null, hasMultipleTables: sheet.hasMultipleTables });
       continue;
     }
-    const parsedRows: ParsedRow[] = sheet.table.rows.map((row) => parseTableRow(row));
+    const parsedRows: ParsedRow[] = stripDisplayControlFrame(
+      sheet.table.rows.map((row) => parseTableRow(row)),
+    ).rows;
     const widths = new Set(parsedRows.map((r) => r.cells.length));
     const columnCount = widths.size === 1 ? [...widths][0] : 0;
 

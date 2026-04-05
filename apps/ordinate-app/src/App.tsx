@@ -21,6 +21,7 @@ import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
 import { resolveUiLocale } from "./i18n/messages";
 import { useEditorStore } from "./store/editorStore";
 import type {
+  ColumnMetric,
   ColumnRailMenuView,
   ChromeVisibilityPhase,
   FloatingMenuPosition,
@@ -97,6 +98,18 @@ function overlayCellsEqual(previous: HeaderOverlayCell[], next: HeaderOverlayCel
     const b = next[index];
     if (a.key !== b.key) return false;
     if (a.rowNumber !== b.rowNumber || a.label !== b.label) return false;
+    if (Math.abs(a.left - b.left) > 0.5) return false;
+    if (Math.abs(a.width - b.width) > 0.5) return false;
+  }
+  return true;
+}
+
+function columnMetricsEqual(previous: ColumnMetric[], next: ColumnMetric[]): boolean {
+  if (previous.length !== next.length) return false;
+  for (let index = 0; index < previous.length; index += 1) {
+    const a = previous[index];
+    const b = next[index];
+    if (a.colIndex !== b.colIndex) return false;
     if (Math.abs(a.left - b.left) > 0.5) return false;
     if (Math.abs(a.width - b.width) > 0.5) return false;
   }
@@ -231,6 +244,7 @@ export default function App() {
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
   const [rowIndexTrackHeight, setRowIndexTrackHeight] = useState(0);
   const [headerOverlayCells, setHeaderOverlayCells] = useState<HeaderOverlayCell[]>([]);
+  const [columnMetrics, setColumnMetrics] = useState<ColumnMetric[]>([]);
 
   const gridViewportAdapter = useMemo(() => createAgGridAdapter(), []);
   const overlaySyncRafRef = useRef<number | null>(null);
@@ -247,6 +261,9 @@ export default function App() {
   const tooltipTimerRef = useRef<number | null>(null);
   const tooltipAnchorRef = useRef<HTMLElement | null>(null);
   const suppressedTooltipTargetRef = useRef<HTMLElement | null>(null);
+  const isGridApiAlive = useCallback((api: GridApi<GridRow> | null): api is GridApi<GridRow> => {
+    return Boolean(api && !api.isDestroyed());
+  }, []);
 
   const currentSheet = useMemo(() => {
     if (!evaluation || !activeSheet) return null;
@@ -356,6 +373,7 @@ export default function App() {
 
   const headerMatrix = useMemo(() => {
     if (!currentSheetState || sheetColCount === 0) return [] as string[][];
+    if (headerRowCount === 0) return [] as string[][];
 
     const fromPresentation = currentSheetPresentation?.headerDisplayRows ?? [];
     if (fromPresentation.length > 0) {
@@ -364,7 +382,7 @@ export default function App() {
       );
     }
 
-    const matrixDepth = Math.max(1, headerRowCount);
+    const matrixDepth = headerRowCount;
     return Array.from({ length: matrixDepth }, (_, rowIndex) =>
       Array.from({ length: sheetColCount }, (_, colIndex) => {
         if (rowIndex === matrixDepth - 1) {
@@ -456,6 +474,7 @@ export default function App() {
     setColumnRailMenuOpen(false);
     setOpenColumnMenuColIndex(null);
     columnMenuAnchorRef.current = null;
+    setColumnMetrics([]);
   }, [activeSheet, mode]);
 
   useEffect(() => {
@@ -726,10 +745,10 @@ export default function App() {
   }, [buildTooltip]);
 
   const syncRowIndexMetrics = useCallback((api: GridApi<GridRow> | null) => {
-    const snapshot = gridViewportAdapter.collectRowMetrics(api, GRID_ROW_HEIGHT);
+    const snapshot = gridViewportAdapter.collectRowMetrics(isGridApiAlive(api) ? api : null, GRID_ROW_HEIGHT);
     setRowIndexMetrics(snapshot.metrics);
     setRowIndexTrackHeight(snapshot.trackHeight);
-  }, [gridViewportAdapter]);
+  }, [gridViewportAdapter, isGridApiAlive]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -894,6 +913,15 @@ export default function App() {
     return map;
   }, [sheetColCount]);
 
+  const syncColumnMetrics = useCallback((api: GridApi<GridRow> | null) => {
+    if (!isGridApiAlive(api) || sheetColCount === 0) {
+      setColumnMetrics((current) => (current.length === 0 ? current : []));
+      return;
+    }
+    const snapshot = gridViewportAdapter.collectColumnMetrics(api, colIndexLookup, sheetColCount);
+    setColumnMetrics((current) => (columnMetricsEqual(current, snapshot) ? current : snapshot));
+  }, [gridViewportAdapter, colIndexLookup, sheetColCount, isGridApiAlive]);
+
   const syncHeaderOverlayCells = useCallback(
     (root: HTMLElement | null) => {
       if (!root || mode === "source" || isActiveSheetBlocked || headerOverlayRows === 0 || sheetColCount === 0) {
@@ -997,48 +1025,46 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (mode === "source") {
+      gridApiRef.current = null;
+    }
+  }, [mode]);
+
   const handleGridReady = useCallback(
     (event: GridReadyEvent<GridRow>) => {
       gridApiRef.current = event.api;
       syncRowIndexMetrics(event.api);
+      syncColumnMetrics(event.api);
       scheduleHeaderOverlaySync(3);
     },
-    [syncRowIndexMetrics, scheduleHeaderOverlaySync],
+    [syncRowIndexMetrics, syncColumnMetrics, scheduleHeaderOverlaySync],
   );
 
   const handleFirstDataRendered = useCallback(
     (event: FirstDataRenderedEvent<GridRow>) => {
       syncRowIndexMetrics(event.api);
+      syncColumnMetrics(event.api);
       scheduleHeaderOverlaySync(3);
     },
-    [syncRowIndexMetrics, scheduleHeaderOverlaySync],
+    [syncRowIndexMetrics, syncColumnMetrics, scheduleHeaderOverlaySync],
   );
 
   const handleModelUpdated = useCallback(
     (event: ModelUpdatedEvent<GridRow>) => {
       syncRowIndexMetrics(event.api);
+      syncColumnMetrics(event.api);
       scheduleHeaderOverlaySync(2);
     },
-    [syncRowIndexMetrics, scheduleHeaderOverlaySync],
+    [syncRowIndexMetrics, syncColumnMetrics, scheduleHeaderOverlaySync],
   );
-
-  const renderedColumnCount = sheetColCount;
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
+    if (!isGridApiAlive(gridApiRef.current)) return;
+    syncColumnMetrics(gridApiRef.current);
     scheduleHeaderOverlaySync(3);
-  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, renderedColumnCount, scheduleHeaderOverlaySync]);
-
-  const gridTemplateColumns = useMemo(() => {
-    if (sheetColCount === 0) return "";
-    const tracks = Array.from({ length: sheetColCount }, (_, colIndex) => {
-      if (colIndex < headerColCount) {
-        return colIndex === 0 ? `${LABEL_COLUMN_WIDTH}px` : `${HEADER_COLUMN_WIDTH}px`;
-      }
-      return `minmax(${DATA_COLUMN_MIN_WIDTH}px, 1fr)`;
-    });
-    return tracks.join(" ");
-  }, [sheetColCount, headerColCount]);
+  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, scheduleHeaderOverlaySync, syncColumnMetrics, isGridApiAlive]);
 
   const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
     if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
@@ -1196,11 +1222,12 @@ export default function App() {
 
   const handleHeaderOverlaySelect = useCallback(
     (rowNumber: number, colIndex: number) => {
+      if (headerRowCount === 0) return;
       const root = gridWrapRef.current;
       if (!root) return;
 
       if (colIndex < 0 || colIndex >= sheetColCount) return;
-      const maxHeaderRow = Math.max(1, headerRowCount);
+      const maxHeaderRow = headerRowCount;
       const clampedRowNumber = Math.max(1, Math.min(rowNumber, maxHeaderRow));
       const colId = toColFieldId(colIndex);
       pendingHeaderSelectionRef.current = {
@@ -1258,7 +1285,8 @@ export default function App() {
       const targetCol = Math.min(Math.max(headerColCount, 0), sheetColCount - 1);
       const colId = toColFieldId(targetCol);
       if (rowPath == null) {
-        const clampedHeaderRow = Math.max(1, Math.min(rowNumber, Math.max(1, headerRowCount)));
+        if (headerRowCount === 0) return;
+        const clampedHeaderRow = Math.max(1, Math.min(rowNumber, headerRowCount));
         setSelectedCell({
           area: "header",
           logical: {
@@ -1290,9 +1318,9 @@ export default function App() {
 
   useEffect(() => {
     const root = gridWrapRef.current;
-    if (!root || mode === "source" || isActiveSheetBlocked) return;
+    if (!root || mode === "source" || isActiveSheetBlocked || headerRowCount === 0) return;
 
-    const leafHeaderRowNumber = Math.max(1, headerRowCount);
+    const leafHeaderRowNumber = headerRowCount;
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
@@ -1340,7 +1368,7 @@ export default function App() {
       setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
       setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
     });
-  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, renderedColumnCount, syncHeaderOverlayCells, gridViewportAdapter]);
+  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, syncHeaderOverlayCells, gridViewportAdapter]);
 
   const handleCellFocused = useCallback(
     (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
@@ -1358,6 +1386,11 @@ export default function App() {
       if (!colNumber) return;
 
       if (event.rowIndex == null) {
+        if (headerRowCount === 0) {
+          setSelectedCell(null);
+          setSelectedColumnIndex(null);
+          return;
+        }
         const pending = pendingHeaderSelectionRef.current;
         if (pending && performance.now() <= pending.expiresAt && pending.colId === rawColId) {
           pendingHeaderSelectionRef.current = null;
@@ -1383,7 +1416,7 @@ export default function App() {
           return {
             area: "header",
             logical: {
-              rAbs: Math.max(1, headerRowCount),
+              rAbs: headerRowCount,
               cAbs: colNumber - 1,
             },
             colId: rawColId,
@@ -1434,7 +1467,8 @@ export default function App() {
     };
 
     if (selectedCell.area === "header") {
-      const maxHeaderRow = Math.max(1, headerRowCount);
+      if (headerRowCount === 0) return null;
+      const maxHeaderRow = headerRowCount;
       const headerRowNumber = Math.max(1, Math.min(selectedCell.logical.rAbs, maxHeaderRow));
       const headerAbsIndex = headerRowNumber - 1;
       const rawHeaderCell = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex] : undefined;
@@ -1641,6 +1675,7 @@ export default function App() {
     [headerOverlayHeight],
   );
   const shouldRenderGrid = Boolean(currentSheet && currentSheetState && activeSheet && !isActiveSheetBlocked);
+  const showGridHeader = headerRowCount > 0;
 
   return (
     <div className="page">
@@ -1689,13 +1724,13 @@ export default function App() {
               <TableStage
                 tableStageClassName={tableStageClassName}
                 tableStageStyle={tableStageStyle}
-                gridTemplateColumns={gridTemplateColumns}
-                renderedColumnCount={renderedColumnCount}
+                columnMetrics={columnMetrics}
                 headerIndexMetrics={headerIndexMetrics}
                 headerIndexTrackHeight={headerIndexTrackHeight}
                 headerOverlayHeight={headerOverlayHeight}
                 headerOverlayCells={headerOverlayCells}
                 headerColCount={headerColCount}
+                showGridHeader={showGridHeader}
                 pinnedHeaderWidth={pinnedHeaderWidth}
                 rowIndexTrackHeight={rowIndexTrackHeight}
                 indexRailsPhase={chromeVisibilityPhase}
@@ -1728,19 +1763,18 @@ export default function App() {
             )}
           </section>
         )}
+        <FormulaBarOverlay
+          mode={mode}
+          phase={chromeVisibilityPhase}
+          formulaBarData={formulaBarData}
+          formulaBarSnapshot={formulaBarSnapshot}
+          onDismiss={clearActiveSelection}
+          onTooltipEnter={showTooltip}
+          onTooltipLeave={clearTooltip}
+          onTooltipSuppress={suppressTooltipForTarget}
+          onTooltipRelease={releaseTooltipForTarget}
+        />
       </div>
-
-      <FormulaBarOverlay
-        mode={mode}
-        phase={chromeVisibilityPhase}
-        formulaBarData={formulaBarData}
-        formulaBarSnapshot={formulaBarSnapshot}
-        onDismiss={clearActiveSelection}
-        onTooltipEnter={showTooltip}
-        onTooltipLeave={clearTooltip}
-        onTooltipSuppress={suppressTooltipForTarget}
-        onTooltipRelease={releaseTooltipForTarget}
-      />
 
       <OverlayPortals
         themeMenuOpen={themeMenuOpen}

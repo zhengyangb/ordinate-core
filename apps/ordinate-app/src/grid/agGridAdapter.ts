@@ -1,6 +1,6 @@
 import type { GridApi } from "ag-grid-community";
 
-import type { GridRow, HeaderOverlayHitResult, RowIndexMetric } from "../types/ui";
+import type { ColumnMetric, GridRow, HeaderOverlayHitResult, RowIndexMetric } from "../types/ui";
 
 export type GridScrollSnapshot = {
   top: number;
@@ -23,6 +23,7 @@ export type RowMetricsSnapshot = {
 
 export type GridViewportAdapter = {
   collectRowMetrics(api: GridApi<GridRow> | null, rowHeightFallback: number): RowMetricsSnapshot;
+  collectColumnMetrics(api: GridApi<GridRow> | null, colIndexLookup: Map<string, number>, expectedColCount: number): ColumnMetric[];
   readLeafHeaderCells(root: HTMLElement, colIndexLookup: Map<string, number>): LeafHeaderCellMetric[];
   resolveLeafHeaderColIdAtClientX(root: HTMLElement, clientX: number, colIndexLookup: Map<string, number>): string | null;
   resolveHeaderColIdFromTarget(target: HTMLElement | null, colCount: number, colIndexLookup: Map<string, number>): string | null;
@@ -85,6 +86,59 @@ export function createAgGridAdapter(): GridViewportAdapter {
         metrics,
         trackHeight: maxBottom,
       };
+    },
+
+    collectColumnMetrics(api, colIndexLookup, expectedColCount) {
+      if (!api) return [];
+      const columns = api.getAllDisplayedColumns();
+      if (columns.length === 0) return [];
+      if (columns.length !== expectedColCount) {
+        throw new Error(`displayed column count mismatch: expected ${expectedColCount}, got ${columns.length}`);
+      }
+
+      const toPinnedZone = (pinned: ReturnType<(typeof columns)[number]["getPinned"]>) => {
+        if (pinned === "left" || pinned === true) return "left" as const;
+        if (pinned === "right") return "right" as const;
+        return "center" as const;
+      };
+
+      const leftPinnedWidth = columns
+        .filter((column) => toPinnedZone(column.getPinned()) === "left")
+        .reduce((sum, column) => sum + column.getActualWidth(), 0);
+      const centerWidth = columns
+        .filter((column) => toPinnedZone(column.getPinned()) === "center")
+        .reduce((sum, column) => sum + column.getActualWidth(), 0);
+
+      const metrics = columns.map((column) => {
+        const colId = column.getColId();
+        const colNumber = colIndexLookup.get(colId);
+        if (!colNumber) {
+          throw new Error(`unknown column id in displayed columns: ${colId}`);
+        }
+        const left = column.getLeft();
+        if (left == null) {
+          throw new Error(`missing left position for column ${colId}`);
+        }
+        const width = column.getActualWidth();
+        if (!(width > 0)) {
+          throw new Error(`invalid width for column ${colId}: ${width}`);
+        }
+        const pinnedZone = toPinnedZone(column.getPinned());
+        const globalLeft =
+          pinnedZone === "left"
+            ? left
+            : pinnedZone === "center"
+              ? leftPinnedWidth + left
+              : leftPinnedWidth + centerWidth + left;
+        return {
+          colIndex: colNumber - 1,
+          left: globalLeft,
+          width,
+        };
+      });
+
+      metrics.sort((a, b) => a.colIndex - b.colIndex);
+      return metrics;
     },
 
     readLeafHeaderCells(root, colIndexLookup) {

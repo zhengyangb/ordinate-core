@@ -77,6 +77,12 @@ export type HeaderOverlayCell = {
   height: number;
 };
 
+export type ColumnMetric = {
+  colIndex: number;
+  left: number;
+  width: number;
+};
+
 export type ThemeMode = "auto" | "light" | "dark";
 
 export type ThemeMenuPosition = {
