@@ -45,6 +45,7 @@ import {
   runtimeValueToText,
   splitPath,
 } from "./utils/sheetView";
+import { selectionDebugLog } from "./utils/selectionDebug";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -77,20 +78,7 @@ type RingRect = {
   height: number;
 };
 
-function isSelectionDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  const globalFlag = (window as typeof window & { __ORDINATE_SELECTION_DEBUG?: boolean }).__ORDINATE_SELECTION_DEBUG;
-  return globalFlag === true;
-}
-
-function selectionDebugLog(event: string, payload?: unknown): void {
-  if (!isSelectionDebugEnabled()) return;
-  if (payload === undefined) {
-    console.debug(`[ordinate-selection] ${event}`);
-    return;
-  }
-  console.debug(`[ordinate-selection] ${event}`, payload);
-}
+type FormulaInputMode = "read" | "edit";
 
 function resolveInitialThemeMode(): ThemeMode {
   if (typeof window === "undefined") return "auto";
@@ -264,8 +252,8 @@ export default function App() {
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [selectedColumnIndex, setSelectedColumnIndex] = useState<number | null>(null);
+  const [formulaInputMode, setFormulaInputMode] = useState<FormulaInputMode>("read");
   const [formulaBarSnapshot, setFormulaBarSnapshot] = useState<FormulaBarData | null>(null);
-  const [formulaInputEditRequestKey, setFormulaInputEditRequestKey] = useState(0);
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [themeMenuPosition, setThemeMenuPosition] = useState<ThemeMenuPosition>({ top: 0, left: 0 });
@@ -501,19 +489,12 @@ export default function App() {
     selectionDebugLog("clearActiveSelection");
     setSelectedCell(null);
     setSelectedColumnIndex(null);
+    setFormulaInputMode("read");
     const active = document.activeElement;
     if (active instanceof HTMLElement) {
       active.blur();
     }
   }, []);
-
-  useEffect(() => {
-    selectionDebugLog("selectedCell changed", selectedCell);
-  }, [selectedCell]);
-
-  useEffect(() => {
-    selectionDebugLog("selectedColumnIndex changed", selectedColumnIndex);
-  }, [selectedColumnIndex]);
 
   useEffect(() => {
     setCollapsedPaths(new Set());
@@ -526,6 +507,7 @@ export default function App() {
     setOpenColumnMenuColIndex(null);
     columnMenuAnchorRef.current = null;
     setColumnMetrics([]);
+    setFormulaInputMode("read");
     demoBlueRingLastRectRef.current = null;
     demoBlueRingCellRef.current = null;
     demoBlueRingCellKeyRef.current = null;
@@ -539,6 +521,7 @@ export default function App() {
     if (!isActiveSheetBlocked) return;
     setSelectedCell(null);
     setSelectedColumnIndex(null);
+    setFormulaInputMode("read");
     setColumnRailMenuOpen(false);
     setOpenColumnMenuColIndex(null);
     columnMenuAnchorRef.current = null;
@@ -547,6 +530,7 @@ export default function App() {
   useEffect(() => {
     if (mode === "source") {
       setFormulaBarSnapshot(null);
+      setFormulaInputMode("read");
     }
   }, [mode]);
 
@@ -861,7 +845,7 @@ export default function App() {
       if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.repeat) return;
       if (mode === "source" || isActiveSheetBlocked) return;
-      if (!selectedCell || selectedCell.area !== "body") return;
+      if (!selectedCell || selectedCell.area !== "body" || formulaInputMode !== "read") return;
       if (themeMenuOpen || toolMenuOpen || columnRailMenuOpen) return;
       const target = event.target as HTMLElement | null;
       if (
@@ -873,7 +857,7 @@ export default function App() {
       }
       event.preventDefault();
       event.stopPropagation();
-      setFormulaInputEditRequestKey((current) => current + 1);
+      setFormulaInputMode("edit");
       selectionDebugLog("global enter edit request", {
         rAbs: selectedCell.logical.rAbs,
         cAbs: selectedCell.logical.cAbs,
@@ -882,7 +866,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleEnterToEdit);
     return () => window.removeEventListener("keydown", handleEnterToEdit);
-  }, [mode, isActiveSheetBlocked, selectedCell, themeMenuOpen, toolMenuOpen, columnRailMenuOpen]);
+  }, [mode, isActiveSheetBlocked, selectedCell, formulaInputMode, themeMenuOpen, toolMenuOpen, columnRailMenuOpen]);
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -993,44 +977,6 @@ export default function App() {
     return map;
   }, [rowData]);
 
-  useEffect(() => {
-    if (!isSelectionDebugEnabled()) return;
-    if (!selectedCell || selectedCell.area !== "body") return;
-    const root = gridWrapRef.current;
-    if (!root) return;
-
-    const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
-    if (!rowPath) {
-      selectionDebugLog("dom selection debug skipped: missing rowPath", selectedCell);
-      return;
-    }
-    const displayedRowIndex = rowPathToDisplayedIndex.get(rowPath);
-    const colId = selectedCell.colId;
-    if (displayedRowIndex == null) {
-      selectionDebugLog("dom selection debug skipped: missing displayedRowIndex", { rowPath, colId });
-      return;
-    }
-
-    const raf = window.requestAnimationFrame(() => {
-      const selector = `.ag-row[row-index="${displayedRowIndex}"] .ag-cell[col-id="${colId}"]`;
-      const cell = root.querySelector<HTMLElement>(selector);
-      if (!cell) {
-        selectionDebugLog("dom selected cell not found", { selector, displayedRowIndex, colId });
-        return;
-      }
-      const afterStyle = window.getComputedStyle(cell, "::after");
-      selectionDebugLog("dom selected cell state", {
-        displayedRowIndex,
-        colId,
-        className: cell.className,
-        afterContent: afterStyle.content,
-        afterBorderTopWidth: afterStyle.borderTopWidth,
-        afterOpacity: afterStyle.opacity,
-      });
-    });
-
-    return () => window.cancelAnimationFrame(raf);
-  }, [selectedCell, absoluteRowPathLookup, rowPathToDisplayedIndex]);
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -1487,6 +1433,7 @@ export default function App() {
         rowPath: null,
       });
       setSelectedColumnIndex(null);
+      setFormulaInputMode("read");
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
         active.blur();
@@ -1501,6 +1448,7 @@ export default function App() {
       if (colIndex < 0 || colIndex >= sheetColCount) return;
       setSelectedColumnIndex(colIndex);
       setSelectedCell(null);
+      setFormulaInputMode("read");
       setFormulaBarSnapshot(null);
     },
     [mode, isActiveSheetBlocked, sheetColCount],
@@ -1514,6 +1462,7 @@ export default function App() {
       setColumnRailMenuPosition(resolveColumnRailMenuPosition(anchorEl.getBoundingClientRect()));
       setOpenColumnMenuColIndex(colIndex);
       setColumnRailMenuOpen(true);
+      setFormulaInputMode("read");
       setFormulaBarSnapshot(null);
     },
     [mode, isActiveSheetBlocked, sheetColCount],
@@ -1549,6 +1498,7 @@ export default function App() {
         });
       }
       setSelectedColumnIndex(null);
+      setFormulaInputMode("read");
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
         active.blur();
@@ -1586,6 +1536,7 @@ export default function App() {
         rowPath: null,
       });
       setSelectedColumnIndex(null);
+      setFormulaInputMode("read");
 
       headerCell.tabIndex = 0;
       requestAnimationFrame(() => headerCell.focus());
@@ -1618,18 +1569,15 @@ export default function App() {
 
   const handleCellFocused = useCallback(
     (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
-      selectionDebugLog("handleCellFocused event", event);
       if (!event.column) {
         // AG Grid emits a null-focus event when focus moves into external UI
         // (e.g. formula input). Keep logical selection stable and only clear
         // via explicit dismiss paths (Esc/outside click/sheet switch).
-        selectionDebugLog("handleCellFocused ignored: no column");
         return;
       }
 
       const rawColId = typeof event.column === "string" ? event.column : event.column.getColId();
       if (!colIndexLookup.has(rawColId)) {
-        selectionDebugLog("handleCellFocused ignored: unknown colId", rawColId);
         return;
       }
       const colNumber = colIndexLookup.get(rawColId);
@@ -1649,10 +1597,7 @@ export default function App() {
             rowPath: null,
           });
           setSelectedColumnIndex(null);
-          selectionDebugLog("handleCellFocused -> header (pending match)", {
-            colId: rawColId,
-            rAbs: pending.rAbs,
-          });
+          setFormulaInputMode("read");
           return;
         }
         if (pending && performance.now() > pending.expiresAt) {
@@ -1661,15 +1606,14 @@ export default function App() {
         // Ignore ambiguous null-row focus changes (typically blur to external
         // controls like formula input). Header selection is handled via
         // explicit pointer/header-overlay paths.
-        selectionDebugLog("handleCellFocused ignored: rowIndex null without pending header");
         return;
       }
 
       const row = rowData[event.rowIndex];
       if (!row) {
-        selectionDebugLog("handleCellFocused cleared: missing row for rowIndex", event.rowIndex);
         setSelectedCell(null);
         setSelectedColumnIndex(null);
+        setFormulaInputMode("read");
         return;
       }
 
@@ -1683,11 +1627,7 @@ export default function App() {
         rowPath: row.__rowPath,
       });
       setSelectedColumnIndex(null);
-      selectionDebugLog("handleCellFocused -> body", {
-        rowIndex: event.rowIndex,
-        colId: rawColId,
-        rAbs: row.__absoluteRowNumber,
-      });
+      setFormulaInputMode("read");
     },
     [rowData, colIndexLookup],
   );
@@ -1717,7 +1657,7 @@ export default function App() {
         rowPath: row.__rowPath,
       });
       setSelectedColumnIndex(null);
-      setFormulaInputEditRequestKey((current) => current + 1);
+      setFormulaInputMode("edit");
       selectionDebugLog("doubleClick edit request", {
         rowIndex: event.rowIndex,
         colId: rawColId,
@@ -1761,7 +1701,7 @@ export default function App() {
         rowPath: row.__rowPath,
       });
       setSelectedColumnIndex(null);
-      setFormulaInputEditRequestKey((current) => current + 1);
+      setFormulaInputMode("edit");
       selectionDebugLog("enter edit request", {
         rowIndex: event.rowIndex,
         colId: rawColId,
@@ -1772,6 +1712,7 @@ export default function App() {
 
   const formulaBarData = useMemo<FormulaBarData | null>(() => {
     if (!currentSheet || !currentSheetState || !selectedCell || isActiveSheetBlocked) return null;
+    if (selectedCell.area !== "body") return null;
 
     const colIndex = selectedCell.logical.cAbs;
     if (colIndex < 0 || colIndex >= sheetColCount) return null;
@@ -1787,31 +1728,6 @@ export default function App() {
         editableSourceText,
       };
     };
-
-    if (selectedCell.area === "header") {
-      if (headerRowCount === 0) return null;
-      const maxHeaderRow = headerRowCount;
-      const headerRowNumber = Math.max(1, Math.min(selectedCell.logical.rAbs, maxHeaderRow));
-      const headerAbsIndex = headerRowNumber - 1;
-      const rawHeaderCell = headerRowCount > 0 ? currentSheetState.cells[headerAbsIndex]?.[colIndex] : undefined;
-      const sourceFromSheet = rawHeaderCell?.text ?? "";
-      const displayText =
-        headerMatrix[headerRowNumber - 1]?.[colIndex] ??
-        sourceFromSheet ??
-        semanticColLabel;
-      const sourceView = resolveSourceView(sourceFromSheet, displayText);
-
-      return {
-        primaryAddress: `Col ${colNumber} · Row ${headerRowNumber}`,
-        secondaryAddress: `${semanticColLabel} / Header`,
-        chip: "Header",
-        displayText: displayText.length > 0 ? displayText : "(blank)",
-        sourceText: sourceView.sourceText,
-        editableSourceText: sourceView.editableSourceText,
-        ...formatLocalView(null),
-        styleLocal: styleLocalView(null),
-      };
-    }
 
     const rowNumber = selectedCell.logical.rAbs;
     const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(rowNumber);
@@ -1868,11 +1784,20 @@ export default function App() {
     isActiveSheetBlocked,
     sheetColCount,
     headerSemanticLabels,
-    headerMatrix,
-    headerRowCount,
     absoluteRowPathLookup,
     headerColCount,
   ]);
+
+  const focusSelectedBodyCell = useCallback(() => {
+    if (mode !== "table" || isActiveSheetBlocked) return;
+    if (!selectedCell || selectedCell.area !== "body") return;
+    if (!isGridApiAlive(gridApiRef.current)) return;
+    const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
+    if (!rowPath) return;
+    const displayedRowIndex = rowPathToDisplayedIndex.get(rowPath);
+    if (displayedRowIndex == null) return;
+    gridApiRef.current.setFocusedCell(displayedRowIndex, selectedCell.colId);
+  }, [mode, isActiveSheetBlocked, selectedCell, absoluteRowPathLookup, rowPathToDisplayedIndex, isGridApiAlive]);
 
   useEffect(() => {
     if (formulaBarData) {
@@ -1971,6 +1896,15 @@ export default function App() {
             : "hidden"
       : "hidden";
 
+  const cellChromeVisibilityPhase: ChromeVisibilityPhase =
+    mode === "table"
+      ? formulaBarData
+        ? "visible"
+        : formulaBarSnapshot
+          ? "hiding"
+          : "hidden"
+      : "hidden";
+
   const themeButtonLabel = themeMode === "auto" ? "Automatic appearance" : themeMode === "light" ? "Light mode" : "Dark mode";
   const themeButtonIcon = themeMode === "auto" ? <AutoIcon /> : themeMode === "light" ? <SunIcon /> : <MoonIcon />;
 
@@ -2028,7 +1962,29 @@ export default function App() {
       cAbs: selectedCell.logical.cAbs,
       nextInput,
     });
-  }, [selectedCell, activeSheet, setCellInput]);
+    setFormulaInputMode("read");
+    window.requestAnimationFrame(() => {
+      focusSelectedBodyCell();
+    });
+  }, [selectedCell, activeSheet, setCellInput, focusSelectedBodyCell]);
+
+  const handleRequestFormulaEdit = useCallback(() => {
+    if (mode === "source" || isActiveSheetBlocked) return;
+    if (!selectedCell || selectedCell.area !== "body") return;
+    setFormulaInputMode("edit");
+    selectionDebugLog("request formula edit", {
+      rAbs: selectedCell.logical.rAbs,
+      cAbs: selectedCell.logical.cAbs,
+    });
+  }, [mode, isActiveSheetBlocked, selectedCell]);
+
+  const handleCancelFormulaEdit = useCallback(() => {
+    setFormulaInputMode("read");
+    window.requestAnimationFrame(() => {
+      focusSelectedBodyCell();
+    });
+    selectionDebugLog("cancel formula edit");
+  }, [focusSelectedBodyCell]);
 
   return (
     <div className="page">
@@ -2098,7 +2054,7 @@ export default function App() {
                 selectedColumnIndex={selectedColumnIndex}
                 columnHasLocalConfig={columnHasLocalConfig}
                 suppressAgHeaderFocus={Boolean(suppressAgHeaderFocus)}
-                showSelectionRing={mode === "table" && !isActiveSheetBlocked}
+                showSelectionRing={mode === "table" && !isActiveSheetBlocked && selectedCell?.area === "body"}
                 selectionRingRef={demoBlueRingRef}
                 handleHeaderOverlaySelect={handleHeaderOverlaySelect}
                 handleColumnRailSelect={handleColumnRailSelect}
@@ -2123,11 +2079,12 @@ export default function App() {
         )}
         <FormulaBarOverlay
           mode={mode}
-          phase={chromeVisibilityPhase}
-          formulaBarData={formulaBarData}
+          phase={cellChromeVisibilityPhase}
           formulaBarSnapshot={formulaBarSnapshot}
-          editRequestKey={formulaInputEditRequestKey}
+          inputMode={formulaInputMode}
           isInputEditable={Boolean(selectedCell && selectedCell.area === "body" && activeSheet && !isActiveSheetBlocked)}
+          onRequestEdit={handleRequestFormulaEdit}
+          onCancelEdit={handleCancelFormulaEdit}
           onCommitInput={handleCommitFormulaInput}
           onDismiss={clearActiveSelection}
           onTooltipEnter={showTooltip}

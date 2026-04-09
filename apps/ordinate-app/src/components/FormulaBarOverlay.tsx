@@ -3,22 +3,7 @@ import { createPortal } from "react-dom";
 
 import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
 import type { ChromeVisibilityPhase, FormatLocalKey, FormulaBarData, StyleLocalView } from "../types/ui";
-
-function isSelectionDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  const globalFlag = (window as typeof window & { __ORDINATE_SELECTION_DEBUG?: boolean }).__ORDINATE_SELECTION_DEBUG;
-  if (globalFlag === true) return true;
-  return window.localStorage.getItem("ordinate-selection-debug") === "1";
-}
-
-function selectionDebugLog(event: string, payload?: unknown): void {
-  if (!isSelectionDebugEnabled()) return;
-  if (payload === undefined) {
-    console.debug(`[ordinate-selection] formula ${event}`);
-    return;
-  }
-  console.debug(`[ordinate-selection] formula ${event}`, payload);
-}
+import { selectionDebugLog } from "../utils/selectionDebug";
 
 function classifyDisplayIssue(issue: string): "format" | "style" | "generic" {
   const normalized = issue.trim().toLowerCase();
@@ -90,10 +75,11 @@ function BannerWarningGlyph() {
 type FormulaBarOverlayProps = {
   mode: "table" | "source";
   phase: ChromeVisibilityPhase;
-  formulaBarData: FormulaBarData | null;
   formulaBarSnapshot: FormulaBarData | null;
-  editRequestKey: number;
+  inputMode: "read" | "edit";
   isInputEditable: boolean;
+  onRequestEdit: () => void;
+  onCancelEdit: () => void;
   onCommitInput: (nextInput: string) => void;
   onDismiss: () => void;
   onTooltipEnter: (text: string, target: HTMLElement, delayMs?: number) => void;
@@ -105,10 +91,11 @@ type FormulaBarOverlayProps = {
 export default function FormulaBarOverlay({
   mode,
   phase,
-  formulaBarData,
   formulaBarSnapshot,
-  editRequestKey,
+  inputMode,
   isInputEditable,
+  onRequestEdit,
+  onCancelEdit,
   onCommitInput,
   onDismiss,
   onTooltipEnter,
@@ -125,12 +112,10 @@ export default function FormulaBarOverlay({
   const [styleMenuPosition, setStyleMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const styleButtonRef = useRef<HTMLButtonElement | null>(null);
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
-  const [isEditingInput, setIsEditingInput] = useState(false);
   const [draftInput, setDraftInput] = useState("");
   const [isComposingInput, setIsComposingInput] = useState(false);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
-  const lastEditRequestKeyRef = useRef(0);
-  const pendingExternalEditRequestRef = useRef(false);
+  const isEditingInput = inputMode === "edit";
 
   const localFormatKey = formulaBarSnapshot?.formatLocalKey ?? "auto";
   const localFormatOptions = formulaBarSnapshot?.formatLocalOptions ?? null;
@@ -157,12 +142,10 @@ export default function FormulaBarOverlay({
 
   useEffect(() => {
     if (!formulaBarSnapshot) {
-      setIsEditingInput(false);
       setDraftInput("");
       setIsComposingInput(false);
       return;
     }
-    setIsEditingInput(false);
     setDraftInput(formulaBarSnapshot.editableSourceText);
     setIsComposingInput(false);
   }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.editableSourceText]);
@@ -308,7 +291,6 @@ export default function FormulaBarOverlay({
     if (mode !== "table" || phase !== "visible" || !formulaBarSnapshot) {
       setFormatMenuOpen(false);
       setStyleMenuOpen(false);
-      setIsEditingInput(false);
       setIsComposingInput(false);
     }
   }, [mode, phase, formulaBarSnapshot]);
@@ -317,61 +299,34 @@ export default function FormulaBarOverlay({
     if (!isInputEditable || !formulaBarSnapshot) return;
     setFormatMenuOpen(false);
     setStyleMenuOpen(false);
-    setIsEditingInput(true);
-    selectionDebugLog("beginEditInput");
+    onRequestEdit();
+    selectionDebugLog("formula beginEditInput");
   };
 
   const cancelEditInput = () => {
     setDraftInput(formulaBarSnapshot?.editableSourceText ?? "");
-    setIsEditingInput(false);
     setIsComposingInput(false);
+    onCancelEdit();
   };
 
   const commitEditInput = () => {
     if (!formulaBarSnapshot) return;
     if (!isInputEditable) {
-      setIsEditingInput(false);
       setIsComposingInput(false);
+      onCancelEdit();
       return;
     }
     if (isComposingInput) return;
     if (draftInput === formulaBarSnapshot.editableSourceText) {
-      setIsEditingInput(false);
       setIsComposingInput(false);
-      selectionDebugLog("commitEditInput noop");
+      onCancelEdit();
+      selectionDebugLog("formula commitEditInput noop");
       return;
     }
-    selectionDebugLog("commitEditInput apply", { draftInput });
+    selectionDebugLog("formula commitEditInput apply", { draftInput });
     onCommitInput(draftInput);
-    setIsEditingInput(false);
     setIsComposingInput(false);
   };
-
-  useEffect(() => {
-    if (editRequestKey === lastEditRequestKeyRef.current) return;
-    lastEditRequestKeyRef.current = editRequestKey;
-    if (editRequestKey <= 0) return;
-    if (mode === "table" && phase !== "hidden" && isInputEditable && formulaBarSnapshot) {
-      setFormatMenuOpen(false);
-      setStyleMenuOpen(false);
-      setIsEditingInput(true);
-      pendingExternalEditRequestRef.current = false;
-      selectionDebugLog("edit request -> immediate edit", { editRequestKey });
-      return;
-    }
-    pendingExternalEditRequestRef.current = true;
-    selectionDebugLog("edit request -> pending", { editRequestKey });
-  }, [editRequestKey, mode, phase, isInputEditable, formulaBarSnapshot]);
-
-  useEffect(() => {
-    if (!pendingExternalEditRequestRef.current) return;
-    if (mode !== "table" || phase === "hidden" || !isInputEditable || !formulaBarSnapshot) return;
-    setFormatMenuOpen(false);
-    setStyleMenuOpen(false);
-    setIsEditingInput(true);
-    pendingExternalEditRequestRef.current = false;
-    selectionDebugLog("pending edit request -> edit");
-  }, [mode, phase, isInputEditable, formulaBarSnapshot]);
 
   if (mode !== "table" || phase === "hidden" || !formulaBarSnapshot) return null;
 
@@ -380,7 +335,7 @@ export default function FormulaBarOverlay({
       <aside
         className={`formula-bar-shell formula-bar-shell--${phase}`}
         aria-live="polite"
-        aria-hidden={formulaBarData ? undefined : true}
+        aria-hidden={formulaBarSnapshot ? undefined : true}
       >
         <div className="formula-bar">
           <div className="formula-meta-stack">
