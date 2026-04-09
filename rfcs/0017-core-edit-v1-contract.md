@@ -84,6 +84,8 @@ Normative requirements:
 - parse success stores `parse_ok` state and clears `unparsedSourceRaw`
 - parse failure stores `parse_failed` state and preserves exact `unparsedSourceRaw`
 - serializer must emit `unparsedSourceRaw` verbatim when `parse_failed`
+- `setCellInput` accepts semantic cell text; callers do not need to provide table-wire escaping (`\|`, `\\`)
+- table-wire escaping is handled by serialization/parsing layer (RFC-0002 / RFC-0011)
 
 ### 2. Cache Surface
 

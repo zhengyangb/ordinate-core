@@ -70,6 +70,28 @@ const FLOATING_MENU_VIEWPORT_MARGIN = 12;
 const FLOATING_MENU_GAP = 8;
 const COLUMN_RAIL_MENU_MAX_WIDTH_REM = 27;
 
+type RingRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+function isSelectionDebugEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  const globalFlag = (window as typeof window & { __ORDINATE_SELECTION_DEBUG?: boolean }).__ORDINATE_SELECTION_DEBUG;
+  return globalFlag === true;
+}
+
+function selectionDebugLog(event: string, payload?: unknown): void {
+  if (!isSelectionDebugEnabled()) return;
+  if (payload === undefined) {
+    console.debug(`[ordinate-selection] ${event}`);
+    return;
+  }
+  console.debug(`[ordinate-selection] ${event}`, payload);
+}
+
 function resolveInitialThemeMode(): ThemeMode {
   if (typeof window === "undefined") return "auto";
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -114,6 +136,18 @@ function columnMetricsEqual(previous: ColumnMetric[], next: ColumnMetric[]): boo
     if (Math.abs(a.width - b.width) > 0.5) return false;
   }
   return true;
+}
+
+function ringRectEqual(previous: RingRect | null, next: RingRect | null): boolean {
+  if (previous == null || next == null) {
+    return previous === next;
+  }
+  return (
+    Math.abs(previous.left - next.left) <= 0.5 &&
+    Math.abs(previous.top - next.top) <= 0.5 &&
+    Math.abs(previous.width - next.width) <= 0.5 &&
+    Math.abs(previous.height - next.height) <= 0.5
+  );
 }
 
 const BLOCKING_SHEET_MESSAGE_FRAGMENTS = [
@@ -221,6 +255,8 @@ export default function App() {
     error,
     setSourceText,
     setActiveSheet,
+    renameSheet,
+    setCellInput,
     enterSourceMode,
     exitSourceMode,
   } = useEditorStore();
@@ -229,6 +265,7 @@ export default function App() {
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [selectedColumnIndex, setSelectedColumnIndex] = useState<number | null>(null);
   const [formulaBarSnapshot, setFormulaBarSnapshot] = useState<FormulaBarData | null>(null);
+  const [formulaInputEditRequestKey, setFormulaInputEditRequestKey] = useState(0);
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [themeMenuPosition, setThemeMenuPosition] = useState<ThemeMenuPosition>({ top: 0, left: 0 });
@@ -248,8 +285,13 @@ export default function App() {
 
   const gridViewportAdapter = useMemo(() => createAgGridAdapter(), []);
   const overlaySyncRafRef = useRef<number | null>(null);
+  const demoBlueRingSyncRafRef = useRef<number | null>(null);
   const autoPanRafRef = useRef<number | null>(null);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
+  const demoBlueRingRef = useRef<HTMLDivElement | null>(null);
+  const demoBlueRingLastRectRef = useRef<RingRect | null>(null);
+  const demoBlueRingCellRef = useRef<HTMLElement | null>(null);
+  const demoBlueRingCellKeyRef = useRef<string | null>(null);
   const columnTrackRef = useRef<HTMLDivElement | null>(null);
   const rowTrackRef = useRef<HTMLDivElement | null>(null);
   const gridApiRef = useRef<GridApi<GridRow> | null>(null);
@@ -456,6 +498,7 @@ export default function App() {
   }, [openColumnMenuColIndex, sheetColCount]);
 
   const clearActiveSelection = useCallback(() => {
+    selectionDebugLog("clearActiveSelection");
     setSelectedCell(null);
     setSelectedColumnIndex(null);
     const active = document.activeElement;
@@ -463,6 +506,14 @@ export default function App() {
       active.blur();
     }
   }, []);
+
+  useEffect(() => {
+    selectionDebugLog("selectedCell changed", selectedCell);
+  }, [selectedCell]);
+
+  useEffect(() => {
+    selectionDebugLog("selectedColumnIndex changed", selectedColumnIndex);
+  }, [selectedColumnIndex]);
 
   useEffect(() => {
     setCollapsedPaths(new Set());
@@ -475,6 +526,13 @@ export default function App() {
     setOpenColumnMenuColIndex(null);
     columnMenuAnchorRef.current = null;
     setColumnMetrics([]);
+    demoBlueRingLastRectRef.current = null;
+    demoBlueRingCellRef.current = null;
+    demoBlueRingCellKeyRef.current = null;
+    const ring = demoBlueRingRef.current;
+    if (ring) {
+      ring.classList.add("is-hidden");
+    }
   }, [activeSheet, mode]);
 
   useEffect(() => {
@@ -798,6 +856,35 @@ export default function App() {
   }, [mode, isActiveSheetBlocked, selectedCell, selectedColumnIndex, clearActiveSelection, themeMenuOpen, toolMenuOpen, columnRailMenuOpen]);
 
   useEffect(() => {
+    const handleEnterToEdit = (event: KeyboardEvent) => {
+      if (event.key !== "Enter") return;
+      if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.repeat) return;
+      if (mode === "source" || isActiveSheetBlocked) return;
+      if (!selectedCell || selectedCell.area !== "body") return;
+      if (themeMenuOpen || toolMenuOpen || columnRailMenuOpen) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          "input, textarea, [contenteditable='true'], .formula-format-menu, .formula-style-menu, .column-rail-menu, .theme-menu, .tool-menu",
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      setFormulaInputEditRequestKey((current) => current + 1);
+      selectionDebugLog("global enter edit request", {
+        rAbs: selectedCell.logical.rAbs,
+        cAbs: selectedCell.logical.cAbs,
+      });
+    };
+
+    window.addEventListener("keydown", handleEnterToEdit);
+    return () => window.removeEventListener("keydown", handleEnterToEdit);
+  }, [mode, isActiveSheetBlocked, selectedCell, themeMenuOpen, toolMenuOpen, columnRailMenuOpen]);
+
+  useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
 
     const handlePointerDown = (event: MouseEvent) => {
@@ -900,6 +987,51 @@ export default function App() {
     return map;
   }, [rowData]);
 
+  const absoluteRowToDisplayedIndex = useMemo(() => {
+    const map = new Map<number, number>();
+    rowData.forEach((row, index) => map.set(row.__absoluteRowNumber, index));
+    return map;
+  }, [rowData]);
+
+  useEffect(() => {
+    if (!isSelectionDebugEnabled()) return;
+    if (!selectedCell || selectedCell.area !== "body") return;
+    const root = gridWrapRef.current;
+    if (!root) return;
+
+    const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
+    if (!rowPath) {
+      selectionDebugLog("dom selection debug skipped: missing rowPath", selectedCell);
+      return;
+    }
+    const displayedRowIndex = rowPathToDisplayedIndex.get(rowPath);
+    const colId = selectedCell.colId;
+    if (displayedRowIndex == null) {
+      selectionDebugLog("dom selection debug skipped: missing displayedRowIndex", { rowPath, colId });
+      return;
+    }
+
+    const raf = window.requestAnimationFrame(() => {
+      const selector = `.ag-row[row-index="${displayedRowIndex}"] .ag-cell[col-id="${colId}"]`;
+      const cell = root.querySelector<HTMLElement>(selector);
+      if (!cell) {
+        selectionDebugLog("dom selected cell not found", { selector, displayedRowIndex, colId });
+        return;
+      }
+      const afterStyle = window.getComputedStyle(cell, "::after");
+      selectionDebugLog("dom selected cell state", {
+        displayedRowIndex,
+        colId,
+        className: cell.className,
+        afterContent: afterStyle.content,
+        afterBorderTopWidth: afterStyle.borderTopWidth,
+        afterOpacity: afterStyle.opacity,
+      });
+    });
+
+    return () => window.cancelAnimationFrame(raf);
+  }, [selectedCell, absoluteRowPathLookup, rowPathToDisplayedIndex]);
+
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
     syncRowIndexMetrics(gridApiRef.current);
@@ -994,6 +1126,97 @@ export default function App() {
     [mode, isActiveSheetBlocked, headerOverlayRows, sheetColCount, colIndexLookup, headerMatrix, gridViewportAdapter],
   );
 
+  const syncDemoBlueRing = useCallback(
+    (root: HTMLElement | null) => {
+      const ring = demoBlueRingRef.current;
+      if (!ring) {
+        return;
+      }
+      if (mode === "source" || isActiveSheetBlocked || !root || selectedCell?.area !== "body") {
+        demoBlueRingCellRef.current = null;
+        demoBlueRingCellKeyRef.current = null;
+        ring.classList.add("is-hidden");
+        demoBlueRingLastRectRef.current = null;
+        return;
+      }
+
+      const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
+      if (!rowPath) {
+        demoBlueRingCellRef.current = null;
+        demoBlueRingCellKeyRef.current = null;
+        ring.classList.add("is-hidden");
+        demoBlueRingLastRectRef.current = null;
+        return;
+      }
+
+      const displayedRowIndex =
+        absoluteRowToDisplayedIndex.get(selectedCell.logical.rAbs) ??
+        rowPathToDisplayedIndex.get(rowPath);
+      if (displayedRowIndex == null) {
+        demoBlueRingCellRef.current = null;
+        demoBlueRingCellKeyRef.current = null;
+        ring.classList.add("is-hidden");
+        demoBlueRingLastRectRef.current = null;
+        return;
+      }
+
+      const colId = selectedCell.colId;
+      const targetKey = `${displayedRowIndex}:${colId}:${rowPath}`;
+      const cachedCell = demoBlueRingCellRef.current;
+      let targetCell =
+        cachedCell && demoBlueRingCellKeyRef.current === targetKey && cachedCell.isConnected
+          ? cachedCell
+          : null;
+      if (!targetCell) {
+        const byRowIndexSelector = `.ag-row[row-index="${displayedRowIndex}"] .ag-cell[col-id="${colId}"]`;
+        const targetCellFromRowIndex = root.querySelector<HTMLElement>(byRowIndexSelector);
+        const byRowPathSelector = `.ag-row[row-id="${CSS.escape(rowPath)}"] .ag-cell[col-id="${colId}"]`;
+        const targetCellFromRowPath = root.querySelector<HTMLElement>(byRowPathSelector);
+        targetCell = targetCellFromRowIndex ?? targetCellFromRowPath;
+        demoBlueRingCellRef.current = targetCell;
+        demoBlueRingCellKeyRef.current = targetCell ? targetKey : null;
+      }
+      const gridShell = root.closest<HTMLElement>(".grid-shell");
+
+      if (!targetCell || !gridShell) {
+        demoBlueRingCellRef.current = null;
+        demoBlueRingCellKeyRef.current = null;
+        ring.classList.add("is-hidden");
+        demoBlueRingLastRectRef.current = null;
+        return;
+      }
+
+      const cellRect = targetCell.getBoundingClientRect();
+      const shellRect = gridShell.getBoundingClientRect();
+      const verticalViewport = root.querySelector<HTMLElement>(".ag-body-viewport");
+      const rowNode = isGridApiAlive(gridApiRef.current) ? gridApiRef.current.getDisplayedRowAtIndex(displayedRowIndex) : null;
+
+      let top = cellRect.top - shellRect.top;
+      let height = cellRect.height;
+      if (verticalViewport && rowNode?.rowTop != null) {
+        const viewportRect = verticalViewport.getBoundingClientRect();
+        top = viewportRect.top - shellRect.top + rowNode.rowTop - verticalViewport.scrollTop;
+        height = rowNode.rowHeight ?? GRID_ROW_HEIGHT;
+      }
+
+      const nextRect: RingRect = {
+        left: Math.round((cellRect.left - shellRect.left) * 10) / 10,
+        top: Math.round(top * 10) / 10,
+        width: Math.round(cellRect.width * 10) / 10,
+        height: Math.round(height * 10) / 10,
+      };
+
+      ring.classList.remove("is-hidden");
+      if (!ringRectEqual(demoBlueRingLastRectRef.current, nextRect)) {
+        ring.style.transform = `translate3d(${nextRect.left}px, ${nextRect.top}px, 0)`;
+        ring.style.width = `${nextRect.width}px`;
+        ring.style.height = `${nextRect.height}px`;
+        demoBlueRingLastRectRef.current = nextRect;
+      }
+    },
+    [mode, isActiveSheetBlocked, selectedCell, absoluteRowPathLookup, absoluteRowToDisplayedIndex, rowPathToDisplayedIndex, isGridApiAlive],
+  );
+
   const scheduleHeaderOverlaySync = useCallback(
     (passes = 2) => {
       if (overlaySyncRafRef.current != null) {
@@ -1014,10 +1237,24 @@ export default function App() {
     [syncHeaderOverlayCells],
   );
 
+  const scheduleDemoBlueRingSync = useCallback(() => {
+    if (demoBlueRingSyncRafRef.current != null) {
+      window.cancelAnimationFrame(demoBlueRingSyncRafRef.current);
+    }
+    demoBlueRingSyncRafRef.current = window.requestAnimationFrame(() => {
+      demoBlueRingSyncRafRef.current = null;
+      syncDemoBlueRing(gridWrapRef.current);
+    });
+  }, [syncDemoBlueRing]);
+
   useEffect(() => {
     return () => {
       if (overlaySyncRafRef.current != null) {
         window.cancelAnimationFrame(overlaySyncRafRef.current);
+      }
+      if (demoBlueRingSyncRafRef.current != null) {
+        window.cancelAnimationFrame(demoBlueRingSyncRafRef.current);
+        demoBlueRingSyncRafRef.current = null;
       }
       if (autoPanRafRef.current != null) {
         window.cancelAnimationFrame(autoPanRafRef.current);
@@ -1037,8 +1274,9 @@ export default function App() {
       syncRowIndexMetrics(event.api);
       syncColumnMetrics(event.api);
       scheduleHeaderOverlaySync(3);
+      scheduleDemoBlueRingSync();
     },
-    [syncRowIndexMetrics, syncColumnMetrics, scheduleHeaderOverlaySync],
+    [syncRowIndexMetrics, syncColumnMetrics, scheduleHeaderOverlaySync, scheduleDemoBlueRingSync],
   );
 
   const handleFirstDataRendered = useCallback(
@@ -1046,8 +1284,9 @@ export default function App() {
       syncRowIndexMetrics(event.api);
       syncColumnMetrics(event.api);
       scheduleHeaderOverlaySync(3);
+      scheduleDemoBlueRingSync();
     },
-    [syncRowIndexMetrics, syncColumnMetrics, scheduleHeaderOverlaySync],
+    [syncRowIndexMetrics, syncColumnMetrics, scheduleHeaderOverlaySync, scheduleDemoBlueRingSync],
   );
 
   const handleModelUpdated = useCallback(
@@ -1055,8 +1294,9 @@ export default function App() {
       syncRowIndexMetrics(event.api);
       syncColumnMetrics(event.api);
       scheduleHeaderOverlaySync(2);
+      scheduleDemoBlueRingSync();
     },
-    [syncRowIndexMetrics, syncColumnMetrics, scheduleHeaderOverlaySync],
+    [syncRowIndexMetrics, syncColumnMetrics, scheduleHeaderOverlaySync, scheduleDemoBlueRingSync],
   );
 
   useEffect(() => {
@@ -1064,7 +1304,8 @@ export default function App() {
     if (!isGridApiAlive(gridApiRef.current)) return;
     syncColumnMetrics(gridApiRef.current);
     scheduleHeaderOverlaySync(3);
-  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, scheduleHeaderOverlaySync, syncColumnMetrics, isGridApiAlive]);
+    scheduleDemoBlueRingSync();
+  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, scheduleHeaderOverlaySync, scheduleDemoBlueRingSync, syncColumnMetrics, isGridApiAlive]);
 
   const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
     if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
@@ -1365,32 +1606,36 @@ export default function App() {
       rowTrack.style.transform = `translateY(${-top}px)`;
       columnTrack.style.transform = `translateX(${-left}px)`;
       syncHeaderOverlayCells(root);
+      syncDemoBlueRing(root);
       setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
       setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
     });
-  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, syncHeaderOverlayCells, gridViewportAdapter]);
+  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, syncHeaderOverlayCells, syncDemoBlueRing, gridViewportAdapter]);
+
+  useEffect(() => {
+    scheduleDemoBlueRingSync();
+  }, [scheduleDemoBlueRingSync, selectedCell, rowData.length, headerOverlayHeight]);
 
   const handleCellFocused = useCallback(
     (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
+      selectionDebugLog("handleCellFocused event", event);
       if (!event.column) {
-        setSelectedCell(null);
-        setSelectedColumnIndex(null);
+        // AG Grid emits a null-focus event when focus moves into external UI
+        // (e.g. formula input). Keep logical selection stable and only clear
+        // via explicit dismiss paths (Esc/outside click/sheet switch).
+        selectionDebugLog("handleCellFocused ignored: no column");
         return;
       }
 
       const rawColId = typeof event.column === "string" ? event.column : event.column.getColId();
       if (!colIndexLookup.has(rawColId)) {
+        selectionDebugLog("handleCellFocused ignored: unknown colId", rawColId);
         return;
       }
       const colNumber = colIndexLookup.get(rawColId);
       if (!colNumber) return;
 
       if (event.rowIndex == null) {
-        if (headerRowCount === 0) {
-          setSelectedCell(null);
-          setSelectedColumnIndex(null);
-          return;
-        }
         const pending = pendingHeaderSelectionRef.current;
         if (pending && performance.now() <= pending.expiresAt && pending.colId === rawColId) {
           pendingHeaderSelectionRef.current = null;
@@ -1404,31 +1649,25 @@ export default function App() {
             rowPath: null,
           });
           setSelectedColumnIndex(null);
+          selectionDebugLog("handleCellFocused -> header (pending match)", {
+            colId: rawColId,
+            rAbs: pending.rAbs,
+          });
           return;
         }
         if (pending && performance.now() > pending.expiresAt) {
           pendingHeaderSelectionRef.current = null;
         }
-        setSelectedCell((current) => {
-          if (current?.area === "header" && current.colId === rawColId) {
-            return current;
-          }
-          return {
-            area: "header",
-            logical: {
-              rAbs: headerRowCount,
-              cAbs: colNumber - 1,
-            },
-            colId: rawColId,
-            rowPath: null,
-          };
-        });
-        setSelectedColumnIndex(null);
+        // Ignore ambiguous null-row focus changes (typically blur to external
+        // controls like formula input). Header selection is handled via
+        // explicit pointer/header-overlay paths.
+        selectionDebugLog("handleCellFocused ignored: rowIndex null without pending header");
         return;
       }
 
       const row = rowData[event.rowIndex];
       if (!row) {
+        selectionDebugLog("handleCellFocused cleared: missing row for rowIndex", event.rowIndex);
         setSelectedCell(null);
         setSelectedColumnIndex(null);
         return;
@@ -1444,8 +1683,91 @@ export default function App() {
         rowPath: row.__rowPath,
       });
       setSelectedColumnIndex(null);
+      selectionDebugLog("handleCellFocused -> body", {
+        rowIndex: event.rowIndex,
+        colId: rawColId,
+        rAbs: row.__absoluteRowNumber,
+      });
     },
-    [rowData, colIndexLookup, headerRowCount],
+    [rowData, colIndexLookup],
+  );
+
+  const handleCellDoubleClicked = useCallback(
+    (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
+      // Editing contract:
+      // - double-click body cell => enter formula input edit mode
+      // - logical selection stays on the cell during/after edit
+      if (mode === "source" || isActiveSheetBlocked) return;
+      if (event.rowIndex == null || !event.column || !activeSheet) return;
+
+      const rawColId = typeof event.column === "string" ? event.column : event.column.getColId();
+      const colNumber = colIndexLookup.get(rawColId);
+      if (!colNumber) return;
+
+      const row = rowData[event.rowIndex];
+      if (!row) return;
+
+      setSelectedCell({
+        area: "body",
+        logical: {
+          rAbs: row.__absoluteRowNumber,
+          cAbs: colNumber - 1,
+        },
+        colId: rawColId,
+        rowPath: row.__rowPath,
+      });
+      setSelectedColumnIndex(null);
+      setFormulaInputEditRequestKey((current) => current + 1);
+      selectionDebugLog("doubleClick edit request", {
+        rowIndex: event.rowIndex,
+        colId: rawColId,
+      });
+    },
+    [mode, isActiveSheetBlocked, activeSheet, colIndexLookup, rowData],
+  );
+
+  const handleCellKeyDown = useCallback(
+    (event: {
+      rowIndex: number | null;
+      column?: string | { getColId(): string } | null;
+      event?: Event | null;
+    }) => {
+      // Editing contract:
+      // - Enter on selected body cell => enter formula input edit mode
+      // - Enter inside formula input => commit and return to read mode
+      // - logical selection remains so arrow navigation can continue
+      const keyboardEvent = event.event instanceof KeyboardEvent ? event.event : null;
+      if (!keyboardEvent) return;
+      if (keyboardEvent.key !== "Enter" || keyboardEvent.shiftKey || keyboardEvent.altKey || keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
+      if (mode === "source" || isActiveSheetBlocked) return;
+      if (event.rowIndex == null || !event.column || !activeSheet) return;
+
+      const rawColId = typeof event.column === "string" ? event.column : event.column.getColId();
+      const colNumber = colIndexLookup.get(rawColId);
+      if (!colNumber) return;
+
+      const row = rowData[event.rowIndex];
+      if (!row) return;
+
+      keyboardEvent.preventDefault();
+      keyboardEvent.stopPropagation();
+      setSelectedCell({
+        area: "body",
+        logical: {
+          rAbs: row.__absoluteRowNumber,
+          cAbs: colNumber - 1,
+        },
+        colId: rawColId,
+        rowPath: row.__rowPath,
+      });
+      setSelectedColumnIndex(null);
+      setFormulaInputEditRequestKey((current) => current + 1);
+      selectionDebugLog("enter edit request", {
+        rowIndex: event.rowIndex,
+        colId: rawColId,
+      });
+    },
+    [mode, isActiveSheetBlocked, activeSheet, colIndexLookup, rowData],
   );
 
   const formulaBarData = useMemo<FormulaBarData | null>(() => {
@@ -1461,8 +1783,8 @@ export default function App() {
       const split = splitCellDisplayMetadata(sourceText);
       const editableSourceText = split.contentText.length > 0 ? split.contentText : sourceText;
       return {
-        sourceText: sourceText.length > 0 ? sourceText : "(blank)",
-        editableSourceText: editableSourceText.length > 0 ? editableSourceText : "(blank)",
+        sourceText,
+        editableSourceText,
       };
     };
 
@@ -1676,6 +1998,37 @@ export default function App() {
   );
   const shouldRenderGrid = Boolean(currentSheet && currentSheetState && activeSheet && !isActiveSheetBlocked);
   const showGridHeader = headerRowCount > 0;
+  const handleRenameSheet = useCallback((sheetName: string, nextName: string): string | null => {
+    try {
+      renameSheet(sheetName, nextName);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }, [renameSheet]);
+  const handleCommitFormulaInput = useCallback((nextInput: string) => {
+    if (!selectedCell || selectedCell.area !== "body") {
+      throw new Error("formula input commit requires a selected body cell");
+    }
+    if (!activeSheet) {
+      throw new Error("formula input commit requires an active sheet");
+    }
+    setCellInput(
+      {
+        kind: "index",
+        sheet: activeSheet,
+        rowIndex: selectedCell.logical.rAbs - 1,
+        colIndex: selectedCell.logical.cAbs,
+      },
+      nextInput,
+    );
+    selectionDebugLog("commit formula input", {
+      sheet: activeSheet,
+      rAbs: selectedCell.logical.rAbs,
+      cAbs: selectedCell.logical.cAbs,
+      nextInput,
+    });
+  }, [selectedCell, activeSheet, setCellInput]);
 
   return (
     <div className="page">
@@ -1686,6 +2039,7 @@ export default function App() {
           sheetNames={sheetNames}
           sheetHealthByName={sheetHealthByName}
           setActiveSheet={setActiveSheet}
+          onRenameSheet={handleRenameSheet}
           visibleTools={visibleTools}
           overflowTools={overflowTools}
           toolMenuOpen={toolMenuOpen}
@@ -1744,6 +2098,8 @@ export default function App() {
                 selectedColumnIndex={selectedColumnIndex}
                 columnHasLocalConfig={columnHasLocalConfig}
                 suppressAgHeaderFocus={Boolean(suppressAgHeaderFocus)}
+                showSelectionRing={mode === "table" && !isActiveSheetBlocked}
+                selectionRingRef={demoBlueRingRef}
                 handleHeaderOverlaySelect={handleHeaderOverlaySelect}
                 handleColumnRailSelect={handleColumnRailSelect}
                 handleColumnRailMenuOpen={handleColumnRailMenuOpen}
@@ -1752,6 +2108,8 @@ export default function App() {
                 handleFirstDataRendered={handleFirstDataRendered}
                 handleModelUpdated={handleModelUpdated}
                 handleCellFocused={handleCellFocused}
+                handleCellDoubleClicked={handleCellDoubleClicked}
+                handleCellKeyDown={handleCellKeyDown}
               />
             ) : activeSheet && isActiveSheetBlocked ? (
               <SheetParseErrorPanel sheetName={activeSheet} issues={activeSheetBlockingIssues} onOpenSourceMode={enterSourceMode} />
@@ -1768,6 +2126,9 @@ export default function App() {
           phase={chromeVisibilityPhase}
           formulaBarData={formulaBarData}
           formulaBarSnapshot={formulaBarSnapshot}
+          editRequestKey={formulaInputEditRequestKey}
+          isInputEditable={Boolean(selectedCell && selectedCell.area === "body" && activeSheet && !isActiveSheetBlocked)}
+          onCommitInput={handleCommitFormulaInput}
           onDismiss={clearActiveSelection}
           onTooltipEnter={showTooltip}
           onTooltipLeave={clearTooltip}

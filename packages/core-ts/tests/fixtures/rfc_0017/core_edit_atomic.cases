@@ -35,6 +35,31 @@ set_cell_input_and_local_display_success
 expect_ok: true
 
 ===
+set_cell_input_semantic_pipe_and_backslash_serialize_escaped
+[doc]
+# Sheet
+| Item || Note |
+| ---- || ---- |
+| A    || ok   |
+[/doc]
+[ops]
+[
+  {
+    "op": "set_cell_input",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Note" },
+    "input": "\"a|b\\\\c\""
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || Note       |
+| ---- || ---------- |
+| A    || "a\|b\\\\c" |
+[/expect]
+expect_ok: true
+
+===
 clear_cell_success
 [doc]
 # Sheet

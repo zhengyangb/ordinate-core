@@ -1,5 +1,6 @@
 import { formatDocument } from "./formatter";
 import { type DocumentState, type SheetState } from "./incremental";
+import { escapeCellText } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import { type ExprNode, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue } from "./runtime/types";
 import { isError, isValidExternalErrorKind } from "./runtime/errors";
@@ -133,7 +134,7 @@ function buildRow(cells: string[], boundary: number | null): string {
     parts.push("");
   }
   cells.forEach((cell, idx) => {
-    parts.push(cell);
+    parts.push(escapeCellText(cell));
     if (boundary !== null && idx + 1 === boundary) {
       parts.push("");
     }

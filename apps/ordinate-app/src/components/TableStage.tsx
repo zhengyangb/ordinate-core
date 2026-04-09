@@ -34,6 +34,8 @@ type TableStageProps = {
   selectedCell: SelectedCell | null;
   selectedColumnIndex: number | null;
   columnHasLocalConfig: boolean[];
+  showSelectionRing: boolean;
+  selectionRingRef: MutableRefObject<HTMLDivElement | null>;
   suppressAgHeaderFocus: boolean;
   handleHeaderOverlaySelect: (rowNumber: number, colIndex: number) => void;
   handleColumnRailSelect: (colIndex: number) => void;
@@ -43,6 +45,12 @@ type TableStageProps = {
   handleFirstDataRendered: (event: FirstDataRenderedEvent<GridRow>) => void;
   handleModelUpdated: (event: ModelUpdatedEvent<GridRow>) => void;
   handleCellFocused: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
+  handleCellDoubleClicked: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
+  handleCellKeyDown: (event: {
+    rowIndex: number | null;
+    column?: string | { getColId(): string } | null;
+    event?: Event | null;
+  }) => void;
 };
 
 function toColumnLetters(colNumber: number): string {
@@ -89,6 +97,8 @@ export default function TableStage({
   selectedCell,
   selectedColumnIndex,
   columnHasLocalConfig,
+  showSelectionRing,
+  selectionRingRef,
   suppressAgHeaderFocus,
   handleHeaderOverlaySelect,
   handleColumnRailSelect,
@@ -98,6 +108,8 @@ export default function TableStage({
   handleFirstDataRendered,
   handleModelUpdated,
   handleCellFocused,
+  handleCellDoubleClicked,
+  handleCellKeyDown,
 }: TableStageProps) {
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
   const selectedRowNumber = selectedCell?.logical.rAbs ?? null;
@@ -281,6 +293,9 @@ export default function TableStage({
       </div>
 
       <div className="grid-shell">
+        {showSelectionRing ? (
+          <div ref={selectionRingRef} className="persistent-selection-ring is-hidden" aria-hidden="true" />
+        ) : null}
         {headerOverlayHeight > 0 ? (
           <>
             <div
@@ -304,7 +319,7 @@ export default function TableStage({
             </div>
           </>
         ) : null}
-        <div className={suppressAgHeaderFocus ? "grid-wrap suppress-header-focus" : "grid-wrap"} ref={gridWrapRef}>
+        <div className={suppressAgHeaderFocus ? "grid-wrap suppress-cell-focus-ring suppress-header-focus" : "grid-wrap suppress-cell-focus-ring"} ref={gridWrapRef}>
           <AgGridReact<GridRow>
             rowData={rowData}
             columnDefs={columnDefs}
@@ -328,6 +343,8 @@ export default function TableStage({
             onFirstDataRendered={handleFirstDataRendered}
             onModelUpdated={handleModelUpdated}
             onCellFocused={handleCellFocused}
+            onCellDoubleClicked={handleCellDoubleClicked}
+            onCellKeyDown={handleCellKeyDown}
             rowClassRules={{
               "section-row": (params) => Boolean(params.data?.__isSection),
             }}

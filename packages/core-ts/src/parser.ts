@@ -194,10 +194,19 @@ function splitUnescapedPipes(inner: string): { parts: string[]; errors: string[]
     if (ch === "\\") {
       if (i + 1 >= inner.length) {
         errors.push("dangling escape at end of row");
+        parts[parts.length - 1] += "\\";
         i += 1;
         continue;
       }
-      parts[parts.length - 1] += inner[i + 1];
+      const next = inner[i + 1];
+      if (next === "|" || next === "\\") {
+        // Table-layer escapes: \| -> | and \\ -> \
+        parts[parts.length - 1] += next;
+        i += 2;
+        continue;
+      }
+      // Preserve unknown backslash sequences literally.
+      parts[parts.length - 1] += `\\${next}`;
       i += 2;
       continue;
     }

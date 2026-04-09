@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject, SetStateAction } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject, type SetStateAction } from "react";
 
 import { CodeIcon, MoreIcon, PlusIcon } from "../icons/uiIcons";
 import type { SheetHealth, ToolSpec } from "../types/ui";
@@ -9,6 +9,7 @@ type AppChromeProps = {
   sheetNames: string[];
   sheetHealthByName: Record<string, SheetHealth>;
   setActiveSheet: (name: string) => void;
+  onRenameSheet: (sheetName: string, nextName: string) => string | null;
   visibleTools: ToolSpec[];
   overflowTools: ToolSpec[];
   toolMenuOpen: boolean;
@@ -36,6 +37,7 @@ export default function AppChrome({
   sheetNames,
   sheetHealthByName,
   setActiveSheet,
+  onRenameSheet,
   visibleTools,
   overflowTools,
   toolMenuOpen,
@@ -56,10 +58,60 @@ export default function AppChrome({
   onTabMouseEnter,
   onTabMouseLeave,
 }: AppChromeProps) {
+  const [renamingSheet, setRenamingSheet] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!renamingSheet) return;
+    const input = renameInputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+    window.requestAnimationFrame(() => {
+      input.select();
+    });
+  }, [renamingSheet]);
+
+  useEffect(() => {
+    if (mode === "source" && renamingSheet) {
+      setRenamingSheet(null);
+      setRenameValue("");
+    }
+  }, [mode, renamingSheet]);
+
+  const startRename = (sheetName: string) => {
+    if (mode !== "table") return;
+    setActiveSheet(sheetName);
+    setRenamingSheet(sheetName);
+    setRenameValue(sheetName);
+  };
+
+  const cancelRename = () => {
+    setRenamingSheet(null);
+    setRenameValue("");
+  };
+
+  const commitRename = () => {
+    if (!renamingSheet) return;
+    const nextName = renameValue.trim();
+    if (nextName === renamingSheet) {
+      cancelRename();
+      return;
+    }
+    const error = onRenameSheet(renamingSheet, nextName);
+    if (error) {
+      cancelRename();
+      return;
+    }
+    cancelRename();
+  };
+
   const tabClassName = (sheetName: string): string => {
     const health = sheetHealthByName[sheetName] ?? "ok";
     const classes = ["sheet-tab"];
     if (sheetName === activeSheet) classes.push("active");
+    if (sheetName === renamingSheet) classes.push("renaming");
     if (health === "invalid") classes.push("invalid");
     return classes.join(" ");
   };
@@ -164,15 +216,56 @@ export default function AppChrome({
                 key={sheetName}
                 className={tabClassName(sheetName)}
                 onClick={() => setActiveSheet(sheetName)}
+                onDoubleClick={() => startRename(sheetName)}
                 type="button"
                 tabIndex={mode === "source" ? -1 : 0}
-                onMouseEnter={(event) => onTabMouseEnter(sheetName, event.currentTarget)}
-                onMouseLeave={onTabMouseLeave}
-                onFocus={(event) => onTabMouseEnter(sheetName, event.currentTarget)}
-                onBlur={onTabMouseLeave}
+                onMouseEnter={(event) => {
+                  if (sheetName !== renamingSheet) onTabMouseEnter(sheetName, event.currentTarget);
+                }}
+                onMouseLeave={() => {
+                  if (sheetName !== renamingSheet) onTabMouseLeave();
+                }}
+                onFocus={(event) => {
+                  if (sheetName !== renamingSheet) onTabMouseEnter(sheetName, event.currentTarget);
+                }}
+                onBlur={() => {
+                  if (sheetName !== renamingSheet) onTabMouseLeave();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "F2") {
+                    event.preventDefault();
+                    startRename(sheetName);
+                  }
+                }}
                 aria-invalid={sheetHealthByName[sheetName] === "invalid"}
               >
-                <span className="sheet-tab-label">{sheetName}</span>
+                {sheetName === renamingSheet ? (
+                  <input
+                    ref={renameInputRef}
+                    className="sheet-tab-rename-input"
+                    value={renameValue}
+                    spellCheck={false}
+                    onChange={(event) => setRenameValue(event.target.value)}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onBlur={commitRename}
+                    onClick={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitRename();
+                        return;
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelRename();
+                      }
+                    }}
+                    aria-label={`Rename ${sheetName}`}
+                  />
+                ) : (
+                  <span className="sheet-tab-label">{sheetName}</span>
+                )}
                 {sheetHealthByName[sheetName] !== "ok" ? (
                   <span
                     className="sheet-tab-alert invalid"

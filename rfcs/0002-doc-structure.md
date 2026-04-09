@@ -206,11 +206,23 @@ It does not yet define:
 
 Those questions are left to later RFCs.
 
+## **Cell Wire Escaping**
+
+`.ord` is pipe-delimited at the table layer, so cell text is serialized with table-layer escaping.
+
+Current rule:
+
+- literal `|` in cell text is serialized as `\|`
+- literal `\` in cell text is serialized as `\\`
+- parser decodes `\| -> |` and `\\ -> \` when reading table rows
+- unknown backslash sequences are preserved literally
+- dangling trailing `\` in a row is invalid
+
+This escaping is a table-wire concern. It is separate from formula/literal semantics inside a cell.
 
 ## **Open Questions**
 
 
 - should prose be allowed around the table inside a sheet
 - should || be the final Header Column marker
-- how should | or || inside cell text be escaped
 - how strict should Markdown compatibility be
