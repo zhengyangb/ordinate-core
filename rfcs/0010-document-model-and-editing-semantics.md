@@ -19,7 +19,7 @@ This RFC is intended to define:
 
 This RFC does not yet define:
 
-- exact CRUD API names
+- exact core-edit API names
 - serialization canonical form
 - exact rebasing rules
 - formatting and metadata
@@ -188,7 +188,7 @@ They are included only to suggest the shape of future editing interfaces.
 
 ## 13. Deferred Topics
 
-- exact CRUD API surface
+- exact core-edit API surface
 - exact column hierarchy semantics
 - exact interaction rules between sections and hierarchy
 - exact rebasing after structural edits

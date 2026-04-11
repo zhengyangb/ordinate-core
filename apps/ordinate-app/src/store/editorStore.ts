@@ -1,6 +1,9 @@
 import { create } from "zustand";
 
 import {
+  applyBatchAtomic,
+  type CoreCellTarget,
+  type CoreEdit,
   DocumentState,
   resolveDocumentPresentation,
   validateDocument,
@@ -25,6 +28,11 @@ interface EditorState {
   error: string | null;
   setSourceText: (text: string) => void;
   setActiveSheet: (sheetName: string) => void;
+  applyCoreEdits: (edits: CoreEdit[], nextActiveSheetHint?: string | null) => void;
+  setCellInput: (target: CoreCellTarget, input: string) => void;
+  renameSheet: (sheet: string, newName: string) => void;
+  setCellLocalFormat: (target: CoreCellTarget, format: string) => void;
+  setCellLocalStyle: (target: CoreCellTarget, style: string) => void;
   exitSourceMode: () => void;
   enterSourceMode: () => void;
 }
@@ -92,7 +100,7 @@ const sampleDocument = `# Management Report
 # A1 Style Demo
 | @display     |      || {:,.1f:<,blue} | {:(),.2f:<} | {:.1%:<} | {::<} | {:,.2f:<,blue,bold} |
 |              | Item || Revenue         | Cost        | Margin   | Notes | Calc                |
-|              | ---- || -------         | ----        | ------   | ----- | ----                |
+| -------- | ---- || -------         | ----        | ------   | ----- | ----                |
 |              | Product A    || 1234.5 {::red}         | -456.7            | 0.125          | "color override" | = B2 + C2 {::red} |
 |              | Product B    || 999.9 {:.3f:>}         | -88.1             | 0.314          | "align + format override" | = B3 + C3 {::normal} |
 |              | Temporal     || 2026-03-24T14:30:00Z {::blue} | PT1H30M {::bold} | 0 | "time literals" | = B2 |
@@ -174,32 +182,79 @@ function bootstrapFromSource(sourceText: string): Pick<
   }
 }
 
+function deriveStateFromDocument(
+  document: DocumentState,
+  activeSheetHint: string | null,
+): Pick<
+  EditorState,
+  "sourceText" | "docState" | "evaluation" | "presentation" | "validation" | "sheetIssuesByName" | "activeSheet" | "error"
+> {
+  const evaluation = document.evaluate();
+  const presentation = resolveDocumentPresentation(document);
+  const sourceText = serializeDocumentState(document);
+  const validation = validateDocument(sourceText);
+  const sheetNames = document.sheets.map((sheet) => sheet.name);
+  const sheetIssuesByName = groupSheetValidationErrors(sheetNames, validation.errors);
+  const firstGlobalIssue = validation.errors.find((issue) => !issue.sheet);
+  const activeSheet = activeSheetHint && sheetNames.includes(activeSheetHint) ? activeSheetHint : sheetNames[0] ?? null;
+
+  return {
+    sourceText,
+    docState: document,
+    evaluation,
+    presentation,
+    validation,
+    sheetIssuesByName,
+    activeSheet,
+    error: firstGlobalIssue?.message ?? null,
+  };
+}
+
 const initialState = bootstrapFromSource(sampleDocument);
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   ...initialState,
   setSourceText: (text) => set({ sourceText: text, presentation: null, validation: null, sheetIssuesByName: {}, error: null }),
   setActiveSheet: (sheetName) => set({ activeSheet: sheetName }),
+  applyCoreEdits: (edits, nextActiveSheetHint) => {
+    const { docState } = get();
+    if (!docState) {
+      throw new Error("cannot apply core edits without an active document state");
+    }
+
+    const result = applyBatchAtomic(docState, edits, { recalculate: false });
+    if (!result.ok) {
+      throw new Error(`[${result.error.category}] ${result.error.message}`);
+    }
+
+    const currentMode = get().mode;
+    const activeHint = nextActiveSheetHint ?? get().activeSheet;
+    set({
+      ...deriveStateFromDocument(result.nextDocument, activeHint),
+      mode: currentMode,
+    });
+  },
+  setCellInput: (target, input) => {
+    get().applyCoreEdits([{ op: "set_cell_input", target, input }]);
+  },
+  renameSheet: (sheet, newName) => {
+    const { activeSheet } = get();
+    const nextActiveSheetHint = activeSheet === sheet ? newName.trim() : activeSheet;
+    get().applyCoreEdits([{ op: "rename_sheet", sheet, newName }], nextActiveSheetHint);
+  },
+  setCellLocalFormat: (target, format) => {
+    get().applyCoreEdits([{ op: "set_cell_local_format", target, format }]);
+  },
+  setCellLocalStyle: (target, style) => {
+    get().applyCoreEdits([{ op: "set_cell_local_style", target, style }]);
+  },
   exitSourceMode: () => {
     try {
       const docState = DocumentState.fromText(get().sourceText);
-      const evaluation = docState.evaluate();
-      const presentation = resolveDocumentPresentation(docState);
-      const validation = validateDocument(get().sourceText);
-      const sheetNames = docState.sheets.map((sheet) => sheet.name);
-      const sheetIssuesByName = groupSheetValidationErrors(sheetNames, validation.errors);
-      const firstGlobalIssue = validation.errors.find((issue) => !issue.sheet);
-      const firstSheet = docState.sheets[0]?.name ?? null;
-
+      const nextState = deriveStateFromDocument(docState, docState.sheets[0]?.name ?? null);
       set({
         mode: "table",
-        docState,
-        evaluation,
-        presentation,
-        validation,
-        sheetIssuesByName,
-        activeSheet: firstSheet,
-        error: firstGlobalIssue?.message ?? null,
+        ...nextState,
       });
     } catch (error) {
       set({ error: toErrorMessage(error) });

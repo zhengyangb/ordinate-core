@@ -18,7 +18,7 @@ This RFC is intended to define:
 
 This RFC does not yet define:
 
-- exact CRUD API names
+- exact core-edit API names
 - stable row or column IDs
 - collaborative editing
 - formatting or metadata

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
 import type { ChromeVisibilityPhase, FormatLocalKey, FormulaBarData, StyleLocalView } from "../types/ui";
+import { selectionDebugLog } from "../utils/selectionDebug";
 
 function classifyDisplayIssue(issue: string): "format" | "style" | "generic" {
   const normalized = issue.trim().toLowerCase();
@@ -74,8 +75,12 @@ function BannerWarningGlyph() {
 type FormulaBarOverlayProps = {
   mode: "table" | "source";
   phase: ChromeVisibilityPhase;
-  formulaBarData: FormulaBarData | null;
   formulaBarSnapshot: FormulaBarData | null;
+  inputMode: "read" | "edit";
+  isInputEditable: boolean;
+  onRequestEdit: () => void;
+  onCancelEdit: () => void;
+  onCommitInput: (nextInput: string) => void;
   onDismiss: () => void;
   onTooltipEnter: (text: string, target: HTMLElement, delayMs?: number) => void;
   onTooltipLeave: () => void;
@@ -86,8 +91,12 @@ type FormulaBarOverlayProps = {
 export default function FormulaBarOverlay({
   mode,
   phase,
-  formulaBarData,
   formulaBarSnapshot,
+  inputMode,
+  isInputEditable,
+  onRequestEdit,
+  onCancelEdit,
+  onCommitInput,
   onDismiss,
   onTooltipEnter,
   onTooltipLeave,
@@ -103,6 +112,10 @@ export default function FormulaBarOverlay({
   const [styleMenuPosition, setStyleMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const styleButtonRef = useRef<HTMLButtonElement | null>(null);
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
+  const [draftInput, setDraftInput] = useState("");
+  const [isComposingInput, setIsComposingInput] = useState(false);
+  const sourceInputRef = useRef<HTMLInputElement | null>(null);
+  const isEditingInput = inputMode === "edit";
 
   const localFormatKey = formulaBarSnapshot?.formatLocalKey ?? "auto";
   const localFormatOptions = formulaBarSnapshot?.formatLocalOptions ?? null;
@@ -128,8 +141,34 @@ export default function FormulaBarOverlay({
   const hasStyleDisplayError = styleErrors.length > 0;
 
   useEffect(() => {
+    if (!formulaBarSnapshot) {
+      setDraftInput("");
+      setIsComposingInput(false);
+      return;
+    }
+    setDraftInput(formulaBarSnapshot.editableSourceText);
+    setIsComposingInput(false);
+  }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.editableSourceText]);
+
+  useEffect(() => {
     setMenuPanelKey(localFormatKey);
   }, [localFormatKey, formulaBarSnapshot?.primaryAddress]);
+
+  useEffect(() => {
+    if (!isEditingInput) return;
+    const input = sourceInputRef.current;
+    if (!input) return;
+    input.focus();
+    const cursor = input.value.length;
+    input.setSelectionRange(cursor, cursor);
+    const raf = window.requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(cursor, cursor);
+    });
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [isEditingInput]);
 
   useEffect(() => {
     if (!formatMenuOpen) return;
@@ -252,8 +291,42 @@ export default function FormulaBarOverlay({
     if (mode !== "table" || phase !== "visible" || !formulaBarSnapshot) {
       setFormatMenuOpen(false);
       setStyleMenuOpen(false);
+      setIsComposingInput(false);
     }
   }, [mode, phase, formulaBarSnapshot]);
+
+  const beginEditInput = () => {
+    if (!isInputEditable || !formulaBarSnapshot) return;
+    setFormatMenuOpen(false);
+    setStyleMenuOpen(false);
+    onRequestEdit();
+    selectionDebugLog("formula beginEditInput");
+  };
+
+  const cancelEditInput = () => {
+    setDraftInput(formulaBarSnapshot?.editableSourceText ?? "");
+    setIsComposingInput(false);
+    onCancelEdit();
+  };
+
+  const commitEditInput = () => {
+    if (!formulaBarSnapshot) return;
+    if (!isInputEditable) {
+      setIsComposingInput(false);
+      onCancelEdit();
+      return;
+    }
+    if (isComposingInput) return;
+    if (draftInput === formulaBarSnapshot.editableSourceText) {
+      setIsComposingInput(false);
+      onCancelEdit();
+      selectionDebugLog("formula commitEditInput noop");
+      return;
+    }
+    selectionDebugLog("formula commitEditInput apply", { draftInput });
+    onCommitInput(draftInput);
+    setIsComposingInput(false);
+  };
 
   if (mode !== "table" || phase === "hidden" || !formulaBarSnapshot) return null;
 
@@ -262,7 +335,7 @@ export default function FormulaBarOverlay({
       <aside
         className={`formula-bar-shell formula-bar-shell--${phase}`}
         aria-live="polite"
-        aria-hidden={formulaBarData ? undefined : true}
+        aria-hidden={formulaBarSnapshot ? undefined : true}
       >
         <div className="formula-bar">
           <div className="formula-meta-stack">
@@ -352,21 +425,65 @@ export default function FormulaBarOverlay({
             </div>
           </div>
           <div className="formula-source-row">
-            <div className="formula-source">
-              {formulaBarSnapshot.editableSourceText}
-            </div>
+            {isEditingInput ? (
+              <input
+                ref={sourceInputRef}
+                className="formula-source formula-source-input is-editing"
+                value={draftInput}
+                spellCheck={false}
+                onChange={(event) => setDraftInput(event.target.value)}
+                onCompositionStart={() => setIsComposingInput(true)}
+                onCompositionEnd={() => setIsComposingInput(false)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    commitEditInput();
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    cancelEditInput();
+                  }
+                }}
+                aria-label="Edit selected cell input"
+              />
+            ) : (
+              <button
+                className={isInputEditable ? "formula-source formula-source-button is-editable is-read" : "formula-source formula-source-button is-read"}
+                type="button"
+                onClick={beginEditInput}
+                onMouseEnter={(event) => {
+                  if (isInputEditable) onTooltipEnter("Edit cell input", event.currentTarget);
+                }}
+                onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+                onFocus={(event) => {
+                  if (isInputEditable) onTooltipEnter("Edit cell input", event.currentTarget);
+                }}
+                onBlur={(event) => onTooltipRelease(event.currentTarget)}
+                onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+                aria-label={isInputEditable ? "Edit selected cell input" : "Cell input (read-only)"}
+              >
+                {formulaBarSnapshot.editableSourceText.length > 0 ? formulaBarSnapshot.editableSourceText : "(blank)"}
+              </button>
+            )}
             <button
               className="formula-dismiss-button"
               type="button"
-              aria-label="Done"
-              onMouseEnter={(event) => onTooltipEnter("Done", event.currentTarget)}
+              aria-label={isEditingInput ? "Apply cell input" : "Done"}
+              onMouseEnter={(event) => onTooltipEnter(isEditingInput ? "Apply cell input" : "Done", event.currentTarget)}
               onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-              onFocus={(event) => onTooltipEnter("Done", event.currentTarget)}
+              onFocus={(event) => onTooltipEnter(isEditingInput ? "Apply cell input" : "Done", event.currentTarget)}
               onBlur={(event) => onTooltipRelease(event.currentTarget)}
               onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
               onClick={() => {
                 setFormatMenuOpen(false);
                 setStyleMenuOpen(false);
+                if (isEditingInput) {
+                  commitEditInput();
+                  return;
+                }
                 onDismiss();
               }}
             >

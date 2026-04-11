@@ -75,6 +75,14 @@
   --formula-shell-topline: oklch(100% 0 0 / 0.34);
   --formula-input-bg: oklch(98.8% 0.002 250 / 0.72);
   --formula-input-border: oklch(100% 0 0 / 0.52);
+  --formula-input-bg-read: oklch(92.8% 0.006 245 / 0.7);
+  --formula-input-bg-focus: oklch(99.35% 0.001 250 / 0.92);
+  --formula-input-border-read: oklch(83.8% 0.01 242 / 0.66);
+  --formula-input-border-focus: oklch(100% 0 0 / 0.7);
+  --formula-input-ink-read: oklch(34% 0.012 244);
+  --formula-input-ink-focus: oklch(18% 0.01 245);
+  --formula-input-caret: oklch(20% 0.012 245);
+  --formula-input-edit-elev-shadow: 0 2px 6px oklch(24% 0.01 245 / 0.1);
   --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.12) 72%, transparent);
   --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.1) 42%, transparent);
   --formula-input-inset-bottom: color-mix(in oklab, var(--chrome-border) 42%, transparent);
@@ -136,6 +144,14 @@
   --formula-shell-topline: oklch(100% 0 0 / 0.14);
   --formula-input-bg: oklch(97.2% 0.003 95 / 0.38);
   --formula-input-border: oklch(100% 0 0 / 0.34);
+  --formula-input-bg-read: oklch(44.5% 0.008 102 / 0.9);
+  --formula-input-bg-focus: oklch(90.6% 0.01 96 / 0.88);
+  --formula-input-border-read: oklch(100% 0 0 / 0.28);
+  --formula-input-border-focus: oklch(100% 0 0 / 0.38);
+  --formula-input-ink-read: oklch(89% 0.006 104);
+  --formula-input-ink-focus: oklch(19% 0.01 98);
+  --formula-input-caret: oklch(22% 0.01 98);
+  --formula-input-edit-elev-shadow: 0 3px 8px oklch(8% 0.008 95 / 0.24);
   --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.08) 66%, transparent);
   --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.04) 34%, transparent);
   --formula-input-inset-bottom: color-mix(in oklab, oklch(100% 0 0 / 0.1) 54%, transparent);
@@ -188,6 +204,14 @@
     --formula-shell-topline: oklch(100% 0 0 / 0.14);
     --formula-input-bg: oklch(97.2% 0.003 95 / 0.38);
     --formula-input-border: oklch(100% 0 0 / 0.34);
+    --formula-input-bg-read: oklch(44.5% 0.008 102 / 0.9);
+    --formula-input-bg-focus: oklch(90.6% 0.01 96 / 0.88);
+    --formula-input-border-read: oklch(100% 0 0 / 0.28);
+    --formula-input-border-focus: oklch(100% 0 0 / 0.38);
+    --formula-input-ink-read: oklch(89% 0.006 104);
+    --formula-input-ink-focus: oklch(19% 0.01 98);
+    --formula-input-caret: oklch(22% 0.01 98);
+    --formula-input-edit-elev-shadow: 0 3px 8px oklch(8% 0.008 95 / 0.24);
     --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.08) 66%, transparent);
     --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.04) 34%, transparent);
     --formula-input-inset-bottom: color-mix(in oklab, oklch(100% 0 0 / 0.1) 54%, transparent);
@@ -943,11 +967,44 @@ textarea {
   white-space: nowrap;
 }
 
+.sheet-tab.renaming {
+  border-color: color-mix(in oklab, var(--accent) 44%, var(--chrome-border));
+  background: color-mix(in oklab, var(--toolbar-pill) 58%, var(--sheet-surface));
+  color: var(--chrome-ink);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--accent) 36%, transparent),
+    inset 0 1px 0 color-mix(in oklab, oklch(100% 0 0 / 0.2) 88%, transparent);
+}
+
+.sheet-tab.active.renaming {
+  background: color-mix(in oklab, var(--toolbar-pill) 72%, var(--sheet-surface));
+  border-color: color-mix(in oklab, var(--accent) 52%, var(--chrome-border));
+  color: var(--chrome-ink);
+}
+
 .sheet-tab-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sheet-tab-rename-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.1;
+  text-align: center;
+  outline: none;
+}
+
+.sheet-tab-rename-input::selection {
+  background: color-mix(in oklab, var(--accent) 62%, oklch(18% 0.02 240 / 0.75));
+  color: oklch(98% 0.005 95);
 }
 
 .sheet-tab-alert {
@@ -1462,24 +1519,50 @@ textarea {
   position: relative;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: var(--sheet-surface);
+}
+
+.persistent-selection-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform: translate3d(-9999px, -9999px, 0);
+  will-change: transform, width, height;
+  border: var(--selection-ring-width) solid var(--selection-ring-color);
+  border-radius: var(--selection-ring-radius);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--sheet-canvas) 68%, transparent),
+    0 0 0 0.5px color-mix(in oklab, var(--accent-strong) 38%, transparent);
+  pointer-events: none;
+  z-index: 6;
+  opacity: 1;
+}
+
+.persistent-selection-ring.is-hidden {
+  transform: translate3d(-9999px, -9999px, 0) !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0;
 }
 
 .header-matrix-overlay {
   position: absolute;
   inset-inline: 0;
   top: 0;
-  z-index: 4;
+  z-index: 8;
   pointer-events: none;
 }
 
 .header-matrix-overlay--center {
-  z-index: 4;
+  z-index: 8;
   clip-path: inset(0 0 0 var(--header-overlay-pinned-width, 0px));
 }
 
 .header-matrix-overlay--pinned {
-  z-index: 6;
+  z-index: 9;
 }
 
 .header-matrix-cell {
@@ -1519,6 +1602,12 @@ textarea {
   background: color-mix(in oklab, var(--sheet-header-row) 88%, oklch(100% 0 0 / 0.12));
 }
 
+.header-matrix-cell:focus,
+.header-matrix-cell:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .header-matrix-cell.has-slot-selection {
   z-index: 2;
 }
@@ -1537,8 +1626,23 @@ textarea {
   content: none !important;
 }
 
+.grid-wrap.suppress-header-focus .ag-header-cell:focus,
+.grid-wrap.suppress-header-focus .ag-header-cell:focus-visible,
+.grid-wrap.suppress-header-focus .ag-header-group-cell:focus,
+.grid-wrap.suppress-header-focus .ag-header-group-cell:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .grid-wrap {
   box-sizing: border-box;
+  /* Header layout contract:
+   * - the overlay renders the visible header rows
+   * - AG Grid's native header is kept at height 0
+   * - this padding-top is the only vertical offset that pushes the body below
+   *   the overlay header; removing it makes body rows slide under the header,
+   *   while also keeping AG header height non-zero creates duplicate blank space
+   */
   height: 100%;
   padding-top: var(--header-overlay-height, 0px);
   background: var(--sheet-surface);
@@ -1587,10 +1691,11 @@ textarea {
 }
 
 .grid-wrap .ag-header {
+  position: relative;
   box-shadow:
     0 1px 0 var(--sheet-grid),
     var(--sticky-row-shadow);
-  z-index: 3;
+  z-index: 7;
 }
 
 .ag-theme-quartz .ag-header-cell {
@@ -1602,6 +1707,19 @@ textarea {
 
 .ag-theme-quartz .ag-header-cell-label {
   align-items: center;
+}
+
+.grid-wrap.overlay-owned-header .ag-header-cell-label {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.grid-wrap.overlay-owned-header .ag-header-container,
+.grid-wrap.overlay-owned-header .ag-header-row,
+.grid-wrap.overlay-owned-header .ag-header-cell,
+.grid-wrap.overlay-owned-header .ag-header-group-cell {
+  min-height: 0 !important;
+  height: 0 !important;
 }
 
 .ag-theme-quartz .ag-cell,
@@ -1805,11 +1923,6 @@ textarea {
   text-underline-offset: 0.14rem;
 }
 
-.grid-wrap .ag-row:has(.ag-cell-range-single-cell),
-.grid-wrap .ag-row:has(.ag-cell-focus:not(.ag-cell-range-selected):focus-within) {
-  z-index: 6;
-}
-
 .grid-wrap .ag-header-cell:focus,
 .grid-wrap .ag-header-cell:focus-visible,
 .grid-wrap .ag-header-group-cell:focus,
@@ -1817,7 +1930,7 @@ textarea {
   outline: none !important;
   overflow: visible !important;
   position: relative;
-  z-index: 7;
+  z-index: 10;
 }
 
 .grid-wrap .ag-header-cell:focus::after,
@@ -1887,6 +2000,33 @@ textarea {
   animation: cell-selection-pulse 220ms var(--ease-out-quart) both;
   pointer-events: none;
   box-sizing: border-box;
+}
+
+/* Body cell ring is rendered by .persistent-selection-ring overlay. */
+.grid-wrap.suppress-cell-focus-ring .ag-ltr .ag-cell-focus:not(.ag-cell-range-selected):focus-within::after,
+.grid-wrap.suppress-cell-focus-ring .ag-ltr .ag-cell-range-single-cell::after,
+.grid-wrap.suppress-cell-focus-ring .ag-ltr .ag-cell-range-single-cell.ag-cell-range-handle::after,
+.grid-wrap.suppress-cell-focus-ring .ag-rtl .ag-cell-focus:not(.ag-cell-range-selected):focus-within::after,
+.grid-wrap.suppress-cell-focus-ring .ag-rtl .ag-cell-range-single-cell::after,
+.grid-wrap.suppress-cell-focus-ring .ag-rtl .ag-cell-range-single-cell.ag-cell-range-handle::after,
+.grid-wrap.suppress-cell-focus-ring .ag-cell:focus::after,
+.grid-wrap.suppress-cell-focus-ring .ag-cell:focus-visible::after,
+.grid-wrap.suppress-cell-focus-ring .ag-cell-focus::after,
+.grid-wrap.suppress-cell-focus-ring .ag-cell-focus:not(.ag-cell-range-selected)::after,
+.grid-wrap.suppress-cell-focus-ring .ag-cell-range-single-cell::after,
+.grid-wrap.suppress-cell-focus-ring .ag-cell-range-single-cell.ag-cell-range-handle::after {
+  content: none !important;
+}
+
+.grid-wrap.suppress-cell-focus-ring .ag-cell:focus,
+.grid-wrap.suppress-cell-focus-ring .ag-cell:focus-visible,
+.grid-wrap.suppress-cell-focus-ring .ag-cell-focus,
+.grid-wrap.suppress-cell-focus-ring .ag-cell-focus:not(.ag-cell-range-selected),
+.grid-wrap.suppress-cell-focus-ring .ag-cell-range-single-cell,
+.grid-wrap.suppress-cell-focus-ring .ag-cell-range-single-cell.ag-cell-range-handle {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
 }
 
 .ag-theme-quartz .ag-cell-focus .tree-cell,
@@ -2152,10 +2292,60 @@ textarea {
     inset 0 -1px 0 var(--formula-input-inset-bottom);
   -webkit-backdrop-filter: blur(8px) saturate(1.02);
   backdrop-filter: blur(8px) saturate(1.02);
-  color: var(--sheet-ink);
+  color: var(--formula-input-ink-read);
   font-family: var(--font-mono);
   font-size: 0.78rem;
   line-height: 1.2;
+  transition:
+    color 140ms var(--ease-out-quart),
+    background-color 140ms var(--ease-out-quart),
+    border-color 140ms var(--ease-out-quart),
+    box-shadow 180ms var(--ease-out-quint),
+    transform 180ms var(--ease-out-quint),
+    filter 180ms var(--ease-out-quint);
+}
+
+.formula-source.is-read {
+  background: var(--formula-input-bg-read);
+  border-color: var(--formula-input-border-read);
+  color: var(--formula-input-ink-read);
+}
+
+.formula-source.is-editing {
+  background: var(--formula-input-bg-focus);
+  border-color: var(--formula-input-border-focus);
+  color: var(--formula-input-ink-focus);
+  box-shadow:
+    inset 0 1px 0 var(--formula-input-inset-top),
+    inset 0 2px 6px var(--formula-input-inset-depth),
+    inset 0 -1px 0 var(--formula-input-inset-bottom),
+    0 0 0 1px color-mix(in oklab, var(--formula-input-border-focus) 86%, transparent),
+    0 1px 0 color-mix(in oklab, oklch(100% 0 0 / 0.36) 70%, transparent),
+    var(--formula-input-edit-elev-shadow);
+  animation: formula-input-focus-in 210ms var(--ease-out-quint) both;
+  filter: saturate(1.05) brightness(1.02);
+}
+
+.formula-source-button {
+  width: 100%;
+  text-align: left;
+  cursor: default;
+}
+
+.formula-source-button.is-editable {
+  cursor: text;
+}
+
+.formula-source-input {
+  width: 100%;
+  outline: none;
+  caret-color: var(--formula-input-caret);
+  color: inherit;
+}
+
+.formula-source-input::selection {
+  background: color-mix(in oklab, var(--accent) 62%, oklch(18% 0.02 240 / 0.72));
+  color: oklch(98% 0.005 95);
 }
 
 .formula-source-row {
@@ -2891,6 +3081,17 @@ textarea:focus-visible,
   to {
     opacity: 0;
     transform: translateX(-50%) translateY(12px) scale(0.99);
+  }
+}
+
+@keyframes formula-input-focus-in {
+  from {
+    transform: translateY(1.2px) scale(0.992);
+    filter: saturate(0.95) brightness(0.98);
+  }
+  to {
+    transform: translateY(0) scale(1);
+    filter: saturate(1.05) brightness(1.02);
   }
 }
 

@@ -125,7 +125,7 @@ describe("RFC-0013 dual reference styles", () => {
       },
     };
     sheet.cells[rowAAbs][outCol].dirty = true;
-    sheet.cells[rowAAbs][outCol].value = null;
+    sheet.cells[rowAAbs][outCol].cachedValue = null;
 
     const output = serializeDocumentState(state);
     const expected = formatDocument(`

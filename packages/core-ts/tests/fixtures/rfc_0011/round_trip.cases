@@ -187,7 +187,7 @@ evaluate: true
 # Sheet
 | @display |      || {:,.1f:>} | {::>,blue} |
 |          | Item || Val       | Out        |
-|          | ---- || ---       | ---        |
+| -------- | ---- || ---       | ---        |
 |          | A    || 12.3      | = B2       |
 [/doc]
 [expect]
@@ -211,4 +211,22 @@ evaluate: true
 | @display | {:,.2f} | {::>} |
 |          | 12.3    | 7     |
 |          | 45      | 9     |
+[/expect]
+
+=== wire_escape_canonicalization_for_pipe_and_backslash
+[doc]
+# Sheet
+| Item | Note      |
+| ---- | --------- |
+| A    | a\|b      |
+| B    | slash\\ok |
+| C    | raw\q     |
+[/doc]
+[expect]
+# Sheet
+| Item | Note      |
+| ---- | --------- |
+| A    | a\|b      |
+| B    | slash\\ok |
+| C    | raw\\q    |
 [/expect]

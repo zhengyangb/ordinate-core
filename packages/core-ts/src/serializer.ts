@@ -1,5 +1,6 @@
 import { formatDocument } from "./formatter";
 import { type DocumentState, type SheetState } from "./incremental";
+import { escapeCellText } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import { type ExprNode, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue } from "./runtime/types";
 import { isError, isValidExternalErrorKind } from "./runtime/errors";
@@ -100,8 +101,8 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
         const rhs = renderExpression(cellState.parsed.expression, rowIdToIndex, colIdToIndex)
           ?? cellState.parsed.expressionText
           ?? "";
-        if (!cellState.dirty && cellState.value !== null && cellState.value.kind !== "blank") {
-          cells.push(`${serializeValue(cellState.value)} = ${rhs}${displaySuffix}`);
+        if (!cellState.dirty && cellState.cachedValue !== null && cellState.cachedValue.kind !== "blank") {
+          cells.push(`${serializeValue(cellState.cachedValue)} = ${rhs}${displaySuffix}`);
         } else {
           cells.push(`= ${rhs}${displaySuffix}`);
         }
@@ -133,7 +134,7 @@ function buildRow(cells: string[], boundary: number | null): string {
     parts.push("");
   }
   cells.forEach((cell, idx) => {
-    parts.push(cell);
+    parts.push(escapeCellText(cell));
     if (boundary !== null && idx + 1 === boundary) {
       parts.push("");
     }

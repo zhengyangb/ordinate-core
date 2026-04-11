@@ -212,6 +212,7 @@ Current working direction:
 - first cell in that row is `@display`
 - remaining cells in that row correspond to semantic columns and carry metadata-only blocks such as `{:,.2f}` or `{::>}`
 - every semantic row is serialized with a leading reserved control column cell
+- when a header divider exists, divider dashes must include the control-column cell
 - parser/runtime strips this control frame before semantic validation, evaluation, and selector resolution
 - control-frame cells (except top-left marker) must be metadata-only or blank
 

@@ -36,6 +36,15 @@ export {
 export { ChangeKind, DocumentState, SheetState } from "./incremental";
 export { serializeDocumentState } from "./serializer";
 export {
+  applyBatchAtomic,
+  type ApplyBatchAtomicOptions,
+  type ApplyBatchAtomicResult,
+  type CoreCellTarget,
+  type CoreEdit,
+  type CoreEditError,
+  type CoreEditErrorCategory,
+} from "./core_edit";
+export {
   formatPresentedCell,
   resolveDocumentPresentation,
   resolvePresentationFromText,

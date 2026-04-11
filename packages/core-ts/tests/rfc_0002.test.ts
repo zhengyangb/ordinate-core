@@ -81,6 +81,13 @@ describe("RFC-0002 requirements", () => {
     const formatted = formatDocument(text);
     expect(formatted).toContain(String.raw`a\|b`);
     expect(formatted).toContain(String.raw`slash\\test`);
+    expect(formatted).toContain(String.raw`raw\\q`);
+  });
+
+  it("invalid dangling escape at end of row", () => {
+    const result = validateDocument(readFixture("invalid_dangling_escape.ord"));
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.message.includes("dangling escape at end of row"))).toBe(true);
   });
 
   it("format matches expected fixture", () => {

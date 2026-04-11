@@ -223,7 +223,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 # Sheet
 | @display |      || {:,.1f:>,bold} | {:d:>,bold} | {:,.2f:>,blue,bold} |
 |          | Item || Price          | Qty         | Total                |
-|          | ---- || ----           | ---         | -----                |
+| -------- | ---- || ----           | ---         | -----                |
 |          | A    || 1234.5         | 2           | = B2 * C2            |
 |          | B    || 9.9 {:,.3f}    | 3 {::green} | = B3 * C3 {::^,normal} |
 `.trim();
@@ -267,17 +267,20 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(bQty.styleLayer.effective).toMatchObject({ align: "right", color: "green", weight: "bold" });
     expect(bQty.displayText).toBe("3");
 
+    const evaluated = evaluateDocument(doc);
+    const evalSheet = evaluated.sheets[0];
+    expect(evalSheet.values[0][3]?.kind).toBe("number");
+    expect(evalSheet.values[0][3]?.value).toBe(2469);
+
     const aTotal = sheet.cells[0][3];
-    expect(aTotal.value?.kind).toBe("number");
-    expect(aTotal.value?.value).toBe(2469);
     expect(aTotal.source).toBe("column");
     expect(aTotal.formatLayer.effective).toMatchObject({ grouping: true, precision: 2, type: "f" });
     expect(aTotal.styleLayer.effective).toMatchObject({ align: "right", color: "blue", weight: "bold" });
     expect(aTotal.displayText).toBe("2,469.00");
 
     const bTotal = sheet.cells[1][3];
-    expect(bTotal.value?.kind).toBe("number");
-    expect(bTotal.value?.value).toBeCloseTo(29.7, 10);
+    expect(evalSheet.values[1][3]?.kind).toBe("number");
+    expect(evalSheet.values[1][3]?.value).toBeCloseTo(29.7, 10);
     expect(bTotal.source).toBe("cell");
     expect(bTotal.formatLayer.effective).toMatchObject({ grouping: true, precision: 2, type: "f" });
     expect(bTotal.styleLayer.effective).toMatchObject({ align: "center", color: "blue", weight: "normal" });
@@ -302,9 +305,11 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(valCell.styleLayer.effective).toBeNull();
     expect(valCell.displayText).toBe("12.5");
 
+    const evalSheet = state.evaluate().sheets[0];
+    expect(evalSheet.values[0][2]?.kind).toBe("number");
+    expect(evalSheet.values[0][2]?.value).toBe(13.5);
+
     const outCell = sheet.cells[0][2];
-    expect(outCell.value?.kind).toBe("number");
-    expect(outCell.value?.value).toBe(13.5);
     expect(outCell.errors.length).toBeGreaterThan(0);
     expect(outCell.formatLayer.effective).toBeNull();
     expect(outCell.styleLayer.effective).toBeNull();
@@ -316,8 +321,6 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: -1234.5 },
         formatLayer: {
-          local: null,
-          inherited: null,
           effective: { sign: "parentheses", zeroPad: false, width: null, grouping: true, precision: 2, type: "f", raw: "(),.2f" },
         },
       }),
@@ -327,8 +330,6 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: 0.125 },
         formatLayer: {
-          local: null,
-          inherited: null,
           effective: { sign: "plus", zeroPad: false, width: null, grouping: false, precision: 1, type: "%", raw: "+.1%" },
         },
       }),
@@ -338,8 +339,6 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: 42 },
         formatLayer: {
-          local: null,
-          inherited: null,
           effective: { sign: "default", zeroPad: true, width: 6, grouping: false, precision: null, type: "d", raw: "06d" },
         },
       }),
@@ -411,7 +410,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 # Sheet
 | @display | oops || {:,.2f} |
 |          | Item || Val     |
-|          | ---- || ---     |
+| -------- | ---- || ---     |
 |          | A    || 12.3    |
 `.trim();
 

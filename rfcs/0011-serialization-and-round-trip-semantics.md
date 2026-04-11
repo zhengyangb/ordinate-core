@@ -81,6 +81,17 @@ Current working direction:
 
 The serializer is therefore allowed to rewrite user-authored formatting into a standard canonical representation.
 
+## Cell Wire Escaping
+
+Serialization is responsible for table-layer escaping.
+
+Current working direction:
+
+- serializer emits `\|` for literal `|` in cell text
+- serializer emits `\\` for literal `\` in cell text
+- parser decodes table-layer escapes before cell semantic parsing
+- this table-layer escaping is independent of formula/literal semantics inside the cell
+
 ## Formula Serialization
 
 Formula cells are serialized in one of two forms:
@@ -175,6 +186,7 @@ Current working direction:
 - control frame starts with a row whose first cell is `@display`
 - control row remaining cells map 1:1 to semantic columns and carry metadata-only blocks (or blank)
 - semantic rows are serialized with a leading reserved control-column cell
+- when a header divider row is present, divider dashes must span all serialized columns, including the reserved control column
 - this control frame is serialization scaffolding and is stripped before semantic table processing
 
 ## Hierarchy and Internal Paths
@@ -223,6 +235,7 @@ Serialization may be performed asynchronously relative to editing, as long as th
 - semantic round-trip is required
 - exact textual round-trip is not required
 - dirty or stale cache must not be serialized as authoritative cache
+- cell wire escaping for `|` and `\` is applied during serialization
 - hierarchy in the table is serialized as header rows
 - hierarchy in references is serialized as reference/path syntax
 - canonical quoting is used during serialization

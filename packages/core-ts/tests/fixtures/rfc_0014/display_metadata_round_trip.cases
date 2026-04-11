@@ -27,7 +27,7 @@ expect_format_grouping: true
 # Sheet
 | @display |      || {:,.1f : > } | {:d : >} |        |
 |          | Item || Price         | Qty      | Total  |
-|          | ---- || -----         | ---      | -----  |
+| -------- | ---- || -----         | ---      | -----  |
 |          | A    || 1234.5        | 2        | = B2 * C2 |
 [/doc]
 [expect]
@@ -102,7 +102,7 @@ expect_has_errors: false
 # Sheet
 | @display |      ||        | {:,.2f} |
 |          | Item || Val    | Out     |
-|          | ---- || ---    | ---     |
+| -------- | ---- || ---    | ---     |
 |          | A    || 12.345 | = B2    |
 [/doc]
 [expect]
@@ -279,7 +279,7 @@ expect_has_errors: false
 # Sheet
 | @display |      ||     | {::>,bold,blue} |
 |          | Item || Val | Out             |
-|          | ---- || --- | ---             |
+| -------- | ---- || --- | ---             |
 |          | A    || 2   | = B2 {::green}  |
 |          | B    || 3   | = B3 {::normal} |
 [/doc]
@@ -308,7 +308,7 @@ expect_has_errors: false
 # Sheet
 | @display |      ||     | {::>,bold,blue} |
 |          | Item || Val | Out             |
-|          | ---- || --- | ---             |
+| -------- | ---- || --- | ---             |
 |          | A    || 3   | = B2 {::normal} |
 [/doc]
 [expect]
