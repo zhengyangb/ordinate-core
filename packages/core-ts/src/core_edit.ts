@@ -124,6 +124,7 @@ function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
   if (edit.op === "set_cell_input") {
     const { sheet, rowIndex, colIndex } = resolveCellTarget(document, edit.target);
     assertDataCell(sheet, rowIndex, colIndex);
+    assertSingleLineCellInput(edit.input);
     sheet.setCellByIndex(rowIndex, colIndex, edit.input, ChangeKind.VALUE, false);
     return;
   }
@@ -337,5 +338,14 @@ function assertColumnDeleteIndex(sheet: SheetState, colIndex: number): void {
 function assertInteger(value: number, name: string): void {
   if (!Number.isInteger(value)) {
     throw new CoreEditFailure("invalid_target", `${name} must be an integer`);
+  }
+}
+
+function assertSingleLineCellInput(input: string): void {
+  if (input.includes("\n") || input.includes("\r")) {
+    throw new CoreEditFailure(
+      "invalid_operation",
+      'cell input must be single-line; use "\\n" for literal text',
+    );
   }
 }

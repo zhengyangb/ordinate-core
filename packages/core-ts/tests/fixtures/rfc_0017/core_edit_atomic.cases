@@ -393,6 +393,32 @@ expect_ok: false
 expect_error_category: invalid_operation
 
 ===
+set_cell_input_rejects_real_newline
+[doc]
+# Sheet
+| Item || Note |
+| ---- || ---- |
+| A    || ok   |
+[/doc]
+[ops]
+[
+  {
+    "op": "set_cell_input",
+    "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Note" },
+    "input": "line1\nline2"
+  }
+]
+[/ops]
+[expect]
+# Sheet
+| Item || Note |
+| ---- || ---- |
+| A    || ok   |
+[/expect]
+expect_ok: false
+expect_error_category: invalid_operation
+
+===
 set_cell_input_parse_failure_preserves_raw
 [doc]
 # Sheet

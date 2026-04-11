@@ -86,6 +86,7 @@ Normative requirements:
 - serializer must emit `unparsedSourceRaw` verbatim when `parse_failed`
 - `setCellInput` accepts semantic cell text; callers do not need to provide table-wire escaping (`\|`, `\\`)
 - table-wire escaping is handled by serialization/parsing layer (RFC-0002 / RFC-0011)
+- `setCellInput` must reject real newline characters (`LF` / `CR`) in a single cell input (fail-early)
 
 ### 2. Cache Surface
 

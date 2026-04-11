@@ -37,7 +37,9 @@ type TableStageProps = {
   showSelectionRing: boolean;
   selectionRingRef: MutableRefObject<HTMLDivElement | null>;
   suppressAgHeaderFocus: boolean;
+  overlayOwnsGridHeader: boolean;
   handleHeaderOverlaySelect: (rowNumber: number, colIndex: number) => void;
+  handleHeaderOverlayKeyDown: (event: KeyboardEvent, rowNumber: number, colIndex: number) => void;
   handleColumnRailSelect: (colIndex: number) => void;
   handleColumnRailMenuOpen: (colIndex: number, anchorEl: HTMLElement) => void;
   handleRowRailSelect: (rowNumber: number, rowPath: string | null) => void;
@@ -100,7 +102,9 @@ export default function TableStage({
   showSelectionRing,
   selectionRingRef,
   suppressAgHeaderFocus,
+  overlayOwnsGridHeader,
   handleHeaderOverlaySelect,
+  handleHeaderOverlayKeyDown,
   handleColumnRailSelect,
   handleColumnRailMenuOpen,
   handleRowRailSelect,
@@ -198,6 +202,8 @@ export default function TableStage({
         key={cell.key}
         className={selectedSlot >= 0 ? "header-matrix-cell has-slot-selection" : "header-matrix-cell"}
         data-row-number={cell.rowNumber}
+        data-start-col={cell.startCol}
+        data-end-col={cell.endCol}
         type="button"
         style={style}
         onMouseDown={(event) => {
@@ -210,6 +216,12 @@ export default function TableStage({
           const slot = Math.min(span - 1, Math.floor(ratio * span));
           const colIndex = cell.startCol + slot;
           handleHeaderOverlaySelect(cell.rowNumber, colIndex);
+          requestAnimationFrame(() => target.focus());
+        }}
+        onKeyDown={(event) => {
+          const spanSize = Math.max(1, cell.endCol - cell.startCol + 1);
+          const selectedColIndex = selectedSlot >= 0 ? cell.startCol + selectedSlot : cell.startCol + spanSize - 1;
+          handleHeaderOverlayKeyDown(event.nativeEvent, cell.rowNumber, selectedColIndex);
         }}
       >
         <span>{cell.label}</span>
@@ -319,13 +331,29 @@ export default function TableStage({
             </div>
           </>
         ) : null}
-        <div className={suppressAgHeaderFocus ? "grid-wrap suppress-cell-focus-ring suppress-header-focus" : "grid-wrap suppress-cell-focus-ring"} ref={gridWrapRef}>
+        <div
+          className={
+            suppressAgHeaderFocus
+              ? overlayOwnsGridHeader
+                ? "grid-wrap suppress-cell-focus-ring suppress-header-focus overlay-owned-header"
+                : "grid-wrap suppress-cell-focus-ring suppress-header-focus"
+              : overlayOwnsGridHeader
+                ? "grid-wrap suppress-cell-focus-ring overlay-owned-header"
+                : "grid-wrap suppress-cell-focus-ring"
+          }
+          ref={gridWrapRef}
+        >
           <AgGridReact<GridRow>
             rowData={rowData}
             columnDefs={columnDefs}
             animateRows
-            headerHeight={showGridHeader ? undefined : 0}
-            groupHeaderHeight={showGridHeader ? undefined : 0}
+            // Header layout contract:
+            // - the visible spreadsheet header is fully owned by our overlay
+            // - `.grid-wrap` reserves that vertical space with padding-top
+            // - AG Grid's native header must stay at 0 height, otherwise
+            //   header space gets counted twice and body rows are pushed down
+            headerHeight={0}
+            groupHeaderHeight={0}
             defaultColDef={{
               editable: false,
               sortable: false,
