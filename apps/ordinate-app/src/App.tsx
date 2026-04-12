@@ -708,7 +708,7 @@ export default function App() {
               item[field] = rowLeaf;
               item[`__kind_${colIndex}`] = "label";
             } else {
-              const headerValue = displayText.length > 0 ? displayText : rawCell?.sourceText ?? "";
+              const headerValue = displayText.length > 0 ? displayText : rawCell?.storedCellText ?? "";
               item[field] = headerValue;
               item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
             }
@@ -1543,7 +1543,7 @@ export default function App() {
       hasFormulaBarData: formulaBarData != null,
       primaryAddress: formulaBarData?.primaryAddress ?? null,
       displayText: formulaBarData?.displayText ?? null,
-      sourceText: formulaBarData?.sourceText ?? null,
+      cellText: formulaBarData?.cellText ?? null,
     });
   }, [selectedCell, formulaBarData]);
 

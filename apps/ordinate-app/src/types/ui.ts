@@ -33,8 +33,8 @@ export type FormulaBarData = {
   secondaryAddress: string;
   chip: string;
   displayText: string;
-  sourceText: string;
-  editableSourceText: string;
+  cellText: string;
+  inputText: string;
   formatLocalKey?: FormatLocalKey;
   formatLocalOptions?: FormatLocalOptions | null;
   styleLocal?: StyleLocalView | null;

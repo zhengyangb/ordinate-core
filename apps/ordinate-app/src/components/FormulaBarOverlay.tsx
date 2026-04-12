@@ -146,9 +146,9 @@ export default function FormulaBarOverlay({
       setIsComposingInput(false);
       return;
     }
-    setDraftInput(formulaBarSnapshot.editableSourceText);
+    setDraftInput(formulaBarSnapshot.inputText);
     setIsComposingInput(false);
-  }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.editableSourceText]);
+  }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.inputText]);
 
   useEffect(() => {
     setMenuPanelKey(localFormatKey);
@@ -304,7 +304,7 @@ export default function FormulaBarOverlay({
   };
 
   const cancelEditInput = () => {
-    setDraftInput(formulaBarSnapshot?.editableSourceText ?? "");
+    setDraftInput(formulaBarSnapshot?.inputText ?? "");
     setIsComposingInput(false);
     onCancelEdit();
   };
@@ -317,7 +317,7 @@ export default function FormulaBarOverlay({
       return;
     }
     if (isComposingInput) return;
-    if (draftInput === formulaBarSnapshot.editableSourceText) {
+    if (draftInput === formulaBarSnapshot.inputText) {
       setIsComposingInput(false);
       onCancelEdit();
       selectionDebugLog("formula commitEditInput noop");
@@ -465,7 +465,7 @@ export default function FormulaBarOverlay({
                 onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
                 aria-label={isInputEditable ? "Edit selected cell input" : "Cell input (read-only)"}
               >
-                {formulaBarSnapshot.editableSourceText.length > 0 ? formulaBarSnapshot.editableSourceText : "(blank)"}
+                {formulaBarSnapshot.inputText.length > 0 ? formulaBarSnapshot.inputText : "(blank)"}
               </button>
             )}
             <button

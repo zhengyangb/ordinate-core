@@ -179,8 +179,8 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
     const badRowAbs = sheet.bodyStart + badRowRel;
     const badPrice = sheet.cells[badRowAbs][1];
 
-    // Raw user text is preserved.
-    expect(badPrice.sourceText).toBe("= sum(B2");
+    // Stored cell text is preserved for invalid input round-trip.
+    expect(badPrice.storedCellText).toBe("= sum(B2");
     expect(badPrice.parsed.kind).toBe("formula");
     expect(badPrice.parsed.expression).not.toBeNull();
     if (!badPrice.parsed.expression || badPrice.parsed.expression.kind !== "literal") {
@@ -444,7 +444,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
       throw new Error("expected resolved target indices");
     }
     const badCell = sheet.cells[rowB][colOut];
-    expect(badCell.sourceText).toBe("= sum(B2");
+    expect(badCell.storedCellText).toBe("= sum(B2");
     expect(badCell.parsed.kind).toBe("formula");
     expect(serializeDocumentState(result.nextDocument)).toContain("= sum(B2");
   });

@@ -78,15 +78,18 @@
   --formula-input-bg-read: oklch(92.8% 0.006 245 / 0.7);
   --formula-input-bg-focus: oklch(99.35% 0.001 250 / 0.92);
   --formula-input-border-read: oklch(83.8% 0.01 242 / 0.66);
-  --formula-input-border-focus: oklch(100% 0 0 / 0.7);
+  --formula-input-border-focus: oklch(100% 0 0 / 0.64);
   --formula-input-ink-read: oklch(34% 0.012 244);
   --formula-input-ink-focus: oklch(18% 0.01 245);
   --formula-input-caret: oklch(20% 0.012 245);
-  --formula-input-edit-elev-shadow: 0 1px 3px oklch(24% 0.01 245 / 0.06);
+  --formula-input-edit-elev-shadow:
+    0 0 26px oklch(34% 0.01 245 / 0.065),
+    0 16px 46px oklch(36% 0.01 245 / 0.105),
+    0 3px 12px oklch(32% 0.012 245 / 0.06);
   --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.12) 72%, transparent);
   --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.1) 42%, transparent);
   --formula-input-inset-bottom: color-mix(in oklab, var(--chrome-border) 42%, transparent);
-  --formula-input-focus-ring: color-mix(in oklab, var(--formula-input-border-focus) 92%, transparent);
+  --formula-input-focus-ring: transparent;
   --formula-dismiss-bg: color-mix(in oklab, var(--accent-soft) 46%, transparent);
   --formula-dismiss-bg-hover: color-mix(in oklab, var(--accent-soft) 58%, transparent);
   --formula-glass-gloss-top: oklch(100% 0 0 / 0.2);

@@ -34,7 +34,7 @@ export enum ChangeKind {
 }
 
 interface CellState {
-  sourceText: string;
+  storedCellText: string;
   parsed: ParsedCell;
   cachedValue: RuntimeValue | null;
   dirty: boolean;
@@ -235,7 +235,7 @@ export class SheetState {
         const value = trimmed[c];
         const normalizedText = normalizeCellTextForParsing(value, rAbs, c, headerRowCount, headerColCount);
         const parsed = parseCellInput(normalizedText);
-        rowCells.push({ sourceText: normalizedText, parsed, cachedValue: null, dirty: true });
+        rowCells.push({ storedCellText: normalizedText, parsed, cachedValue: null, dirty: true });
       }
       cells.push(rowCells);
     }
@@ -311,7 +311,7 @@ export class SheetState {
     const rawText = kind === ChangeKind.CLEAR && text === "" ? " " : text;
     const cell = this.cells[rAbs][c];
     const normalizedText = normalizeCellTextForParsing(rawText, rAbs, c, this.headerRowCount, this.headerColCount);
-    cell.sourceText = normalizedText;
+    cell.storedCellText = normalizedText;
     cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
     cell.dirty = true;
     cell.cachedValue = null;
@@ -391,7 +391,7 @@ export class SheetState {
     const nextRaw = composeCellRawWithDisplay(contentText, nextDisplay);
     const normalizedText = normalizeCellTextForParsing(nextRaw, rAbs, c, this.headerRowCount, this.headerColCount);
     const cell = this.cells[rAbs][c];
-    cell.sourceText = normalizedText;
+    cell.storedCellText = normalizedText;
     cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
     this.updateRowText(rAbs, c, nextRaw);
   }
@@ -480,9 +480,9 @@ export class SheetState {
     const newRow: ParsedRow = { rawCells, cells, boundary, errors: [] };
     this.logicalRows.splice(rowIndex, 0, newRow);
 
-    const newCellStates: CellState[] = rawCells.map((sourceText) => ({
-      sourceText,
-      parsed: this.bindParsedCell(parseCellInput(sourceText)),
+    const newCellStates: CellState[] = rawCells.map((storedCellText) => ({
+      storedCellText,
+      parsed: this.bindParsedCell(parseCellInput(storedCellText)),
       cachedValue: null,
       dirty: true,
     }));
@@ -530,7 +530,7 @@ export class SheetState {
     }
     for (const rowCells of this.cells) {
       rowCells.splice(colIndex, 0, {
-        sourceText: " ",
+        storedCellText: " ",
         parsed: this.bindParsedCell(parseCellInput(" ")),
         cachedValue: null,
         dirty: true,
@@ -589,7 +589,7 @@ export class SheetState {
 
     const cellState = this.cells[rAbs]?.[0];
     if (cellState) {
-      cellState.sourceText = row.rawCells[0];
+      cellState.storedCellText = row.rawCells[0];
       const normalized = normalizeCellTextForParsing(row.rawCells[0], rAbs, 0, this.headerRowCount, this.headerColCount);
       cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
       cellState.cachedValue = null;
@@ -623,7 +623,7 @@ export class SheetState {
 
     const cellState = this.cells[headerRowIndex]?.[colIndex];
     if (cellState) {
-      cellState.sourceText = newLabel;
+      cellState.storedCellText = newLabel;
       const normalized = normalizeCellTextForParsing(newLabel, headerRowIndex, colIndex, this.headerRowCount, this.headerColCount);
       cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
       cellState.cachedValue = null;
