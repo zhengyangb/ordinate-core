@@ -10,7 +10,7 @@ type RuntimeSheet = {
 };
 
 type StateCell = {
-  text?: string;
+  sourceText?: string;
   parsed?: {
     kind: string;
   };
@@ -74,7 +74,7 @@ export function buildFormulaBarData({
     if (rowNumber < 1 || rowNumber > maxHeaderRow) return null;
 
     const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
-    const sourceRaw = rawCell?.text ?? "";
+    const sourceRaw = rawCell?.sourceText ?? "";
     const displayText = currentSheetPresentation?.headerDisplayRows?.[rowNumber - 1]?.[colIndex] ?? sourceRaw;
     const sourceView = resolveFormulaSourceView(sourceRaw, displayText);
     return {
@@ -100,7 +100,7 @@ export function buildFormulaBarData({
 
   if (colIndex < headerColCount) {
     const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
-    const sourceRaw = rawCell?.text ?? "";
+    const sourceRaw = rawCell?.sourceText ?? "";
     const displayText = colIndex === 0 ? rowLeaf : (presentedCell?.displayText ?? sourceRaw);
     const sourceView = resolveFormulaSourceView(sourceRaw, displayText);
     return {
@@ -117,7 +117,7 @@ export function buildFormulaBarData({
 
   const runtimeValue = currentSheet.values[rowRel]?.[colIndex];
   const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
-  const sourceText = rawCell?.text ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+  const sourceText = rawCell?.sourceText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
   const fallbackSourceText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
   const sourceView = resolveFormulaSourceView(sourceText, fallbackSourceText);
   const chip = rawCell?.parsed?.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);

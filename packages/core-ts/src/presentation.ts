@@ -67,8 +67,8 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
       for (let c = 0; c < sheet.colCount; c += 1) {
         const isHeaderColumn = c < sheet.headerColCount;
         const parsedDisplay = sheet.cells[rAbs][c].parsed.display ?? null;
-        const cellFormatLocal = !isHeaderColumn && parsedDisplay && parsedDisplay.valid ? parsedDisplay.formatSpec : null;
-        const cellStyleLocal = !isHeaderColumn && parsedDisplay && parsedDisplay.valid ? parsedDisplay.styleSpec : null;
+        const cellFormatLocal = !isHeaderColumn && parsedDisplay && parsedDisplay.valid ? parsedDisplay.format : null;
+        const cellStyleLocal = !isHeaderColumn && parsedDisplay && parsedDisplay.valid ? parsedDisplay.style : null;
         const colDefault = c < defaults.length
           ? defaults[c]
           : {
@@ -154,7 +154,6 @@ function resolveStyleSpec(localStyle: StyleSpec | null, inheritedStyle: StyleSpe
     align,
     weight,
     color,
-    raw: serializeStyleSpec({ align, weight, color, raw: "" }),
   };
 }
 
@@ -222,14 +221,14 @@ function computeColumnDefaults(sheet: DocumentState["sheets"][number]): ColumnDi
     if (!parsedDisplay) continue;
     defaults[c] = {
       formatLayer: {
-        local: parsedDisplay.valid ? parsedDisplay.formatSpec : null,
+        local: parsedDisplay.valid ? parsedDisplay.format : null,
         inherited: null,
-        effective: parsedDisplay.valid ? parsedDisplay.formatSpec : null,
+        effective: parsedDisplay.valid ? parsedDisplay.format : null,
       },
       styleLayer: {
-        local: parsedDisplay.valid ? parsedDisplay.styleSpec : null,
+        local: parsedDisplay.valid ? parsedDisplay.style : null,
         inherited: null,
-        effective: parsedDisplay.valid ? parsedDisplay.styleSpec : null,
+        effective: parsedDisplay.valid ? parsedDisplay.style : null,
       },
       valid: parsedDisplay.valid,
       errors: [...parsedDisplay.errors],

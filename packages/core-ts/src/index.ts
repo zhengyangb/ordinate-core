@@ -29,7 +29,10 @@ export {
   type ErrorRuntimeValue,
   type EvaluationResult,
   type ExternalErrorKind,
+  type FormatSpec,
   type SheetEvaluation,
+  type StylePatch,
+  type StyleSpec,
   type RuntimeValue,
 } from "./runtime";
 

@@ -13,6 +13,7 @@ export type {
   RuntimeValue,
   SheetEvaluation,
   StyleSpec,
+  StylePatch,
   TextAlign,
   TextColor,
   TextWeight,

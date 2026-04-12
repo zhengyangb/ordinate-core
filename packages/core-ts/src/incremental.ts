@@ -17,6 +17,7 @@ import {
   type ParsedDisplayMetadata,
   type FormatSpec,
   type StyleSpec,
+  type StylePatch,
   type ReferenceExpr,
   type RuntimeValue,
   type SheetEvaluation,
@@ -33,7 +34,7 @@ export enum ChangeKind {
 }
 
 interface CellState {
-  text: string;
+  sourceText: string;
   parsed: ParsedCell;
   cachedValue: RuntimeValue | null;
   dirty: boolean;
@@ -234,7 +235,7 @@ export class SheetState {
         const value = trimmed[c];
         const normalizedText = normalizeCellTextForParsing(value, rAbs, c, headerRowCount, headerColCount);
         const parsed = parseCellInput(normalizedText);
-        rowCells.push({ text: normalizedText, parsed, cachedValue: null, dirty: true });
+        rowCells.push({ sourceText: normalizedText, parsed, cachedValue: null, dirty: true });
       }
       cells.push(rowCells);
     }
@@ -310,7 +311,7 @@ export class SheetState {
     const rawText = kind === ChangeKind.CLEAR && text === "" ? " " : text;
     const cell = this.cells[rAbs][c];
     const normalizedText = normalizeCellTextForParsing(rawText, rAbs, c, this.headerRowCount, this.headerColCount);
-    cell.text = normalizedText;
+    cell.sourceText = normalizedText;
     cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
     cell.dirty = true;
     cell.cachedValue = null;
@@ -338,13 +339,14 @@ export class SheetState {
   }
 
   // Set cell-local format metadata while preserving current local style metadata.
-  setCellLocalFormatByIndex(rAbs: number, c: number, formatRaw: string | null) {
+  setCellLocalFormatByIndex(rAbs: number, c: number, format: FormatSpec | null) {
     if (rAbs < 0 || rAbs >= this.rowCount || c < 0 || c >= this.colCount) {
       throw new Error("cell index out of range");
     }
+    assertFormatSpecOrNull(format);
     const existing = this.cells[rAbs][c].parsed.display;
-    const styleRaw = displayStyleRaw(existing);
-    this.setCellLocalDisplayByIndex(rAbs, c, formatRaw, styleRaw);
+    const style = existing && existing.valid ? existing.style : null;
+    this.setCellLocalDisplayByIndex(rAbs, c, format, style);
   }
 
   // Clear cell-local format metadata while preserving current local style metadata.
@@ -353,35 +355,43 @@ export class SheetState {
   }
 
   // Set cell-local style metadata while preserving current local format metadata.
-  setCellLocalStyleByIndex(rAbs: number, c: number, styleRaw: string | null) {
+  setCellLocalStyleByIndex(rAbs: number, c: number, stylePatch: StylePatch) {
     if (rAbs < 0 || rAbs >= this.rowCount || c < 0 || c >= this.colCount) {
       throw new Error("cell index out of range");
     }
+    assertStylePatch(stylePatch);
     const existing = this.cells[rAbs][c].parsed.display;
-    const formatRaw = displayFormatRaw(existing);
-    this.setCellLocalDisplayByIndex(rAbs, c, formatRaw, styleRaw);
+    const format = existing && existing.valid ? existing.format : null;
+    const currentStyle = existing && existing.valid ? existing.style : null;
+    const style = applyStylePatch(currentStyle, stylePatch);
+    this.setCellLocalDisplayByIndex(rAbs, c, format, style);
   }
 
   // Clear cell-local style metadata while preserving current local format metadata.
   clearCellLocalStyleByIndex(rAbs: number, c: number) {
-    this.setCellLocalStyleByIndex(rAbs, c, null);
+    if (rAbs < 0 || rAbs >= this.rowCount || c < 0 || c >= this.colCount) {
+      throw new Error("cell index out of range");
+    }
+    const existing = this.cells[rAbs][c].parsed.display;
+    const format = existing && existing.valid ? existing.format : null;
+    this.setCellLocalDisplayByIndex(rAbs, c, format, null);
   }
 
   // Update local display metadata without mutating formula/value dependency state.
   private setCellLocalDisplayByIndex(
     rAbs: number,
     c: number,
-    formatRaw: string | null,
-    styleRaw: string | null,
+    format: FormatSpec | null,
+    style: StyleSpec | null,
   ) {
-    const nextDisplay = parseDisplayFromSpecs(formatRaw, styleRaw);
+    const nextDisplay = createDisplayFromSpecs(format, style);
     const row = this.logicalRows[rAbs];
     const currentRaw = c < row.rawCells.length ? row.rawCells[c] : "";
     const contentText = stripCellDisplayMetadata(currentRaw).trim();
     const nextRaw = composeCellRawWithDisplay(contentText, nextDisplay);
     const normalizedText = normalizeCellTextForParsing(nextRaw, rAbs, c, this.headerRowCount, this.headerColCount);
     const cell = this.cells[rAbs][c];
-    cell.text = normalizedText;
+    cell.sourceText = normalizedText;
     cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
     this.updateRowText(rAbs, c, nextRaw);
   }
@@ -470,9 +480,9 @@ export class SheetState {
     const newRow: ParsedRow = { rawCells, cells, boundary, errors: [] };
     this.logicalRows.splice(rowIndex, 0, newRow);
 
-    const newCellStates: CellState[] = rawCells.map((text) => ({
-      text,
-      parsed: this.bindParsedCell(parseCellInput(text)),
+    const newCellStates: CellState[] = rawCells.map((sourceText) => ({
+      sourceText,
+      parsed: this.bindParsedCell(parseCellInput(sourceText)),
       cachedValue: null,
       dirty: true,
     }));
@@ -520,7 +530,7 @@ export class SheetState {
     }
     for (const rowCells of this.cells) {
       rowCells.splice(colIndex, 0, {
-        text: " ",
+        sourceText: " ",
         parsed: this.bindParsedCell(parseCellInput(" ")),
         cachedValue: null,
         dirty: true,
@@ -579,7 +589,7 @@ export class SheetState {
 
     const cellState = this.cells[rAbs]?.[0];
     if (cellState) {
-      cellState.text = row.rawCells[0];
+      cellState.sourceText = row.rawCells[0];
       const normalized = normalizeCellTextForParsing(row.rawCells[0], rAbs, 0, this.headerRowCount, this.headerColCount);
       cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
       cellState.cachedValue = null;
@@ -613,7 +623,7 @@ export class SheetState {
 
     const cellState = this.cells[headerRowIndex]?.[colIndex];
     if (cellState) {
-      cellState.text = newLabel;
+      cellState.sourceText = newLabel;
       const normalized = normalizeCellTextForParsing(newLabel, headerRowIndex, colIndex, this.headerRowCount, this.headerColCount);
       cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
       cellState.cachedValue = null;
@@ -966,10 +976,6 @@ function extractColumnDisplayMetadataFromControlRow(
     const content = stripCellDisplayMetadata(raw).trim();
     if (content !== "" || !parsed.display) {
       output[c] = {
-        format: null,
-        style: null,
-        formatSpec: null,
-        styleSpec: null,
         valid: false,
         rawBlock: raw.trim(),
         errors: ["display_control_cell_requires_metadata_only"],
@@ -990,50 +996,94 @@ function resizeColumnDisplayMetadata(
   return [...metadata, ...Array(colCount - metadata.length).fill(null)];
 }
 
-function displayFormatRaw(display: ParsedDisplayMetadata | null | undefined): string | null {
-  if (!display || !display.valid || !display.formatSpec) return null;
-  return serializeFormatSpec(display.formatSpec);
-}
-
-function displayStyleRaw(display: ParsedDisplayMetadata | null | undefined): string | null {
-  if (!display || !display.valid || !display.styleSpec) return null;
-  return serializeStyleSpec(display.styleSpec);
-}
-
-function parseDisplayFromSpecs(formatRaw: string | null, styleRaw: string | null): ParsedDisplayMetadata | null {
-  const normalizedFormat = normalizeDisplaySpecInput(formatRaw, "format");
-  const normalizedStyle = normalizeDisplaySpecInput(styleRaw, "style");
-  if (normalizedFormat === null && normalizedStyle === null) {
+function createDisplayFromSpecs(format: FormatSpec | null, style: StyleSpec | null): ParsedDisplayMetadata | null {
+  if (format === null && style === null) {
     return null;
   }
 
-  const rawBlock = buildDisplayRawBlock(normalizedFormat, normalizedStyle);
-  const parsed = parseCellInput(`0 ${rawBlock}`);
-  const display = parsed.display;
-  if (!display) {
-    throw new Error("invalid display metadata");
-  }
-  if (!display.valid) {
-    const detail = display.errors.join(", ");
-    throw new Error(detail.length > 0 ? `invalid display metadata: ${detail}` : "invalid display metadata");
-  }
-  return display;
+  return {
+    valid: true,
+    format,
+    style,
+    rawBlock: buildDisplayRawBlock(format, style),
+    errors: [],
+  };
 }
 
-function normalizeDisplaySpecInput(raw: string | null, axis: "format" | "style"): string | null {
-  if (raw === null) return null;
-  const trimmed = raw.trim();
-  if (trimmed === "") {
-    throw new Error(`${axis} spec cannot be empty`);
-  }
-  return trimmed;
-}
-
-function buildDisplayRawBlock(formatRaw: string | null, styleRaw: string | null): string {
+function buildDisplayRawBlock(format: FormatSpec | null, style: StyleSpec | null): string {
+  const formatRaw = format ? serializeFormatSpec(format) : "";
+  const styleRaw = style ? serializeStyleSpec(style) : "";
   if (formatRaw && styleRaw) return `{:${formatRaw}:${styleRaw}}`;
   if (formatRaw) return `{:${formatRaw}}`;
   if (styleRaw) return `{::${styleRaw}}`;
   return "";
+}
+
+function applyStylePatch(current: StyleSpec | null, patch: StylePatch): StyleSpec | null {
+  const align = Object.hasOwn(patch, "align") ? patch.align ?? null : current?.align ?? null;
+  const weight = Object.hasOwn(patch, "weight") ? patch.weight ?? null : current?.weight ?? null;
+  const color = Object.hasOwn(patch, "color") ? patch.color ?? null : current?.color ?? null;
+  if (align === null && weight === null && color === null) {
+    return null;
+  }
+  return { align, weight, color };
+}
+
+function assertFormatSpecOrNull(format: FormatSpec | null): void {
+  if (format === null) return;
+  if (typeof format !== "object") {
+    throw new Error("format spec must be an object or null");
+  }
+  assertKnownKeys(format, ["sign", "zeroPad", "width", "grouping", "precision", "type"], "format");
+  if (!["default", "plus", "parentheses"].includes(format.sign)) {
+    throw new Error("format.sign must be default, plus, or parentheses");
+  }
+  if (typeof format.zeroPad !== "boolean") {
+    throw new Error("format.zeroPad must be boolean");
+  }
+  if (format.width !== null && (!Number.isInteger(format.width) || format.width < 0)) {
+    throw new Error("format.width must be a non-negative integer or null");
+  }
+  if (typeof format.grouping !== "boolean") {
+    throw new Error("format.grouping must be boolean");
+  }
+  if (format.precision !== null && (!Number.isInteger(format.precision) || format.precision < 0)) {
+    throw new Error("format.precision must be a non-negative integer or null");
+  }
+  if (format.type !== null && !["f", "e", "%", "d"].includes(format.type)) {
+    throw new Error("format.type must be f, e, %, d, or null");
+  }
+  if (format.type === "d" && format.precision !== null) {
+    throw new Error("integer format disallows precision");
+  }
+}
+
+function assertStylePatch(style: StylePatch): void {
+  if (!style || typeof style !== "object") {
+    throw new Error("style patch must be an object");
+  }
+  assertKnownKeys(style, ["align", "weight", "color"], "style");
+  const align = style.align;
+  const weight = style.weight;
+  const color = style.color;
+  if (Object.hasOwn(style, "align") && align !== undefined && align !== null && !["left", "right", "center"].includes(align)) {
+    throw new Error("style.align must be left, right, center, or null");
+  }
+  if (Object.hasOwn(style, "weight") && weight !== undefined && weight !== null && !["bold", "normal"].includes(weight)) {
+    throw new Error("style.weight must be bold, normal, or null");
+  }
+  if (Object.hasOwn(style, "color") && color !== undefined && color !== null && !["red", "green", "blue"].includes(color)) {
+    throw new Error("style.color must be red, green, blue, or null");
+  }
+}
+
+function assertKnownKeys(value: object, allowed: string[], label: string): void {
+  const allowedSet = new Set(allowed);
+  for (const key of Object.keys(value)) {
+    if (!allowedSet.has(key)) {
+      throw new Error(`${label} contains unsupported field '${key}'`);
+    }
+  }
 }
 
 function composeCellRawWithDisplay(contentText: string, display: ParsedDisplayMetadata | null): string {

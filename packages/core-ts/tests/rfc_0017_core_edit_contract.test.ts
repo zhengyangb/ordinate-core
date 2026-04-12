@@ -6,6 +6,7 @@ import {
   applyBatchAtomic,
   type CoreEdit,
   type CoreEditErrorCategory,
+  type FormatSpec,
   DocumentState,
   evaluateDocument,
   formatDocument,
@@ -16,6 +17,15 @@ import {
   serializeDocumentState,
   splitCellDisplayMetadata,
 } from "../src";
+
+const FORMAT_GROUPED_2F: FormatSpec = {
+  sign: "default",
+  zeroPad: false,
+  width: null,
+  grouping: true,
+  precision: 2,
+  type: "f",
+};
 
 const API_DOC = `
 # Sheet
@@ -169,7 +179,7 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
     const badPrice = sheet.cells[badRowAbs][1];
 
     // Raw user text is preserved.
-    expect(badPrice.text).toBe("= sum(B2");
+    expect(badPrice.sourceText).toBe("= sum(B2");
     expect(badPrice.parsed.kind).toBe("formula");
     expect(badPrice.parsed.expression).not.toBeNull();
     if (!badPrice.parsed.expression || badPrice.parsed.expression.kind !== "literal") {
@@ -278,12 +288,12 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
       {
         op: "set_cell_local_format",
         target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
-        format: ",.2f",
+        format: FORMAT_GROUPED_2F,
       },
       {
         op: "set_cell_local_style",
         target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
-        style: "green",
+        style: { color: "green" },
       },
     ]);
     expect(updated.ok).toBe(true);
@@ -307,6 +317,90 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(aOutCleared.styleLayer.local).toBeNull();
   });
 
+  it("replaces invalid display metadata when setting structured local metadata", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:bad fmt:purple} |
+`.trim());
+
+    const replaced = applyBatchAtomic(state, [
+      {
+        op: "set_cell_local_style",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        style: { color: "green" },
+      },
+    ]);
+
+    expect(replaced.ok).toBe(true);
+    if (!replaced.ok) throw new Error("expected success");
+    const presentation = resolveDocumentPresentation(replaced.nextDocument);
+    expect(presentation.sheets[0].cells[0][1].styleLayer.local).toMatchObject({ color: "green" });
+    const output = serializeDocumentState(replaced.nextDocument);
+    expect(output).toContain("1 {::green}");
+    expect(output).not.toContain("bad fmt");
+    expect(output).not.toContain("purple");
+  });
+
+  it("applies style patches by axis and uses null to clear an axis", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {::>,blue} |
+`.trim());
+
+    const clearedColor = applyBatchAtomic(state, [
+      {
+        op: "set_cell_local_style",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        style: { color: null },
+      },
+    ]);
+
+    expect(clearedColor.ok).toBe(true);
+    if (!clearedColor.ok) throw new Error("expected success");
+    const cell = resolveDocumentPresentation(clearedColor.nextDocument).sheets[0].cells[0][1];
+    expect(cell.styleLayer.local).toMatchObject({ align: "right", color: null, weight: null });
+    expect(serializeDocumentState(clearedColor.nextDocument)).toContain("1 {::>}");
+
+    const addedWeight = applyBatchAtomic(clearedColor.nextDocument, [
+      {
+        op: "set_cell_local_style",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        style: { weight: "bold" },
+      },
+    ]);
+    expect(addedWeight.ok).toBe(true);
+    if (!addedWeight.ok) throw new Error("expected success");
+    expect(serializeDocumentState(addedWeight.nextDocument)).toContain("1 {::>,bold}");
+  });
+
+  it("rejects legacy raw display edit payloads", () => {
+    const rawFormat = applyBatchAtomic(DocumentState.fromText(EDIT_DOC), [
+      {
+        op: "set_cell_local_format",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        format: ",.2f" as any,
+      },
+    ]);
+    expect(rawFormat.ok).toBe(false);
+    if (rawFormat.ok) throw new Error("expected raw format payload to fail");
+    expect(rawFormat.error.category).toBe("invalid_operation");
+
+    const rawStyle = applyBatchAtomic(DocumentState.fromText(EDIT_DOC), [
+      {
+        op: "set_cell_local_style",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        style: { raw: "green" } as any,
+      },
+    ]);
+    expect(rawStyle.ok).toBe(false);
+    if (rawStyle.ok) throw new Error("expected raw style payload to fail");
+    expect(rawStyle.error.category).toBe("invalid_operation");
+  });
+
   it("preserves invalid formula source text on set_cell_input parse failure", () => {
     const state = DocumentState.fromText(EDIT_DOC);
     const result = applyBatchAtomic(state, [
@@ -326,7 +420,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
       throw new Error("expected resolved target indices");
     }
     const badCell = sheet.cells[rowB][colOut];
-    expect(badCell.text).toBe("= sum(B2");
+    expect(badCell.sourceText).toBe("= sum(B2");
     expect(badCell.parsed.kind).toBe("formula");
     expect(serializeDocumentState(result.nextDocument)).toContain("= sum(B2");
   });

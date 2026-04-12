@@ -8,7 +8,9 @@ import {
   resolveDocumentPresentation,
   validateDocument,
   type EvaluationResult,
+  type FormatSpec,
   type PresentationResult,
+  type StylePatch,
   type ValidationError,
   type ValidationResult,
   serializeDocumentState,
@@ -31,8 +33,8 @@ interface EditorState {
   applyCoreEdits: (edits: CoreEdit[], nextActiveSheetHint?: string | null) => void;
   setCellInput: (target: CoreCellTarget, input: string) => void;
   renameSheet: (sheet: string, newName: string) => void;
-  setCellLocalFormat: (target: CoreCellTarget, format: string) => void;
-  setCellLocalStyle: (target: CoreCellTarget, style: string) => void;
+  setCellLocalFormat: (target: CoreCellTarget, format: FormatSpec | null) => void;
+  setCellLocalStyle: (target: CoreCellTarget, style: StylePatch) => void;
   exitSourceMode: () => void;
   enterSourceMode: () => void;
 }

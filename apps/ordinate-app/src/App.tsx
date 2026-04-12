@@ -708,7 +708,7 @@ export default function App() {
               item[field] = rowLeaf;
               item[`__kind_${colIndex}`] = "label";
             } else {
-              const headerValue = displayText.length > 0 ? displayText : rawCell?.text ?? "";
+              const headerValue = displayText.length > 0 ? displayText : rawCell?.sourceText ?? "";
               item[field] = headerValue;
               item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
             }
@@ -720,8 +720,6 @@ export default function App() {
             item[`__color_${colIndex}`] = presentedCell?.styleLayer.effective?.color ?? "";
             item[`__display_has_errors_${colIndex}`] = (presentedCell?.errors.length ?? 0) > 0;
             item[`__display_source_${colIndex}`] = presentedCell?.source ?? "default";
-            item[`__display_format_${colIndex}`] = presentedCell?.formatLayer.effective?.raw ?? "";
-            item[`__display_style_${colIndex}`] = presentedCell?.styleLayer.effective?.raw ?? "";
             if (runtimeValue?.kind === "error") {
               item[`__error_external_${colIndex}`] = runtimeValue.errorKind;
               item[`__error_internal_${colIndex}`] = runtimeValue.internalKind;

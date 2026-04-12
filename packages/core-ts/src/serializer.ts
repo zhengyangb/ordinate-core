@@ -2,7 +2,7 @@ import { formatDocument } from "./formatter";
 import { type DocumentState, type SheetState } from "./incremental";
 import { escapeCellText } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
-import { type ExprNode, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue } from "./runtime/types";
+import { type ExprNode, type FormatSpec, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue, type StyleSpec } from "./runtime/types";
 import { isError, isValidExternalErrorKind } from "./runtime/errors";
 
 // Serialize a DocumentState to canonical .ord text.
@@ -309,8 +309,8 @@ function renderDisplayBlock(display: ParsedDisplayMetadata | null): string {
   if (!display.valid) {
     return display.rawBlock ? ` ${display.rawBlock}` : "";
   }
-  const format = display.formatSpec ? serializeFormatSpec(display.formatSpec) : "";
-  const style = display.styleSpec ? serializeStyleSpec(display.styleSpec) : "";
+  const format = display.format ? serializeFormatSpec(display.format) : "";
+  const style = display.style ? serializeStyleSpec(display.style) : "";
   if (format === "" && style === "") {
     return "";
   }
@@ -327,15 +327,15 @@ function renderDisplayControlCell(display: ParsedDisplayMetadata): string {
   if (!display.valid) {
     return display.rawBlock ?? "";
   }
-  const format = display.formatSpec ? serializeFormatSpec(display.formatSpec) : "";
-  const style = display.styleSpec ? serializeStyleSpec(display.styleSpec) : "";
+  const format = display.format ? serializeFormatSpec(display.format) : "";
+  const style = display.style ? serializeStyleSpec(display.style) : "";
   if (format === "" && style === "") return "";
   if (style === "") return `{:${format}}`;
   if (format === "") return `{::${style}}`;
   return `{:${format}:${style}}`;
 }
 
-function serializeFormatSpec(spec: NonNullable<ParsedDisplayMetadata["formatSpec"]>): string {
+function serializeFormatSpec(spec: FormatSpec): string {
   let out = "";
   if (spec.sign === "plus") out += "+";
   else if (spec.sign === "parentheses") out += "()";
@@ -347,7 +347,7 @@ function serializeFormatSpec(spec: NonNullable<ParsedDisplayMetadata["formatSpec
   return out;
 }
 
-function serializeStyleSpec(spec: NonNullable<ParsedDisplayMetadata["styleSpec"]>): string {
+function serializeStyleSpec(spec: StyleSpec): string {
   const parts: string[] = [];
   if (spec.align === "left") parts.push("<");
   if (spec.align === "right") parts.push(">");

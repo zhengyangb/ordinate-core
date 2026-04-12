@@ -52,7 +52,7 @@ type RuntimeSheet = {
 };
 
 type StateCell = {
-  text?: string;
+  sourceText?: string;
 };
 
 type StateSheet = {
@@ -248,7 +248,7 @@ export function trimSheetColCount(currentSheetState: StateSheet | null, currentS
 
     let hasRawText = false;
     for (let rowIndex = 0; rowIndex < currentSheetState.cells.length; rowIndex += 1) {
-      const rawText = currentSheetState.cells[rowIndex]?.[colIndex]?.text?.trim() ?? "";
+      const rawText = currentSheetState.cells[rowIndex]?.[colIndex]?.sourceText?.trim() ?? "";
       if (rawText.length > 0) {
         hasRawText = true;
         break;
