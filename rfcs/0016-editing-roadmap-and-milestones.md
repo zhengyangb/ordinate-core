@@ -48,6 +48,89 @@ This roadmap is paired with RFC-0017, which defines the first formal core-edit A
 - `column display defaults` means column-level default `format/style`
 - `format` and `style` are fields, not separate top-level feature families
 
+### Cell Source Terminology
+
+This RFC defines the shared terminology used by later read/edit contracts.
+
+These terms describe `.ord` cell text segments and read/edit contracts. They do not require implementation field names such as `sourceText` to have identical meaning.
+
+Core terms:
+
+- `cell`: the full serialized cell text
+- `body`: the cell text excluding trailing `display`
+- `display`: trailing display metadata, when present
+- `input`: read/edit-facing formula or literal text
+- `literal`: a non-formula `body`
+- `expr`: the formula expression text, excluding any leading formula marker
+- `cached value`: the serialized cached value in a cached formula body
+- `formula marker`: the leading `=` in formula input (`= expr`)
+- `cache separator`: the `=` between cached value and expression in serialized cached-formula body (`cached value = expr`)
+
+The `input` term is the read/edit-facing cell text and applies to both formulas and literals.
+
+For literals, `input` is the literal `body`.
+
+For formulas, `input` is always the formula-marker form `= expr`, even when the serialized `body` is a cached formula written as `cached value = expr`.
+
+Formula without cached value:
+
+```text
+cell
++------------------------------+
+| = B2 + 1        {:,.2f:>,blue}|
++------------------------------+
+  [  body  ]       [  display  ]
+  [  input ]
+  formula marker: "="
+  expr: "B2 + 1"
+```
+
+Formula with cached value:
+
+```text
+cell
++----------------------------------+
+| 6 = B2 + 1        {:,.2f:>,blue}  |
++----------------------------------+
+  [    body    ]       [  display  ]
+  cached value: "6"
+  cache separator: "="
+  expr: "B2 + 1"
+
+input, derived from body:
++--------+
+|= B2 + 1|
++--------+
+formula marker: "="
+expr: "B2 + 1"
+```
+
+Literal:
+
+```text
+cell
++------------------+
+| "abc"   {::green}|
++------------------+
+  [body]  [display]
+  [input]
+  [literal]
+```
+
+Comparison:
+
+| Concept | Formula, no cache | Formula, with cache | String literal | Number literal |
+|---|---|---|---|---|
+| `cell` | `= B2 + 1 {:,.2f:>,blue}` | `6 = B2 + 1 {:,.2f:>,blue}` | `"abc" {::green}` | `12.3 {::red}` |
+| `body` | `= B2 + 1` | `6 = B2 + 1` | `"abc"` | `12.3` |
+| `display` | `{:,.2f:>,blue}` | `{:,.2f:>,blue}` | `{::green}` | `{::red}` |
+| `input` | `= B2 + 1` | `= B2 + 1` | `"abc"` | `12.3` |
+| `literal` | none | none | `"abc"` | `12.3` |
+| `expr` | `B2 + 1` | `B2 + 1` | none | none |
+| `cached value` | none | `6` | none | none |
+
+Read/edit APIs must not expose a cached formula `body` directly as `input`.
+
 ## Milestone V1: Core Edit Foundation
 
 ### Scope
@@ -64,7 +147,7 @@ This roadmap is paired with RFC-0017, which defines the first formal core-edit A
   - insert/delete column
 - rebasing v1 for row/column insertion and deletion
 - fail-early error behavior for invalid edit application
-- raw input preservation for invalid-input round-trip safety
+- unparsed source preservation for invalid-input round-trip safety
 - conformance testing: incremental result must match full recalculation result
 
 ### Explicitly Out of Scope

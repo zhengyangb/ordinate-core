@@ -20,6 +20,7 @@ export type {
   ViewSelection,
 } from "./runtime/types";
 
-export { parseCellInput, splitCellDisplayMetadata, stripCellDisplayMetadata } from "./runtime/parse";
+export { parseCellInput, resolveCellInputText, splitCellDisplayMetadata, stripCellDisplayMetadata } from "./runtime/parse";
+export type { CellInputTextView } from "./runtime/parse";
 export { evaluateDocument } from "./runtime/eval";
 export { isError, isValidExternalErrorKind, makeError, makeInternalError, projectExternalKind } from "./runtime/errors";

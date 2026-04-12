@@ -56,7 +56,7 @@ The model may also contain higher-level structural objects such as:
 
 A cell should be able to carry at least the following semantic information:
 
-- raw input
+- input, with unparsed source preserved when parsing fails
 - cached value
 - dirty state
 - optionally parsed expression / AST

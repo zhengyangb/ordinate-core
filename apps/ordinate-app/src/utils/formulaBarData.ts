@@ -1,4 +1,4 @@
-import { splitCellDisplayMetadata, type PresentedCell, type RuntimeValue } from "@ordinate/core";
+import { resolveCellInputText, splitCellDisplayMetadata, type PresentedCell, type RuntimeValue } from "@ordinate/core";
 
 import type { FormulaBarData, SelectedCell } from "../types/ui";
 import { BLANK_RUNTIME_VALUE, formatLocalView, styleLocalView } from "./appHelpers";
@@ -38,10 +38,12 @@ type BuildFormulaBarDataParams = {
   absoluteRowPathLookup: Map<number, string>;
 };
 
-function resolveFormulaSourceView(rawSource: string, fallbackSource: string) {
+function resolveCellSourceView(rawSource: string, fallbackSource: string, mode: "input" | "body") {
   const sourceText = rawSource.length > 0 ? rawSource : fallbackSource;
-  const split = splitCellDisplayMetadata(sourceText);
-  const editableSourceText = split.contentText.length > 0 ? split.contentText : sourceText;
+  const sourceView = mode === "input"
+    ? resolveCellInputText(sourceText)
+    : { inputText: splitCellDisplayMetadata(sourceText).contentText };
+  const editableSourceText = sourceView.inputText.length > 0 ? sourceView.inputText : sourceText;
   return {
     sourceText,
     editableSourceText,
@@ -76,7 +78,7 @@ export function buildFormulaBarData({
     const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
     const sourceRaw = rawCell?.sourceText ?? "";
     const displayText = currentSheetPresentation?.headerDisplayRows?.[rowNumber - 1]?.[colIndex] ?? sourceRaw;
-    const sourceView = resolveFormulaSourceView(sourceRaw, displayText);
+    const sourceView = resolveCellSourceView(sourceRaw, displayText, "body");
     return {
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
       secondaryAddress: `${semanticColLabel} / Header Row ${rowNumber}`,
@@ -102,7 +104,7 @@ export function buildFormulaBarData({
     const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
     const sourceRaw = rawCell?.sourceText ?? "";
     const displayText = colIndex === 0 ? rowLeaf : (presentedCell?.displayText ?? sourceRaw);
-    const sourceView = resolveFormulaSourceView(sourceRaw, displayText);
+    const sourceView = resolveCellSourceView(sourceRaw, displayText, "body");
     return {
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
       secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
@@ -119,7 +121,7 @@ export function buildFormulaBarData({
   const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
   const sourceText = rawCell?.sourceText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
   const fallbackSourceText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
-  const sourceView = resolveFormulaSourceView(sourceText, fallbackSourceText);
+  const sourceView = resolveCellSourceView(sourceText, fallbackSourceText, "input");
   const chip = rawCell?.parsed?.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);
 
   return {

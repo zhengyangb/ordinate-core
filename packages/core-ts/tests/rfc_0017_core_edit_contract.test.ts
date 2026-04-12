@@ -14,6 +14,7 @@ import {
   parseDocumentModel,
   resolveDocumentPresentation,
   resolvePresentationFromText,
+  resolveCellInputText,
   serializeDocumentState,
   splitCellDisplayMetadata,
 } from "../src";
@@ -202,6 +203,29 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
     });
     expect(splitCellDisplayMetadata('12.345 {::green}')).toEqual({
       contentText: "12.345",
+      displayMetaRaw: "{::green}",
+    });
+  });
+
+  it("derives read/edit input from cached formula body without exposing cache", () => {
+    expect(resolveCellInputText("6 = B2 + 1 {:,.2f:>,blue}")).toEqual({
+      cellText: "6 = B2 + 1 {:,.2f:>,blue}",
+      bodyText: "6 = B2 + 1",
+      inputText: "= B2 + 1",
+      displayMetaRaw: "{:,.2f:>,blue}",
+    });
+
+    expect(resolveCellInputText("= B2 + 1 {:,.2f:>,blue}")).toEqual({
+      cellText: "= B2 + 1 {:,.2f:>,blue}",
+      bodyText: "= B2 + 1",
+      inputText: "= B2 + 1",
+      displayMetaRaw: "{:,.2f:>,blue}",
+    });
+
+    expect(resolveCellInputText('"abc" {::green}')).toEqual({
+      cellText: '"abc" {::green}',
+      bodyText: '"abc"',
+      inputText: '"abc"',
       displayMetaRaw: "{::green}",
     });
   });

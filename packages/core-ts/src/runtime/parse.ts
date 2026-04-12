@@ -79,6 +79,32 @@ export function parseCellInput(text: string): ParsedCell {
   };
 }
 
+export interface CellInputTextView {
+  cellText: string;
+  bodyText: string;
+  inputText: string;
+  displayMetaRaw: string | null;
+}
+
+// Return read/edit-facing input text. Cached formula bodies become formula-marker input.
+export function resolveCellInputText(text: string): CellInputTextView {
+  const split = splitCellDisplayMetadata(text);
+  const parsed = parseCellInput(text);
+  let inputText = split.contentText;
+
+  if (parsed.kind === "formula" && parsed.expressionText !== undefined && !split.contentText.trim().startsWith("=")) {
+    const exprText = parsed.expressionText?.trim() ?? "";
+    inputText = exprText.length > 0 ? `= ${exprText}` : "=";
+  }
+
+  return {
+    cellText: text,
+    bodyText: split.contentText,
+    inputText,
+    displayMetaRaw: split.displayMetaRaw,
+  };
+}
+
 export function splitCellDisplayMetadata(text: string): {
   contentText: string;
   displayMetaRaw: string | null;
