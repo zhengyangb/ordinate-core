@@ -78,14 +78,18 @@
   --formula-input-bg-read: oklch(92.8% 0.006 245 / 0.7);
   --formula-input-bg-focus: oklch(99.35% 0.001 250 / 0.92);
   --formula-input-border-read: oklch(83.8% 0.01 242 / 0.66);
-  --formula-input-border-focus: oklch(100% 0 0 / 0.7);
+  --formula-input-border-focus: oklch(100% 0 0 / 0.64);
   --formula-input-ink-read: oklch(34% 0.012 244);
   --formula-input-ink-focus: oklch(18% 0.01 245);
   --formula-input-caret: oklch(20% 0.012 245);
-  --formula-input-edit-elev-shadow: 0 2px 6px oklch(24% 0.01 245 / 0.1);
+  --formula-input-edit-elev-shadow:
+    0 0 26px oklch(34% 0.01 245 / 0.065),
+    0 16px 46px oklch(36% 0.01 245 / 0.105),
+    0 3px 12px oklch(32% 0.012 245 / 0.06);
   --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.12) 72%, transparent);
   --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.1) 42%, transparent);
   --formula-input-inset-bottom: color-mix(in oklab, var(--chrome-border) 42%, transparent);
+  --formula-input-focus-ring: transparent;
   --formula-dismiss-bg: color-mix(in oklab, var(--accent-soft) 46%, transparent);
   --formula-dismiss-bg-hover: color-mix(in oklab, var(--accent-soft) 58%, transparent);
   --formula-glass-gloss-top: oklch(100% 0 0 / 0.2);
@@ -136,25 +140,26 @@
   --menu-hover-ink: var(--chrome-ink);
   --menu-active-bg: color-mix(in oklab, var(--accent-soft) 32%, var(--toolbar-pill));
   --menu-active-ink: oklch(92% 0.03 145);
-  --formula-meta-ink-primary: oklch(86% 0.006 104);
-  --formula-meta-ink-secondary: oklch(76% 0.006 104);
-  --formula-tool-ink: oklch(74% 0.006 104);
-  --formula-shell-bg: oklch(30% 0.008 100 / 0.46);
-  --formula-shell-border: oklch(100% 0 0 / 0.22);
+  --formula-meta-ink-primary: oklch(94% 0.008 104);
+  --formula-meta-ink-secondary: oklch(89% 0.007 104);
+  --formula-tool-ink: oklch(88% 0.007 104);
+  --formula-shell-bg: oklch(22% 0.008 100 / 0.64);
+  --formula-shell-border: oklch(100% 0 0 / 0.3);
   --formula-shell-topline: oklch(100% 0 0 / 0.14);
   --formula-input-bg: oklch(97.2% 0.003 95 / 0.38);
   --formula-input-border: oklch(100% 0 0 / 0.34);
   --formula-input-bg-read: oklch(44.5% 0.008 102 / 0.9);
   --formula-input-bg-focus: oklch(90.6% 0.01 96 / 0.88);
   --formula-input-border-read: oklch(100% 0 0 / 0.28);
-  --formula-input-border-focus: oklch(100% 0 0 / 0.38);
+  --formula-input-border-focus: oklch(100% 0 0 / 0.44);
   --formula-input-ink-read: oklch(89% 0.006 104);
   --formula-input-ink-focus: oklch(19% 0.01 98);
   --formula-input-caret: oklch(22% 0.01 98);
-  --formula-input-edit-elev-shadow: 0 3px 8px oklch(8% 0.008 95 / 0.24);
+  --formula-input-edit-elev-shadow: 0 1px 3px oklch(8% 0.008 95 / 0.14);
   --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.08) 66%, transparent);
   --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.04) 34%, transparent);
   --formula-input-inset-bottom: color-mix(in oklab, oklch(100% 0 0 / 0.1) 54%, transparent);
+  --formula-input-focus-ring: color-mix(in oklab, var(--formula-input-border-focus) 92%, transparent);
   --formula-dismiss-bg: color-mix(in oklab, var(--accent-soft) 72%, var(--sheet-surface));
   --formula-dismiss-bg-hover: color-mix(in oklab, var(--accent-soft) 82%, var(--sheet-surface));
   --formula-glass-gloss-top: oklch(100% 0 0 / 0.1);
@@ -196,25 +201,26 @@
     --menu-hover-ink: var(--chrome-ink);
     --menu-active-bg: color-mix(in oklab, var(--accent-soft) 32%, var(--toolbar-pill));
     --menu-active-ink: oklch(92% 0.03 145);
-    --formula-meta-ink-primary: oklch(86% 0.006 104);
-    --formula-meta-ink-secondary: oklch(76% 0.006 104);
-    --formula-tool-ink: oklch(74% 0.006 104);
-    --formula-shell-bg: oklch(30% 0.008 100 / 0.46);
-    --formula-shell-border: oklch(100% 0 0 / 0.22);
+    --formula-meta-ink-primary: oklch(94% 0.008 104);
+    --formula-meta-ink-secondary: oklch(89% 0.007 104);
+    --formula-tool-ink: oklch(88% 0.007 104);
+    --formula-shell-bg: oklch(22% 0.008 100 / 0.64);
+    --formula-shell-border: oklch(100% 0 0 / 0.3);
     --formula-shell-topline: oklch(100% 0 0 / 0.14);
     --formula-input-bg: oklch(97.2% 0.003 95 / 0.38);
     --formula-input-border: oklch(100% 0 0 / 0.34);
     --formula-input-bg-read: oklch(44.5% 0.008 102 / 0.9);
     --formula-input-bg-focus: oklch(90.6% 0.01 96 / 0.88);
     --formula-input-border-read: oklch(100% 0 0 / 0.28);
-    --formula-input-border-focus: oklch(100% 0 0 / 0.38);
+    --formula-input-border-focus: oklch(100% 0 0 / 0.44);
     --formula-input-ink-read: oklch(89% 0.006 104);
     --formula-input-ink-focus: oklch(19% 0.01 98);
     --formula-input-caret: oklch(22% 0.01 98);
-    --formula-input-edit-elev-shadow: 0 3px 8px oklch(8% 0.008 95 / 0.24);
+    --formula-input-edit-elev-shadow: 0 1px 3px oklch(8% 0.008 95 / 0.14);
     --formula-input-inset-top: color-mix(in oklab, oklch(100% 0 0 / 0.08) 66%, transparent);
     --formula-input-inset-depth: color-mix(in oklab, oklch(0% 0 0 / 0.04) 34%, transparent);
     --formula-input-inset-bottom: color-mix(in oklab, oklch(100% 0 0 / 0.1) 54%, transparent);
+    --formula-input-focus-ring: color-mix(in oklab, var(--formula-input-border-focus) 92%, transparent);
     --formula-dismiss-bg: color-mix(in oklab, var(--accent-soft) 72%, var(--sheet-surface));
     --formula-dismiss-bg-hover: color-mix(in oklab, var(--accent-soft) 82%, var(--sheet-surface));
     --formula-glass-gloss-top: oklch(100% 0 0 / 0.1);
@@ -2319,8 +2325,7 @@ textarea {
     inset 0 1px 0 var(--formula-input-inset-top),
     inset 0 2px 6px var(--formula-input-inset-depth),
     inset 0 -1px 0 var(--formula-input-inset-bottom),
-    0 0 0 1px color-mix(in oklab, var(--formula-input-border-focus) 86%, transparent),
-    0 1px 0 color-mix(in oklab, oklch(100% 0 0 / 0.36) 70%, transparent),
+    0 0 0 1px var(--formula-input-focus-ring),
     var(--formula-input-edit-elev-shadow);
   animation: formula-input-focus-in 210ms var(--ease-out-quint) both;
   filter: saturate(1.05) brightness(1.02);

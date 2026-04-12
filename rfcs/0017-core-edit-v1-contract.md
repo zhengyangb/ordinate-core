@@ -51,7 +51,7 @@ V1 includes the following logical operations:
 
 V1 defines a canonical cell state split into three parts:
 
-- `input`: user-authored input state
+- `input`: read/edit-facing formula/literal input as defined in RFC-0016
 - `cache`: cached runtime value plus dirty-state
 - `localDisplay`: cell-local display metadata (`format` and `style`)
 
@@ -59,7 +59,8 @@ Normative requirements:
 
 - read APIs and write APIs must use this conceptual split
 - serialization layout does not redefine this model
-- input/cache/localDisplay must not be conflated into one opaque cell-text field
+- `input`/`cache`/`localDisplay` must not be conflated into one opaque cell-text field
+- cached formula `body` text must not be exposed directly as `input`
 
 ## Public Read Contract (V1)
 
@@ -67,13 +68,17 @@ V1 read surfaces are split by concern.
 
 ### 1. Input Surface
 
-Input is what the user authored for formula/literal semantics.
+Input is the read/edit-facing text defined in RFC-0016.
+
+For formulas, input is always `= expr`, even if the serialized body is `cached value = expr`.
+
+For literals, input is the literal body.
 
 Current contract terms:
 
 - `parseState`: `parse_ok` or `parse_failed`
 - when `parse_ok`:
-  - `inputText`: editable semantic input (formula/literal content, excluding display metadata wrapper)
+  - `inputText`: editable input (formula/literal content, excluding the `display` segment and excluding cached value)
   - `parsedInput`: parsed representation of `inputText`
 - when `parse_failed`:
   - `unparsedSourceRaw`: exact source text fragment preserved for lossless round-trip
@@ -134,9 +139,9 @@ Notes:
 - `displayText` belongs to presentation, not to input
 - `displayText` is derived from value + effective display metadata
 
-## Raw Input Preservation
+## Unparsed Source Preservation
 
-V1 requires preserving raw user input to prevent data loss.
+V1 requires preserving unparsed source to prevent data loss.
 
 Normative requirements:
 
@@ -294,7 +299,7 @@ Minimum required suites:
 - failure atomicity tests (authoritative state unchanged on error)
 - conformance tests: incremental vs full recompute equivalence
 - serialization stability tests after structural edits
-- invalid-input round-trip tests (raw input preserved)
+- invalid-input round-trip tests (unparsed source preserved)
 - local display edit tests (`format` and `style` independently)
 
 ## Deferred to V2+

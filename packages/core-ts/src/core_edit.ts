@@ -1,4 +1,5 @@
 import { ChangeKind, DocumentState, SheetState } from "./incremental";
+import type { FormatSpec, StylePatch } from "./runtime/types";
 
 export type CoreEditErrorCategory =
   | "invalid_target"
@@ -31,9 +32,9 @@ export type CoreCellTarget =
 export type CoreEdit =
   | { op: "set_cell_input"; target: CoreCellTarget; input: string }
   | { op: "clear_cell"; target: CoreCellTarget }
-  | { op: "set_cell_local_format"; target: CoreCellTarget; format: string }
+  | { op: "set_cell_local_format"; target: CoreCellTarget; format: FormatSpec | null }
   | { op: "clear_cell_local_format"; target: CoreCellTarget }
-  | { op: "set_cell_local_style"; target: CoreCellTarget; style: string }
+  | { op: "set_cell_local_style"; target: CoreCellTarget; style: StylePatch }
   | { op: "clear_cell_local_style"; target: CoreCellTarget }
   | { op: "rename_sheet"; sheet: string; newName: string }
   | { op: "insert_row"; sheet: string; rowIndex: number }

@@ -105,12 +105,14 @@ Supported forms:
 
 | Syntax | Meaning | Example |
 |---|---|---|
-| `cell_expr` | no display metadata | `1234.5` |
-| `cell_expr {: format_spec}` | format only | `1234.5 {:,.2f}` |
-| `cell_expr {: : style_spec}` | style only | `42 {: :>}` |
-| `cell_expr {: format_spec : style_spec}` | format and style | `1234.5 {:,.2f:>,red}` |
+| `body` | no display metadata | `1234.5` |
+| `body {: format_spec}` | format only | `1234.5 {:,.2f}` |
+| `body {: : style_spec}` | style only | `42 {: :>}` |
+| `body {: format_spec : style_spec}` | format and style | `1234.5 {:,.2f:>,red}` |
 
-`cell_expr` may be either a literal or a formula expression.
+`body` follows RFC-0016 cell source terminology. It may be a literal body, formula body, or cached-formula body.
+
+Display metadata is a trailing `display` segment and is not part of `input`.
 
 Example: `= sum(A:A) {:,.2f}`
 
@@ -299,9 +301,9 @@ Formula-cache note:
 - `time` and `datetime` may be offset-naive or offset-qualified
 - valid supported unquoted ISO 8601 forms are parsed natively before string fallback
 - quoted equivalents remain strings
-- inline cell format uses `cell_expr {: format_spec}`
-- inline cell style uses `cell_expr {: : style_spec}`
-- combined display metadata may use `cell_expr {: format_spec : style_spec}`
+- inline cell format uses `body {: format_spec}`
+- inline cell style uses `body {: : style_spec}`
+- combined display metadata may use `body {: format_spec : style_spec}`
 - numeric format specs are inspired by a constrained Python-like mini-language
 - sign policy includes bare default, `+`, and `()`
 - style is separate from format

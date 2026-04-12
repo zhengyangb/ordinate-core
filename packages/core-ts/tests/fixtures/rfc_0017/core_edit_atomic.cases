@@ -16,12 +16,19 @@ set_cell_input_and_local_display_success
   {
     "op": "set_cell_local_format",
     "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Out" },
-    "format": ",.2f"
+    "format": {
+      "sign": "default",
+      "zeroPad": false,
+      "width": null,
+      "grouping": true,
+      "precision": 2,
+      "type": "f"
+    }
   },
   {
     "op": "set_cell_local_style",
     "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Out" },
-    "style": "green"
+    "style": { "color": "green" }
   }
 ]
 [/ops]

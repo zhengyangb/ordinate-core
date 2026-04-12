@@ -79,6 +79,32 @@ export function parseCellInput(text: string): ParsedCell {
   };
 }
 
+export interface CellInputTextView {
+  cellText: string;
+  bodyText: string;
+  inputText: string;
+  displayMetaRaw: string | null;
+}
+
+// Return read/edit-facing input text. Cached formula bodies become formula-marker input.
+export function resolveCellInputText(text: string): CellInputTextView {
+  const split = splitCellDisplayMetadata(text);
+  const parsed = parseCellInput(text);
+  let inputText = split.contentText;
+
+  if (parsed.kind === "formula" && parsed.expressionText !== undefined && !split.contentText.trim().startsWith("=")) {
+    const exprText = parsed.expressionText?.trim() ?? "";
+    inputText = exprText.length > 0 ? `= ${exprText}` : "=";
+  }
+
+  return {
+    cellText: text,
+    bodyText: split.contentText,
+    inputText,
+    displayMetaRaw: split.displayMetaRaw,
+  };
+}
+
 export function splitCellDisplayMetadata(text: string): {
   contentText: string;
   displayMetaRaw: string | null;
@@ -711,14 +737,12 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
     }
     const styleSpec = parseStyleSpec(style);
     if ("error" in styleSpec) {
-      return invalidDisplay(rawBlock, styleSpec.error, null, style);
+      return invalidDisplay(rawBlock, styleSpec.error);
     }
     return {
-      format: null,
-      style,
-      formatSpec: null,
-      styleSpec: styleSpec.value,
       valid: true,
+      format: null,
+      style: styleSpec.value,
       rawBlock,
       errors: [],
     };
@@ -732,14 +756,12 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
     }
     const formatSpec = parseFormatSpec(format);
     if ("error" in formatSpec) {
-      return invalidDisplay(rawBlock, formatSpec.error, format, null);
+      return invalidDisplay(rawBlock, formatSpec.error);
     }
     return {
-      format,
-      style: null,
-      formatSpec: formatSpec.value,
-      styleSpec: null,
       valid: true,
+      format: formatSpec.value,
+      style: null,
       rawBlock,
       errors: [],
     };
@@ -756,18 +778,16 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
 
   const formatSpec = parseFormatSpec(format);
   if ("error" in formatSpec) {
-    return invalidDisplay(rawBlock, formatSpec.error, format, style);
+    return invalidDisplay(rawBlock, formatSpec.error);
   }
   const styleSpec = parseStyleSpec(style);
   if ("error" in styleSpec) {
-    return invalidDisplay(rawBlock, styleSpec.error, format, style);
+    return invalidDisplay(rawBlock, styleSpec.error);
   }
   return {
-    format,
-    style,
-    formatSpec: formatSpec.value,
-    styleSpec: styleSpec.value,
     valid: true,
+    format: formatSpec.value,
+    style: styleSpec.value,
     rawBlock,
     errors: [],
   };
@@ -797,17 +817,8 @@ function findTopLevelColon(text: string): number {
   return -1;
 }
 
-function invalidDisplay(
-  rawBlock: string,
-  error: string,
-  format: string | null = null,
-  style: string | null = null,
-): ParsedDisplayMetadata {
+function invalidDisplay(rawBlock: string, error: string): ParsedDisplayMetadata {
   return {
-    format,
-    style,
-    formatSpec: null,
-    styleSpec: null,
     valid: false,
     rawBlock,
     errors: [error],
@@ -893,7 +904,6 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string 
       grouping,
       precision,
       type,
-      raw: text,
     },
   };
 }
@@ -961,7 +971,6 @@ function parseStyleSpec(spec: string): { value: StyleSpec } | { error: string } 
       align,
       weight,
       color,
-      raw: text,
     },
   };
 }

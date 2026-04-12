@@ -24,12 +24,16 @@ export {
   makeError,
   makeInternalError,
   projectExternalKind,
+  resolveCellInputText,
   splitCellDisplayMetadata,
   stripCellDisplayMetadata,
   type ErrorRuntimeValue,
   type EvaluationResult,
   type ExternalErrorKind,
+  type FormatSpec,
   type SheetEvaluation,
+  type StylePatch,
+  type StyleSpec,
   type RuntimeValue,
 } from "./runtime";
 
@@ -44,6 +48,7 @@ export {
   type CoreEditError,
   type CoreEditErrorCategory,
 } from "./core_edit";
+export type { CellInputTextView } from "./runtime";
 export {
   formatPresentedCell,
   resolveDocumentPresentation,

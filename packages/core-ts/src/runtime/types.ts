@@ -117,23 +117,29 @@ export interface FormatSpec {
   grouping: boolean;
   precision: number | null;
   type: NumericFormatType | null;
-  raw: string;
 }
 
 export interface StyleSpec {
   align: TextAlign | null;
   weight: TextWeight | null;
   color: TextColor | null;
-  raw: string;
 }
 
-export interface ParsedDisplayMetadata {
-  format: string | null;
-  style: string | null;
-  formatSpec: FormatSpec | null;
-  styleSpec: StyleSpec | null;
-  valid: boolean;
-  rawBlock: string | null;
+export type StylePatch = Partial<StyleSpec>;
+
+export type ParsedDisplayMetadata = ValidDisplayMetadata | InvalidDisplayMetadata;
+
+export interface ValidDisplayMetadata {
+  valid: true;
+  format: FormatSpec | null;
+  style: StyleSpec | null;
+  rawBlock: string;
+  errors: string[];
+}
+
+export interface InvalidDisplayMetadata {
+  valid: false;
+  rawBlock: string;
   errors: string[];
 }
 

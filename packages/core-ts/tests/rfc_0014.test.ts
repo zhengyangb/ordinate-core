@@ -152,9 +152,8 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 
     const both = parseCellInput("1234.5 {:,.2f:>,red}");
     expect(both.display?.valid).toBe(true);
-    expect(both.display?.format).toBe(",.2f");
-    expect(both.display?.style).toBe(">,red");
-    expect(both.display?.formatSpec).toMatchObject({
+    if (!both.display?.valid) throw new Error("expected valid display metadata");
+    expect(both.display.format).toMatchObject({
       sign: "default",
       zeroPad: false,
       width: null,
@@ -162,7 +161,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       precision: 2,
       type: "f",
     });
-    expect(both.display?.styleSpec).toMatchObject({
+    expect(both.display.style).toMatchObject({
       align: "right",
       weight: null,
       color: "red",
@@ -170,9 +169,9 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 
     const styleOnly = parseCellInput("42 {: :bold}");
     expect(styleOnly.display?.valid).toBe(true);
-    expect(styleOnly.display?.format).toBeNull();
-    expect(styleOnly.display?.style).toBe("bold");
-    expect(styleOnly.display?.styleSpec).toMatchObject({
+    if (!styleOnly.display?.valid) throw new Error("expected valid display metadata");
+    expect(styleOnly.display.format).toBeNull();
+    expect(styleOnly.display.style).toMatchObject({
       align: null,
       weight: "bold",
       color: null,
@@ -180,7 +179,8 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 
     const longWeight = parseCellInput("42 {::weight=normal,color=blue,align=left}");
     expect(longWeight.display?.valid).toBe(true);
-    expect(longWeight.display?.styleSpec).toMatchObject({
+    if (!longWeight.display?.valid) throw new Error("expected valid display metadata");
+    expect(longWeight.display.style).toMatchObject({
       align: "left",
       weight: "normal",
       color: "blue",
@@ -321,7 +321,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: -1234.5 },
         formatLayer: {
-          effective: { sign: "parentheses", zeroPad: false, width: null, grouping: true, precision: 2, type: "f", raw: "(),.2f" },
+          effective: { sign: "parentheses", zeroPad: false, width: null, grouping: true, precision: 2, type: "f" },
         },
       }),
     ).toBe("(1,234.50)");
@@ -330,7 +330,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: 0.125 },
         formatLayer: {
-          effective: { sign: "plus", zeroPad: false, width: null, grouping: false, precision: 1, type: "%", raw: "+.1%" },
+          effective: { sign: "plus", zeroPad: false, width: null, grouping: false, precision: 1, type: "%" },
         },
       }),
     ).toBe("+12.5%");
@@ -339,7 +339,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: 42 },
         formatLayer: {
-          effective: { sign: "default", zeroPad: true, width: 6, grouping: false, precision: null, type: "d", raw: "06d" },
+          effective: { sign: "default", zeroPad: true, width: 6, grouping: false, precision: null, type: "d" },
         },
       }),
     ).toBe("000042");

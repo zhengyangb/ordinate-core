@@ -103,6 +103,10 @@ A clean formula cell with a valid cache may be serialized using the cached form.
 
 A formula cell whose cache is not authoritative must be serialized without a cache.
 
+These are serialized `body` forms in the terminology of RFC-0016.
+
+They do not redefine `input`: formula input remains `= expression`, even when serialization uses `cached_value = expression`.
+
 ## Error Serialization
 
 Error serialization follows RFC-0015.
