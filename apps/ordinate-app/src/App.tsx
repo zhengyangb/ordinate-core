@@ -9,7 +9,7 @@ import {
   type ModelUpdatedEvent,
 } from "ag-grid-community";
 
-import { type RuntimeValue } from "@ordinate/core";
+import { type RuntimeValue, type StylePatch } from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
 import ErrorCellChip from "./components/ErrorCellChip";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
@@ -107,6 +107,7 @@ export default function App() {
     setActiveSheet,
     renameSheet,
     setCellInput,
+    setCellLocalStyle,
     enterSourceMode,
     exitSourceMode,
   } = useEditorStore();
@@ -651,7 +652,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (!selectedCell && selectedColumnIndex == null) return;
       const interactiveRoot = target?.closest(
-        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, .column-index-main, .column-index-menu-trigger, .column-rail-menu, textarea",
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, .column-index-main, .column-index-menu-trigger, .column-rail-menu, textarea",
       );
       if (interactiveRoot) return;
       clearActiveSelection();
@@ -1811,6 +1812,34 @@ export default function App() {
     });
   }, [selectedCell, activeSheet, setCellInput, focusSelectedBodyCell]);
 
+  const handleSetCellLocalStyle = useCallback(<Axis extends "align" | "weight" | "color">(
+    axis: Axis,
+    value: NonNullable<FormulaBarData["styleLocal"]>[Axis],
+  ) => {
+    if (!selectedCell || selectedCell.area !== "body") {
+      throw new Error("style edit requires a selected body cell");
+    }
+    if (!activeSheet) {
+      throw new Error("style edit requires an active sheet");
+    }
+    const patch: StylePatch = {
+      [axis]: value === "auto" ? null : value,
+    };
+    setCellLocalStyle(
+      {
+        kind: "index",
+        sheet: activeSheet,
+        rowIndex: selectedCell.logical.rAbs - 1,
+        colIndex: selectedCell.logical.cAbs,
+      },
+      patch,
+    );
+    setFormulaInputMode("read");
+    window.requestAnimationFrame(() => {
+      focusSelectedBodyCell();
+    });
+  }, [selectedCell, activeSheet, setCellLocalStyle, focusSelectedBodyCell]);
+
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
     if (!selectedCell || selectedCell.area !== "body") return;
@@ -1931,6 +1960,7 @@ export default function App() {
           onRequestEdit={handleRequestFormulaEdit}
           onCancelEdit={handleCancelFormulaEdit}
           onCommitInput={handleCommitFormulaInput}
+          onSetLocalStyle={handleSetCellLocalStyle}
           onDismiss={clearActiveSelection}
           onTooltipEnter={showTooltip}
           onTooltipLeave={clearTooltip}

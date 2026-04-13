@@ -1898,8 +1898,10 @@ textarea {
   justify-content: center;
 }
 
+.data-cell.is-bold,
+.data-cell.is-bold .ag-cell-wrapper,
 .data-cell.is-bold .ag-cell-value {
-  font-weight: 660;
+  font-weight: 700;
 }
 
 .data-cell.is-color-red:not(.is-error),

@@ -81,6 +81,7 @@ type FormulaBarOverlayProps = {
   onRequestEdit: () => void;
   onCancelEdit: () => void;
   onCommitInput: (nextInput: string) => void;
+  onSetLocalStyle: <Axis extends keyof StyleLocalView>(axis: Axis, value: StyleLocalView[Axis]) => void;
   onDismiss: () => void;
   onTooltipEnter: (text: string, target: HTMLElement, delayMs?: number) => void;
   onTooltipLeave: () => void;
@@ -97,6 +98,7 @@ export default function FormulaBarOverlay({
   onRequestEdit,
   onCancelEdit,
   onCommitInput,
+  onSetLocalStyle,
   onDismiss,
   onTooltipEnter,
   onTooltipLeave,
@@ -552,7 +554,10 @@ export default function FormulaBarOverlay({
                 </span>
               </div>
             ) : null}
-            <StylePreviewPanel styleLocal={localStyle} />
+            <StylePreviewPanel
+              styleLocal={localStyle}
+              onChange={isInputEditable ? onSetLocalStyle : undefined}
+            />
           </>
         </div>,
         document.body,
