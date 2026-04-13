@@ -308,7 +308,7 @@ export class SheetState {
       throw new Error("cell index out of range");
     }
 
-    const rawText = kind === ChangeKind.CLEAR && text === "" ? " " : text;
+    const rawText = (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) && text === "" ? " " : text;
     const cell = this.cells[rAbs][c];
     const normalizedText = normalizeCellTextForParsing(rawText, rAbs, c, this.headerRowCount, this.headerColCount);
     cell.storedCellText = normalizedText;

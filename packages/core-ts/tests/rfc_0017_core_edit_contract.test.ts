@@ -53,6 +53,8 @@ const AMBIGUOUS_DOC = `
 | A    || 3    | 4    |
 `.trim();
 
+const CELL_INPUT_TARGET = { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "2024" } as const;
+
 type CoreEditCase = {
   name: string;
   doc: string;
@@ -304,6 +306,81 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(dependent.dirty).toBe(true);
     expect(dependent.cachedValue?.kind).toBe("number");
     expect(Number(dependent.cachedValue?.value)).toBeCloseTo(3, 10);
+  });
+
+  it("keeps table shape when set_cell_input clears a cell with empty input", () => {
+    const state = DocumentState.fromText(EDIT_DOC);
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_cell_input",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "2024" },
+        input: "",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).toContain("| A    ||      | 2    | = B2 + C2 |");
+    const roundTripped = DocumentState.fromText(output);
+    expect(roundTripped.sheets[0].colCount).toBe(4);
+    expect(roundTripped.sheets[0].cells[roundTripped.sheets[0].bodyStart][1].storedCellText).toBe("");
+  });
+
+  const allowedCellInputs = [
+    { name: "number literal", input: "123", expectedStoredCellText: "123" },
+    { name: "implicit string literal", input: "abc", expectedStoredCellText: "abc" },
+    { name: "unclosed brace in implicit string literal", input: "abc {", expectedStoredCellText: "abc {" },
+    { name: "unclosed display-like brace in implicit string literal", input: "abc {::green", expectedStoredCellText: "abc {::green" },
+    { name: "non-display brace block in implicit string literal", input: "abc {foo}", expectedStoredCellText: "abc {foo}" },
+    { name: "quoted display-like text literal", input: '"abc {::green}"', expectedStoredCellText: '"abc {::green}"' },
+    { name: "formula string literal with display-like text", input: '= "123 {::green}" + 1', expectedStoredCellText: '= "123 {::green}" + 1' },
+    { name: "formula parse error remains preservable input", input: "= sum(B2", expectedStoredCellText: "= sum(B2" },
+  ];
+
+  it.each(allowedCellInputs)("allows set_cell_input for $name", ({ input, expectedStoredCellText }) => {
+    const result = applyBatchAtomic(DocumentState.fromText(EDIT_DOC), [
+      {
+        op: "set_cell_input",
+        target: CELL_INPUT_TARGET,
+        input,
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    const sheet = result.nextDocument.sheets[0];
+    const rowA = (sheet.rowMap.get(JSON.stringify(["A"])) ?? [])[0];
+    const col2024 = (sheet.colMap.get("2024") ?? [])[0];
+    if (rowA === undefined || col2024 === undefined) {
+      throw new Error("expected resolved target indices");
+    }
+    expect(sheet.cells[rowA][col2024].storedCellText).toBe(expectedStoredCellText);
+  });
+
+  const rejectedCellInputs = [
+    { name: "valid style display segment", input: "abc {::green}" },
+    { name: "invalid display segment", input: "abc {:bad}" },
+    { name: "formula with display segment", input: "= B2 + 1 {::green}" },
+    { name: "cached formula body", input: "6 = B2 + 1" },
+    { name: "real line feed", input: "abc\nxyz" },
+    { name: "real carriage return", input: "abc\rxyz" },
+  ];
+
+  it.each(rejectedCellInputs)("rejects set_cell_input for $name", ({ input }) => {
+    const result = applyBatchAtomic(DocumentState.fromText(EDIT_DOC), [
+      {
+        op: "set_cell_input",
+        target: CELL_INPUT_TARGET,
+        input,
+      },
+    ]);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.category).toBe("invalid_operation");
+    expect(result.error.op).toBe("set_cell_input");
   });
 
   it("supports local format/style edits without conflating presentation and value", () => {

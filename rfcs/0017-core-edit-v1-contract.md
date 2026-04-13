@@ -92,6 +92,8 @@ Normative requirements:
 - `setCellInput` accepts semantic cell text; callers do not need to provide table-wire escaping (`\|`, `\\`)
 - table-wire escaping is handled by serialization/parsing layer (RFC-0002 / RFC-0011)
 - `setCellInput` must reject real newline characters (`LF` / `CR`) in a single cell input (fail-early)
+- `setCellInput` must reject input containing a trailing `display` segment; callers must use display metadata edit operations instead
+- `setCellInput` must reject cached-formula body text such as `cached value = expr`; callers must pass formula input as `= expr`
 
 ### 2. Cache Surface
 
