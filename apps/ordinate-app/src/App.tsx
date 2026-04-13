@@ -9,7 +9,7 @@ import {
   type ModelUpdatedEvent,
 } from "ag-grid-community";
 
-import { type RuntimeValue, type StylePatch } from "@ordinate/core";
+import { type FormatSpec, type RuntimeValue, type StylePatch } from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
 import ErrorCellChip from "./components/ErrorCellChip";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
@@ -26,6 +26,8 @@ import type {
   ChromeVisibilityPhase,
   FloatingMenuPosition,
   FloatingTooltip,
+  FormatLocalKey,
+  FormatLocalOptions,
   FormulaBarData,
   GridRow,
   HeaderIndexMetric,
@@ -92,6 +94,30 @@ import { buildFormulaBarData } from "./utils/formulaBarData";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+type AutoPanTarget = {
+  key: string;
+  displayedRowIndex: number;
+  colId: string;
+};
+
+function formatSpecFromLocalKey(key: FormatLocalKey, options: FormatLocalOptions | null): FormatSpec | null {
+  if (key === "auto") return null;
+  const typeByKey: Record<Exclude<FormatLocalKey, "auto">, NonNullable<FormatSpec["type"]>> = {
+    integer: "d",
+    decimal: "f",
+    scientific: "e",
+    percent: "%",
+  };
+  return {
+    sign: options?.sign ?? "default",
+    zeroPad: options?.zeroPad ?? false,
+    width: options?.width ?? null,
+    grouping: options?.grouping ?? false,
+    precision: key === "integer" ? null : options?.precision ?? null,
+    type: typeByKey[key],
+  };
+}
+
 export default function App() {
   const uiLocale = useMemo(() => resolveUiLocale(window.navigator.language), []);
   const {
@@ -107,6 +133,7 @@ export default function App() {
     setActiveSheet,
     renameSheet,
     setCellInput,
+    setCellLocalFormat,
     setCellLocalStyle,
     enterSourceMode,
     exitSourceMode,
@@ -1548,6 +1575,20 @@ export default function App() {
     });
   }, [selectedCell, formulaBarData]);
 
+  const autoPanTarget = useMemo<AutoPanTarget | null>(() => {
+    if (!formulaBarData || selectedCell?.area !== "body") return null;
+    const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
+    if (!rowPath) return null;
+    const displayedRowIndex = rowPathToDisplayedIndex.get(rowPath);
+    if (displayedRowIndex == null) return null;
+    return {
+      key: `${selectedCell.logical.rAbs}:${selectedCell.logical.cAbs}:${rowPath}:${displayedRowIndex}`,
+      displayedRowIndex,
+      colId: selectedCell.colId,
+    };
+  }, [Boolean(formulaBarData), selectedCell, absoluteRowPathLookup, rowPathToDisplayedIndex]);
+  const autoPanTargetKey = autoPanTarget?.key ?? null;
+
   const focusBodyCellAt = useCallback(
     (rAbs: number, cAbs: number) => {
       if (mode !== "table" || isActiveSheetBlocked) return;
@@ -1654,7 +1695,7 @@ export default function App() {
   }, [formulaBarData]);
 
   useEffect(() => {
-    if (mode !== "table" || isActiveSheetBlocked || !formulaBarData || selectedCell?.area !== "body") return;
+    if (mode !== "table" || isActiveSheetBlocked || !autoPanTarget) return;
 
     const root = gridWrapRef.current;
     if (!root) return;
@@ -1662,18 +1703,12 @@ export default function App() {
     const viewport = queryGridBodyViewport(root);
     if (!viewport) return;
 
-    const selectedRowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
-    if (!selectedRowPath) return;
-
-    const displayedRowIndex = rowPathToDisplayedIndex.get(selectedRowPath);
-    if (displayedRowIndex == null) return;
-
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let kickoffRaf: number | null = null;
 
     const runAutoPan = () => {
       const selectedCellElement = root.querySelector<HTMLElement>(
-        `.ag-row[row-index="${displayedRowIndex}"] .ag-cell[col-id="${selectedCell.colId}"]`,
+        `.ag-row[row-index="${autoPanTarget.displayedRowIndex}"] .ag-cell[col-id="${autoPanTarget.colId}"]`,
       );
       const formulaElement = document.querySelector<HTMLElement>(".formula-bar-shell .formula-bar");
       if (!selectedCellElement || !formulaElement) return;
@@ -1727,7 +1762,7 @@ export default function App() {
         autoPanRafRef.current = null;
       }
     };
-  }, [mode, isActiveSheetBlocked, formulaBarData, selectedCell, absoluteRowPathLookup, rowPathToDisplayedIndex]);
+  }, [mode, isActiveSheetBlocked, autoPanTargetKey]);
 
   const chromeVisibilityPhase: ChromeVisibilityPhase =
     mode === "table"
@@ -1812,6 +1847,28 @@ export default function App() {
     });
   }, [selectedCell, activeSheet, setCellInput, focusSelectedBodyCell]);
 
+  const handleSetCellLocalFormat = useCallback((key: FormatLocalKey, options: FormatLocalOptions | null | undefined) => {
+    if (!selectedCell || selectedCell.area !== "body") {
+      throw new Error("format edit requires a selected body cell");
+    }
+    if (!activeSheet) {
+      throw new Error("format edit requires an active sheet");
+    }
+    setCellLocalFormat(
+      {
+        kind: "index",
+        sheet: activeSheet,
+        rowIndex: selectedCell.logical.rAbs - 1,
+        colIndex: selectedCell.logical.cAbs,
+      },
+      formatSpecFromLocalKey(key, options ?? null),
+    );
+    setFormulaInputMode("read");
+    window.requestAnimationFrame(() => {
+      scheduleSelectionRingSync();
+    });
+  }, [selectedCell, activeSheet, setCellLocalFormat, scheduleSelectionRingSync]);
+
   const handleSetCellLocalStyle = useCallback(<Axis extends "align" | "weight" | "color">(
     axis: Axis,
     value: NonNullable<FormulaBarData["styleLocal"]>[Axis],
@@ -1836,9 +1893,9 @@ export default function App() {
     );
     setFormulaInputMode("read");
     window.requestAnimationFrame(() => {
-      focusSelectedBodyCell();
+      scheduleSelectionRingSync();
     });
-  }, [selectedCell, activeSheet, setCellLocalStyle, focusSelectedBodyCell]);
+  }, [selectedCell, activeSheet, setCellLocalStyle, scheduleSelectionRingSync]);
 
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -1960,6 +2017,7 @@ export default function App() {
           onRequestEdit={handleRequestFormulaEdit}
           onCancelEdit={handleCancelFormulaEdit}
           onCommitInput={handleCommitFormulaInput}
+          onSetLocalFormat={handleSetCellLocalFormat}
           onSetLocalStyle={handleSetCellLocalStyle}
           onDismiss={clearActiveSelection}
           onTooltipEnter={showTooltip}
