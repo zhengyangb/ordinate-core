@@ -321,6 +321,9 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected success");
 
+    const edited = result.nextDocument.sheets[0].cells[result.nextDocument.sheets[0].bodyStart][1];
+    expect(edited.storedCellText).toBe("");
+
     const output = serializeDocumentState(result.nextDocument);
     expect(output).toContain("| A    ||      | 2    | = B2 + C2 |");
     const roundTripped = DocumentState.fromText(output);

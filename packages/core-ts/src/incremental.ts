@@ -308,15 +308,14 @@ export class SheetState {
       throw new Error("cell index out of range");
     }
 
-    const rawText = (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) && text === "" ? " " : text;
     const cell = this.cells[rAbs][c];
-    const normalizedText = normalizeCellTextForParsing(rawText, rAbs, c, this.headerRowCount, this.headerColCount);
+    const normalizedText = normalizeCellTextForParsing(text, rAbs, c, this.headerRowCount, this.headerColCount);
     cell.storedCellText = normalizedText;
     cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
     cell.dirty = true;
     cell.cachedValue = null;
 
-    this.updateRowText(rAbs, c, rawText);
+    this.updateRowText(rAbs, c, text);
 
     if (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) {
       this.updateDependenciesForCell(rAbs, c);
@@ -475,7 +474,7 @@ export class SheetState {
     }
 
     const boundary = this.logicalRows.length > 0 ? this.logicalRows[0].boundary : null;
-    const rawCells = Array.from({ length: this.colCount }, () => " ");
+    const rawCells = Array.from({ length: this.colCount }, () => "");
     const cells = Array.from({ length: this.colCount }, () => "");
     const newRow: ParsedRow = { rawCells, cells, boundary, errors: [] };
     this.logicalRows.splice(rowIndex, 0, newRow);
@@ -525,13 +524,13 @@ export class SheetState {
     }
 
     for (const row of this.logicalRows) {
-      row.rawCells.splice(colIndex, 0, " ");
+      row.rawCells.splice(colIndex, 0, "");
       row.cells.splice(colIndex, 0, "");
     }
     for (const rowCells of this.cells) {
       rowCells.splice(colIndex, 0, {
-        storedCellText: " ",
-        parsed: this.bindParsedCell(parseCellInput(" ")),
+        storedCellText: "",
+        parsed: this.bindParsedCell(parseCellInput("")),
         cachedValue: null,
         dirty: true,
       });

@@ -348,7 +348,9 @@ export default function FormulaBarOverlay({
               <span className="formula-subaddress">{formulaBarSnapshot.secondaryAddress}</span>
             </div>
             <div className="formula-meta-lower">
-              <span className="formula-chip formula-chip--inline" title={chipText}>{chipText}</span>
+              <span className="formula-chip-slot">
+                <span className="formula-chip formula-chip--inline" title={chipText}>{chipText}</span>
+              </span>
               <div className="formula-display-meta" aria-label="Display metadata">
                 <div className="formula-format-control">
                   <button

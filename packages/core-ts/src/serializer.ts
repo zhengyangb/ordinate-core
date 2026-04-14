@@ -109,10 +109,10 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
       } else {
         const displaySuffix = renderDisplayBlock(cellState.parsed.display ?? null);
         if (displaySuffix === "") {
-          cells.push(raw);
+          cells.push(encodeTableCellText(raw));
         } else {
           const base = stripCellDisplayMetadata(raw).trim();
-          cells.push(`${base}${displaySuffix}`);
+          cells.push(encodeTableCellText(`${base}${displaySuffix}`));
         }
       }
     }
@@ -140,6 +140,10 @@ function buildRow(cells: string[], boundary: number | null): string {
     }
   });
   return `|${parts.join("|")}|`;
+}
+
+function encodeTableCellText(text: string): string {
+  return text === "" ? " " : text;
 }
 
 function serializeValue(value: RuntimeValue): string {
