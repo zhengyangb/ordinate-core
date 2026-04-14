@@ -51,7 +51,7 @@ V1 includes the following logical operations:
 
 V1 defines a canonical cell state split into three parts:
 
-- `input`: read/edit-facing formula/literal input as defined in RFC-0016
+- `body`: structured formula/literal input state as defined in RFC-0016
 - `cache`: cached runtime value plus dirty-state
 - `localDisplay`: cell-local display metadata (`format` and `style`)
 
@@ -59,8 +59,10 @@ Normative requirements:
 
 - read APIs and write APIs must use this conceptual split
 - serialization layout does not redefine this model
-- `input`/`cache`/`localDisplay` must not be conflated into one opaque cell-text field
+- `body`/`cache`/`localDisplay` must not be conflated into one opaque cell-text field
 - cached formula `body` text must not be exposed directly as `input`
+- valid `body` is serialized from structured fields; invalid `body` preserves `unparsedBodyRaw`
+- valid `localDisplay` is serialized from structured `format`/`style`; invalid `localDisplay` preserves its raw display block
 
 ## Public Read Contract (V1)
 
@@ -81,14 +83,14 @@ Current contract terms:
   - `inputText`: editable input (formula/literal content, excluding the `display` segment and excluding cached value)
   - `parsedInput`: parsed representation of `inputText`
 - when `parse_failed`:
-  - `unparsedSourceRaw`: exact source text fragment preserved for lossless round-trip
+  - `unparsedBodyRaw`: exact body source text fragment preserved for lossless round-trip
 
 Normative requirements:
 
 - on edit, parser attempts parse immediately
-- parse success stores `parse_ok` state and clears `unparsedSourceRaw`
-- parse failure stores `parse_failed` state and preserves exact `unparsedSourceRaw`
-- serializer must emit `unparsedSourceRaw` verbatim when `parse_failed`
+- parse success stores `parse_ok` state and clears `unparsedBodyRaw`
+- parse failure stores `parse_failed` state and preserves exact `unparsedBodyRaw`
+- serializer must emit `unparsedBodyRaw` verbatim when `parse_failed`
 - `setCellInput` accepts semantic cell text; callers do not need to provide table-wire escaping (`\|`, `\\`)
 - table-wire escaping is handled by serialization/parsing layer (RFC-0002 / RFC-0011)
 - empty `input` represents a semantic empty cell; serializer must encode it unambiguously for `.ord` text without requiring edit state to store a placeholder space
@@ -150,9 +152,10 @@ Normative requirements:
 
 - `setCellInput` attempts parse on every write
 - parse-success path does not rely on persistent raw-source storage
-- parse-failure path preserves exact `unparsedSourceRaw`
+- parse-failure path preserves exact `unparsedBodyRaw`
 - invalid input must still round-trip through parse/serialize without information loss
 - cache and local display may change independently of input state
+- invalid body and invalid display metadata are preserved independently; editing display metadata must not rewrite an invalid body
 
 ## Application Model
 

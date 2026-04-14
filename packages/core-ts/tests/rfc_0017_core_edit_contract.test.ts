@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyBatchAtomic,
+  type CoreCellTarget,
   type CoreEdit,
   type CoreEditErrorCategory,
   type FormatSpec,
   DocumentState,
   evaluateDocument,
   formatDocument,
-  isError,
   parseDocumentModel,
   resolveDocumentPresentation,
   resolvePresentationFromText,
@@ -53,7 +53,13 @@ const AMBIGUOUS_DOC = `
 | A    || 3    | 4    |
 `.trim();
 
-const CELL_INPUT_TARGET = { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "2024" } as const;
+const CELL_INPUT_TARGET: CoreCellTarget = { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "2024" };
+
+function cellInputSource(cell: any): string {
+  const body = cell.body;
+  if (!body.valid) return body.unparsedBodyRaw;
+  return body.inputText;
+}
 
 type CoreEditCase = {
   name: string;
@@ -181,15 +187,10 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
     const badRowAbs = sheet.bodyStart + badRowRel;
     const badPrice = sheet.cells[badRowAbs][1];
 
-    // Stored cell text is preserved for invalid input round-trip.
-    expect(badPrice.storedCellText).toBe("= sum(B2");
-    expect(badPrice.parsed.kind).toBe("formula");
-    expect(badPrice.parsed.expression).not.toBeNull();
-    if (!badPrice.parsed.expression || badPrice.parsed.expression.kind !== "literal") {
-      throw new Error("expected parse-error literal expression");
-    }
-    expect(isError(badPrice.parsed.expression.value as any)).toBe(true);
-    expect((badPrice.parsed.expression.value as any).errorKind).toBe("parse_error");
+    expect(badPrice.body.valid).toBe(false);
+    if (badPrice.body.valid) throw new Error("expected invalid body");
+    expect(badPrice.body.unparsedBodyRaw).toBe("= sum(B2");
+    expect(badPrice.localDisplay).toBeNull();
 
     state.evaluate();
     const output = serializeDocumentState(state);
@@ -322,27 +323,27 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     if (!result.ok) throw new Error("expected success");
 
     const edited = result.nextDocument.sheets[0].cells[result.nextDocument.sheets[0].bodyStart][1];
-    expect(edited.storedCellText).toBe("");
+    expect(cellInputSource(edited)).toBe("");
 
     const output = serializeDocumentState(result.nextDocument);
     expect(output).toContain("| A    ||      | 2    | = B2 + C2 |");
     const roundTripped = DocumentState.fromText(output);
     expect(roundTripped.sheets[0].colCount).toBe(4);
-    expect(roundTripped.sheets[0].cells[roundTripped.sheets[0].bodyStart][1].storedCellText).toBe("");
+    expect(cellInputSource(roundTripped.sheets[0].cells[roundTripped.sheets[0].bodyStart][1])).toBe("");
   });
 
   const allowedCellInputs = [
-    { name: "number literal", input: "123", expectedStoredCellText: "123" },
-    { name: "implicit string literal", input: "abc", expectedStoredCellText: "abc" },
-    { name: "unclosed brace in implicit string literal", input: "abc {", expectedStoredCellText: "abc {" },
-    { name: "unclosed display-like brace in implicit string literal", input: "abc {::green", expectedStoredCellText: "abc {::green" },
-    { name: "non-display brace block in implicit string literal", input: "abc {foo}", expectedStoredCellText: "abc {foo}" },
-    { name: "quoted display-like text literal", input: '"abc {::green}"', expectedStoredCellText: '"abc {::green}"' },
-    { name: "formula string literal with display-like text", input: '= "123 {::green}" + 1', expectedStoredCellText: '= "123 {::green}" + 1' },
-    { name: "formula parse error remains preservable input", input: "= sum(B2", expectedStoredCellText: "= sum(B2" },
+    { name: "number literal", input: "123", expectedInputText: "123" },
+    { name: "implicit string literal", input: "abc", expectedInputText: "abc" },
+    { name: "unclosed brace in implicit string literal", input: "abc {", expectedInputText: "abc {" },
+    { name: "unclosed display-like brace in implicit string literal", input: "abc {::green", expectedInputText: "abc {::green" },
+    { name: "non-display brace block in implicit string literal", input: "abc {foo}", expectedInputText: "abc {foo}" },
+    { name: "quoted display-like text literal", input: '"abc {::green}"', expectedInputText: '"abc {::green}"' },
+    { name: "formula string literal with display-like text", input: '= "123 {::green}" + 1', expectedInputText: '= "123 {::green}" + 1' },
+    { name: "formula parse error remains preservable input", input: "= sum(B2", expectedInputText: "= sum(B2" },
   ];
 
-  it.each(allowedCellInputs)("allows set_cell_input for $name", ({ input, expectedStoredCellText }) => {
+  it.each(allowedCellInputs)("allows set_cell_input for $name", ({ input, expectedInputText }) => {
     const result = applyBatchAtomic(DocumentState.fromText(EDIT_DOC), [
       {
         op: "set_cell_input",
@@ -359,7 +360,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     if (rowA === undefined || col2024 === undefined) {
       throw new Error("expected resolved target indices");
     }
-    expect(sheet.cells[rowA][col2024].storedCellText).toBe(expectedStoredCellText);
+    expect(cellInputSource(sheet.cells[rowA][col2024])).toBe(expectedInputText);
   });
 
   const rejectedCellInputs = [
@@ -447,6 +448,115 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(output).not.toContain("purple");
   });
 
+  it("edits valid display metadata without rewriting an invalid body", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || = B2 + {::green} |
+`.trim());
+
+    const sheet = state.sheets[0];
+    const cell = sheet.cells[sheet.bodyStart][1];
+    expect(cell.body.valid).toBe(false);
+    if (cell.body.valid) throw new Error("expected invalid body");
+    expect(cell.body.unparsedBodyRaw).toBe("= B2 +");
+    expect(cell.localDisplay?.valid).toBe(true);
+
+    const updated = applyBatchAtomic(state, [
+      {
+        op: "set_cell_local_style",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        style: { color: "blue" },
+      },
+    ]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) throw new Error("expected success");
+    const updatedCell = updated.nextDocument.sheets[0].cells[updated.nextDocument.sheets[0].bodyStart][1];
+    expect(updatedCell.body.valid).toBe(false);
+    if (updatedCell.body.valid) throw new Error("expected invalid body");
+    expect(updatedCell.body.unparsedBodyRaw).toBe("= B2 +");
+    expect(updatedCell.localDisplay?.valid).toBe(true);
+    if (!updatedCell.localDisplay?.valid) throw new Error("expected valid display");
+    expect(updatedCell.localDisplay.style).toMatchObject({ color: "blue" });
+    expect(serializeDocumentState(updated.nextDocument)).toContain("= B2 + {::blue}");
+  });
+
+  it("keeps valid body and invalid display metadata independent", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2fd} |
+`.trim());
+
+    const sheet = state.sheets[0];
+    const cell = sheet.cells[sheet.bodyStart][1];
+    expect(cell.body.valid).toBe(true);
+    expect(cell.localDisplay?.valid).toBe(false);
+    expect(serializeDocumentState(state)).toContain("1 {:,.2fd}");
+
+    const replaced = applyBatchAtomic(state, [
+      {
+        op: "set_cell_local_format",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        format: FORMAT_GROUPED_2F,
+      },
+    ]);
+    expect(replaced.ok).toBe(true);
+    if (!replaced.ok) throw new Error("expected success");
+    const output = serializeDocumentState(replaced.nextDocument);
+    expect(output).toContain("1 {:,.2f}");
+    expect(output).not.toContain(":,.2fd");
+  });
+
+  it("clears local display metadata without mutating an invalid body", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || = B2 + {::green} |
+`.trim());
+
+    const cleared = applyBatchAtomic(state, [
+      {
+        op: "clear_cell_local_style",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+      },
+    ]);
+
+    expect(cleared.ok).toBe(true);
+    if (!cleared.ok) throw new Error("expected success");
+    const cell = cleared.nextDocument.sheets[0].cells[cleared.nextDocument.sheets[0].bodyStart][1];
+    expect(cell.body.valid).toBe(false);
+    if (cell.body.valid) throw new Error("expected invalid body");
+    expect(cell.body.unparsedBodyRaw).toBe("= B2 +");
+    expect(cell.localDisplay).toBeNull();
+    expect(serializeDocumentState(cleared.nextDocument)).toContain("= B2 +");
+    expect(serializeDocumentState(cleared.nextDocument)).not.toContain("{::green}");
+  });
+
+  it("does not mutate body or display state when recalculating cache", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || = 2 + 1 {::green} |
+`.trim());
+    const sheet = state.sheets[0];
+    const outCell = sheet.cells[sheet.bodyStart][1];
+    const beforeBody = structuredClone(outCell.body);
+    const beforeDisplay = structuredClone(outCell.localDisplay);
+
+    state.evaluate();
+
+    expect(outCell.body).toEqual(beforeBody);
+    expect(outCell.localDisplay).toEqual(beforeDisplay);
+    expect(outCell.cachedValue?.kind).toBe("number");
+    expect(serializeDocumentState(state)).toContain("3 = 2 + 1 {::green}");
+  });
+
   it("applies style patches by axis and uses null to clear an axis", () => {
     const state = DocumentState.fromText(`
 # Sheet
@@ -524,8 +634,9 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
       throw new Error("expected resolved target indices");
     }
     const badCell = sheet.cells[rowB][colOut];
-    expect(badCell.storedCellText).toBe("= sum(B2");
-    expect(badCell.parsed.kind).toBe("formula");
+    expect(badCell.body.valid).toBe(false);
+    if (badCell.body.valid) throw new Error("expected invalid body");
+    expect(badCell.body.unparsedBodyRaw).toBe("= sum(B2");
     expect(serializeDocumentState(result.nextDocument)).toContain("= sum(B2");
   });
 

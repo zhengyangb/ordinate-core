@@ -20,16 +20,23 @@ export {
 
 export {
   evaluateDocument,
+  getCellTextView,
   isError,
+  diagnosticFromError,
   makeError,
   makeInternalError,
+  parseCellText,
   projectExternalKind,
   resolveCellInputText,
+  runtimeErrorFromDiagnostic,
   splitCellDisplayMetadata,
   stripCellDisplayMetadata,
+  type Diagnostic,
   type ErrorRuntimeValue,
   type EvaluationResult,
   type ExternalErrorKind,
+  type CellBodyState,
+  type CellDisplayState,
   type FormatSpec,
   type SheetEvaluation,
   type StylePatch,
@@ -48,7 +55,7 @@ export {
   type CoreEditError,
   type CoreEditErrorCategory,
 } from "./core_edit";
-export type { CellInputTextView } from "./runtime";
+export type { CellInputTextView, CellTextViewSource } from "./runtime";
 export {
   formatPresentedCell,
   resolveDocumentPresentation,

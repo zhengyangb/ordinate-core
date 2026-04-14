@@ -66,7 +66,7 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
       const rowCells: PresentedCell[] = [];
       for (let c = 0; c < sheet.colCount; c += 1) {
         const isHeaderColumn = c < sheet.headerColCount;
-        const parsedDisplay = sheet.cells[rAbs][c].parsed.display ?? null;
+        const parsedDisplay = sheet.cells[rAbs][c].localDisplay ?? null;
         const cellFormatLocal = !isHeaderColumn && parsedDisplay && parsedDisplay.valid ? parsedDisplay.format : null;
         const cellStyleLocal = !isHeaderColumn && parsedDisplay && parsedDisplay.valid ? parsedDisplay.style : null;
         const colDefault = c < defaults.length
@@ -102,7 +102,7 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
               : "default";
         const errors: string[] = [];
         if (!isHeaderColumn && parsedDisplay && !parsedDisplay.valid) {
-          errors.push(...parsedDisplay.errors);
+          errors.push(parsedDisplay.issue.code);
         } else if (!isHeaderColumn && colDefault.valid === false && colDefault.errors.length > 0) {
           errors.push(...colDefault.errors);
         }
@@ -231,7 +231,7 @@ function computeColumnDefaults(sheet: DocumentState["sheets"][number]): ColumnDi
         effective: parsedDisplay.valid ? parsedDisplay.style : null,
       },
       valid: parsedDisplay.valid,
-      errors: [...parsedDisplay.errors],
+      errors: parsedDisplay.valid ? [] : [parsedDisplay.issue.code],
     };
   }
   return defaults;

@@ -116,7 +116,11 @@ describe("RFC-0013 dual reference styles", () => {
     const sheet = state.sheets[0];
     const outCol = sheet.colLabels.indexOf("Out");
     const rowAAbs = sheet.bodyStart + sheet.rowPaths.indexOf("A");
-    sheet.cells[rowAAbs][outCol].parsed.expression = {
+    const body = sheet.cells[rowAAbs][outCol].body;
+    if (!body.valid || body.kind !== "formula") {
+      throw new Error("expected formula body");
+    }
+    body.expression = {
       kind: "reference",
       value: {
         rowSelector: { kind: "label", value: ["Revenue"] },

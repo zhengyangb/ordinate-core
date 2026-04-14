@@ -357,7 +357,7 @@ function assertSingleLineCellInput(input: string): void {
     );
   }
   const parsed = parseCellInput(input);
-  if (parsed.kind === "formula" && parsed.cached !== null && !input.trim().startsWith("=")) {
+  if (parsed.initialCachedValue !== null && !input.trim().startsWith("=")) {
     throw new CoreEditFailure(
       "invalid_operation",
       'cell input must not include cached values; use formula input such as "= expr"',

@@ -1,7 +1,6 @@
 import { formatDocument } from "./formatter";
 import { type DocumentState, type SheetState } from "./incremental";
 import { escapeCellText } from "./parser";
-import { stripCellDisplayMetadata } from "./runtime/parse";
 import { type ExprNode, type FormatSpec, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue, type StyleSpec } from "./runtime/types";
 import { isError, isValidExternalErrorKind } from "./runtime/errors";
 
@@ -88,32 +87,11 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
     const rowBoundary = row.boundary === null ? null : row.boundary + (includeDisplayControlFrame ? 1 : 0);
     const cells: string[] = includeDisplayControlFrame ? [" "] : [];
     for (let c = 0; c < sheet.colCount; c += 1) {
-      const raw = c < row.rawCells.length ? row.rawCells[c] : "";
       const cellState = sheet.cells[rAbs][c];
-      if (cellState.parsed.kind === "formula") {
-        const displaySuffix = renderDisplayBlock(cellState.parsed.display ?? null);
-        if (isParseErrorExpression(cellState.parsed.expression)) {
-          const exprText = cellState.parsed.expressionText?.trim() ?? "";
-          cells.push(`= ${exprText}${displaySuffix}`);
-          continue;
-        }
-
-        const rhs = renderExpression(cellState.parsed.expression, rowIdToIndex, colIdToIndex)
-          ?? cellState.parsed.expressionText
-          ?? "";
-        if (!cellState.dirty && cellState.cachedValue !== null && cellState.cachedValue.kind !== "blank") {
-          cells.push(`${serializeValue(cellState.cachedValue)} = ${rhs}${displaySuffix}`);
-        } else {
-          cells.push(`= ${rhs}${displaySuffix}`);
-        }
+      if (rAbs < sheet.headerRowCount || c < sheet.headerColCount) {
+        cells.push(encodeTableCellText(c < row.rawCells.length ? row.rawCells[c] : ""));
       } else {
-        const displaySuffix = renderDisplayBlock(cellState.parsed.display ?? null);
-        if (displaySuffix === "") {
-          cells.push(encodeTableCellText(raw));
-        } else {
-          const base = stripCellDisplayMetadata(raw).trim();
-          cells.push(encodeTableCellText(`${base}${displaySuffix}`));
-        }
+        cells.push(encodeTableCellText(serializeCellState(cellState, rowIdToIndex, colIdToIndex)));
       }
     }
     lines.push(buildRow(cells, rowBoundary));
@@ -122,10 +100,31 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
   return lines;
 }
 
-function isParseErrorExpression(node: ExprNode | null | undefined): boolean {
-  if (!node || node.kind !== "literal") return false;
-  const value = node.value as RuntimeValue;
-  return isError(value) && value.errorKind === "parse_error";
+function serializeCellState(
+  cellState: SheetState["cells"][number][number],
+  rowIdToIndex: Map<number, number>,
+  colIdToIndex: Map<number, number>,
+): string {
+  const body = cellState.body;
+  const displaySuffix = renderDisplayBlock(cellState.localDisplay);
+  if (!body.valid) {
+    return `${body.unparsedBodyRaw}${displaySuffix}`;
+  }
+  if (body.kind === "literal") {
+    return `${serializeLiteralBody(body.literal, body.inputText)}${displaySuffix}`;
+  }
+
+  const rhs = renderExpression(body.expression, rowIdToIndex, colIdToIndex) ?? body.expressionText;
+  if (!cellState.dirty && cellState.cachedValue !== null && cellState.cachedValue.kind !== "blank") {
+    return `${serializeValue(cellState.cachedValue)} = ${rhs}${displaySuffix}`;
+  }
+  return `= ${rhs}${displaySuffix}`;
+}
+
+function serializeLiteralBody(value: RuntimeValue, inputText: string): string {
+  if (value.kind === "blank") return "";
+  if (value.kind === "string") return inputText;
+  return serializeValue(value);
 }
 
 function buildRow(cells: string[], boundary: number | null): string {

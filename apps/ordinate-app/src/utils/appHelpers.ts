@@ -1,4 +1,4 @@
-import type { PresentedCell, RuntimeValue } from "@ordinate/core";
+import { getCellTextView, type CellTextViewSource, type PresentedCell, type RuntimeValue } from "@ordinate/core";
 
 import type {
   ColumnMetric,
@@ -51,9 +51,7 @@ type RuntimeSheet = {
   values: RuntimeValue[][];
 };
 
-type StateCell = {
-  storedCellText?: string;
-};
+type StateCell = CellTextViewSource;
 
 type StateSheet = {
   colCount: number;
@@ -248,7 +246,8 @@ export function trimSheetColCount(currentSheetState: StateSheet | null, currentS
 
     let hasRawText = false;
     for (let rowIndex = 0; rowIndex < currentSheetState.cells.length; rowIndex += 1) {
-      const rawText = currentSheetState.cells[rowIndex]?.[colIndex]?.storedCellText?.trim() ?? "";
+      const cell = currentSheetState.cells[rowIndex]?.[colIndex];
+      const rawText = cell ? getCellTextView(cell).inputText.trim() : "";
       if (rawText.length > 0) {
         hasRawText = true;
         break;

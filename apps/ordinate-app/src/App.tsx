@@ -9,7 +9,7 @@ import {
   type ModelUpdatedEvent,
 } from "ag-grid-community";
 
-import { type FormatSpec, type RuntimeValue, type StylePatch } from "@ordinate/core";
+import { getCellTextView, type FormatSpec, type RuntimeValue, type StylePatch } from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
 import ErrorCellChip from "./components/ErrorCellChip";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
@@ -736,7 +736,11 @@ export default function App() {
               item[field] = rowLeaf;
               item[`__kind_${colIndex}`] = "label";
             } else {
-              const headerValue = displayText.length > 0 ? displayText : rawCell?.storedCellText ?? "";
+              const headerValue = displayText.length > 0
+                ? displayText
+                : rawCell
+                  ? getCellTextView(rawCell).inputText
+                  : "";
               item[field] = headerValue;
               item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
             }

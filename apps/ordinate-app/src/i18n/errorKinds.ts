@@ -32,20 +32,65 @@ export function getExternalErrorLabel(locale: UiLocale, rawKind: string): string
 
 type ErrorContext = Record<string, unknown>;
 
-function expectString(context: ErrorContext, key: string): string {
-  const value = context[key];
-  if (typeof value !== "string") {
-    throw new Error(`expected error context key '${key}' to be string`);
-  }
-  return value;
+function logErrorTooltipFallback(reason: string, details: Record<string, unknown>): void {
+  console.warn("[ordinate-app] falling back to generic error tooltip", {
+    reason,
+    ...details,
+  });
 }
 
-function parseContext(rawContext: string): ErrorContext {
-  const parsed = JSON.parse(rawContext);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("expected error context to be object");
+function readStringContext(
+  context: ErrorContext,
+  key: string,
+  fallbackMessageKey: UiMessageKey,
+  params: { locale: UiLocale; externalKind: string; internalKind: string },
+): { ok: true; value: string } | { ok: false; message: string } {
+  const value = context[key];
+  if (typeof value === "string") {
+    return { ok: true, value };
   }
-  return parsed as ErrorContext;
+  logErrorTooltipFallback("missing_string_context", {
+    key,
+    externalKind: params.externalKind,
+    internalKind: params.internalKind,
+    context,
+  });
+  return {
+    ok: false,
+    message: t(params.locale, fallbackMessageKey),
+  };
+}
+
+function parseContext(
+  rawContext: string,
+  params: { locale: UiLocale; externalKind: string; internalKind: string },
+): { ok: true; context: ErrorContext } | { ok: false; message: string } {
+  try {
+    const parsed = JSON.parse(rawContext);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      logErrorTooltipFallback("invalid_context_shape", {
+        externalKind: params.externalKind,
+        internalKind: params.internalKind,
+        rawContext,
+      });
+      return {
+        ok: false,
+        message: t(params.locale, classifyGenericMessage(params.internalKind)),
+      };
+    }
+    return { ok: true, context: parsed as ErrorContext };
+  } catch (error) {
+    logErrorTooltipFallback("invalid_context_json", {
+      externalKind: params.externalKind,
+      internalKind: params.internalKind,
+      rawContext,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      ok: false,
+      message: t(params.locale, classifyGenericMessage(params.internalKind)),
+    };
+  }
 }
 
 function classifyGenericMessage(internalKind: string): UiMessageKey {
@@ -66,7 +111,15 @@ export function formatErrorTooltip(params: {
   internalKind: string;
   context: string;
 }): string {
-  const context = parseContext(params.context);
+  const parsedContext = parseContext(params.context, {
+    locale: params.locale,
+    externalKind: params.externalKind,
+    internalKind: params.internalKind,
+  });
+  if (!parsedContext.ok) {
+    return parsedContext.message;
+  }
+  const context = parsedContext.context;
 
   if (params.internalKind === "divide_by_zero") {
     return t(params.locale, "error.message.div_by_zero");
@@ -75,20 +128,30 @@ export function formatErrorTooltip(params: {
     return t(params.locale, "error.message.parse_missing_closing_paren");
   }
   if (params.internalKind === "parse_function_call_missing_closing_paren") {
+    const name = readStringContext(context, "name", "error.message.parse_generic", params);
+    if (!name.ok) return name.message;
     return t(params.locale, "error.message.parse_function_missing_closing_paren", {
-      name: expectString(context, "name"),
+      name: name.value,
     });
   }
   if (params.internalKind === "invalid_arithmetic") {
+    const operator = readStringContext(context, "operator", "error.message.type_generic", params);
+    if (!operator.ok) return operator.message;
+    const leftKind = readStringContext(context, "leftKind", "error.message.type_generic", params);
+    if (!leftKind.ok) return leftKind.message;
+    const rightKind = readStringContext(context, "rightKind", "error.message.type_generic", params);
+    if (!rightKind.ok) return rightKind.message;
     return t(params.locale, "error.message.type_invalid_arithmetic", {
-      operator: expectString(context, "operator"),
-      leftKind: expectString(context, "leftKind"),
-      rightKind: expectString(context, "rightKind"),
+      operator: operator.value,
+      leftKind: leftKind.value,
+      rightKind: rightKind.value,
     });
   }
   if (params.internalKind === "invalid_function_call") {
+    const fn = readStringContext(context, "function", "error.message.type_generic", params);
+    if (!fn.ok) return fn.message;
     return t(params.locale, "error.message.type_invalid_function_call", {
-      name: expectString(context, "function"),
+      name: fn.value,
     });
   }
 

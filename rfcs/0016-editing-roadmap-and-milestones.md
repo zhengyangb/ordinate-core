@@ -52,7 +52,7 @@ This roadmap is paired with RFC-0017, which defines the first formal core-edit A
 
 This RFC defines the shared terminology used by later read/edit contracts.
 
-These terms describe `.ord` cell text segments and read/edit contracts. They do not require implementation field names such as `storedCellText` to have identical meaning.
+These terms describe `.ord` cell text segments and read/edit contracts. They are conceptual terms, not a requirement to keep an opaque raw cell text field in the implementation.
 
 Core terms:
 
