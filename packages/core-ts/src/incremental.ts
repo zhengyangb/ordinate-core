@@ -11,6 +11,8 @@ import {
   separatorRowIndex,
 } from "./runtime/eval";
 import {
+  type CellBodyState,
+  type CellDisplayState,
   type EvaluationResult,
   type ExprNode,
   type ParsedCell,
@@ -23,7 +25,7 @@ import {
   type SheetEvaluation,
   type ViewSelection,
 } from "./runtime/types";
-import { makeInternalError } from "./runtime/errors";
+import { makeInternalError, runtimeErrorFromDiagnostic } from "./runtime/errors";
 
 export enum ChangeKind {
   VALUE = "value",
@@ -34,8 +36,8 @@ export enum ChangeKind {
 }
 
 interface CellState {
-  storedCellText: string;
-  parsed: ParsedCell;
+  body: CellBodyState;
+  localDisplay: CellDisplayState;
   cachedValue: RuntimeValue | null;
   dirty: boolean;
 }
@@ -235,7 +237,12 @@ export class SheetState {
         const value = trimmed[c];
         const normalizedText = normalizeCellTextForParsing(value, rAbs, c, headerRowCount, headerColCount);
         const parsed = parseCellInput(normalizedText);
-        rowCells.push({ storedCellText: normalizedText, parsed, cachedValue: null, dirty: true });
+        rowCells.push({
+          body: parsed.body,
+          localDisplay: parsed.localDisplay,
+          cachedValue: parsed.initialCachedValue,
+          dirty: !parsed.body.valid || parsed.initialCachedValue === null,
+        });
       }
       cells.push(rowCells);
     }
@@ -308,15 +315,17 @@ export class SheetState {
       throw new Error("cell index out of range");
     }
 
-    const rawText = kind === ChangeKind.CLEAR && text === "" ? " " : text;
     const cell = this.cells[rAbs][c];
-    const normalizedText = normalizeCellTextForParsing(rawText, rAbs, c, this.headerRowCount, this.headerColCount);
-    cell.storedCellText = normalizedText;
-    cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
+    const normalizedText = normalizeCellTextForParsing(text, rAbs, c, this.headerRowCount, this.headerColCount);
+    const parsed = this.bindParsedCell(parseCellInput(normalizedText));
+    cell.body = parsed.body;
+    if (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) {
+      cell.localDisplay = parsed.localDisplay;
+    }
     cell.dirty = true;
     cell.cachedValue = null;
 
-    this.updateRowText(rAbs, c, rawText);
+    this.updateRowText(rAbs, c, text);
 
     if (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) {
       this.updateDependenciesForCell(rAbs, c);
@@ -344,7 +353,7 @@ export class SheetState {
       throw new Error("cell index out of range");
     }
     assertFormatSpecOrNull(format);
-    const existing = this.cells[rAbs][c].parsed.display;
+    const existing = this.cells[rAbs][c].localDisplay;
     const style = existing && existing.valid ? existing.style : null;
     this.setCellLocalDisplayByIndex(rAbs, c, format, style);
   }
@@ -360,7 +369,7 @@ export class SheetState {
       throw new Error("cell index out of range");
     }
     assertStylePatch(stylePatch);
-    const existing = this.cells[rAbs][c].parsed.display;
+    const existing = this.cells[rAbs][c].localDisplay;
     const format = existing && existing.valid ? existing.format : null;
     const currentStyle = existing && existing.valid ? existing.style : null;
     const style = applyStylePatch(currentStyle, stylePatch);
@@ -372,7 +381,7 @@ export class SheetState {
     if (rAbs < 0 || rAbs >= this.rowCount || c < 0 || c >= this.colCount) {
       throw new Error("cell index out of range");
     }
-    const existing = this.cells[rAbs][c].parsed.display;
+    const existing = this.cells[rAbs][c].localDisplay;
     const format = existing && existing.valid ? existing.format : null;
     this.setCellLocalDisplayByIndex(rAbs, c, format, null);
   }
@@ -385,20 +394,13 @@ export class SheetState {
     style: StyleSpec | null,
   ) {
     const nextDisplay = createDisplayFromSpecs(format, style);
-    const row = this.logicalRows[rAbs];
-    const currentRaw = c < row.rawCells.length ? row.rawCells[c] : "";
-    const contentText = stripCellDisplayMetadata(currentRaw).trim();
-    const nextRaw = composeCellRawWithDisplay(contentText, nextDisplay);
-    const normalizedText = normalizeCellTextForParsing(nextRaw, rAbs, c, this.headerRowCount, this.headerColCount);
     const cell = this.cells[rAbs][c];
-    cell.storedCellText = normalizedText;
-    cell.parsed = this.bindParsedCell(parseCellInput(normalizedText));
-    this.updateRowText(rAbs, c, nextRaw);
+    cell.localDisplay = nextDisplay;
   }
 
   // Bind absolute selectors to stable IDs (tentative RFC-0012 behavior).
   private bindParsedCell(parsed: ParsedCell): ParsedCell {
-    if (parsed.kind !== "formula" || !parsed.expression) {
+    if (!parsed.body.valid || parsed.body.kind !== "formula") {
       return parsed;
     }
 
@@ -451,7 +453,7 @@ export class SheetState {
       }
     };
 
-    walk(parsed.expression);
+    walk(parsed.body.expression);
     return parsed;
   }
 
@@ -460,7 +462,12 @@ export class SheetState {
     for (let rAbs = 0; rAbs < this.cells.length; rAbs += 1) {
       for (let c = 0; c < this.cells[rAbs].length; c += 1) {
         const cell = this.cells[rAbs][c];
-        cell.parsed = this.bindParsedCell(cell.parsed);
+        const parsed = this.bindParsedCell({
+          body: cell.body,
+          localDisplay: cell.localDisplay,
+          initialCachedValue: cell.cachedValue,
+        });
+        cell.body = parsed.body;
       }
     }
   }
@@ -475,17 +482,20 @@ export class SheetState {
     }
 
     const boundary = this.logicalRows.length > 0 ? this.logicalRows[0].boundary : null;
-    const rawCells = Array.from({ length: this.colCount }, () => " ");
+    const rawCells = Array.from({ length: this.colCount }, () => "");
     const cells = Array.from({ length: this.colCount }, () => "");
     const newRow: ParsedRow = { rawCells, cells, boundary, errors: [] };
     this.logicalRows.splice(rowIndex, 0, newRow);
 
-    const newCellStates: CellState[] = rawCells.map((storedCellText) => ({
-      storedCellText,
-      parsed: this.bindParsedCell(parseCellInput(storedCellText)),
-      cachedValue: null,
-      dirty: true,
-    }));
+    const newCellStates: CellState[] = rawCells.map((cellText) => {
+      const parsed = this.bindParsedCell(parseCellInput(cellText));
+      return {
+        body: parsed.body,
+        localDisplay: parsed.localDisplay,
+        cachedValue: null,
+        dirty: true,
+      };
+    });
     this.cells.splice(rowIndex, 0, newCellStates);
     this.rowIds.splice(rowIndex, 0, this.nextRowId);
     this.nextRowId += 1;
@@ -525,13 +535,14 @@ export class SheetState {
     }
 
     for (const row of this.logicalRows) {
-      row.rawCells.splice(colIndex, 0, " ");
+      row.rawCells.splice(colIndex, 0, "");
       row.cells.splice(colIndex, 0, "");
     }
     for (const rowCells of this.cells) {
+      const parsed = this.bindParsedCell(parseCellInput(""));
       rowCells.splice(colIndex, 0, {
-        storedCellText: " ",
-        parsed: this.bindParsedCell(parseCellInput(" ")),
+        body: parsed.body,
+        localDisplay: parsed.localDisplay,
         cachedValue: null,
         dirty: true,
       });
@@ -589,9 +600,10 @@ export class SheetState {
 
     const cellState = this.cells[rAbs]?.[0];
     if (cellState) {
-      cellState.storedCellText = row.rawCells[0];
       const normalized = normalizeCellTextForParsing(row.rawCells[0], rAbs, 0, this.headerRowCount, this.headerColCount);
-      cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
+      const parsed = this.bindParsedCell(parseCellInput(normalized));
+      cellState.body = parsed.body;
+      cellState.localDisplay = parsed.localDisplay;
       cellState.cachedValue = null;
       cellState.dirty = true;
     }
@@ -623,9 +635,10 @@ export class SheetState {
 
     const cellState = this.cells[headerRowIndex]?.[colIndex];
     if (cellState) {
-      cellState.storedCellText = newLabel;
       const normalized = normalizeCellTextForParsing(newLabel, headerRowIndex, colIndex, this.headerRowCount, this.headerColCount);
-      cellState.parsed = this.bindParsedCell(parseCellInput(normalized));
+      const parsed = this.bindParsedCell(parseCellInput(normalized));
+      cellState.body = parsed.body;
+      cellState.localDisplay = parsed.localDisplay;
       cellState.cachedValue = null;
       cellState.dirty = true;
     }
@@ -666,14 +679,16 @@ export class SheetState {
     }
 
     states.set(key, "visiting");
-    const parsedCell = cell.parsed;
+    const body = cell.body;
 
     let value: RuntimeValue;
-    if (parsedCell.kind === "literal") {
-      value = parsedCell.literal ?? { kind: "blank", value: null };
+    if (!body.valid) {
+      value = runtimeErrorFromDiagnostic(body.issue);
+    } else if (body.kind === "literal") {
+      value = body.literal;
     } else {
       value = evalExpr(
-        parsedCell.expression,
+        body.expression,
         rAbs,
         c,
         (rDep, cDep) => this.evalCell(rDep, cDep, states),
@@ -764,9 +779,8 @@ export class SheetState {
   // Collect view dependencies referenced by a formula cell.
   private collectViewDependencies(rAbs: number, c: number): ViewSelection[] {
     const cell = this.cells[rAbs][c];
-    if (cell.parsed.kind !== "formula") return [];
-    const expr = cell.parsed.expression;
-    if (!expr) return [];
+    if (!cell.body.valid || cell.body.kind !== "formula") return [];
+    const expr = cell.body.expression;
     const views: ViewSelection[] = [];
 
     const walk = (node: ExprNode | null) => {
@@ -974,15 +988,18 @@ function extractColumnDisplayMetadataFromControlRow(
     if (raw.trim() === "") continue;
     const parsed = parseCellInput(raw);
     const content = stripCellDisplayMetadata(raw).trim();
-    if (content !== "" || !parsed.display) {
+    if (content !== "" || !parsed.localDisplay) {
       output[c] = {
         valid: false,
         rawBlock: raw.trim(),
-        errors: ["display_control_cell_requires_metadata_only"],
+        issue: {
+          code: "display_control_cell_requires_metadata_only",
+          context: {},
+        },
       };
       continue;
     }
-    output[c] = parsed.display;
+    output[c] = parsed.localDisplay;
   }
   return output;
 }
@@ -1005,18 +1022,7 @@ function createDisplayFromSpecs(format: FormatSpec | null, style: StyleSpec | nu
     valid: true,
     format,
     style,
-    rawBlock: buildDisplayRawBlock(format, style),
-    errors: [],
   };
-}
-
-function buildDisplayRawBlock(format: FormatSpec | null, style: StyleSpec | null): string {
-  const formatRaw = format ? serializeFormatSpec(format) : "";
-  const styleRaw = style ? serializeStyleSpec(style) : "";
-  if (formatRaw && styleRaw) return `{:${formatRaw}:${styleRaw}}`;
-  if (formatRaw) return `{:${formatRaw}}`;
-  if (styleRaw) return `{::${styleRaw}}`;
-  return "";
 }
 
 function applyStylePatch(current: StyleSpec | null, patch: StylePatch): StyleSpec | null {
@@ -1084,41 +1090,6 @@ function assertKnownKeys(value: object, allowed: string[], label: string): void 
       throw new Error(`${label} contains unsupported field '${key}'`);
     }
   }
-}
-
-function composeCellRawWithDisplay(contentText: string, display: ParsedDisplayMetadata | null): string {
-  if (!display) return contentText;
-  const rawBlock = display.rawBlock;
-  if (!rawBlock) {
-    throw new Error("display metadata missing raw block");
-  }
-  if (contentText.length === 0) return rawBlock;
-  return `${contentText} ${rawBlock}`;
-}
-
-function serializeFormatSpec(spec: FormatSpec): string {
-  let out = "";
-  if (spec.sign === "plus") out += "+";
-  else if (spec.sign === "parentheses") out += "()";
-  if (spec.zeroPad) out += "0";
-  if (spec.width !== null) out += `${spec.width}`;
-  if (spec.grouping) out += ",";
-  if (spec.precision !== null) out += `.${spec.precision}`;
-  if (spec.type !== null) out += spec.type;
-  return out;
-}
-
-function serializeStyleSpec(spec: StyleSpec): string {
-  const parts: string[] = [];
-  if (spec.align === "left") parts.push("<");
-  if (spec.align === "right") parts.push(">");
-  if (spec.align === "center") parts.push("^");
-  if (spec.weight === "bold") parts.push("bold");
-  if (spec.weight === "normal") parts.push("normal");
-  if (spec.color === "red") parts.push("red");
-  if (spec.color === "green") parts.push("green");
-  if (spec.color === "blue") parts.push("blue");
-  return parts.join(",");
 }
 
 export class DocumentState {

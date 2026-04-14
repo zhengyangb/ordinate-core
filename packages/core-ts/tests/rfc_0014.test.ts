@@ -13,6 +13,11 @@ import {
   validateDocument,
 } from "../src";
 import { parseCellInput, splitCellDisplayMetadata } from "../src/runtime";
+import type { ParsedCell, RuntimeValue } from "../src/runtime";
+
+function literalOf(cell: ParsedCell): RuntimeValue | null {
+  return cell.body.valid && cell.body.kind === "literal" ? cell.body.literal : null;
+}
 
 type DisplayCase = {
   name: string;
@@ -109,51 +114,51 @@ function loadDisplayCases(path: string): DisplayCase[] {
 describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("parses cell-level display metadata blocks", () => {
     const date = parseCellInput("2026-03-24");
-    expect(date.literal?.kind).toBe("date");
-    expect(date.literal?.value).toBe("2026-03-24");
-    expect(date.literal?.isOffsetQualified).toBe(false);
+    expect(literalOf(date)?.kind).toBe("date");
+    expect((literalOf(date) as any)?.value).toBe("2026-03-24");
+    expect((literalOf(date) as any)?.isOffsetQualified).toBe(false);
 
     const timeNaive = parseCellInput("14:30");
-    expect(timeNaive.literal?.kind).toBe("time");
-    expect(timeNaive.literal?.value).toBe("14:30");
-    expect(timeNaive.literal?.isOffsetQualified).toBe(false);
+    expect(literalOf(timeNaive)?.kind).toBe("time");
+    expect((literalOf(timeNaive) as any)?.value).toBe("14:30");
+    expect((literalOf(timeNaive) as any)?.isOffsetQualified).toBe(false);
 
     const timeOffset = parseCellInput("14:30:00-04:00");
-    expect(timeOffset.literal?.kind).toBe("time");
-    expect(timeOffset.literal?.value).toBe("14:30:00-04:00");
-    expect(timeOffset.literal?.isOffsetQualified).toBe(true);
+    expect(literalOf(timeOffset)?.kind).toBe("time");
+    expect((literalOf(timeOffset) as any)?.value).toBe("14:30:00-04:00");
+    expect((literalOf(timeOffset) as any)?.isOffsetQualified).toBe(true);
 
     const datetimeNaive = parseCellInput("2026-03-24T14:30");
-    expect(datetimeNaive.literal?.kind).toBe("datetime");
-    expect(datetimeNaive.literal?.value).toBe("2026-03-24T14:30");
-    expect(datetimeNaive.literal?.isOffsetQualified).toBe(false);
+    expect(literalOf(datetimeNaive)?.kind).toBe("datetime");
+    expect((literalOf(datetimeNaive) as any)?.value).toBe("2026-03-24T14:30");
+    expect((literalOf(datetimeNaive) as any)?.isOffsetQualified).toBe(false);
 
     const datetime = parseCellInput("2026-03-24T14:30:00Z");
-    expect(datetime.literal?.kind).toBe("datetime");
-    expect(datetime.literal?.value).toBe("2026-03-24T14:30:00Z");
-    expect(datetime.literal?.isOffsetQualified).toBe(true);
+    expect(literalOf(datetime)?.kind).toBe("datetime");
+    expect((literalOf(datetime) as any)?.value).toBe("2026-03-24T14:30:00Z");
+    expect((literalOf(datetime) as any)?.isOffsetQualified).toBe(true);
 
     const duration = parseCellInput("PT1H30M");
-    expect(duration.literal?.kind).toBe("duration");
-    expect(duration.literal?.value).toBe("PT1H30M");
+    expect(literalOf(duration)?.kind).toBe("duration");
+    expect((literalOf(duration) as any)?.value).toBe("PT1H30M");
 
     const cachedTime = parseCellInput("14:30 = B2");
-    expect(cachedTime.cached?.kind).toBe("time");
-    expect(cachedTime.cached?.value).toBe("14:30");
-    expect(cachedTime.cached?.isOffsetQualified).toBe(false);
+    expect(cachedTime.initialCachedValue?.kind).toBe("time");
+    expect((cachedTime.initialCachedValue as any)?.value).toBe("14:30");
+    expect((cachedTime.initialCachedValue as any)?.isOffsetQualified).toBe(false);
 
     const cachedDatetime = parseCellInput("2026-03-24T14:30:00+08:00 = B2");
-    expect(cachedDatetime.cached?.kind).toBe("datetime");
-    expect(cachedDatetime.cached?.value).toBe("2026-03-24T14:30:00+08:00");
-    expect(cachedDatetime.cached?.isOffsetQualified).toBe(true);
+    expect(cachedDatetime.initialCachedValue?.kind).toBe("datetime");
+    expect((cachedDatetime.initialCachedValue as any)?.value).toBe("2026-03-24T14:30:00+08:00");
+    expect((cachedDatetime.initialCachedValue as any)?.isOffsetQualified).toBe(true);
 
     const quotedDatetime = parseCellInput('"2026-03-24T14:30:00Z"');
-    expect(quotedDatetime.literal?.kind).toBe("string");
+    expect(literalOf(quotedDatetime)?.kind).toBe("string");
 
     const both = parseCellInput("1234.5 {:,.2f:>,red}");
-    expect(both.display?.valid).toBe(true);
-    if (!both.display?.valid) throw new Error("expected valid display metadata");
-    expect(both.display.format).toMatchObject({
+    expect(both.localDisplay?.valid).toBe(true);
+    if (!both.localDisplay?.valid) throw new Error("expected valid display metadata");
+    expect(both.localDisplay.format).toMatchObject({
       sign: "default",
       zeroPad: false,
       width: null,
@@ -161,49 +166,53 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       precision: 2,
       type: "f",
     });
-    expect(both.display.style).toMatchObject({
+    expect(both.localDisplay.style).toMatchObject({
       align: "right",
       weight: null,
       color: "red",
     });
 
     const styleOnly = parseCellInput("42 {: :bold}");
-    expect(styleOnly.display?.valid).toBe(true);
-    if (!styleOnly.display?.valid) throw new Error("expected valid display metadata");
-    expect(styleOnly.display.format).toBeNull();
-    expect(styleOnly.display.style).toMatchObject({
+    expect(styleOnly.localDisplay?.valid).toBe(true);
+    if (!styleOnly.localDisplay?.valid) throw new Error("expected valid display metadata");
+    expect(styleOnly.localDisplay.format).toBeNull();
+    expect(styleOnly.localDisplay.style).toMatchObject({
       align: null,
       weight: "bold",
       color: null,
     });
 
     const longWeight = parseCellInput("42 {::weight=normal,color=blue,align=left}");
-    expect(longWeight.display?.valid).toBe(true);
-    if (!longWeight.display?.valid) throw new Error("expected valid display metadata");
-    expect(longWeight.display.style).toMatchObject({
+    expect(longWeight.localDisplay?.valid).toBe(true);
+    if (!longWeight.localDisplay?.valid) throw new Error("expected valid display metadata");
+    expect(longWeight.localDisplay.style).toMatchObject({
       align: "left",
       weight: "normal",
       color: "blue",
     });
 
     const legacyBoldEquals = parseCellInput("1 {::bold=true}");
-    expect(legacyBoldEquals.display?.valid).toBe(false);
-    expect(legacyBoldEquals.display?.errors[0]).toBe("unsupported_style_item:bold=true");
+    expect(legacyBoldEquals.localDisplay?.valid).toBe(false);
+    if (legacyBoldEquals.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(legacyBoldEquals.localDisplay.issue.code).toBe("unsupported_style_item:bold=true");
 
     const conflict = parseCellInput("1 {:,.2fd}");
-    expect(conflict.display?.valid).toBe(false);
-    expect(conflict.display?.errors[0]).toBe("invalid_format_spec_trailing_chars");
+    expect(conflict.localDisplay?.valid).toBe(false);
+    if (conflict.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(conflict.localDisplay.issue.code).toBe("invalid_format_spec_trailing_chars");
 
     const styleConflict = parseCellInput("1 {:,.2f:>,^}");
-    expect(styleConflict.display?.valid).toBe(false);
-    expect(styleConflict.display?.errors[0]).toBe("duplicate_align_style");
+    expect(styleConflict.localDisplay?.valid).toBe(false);
+    if (styleConflict.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(styleConflict.localDisplay.issue.code).toBe("duplicate_align_style");
 
     const weightConflict = parseCellInput("1 {::bold,weight=normal}");
-    expect(weightConflict.display?.valid).toBe(false);
-    expect(weightConflict.display?.errors[0]).toBe("duplicate_weight_style");
+    expect(weightConflict.localDisplay?.valid).toBe(false);
+    if (weightConflict.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(weightConflict.localDisplay.issue.code).toBe("duplicate_weight_style");
 
     const noMeta = parseCellInput("123");
-    expect(noMeta.display).toBeNull();
+    expect(noMeta.localDisplay).toBeNull();
   });
 
   it("splits editable content from trailing display metadata", () => {

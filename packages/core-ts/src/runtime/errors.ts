@@ -1,4 +1,4 @@
-import { type ExternalErrorKind, type RuntimeValue, type ErrorRuntimeValue } from "./types";
+import { type Diagnostic, type ExternalErrorKind, type RuntimeValue, type ErrorRuntimeValue } from "./types";
 
 const EXTERNAL_KIND_RE = /^[a-z][a-z0-9_]*$/;
 
@@ -24,6 +24,17 @@ export function makeError(
 
 export function makeInternalError(internalKind: string, context: Record<string, unknown> = {}): ErrorRuntimeValue {
   return makeError(projectExternalKind(internalKind, context), internalKind, context);
+}
+
+export function diagnosticFromError(error: ErrorRuntimeValue): Diagnostic {
+  return {
+    code: error.internalKind,
+    context: error.context,
+  };
+}
+
+export function runtimeErrorFromDiagnostic(issue: Diagnostic): ErrorRuntimeValue {
+  return makeInternalError(issue.code, issue.context);
 }
 
 export function isError(value: RuntimeValue | null | undefined): value is ErrorRuntimeValue {
@@ -57,4 +68,3 @@ export function projectExternalKind(internalKind: string, _context: Record<strin
 
   return "generic";
 }
-

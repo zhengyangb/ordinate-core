@@ -90,6 +90,7 @@ type FormatPreviewPanelProps = {
   localFormatOptions: FormatLocalOptions | null;
   inspectedKey: FormatLocalKey;
   onInspectKey?: (key: FormatLocalKey) => void;
+  onChange?: (key: FormatLocalKey) => void;
 };
 
 export function FormatPreviewPanel({
@@ -97,6 +98,7 @@ export function FormatPreviewPanel({
   localFormatOptions,
   inspectedKey,
   onInspectKey,
+  onChange,
 }: FormatPreviewPanelProps) {
   const hasOverride = localFormatKey !== "auto";
   const formatFields: Array<{ label: string; value: string; isDefault: boolean }> = [
@@ -146,7 +148,10 @@ export function FormatPreviewPanel({
             type="button"
             role="menuitemradio"
             aria-checked={localFormatKey === option.key}
-            onClick={() => onInspectKey?.(option.key)}
+            onClick={() => {
+              onInspectKey?.(option.key);
+              onChange?.(option.key);
+            }}
           >
             <span className="formula-format-option-icon"><FormatOptionGlyph option={option.key} /></span>
             <span>{option.label}</span>
@@ -177,9 +182,10 @@ export function FormatPreviewPanel({
 
 type StylePreviewPanelProps = {
   styleLocal: StyleLocalView;
+  onChange?: <Axis extends keyof StyleLocalView>(axis: Axis, value: StyleLocalView[Axis]) => void;
 };
 
-export function StylePreviewPanel({ styleLocal }: StylePreviewPanelProps) {
+export function StylePreviewPanel({ styleLocal, onChange }: StylePreviewPanelProps) {
   return (
     <div className="formula-style-menu-panel">
       <div className="formula-style-row">
@@ -200,7 +206,10 @@ export function StylePreviewPanel({ styleLocal }: StylePreviewPanelProps) {
                 option.key === "normal" ? "is-weight-regular" : "",
               ].join(" ").trim()}
               aria-pressed={styleLocal.weight === option.key}
-              onClick={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.preventDefault();
+                onChange?.("weight", option.key as StyleLocalView["weight"]);
+              }}
             >
               {option.label}
             </button>
@@ -221,7 +230,10 @@ export function StylePreviewPanel({ styleLocal }: StylePreviewPanelProps) {
               type="button"
               className={styleLocal.align === option.key ? "formula-style-segment is-selected" : "formula-style-segment"}
               aria-pressed={styleLocal.align === option.key}
-              onClick={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.preventDefault();
+                onChange?.("align", option.key as StyleLocalView["align"]);
+              }}
             >
               {option.icon ? <span className="formula-style-segment-icon">{option.icon}</span> : option.label}
             </button>
@@ -246,7 +258,10 @@ export function StylePreviewPanel({ styleLocal }: StylePreviewPanelProps) {
                 option.tone ? `is-tone-${option.tone}` : "",
               ].join(" ").trim()}
               aria-pressed={styleLocal.color === option.key}
-              onClick={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.preventDefault();
+                onChange?.("color", option.key as StyleLocalView["color"]);
+              }}
             >
               {option.label}
             </button>

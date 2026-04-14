@@ -1,4 +1,5 @@
 import { ChangeKind, DocumentState, SheetState } from "./incremental";
+import { parseCellInput, splitCellDisplayMetadata } from "./runtime";
 import type { FormatSpec, StylePatch } from "./runtime/types";
 
 export type CoreEditErrorCategory =
@@ -347,6 +348,19 @@ function assertSingleLineCellInput(input: string): void {
     throw new CoreEditFailure(
       "invalid_operation",
       'cell input must be single-line; use "\\n" for literal text',
+    );
+  }
+  if (splitCellDisplayMetadata(input).displayMetaRaw !== null) {
+    throw new CoreEditFailure(
+      "invalid_operation",
+      "cell input must not include display metadata; use display metadata edit operations",
+    );
+  }
+  const parsed = parseCellInput(input);
+  if (parsed.initialCachedValue !== null && !input.trim().startsWith("=")) {
+    throw new CoreEditFailure(
+      "invalid_operation",
+      'cell input must not include cached values; use formula input such as "= expr"',
     );
   }
 }

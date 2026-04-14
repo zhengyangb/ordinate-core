@@ -11,7 +11,7 @@ import {
   type BooleanRuntimeValue,
   type ViewSelection,
 } from "./types";
-import { isError, makeInternalError } from "./errors";
+import { isError, makeInternalError, runtimeErrorFromDiagnostic } from "./errors";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 const SECTION_RE = /^(\[+)([^\[\]]+)(\]+)$/;
@@ -113,13 +113,16 @@ function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
     states.set(key, "visiting");
     const cellText = rAbs >= 0 && rAbs < allCells.length && c >= 0 && c < colCount ? allCells[rAbs][c] : "";
     const parsedCell = parseCellInput(cellText);
+    const body = parsedCell.body;
 
     let value: RuntimeValue;
-    if (parsedCell.kind === "literal") {
-      value = parsedCell.literal ?? { kind: "blank", value: null };
+    if (!body.valid) {
+      value = runtimeErrorFromDiagnostic(body.issue);
+    } else if (body.kind === "literal") {
+      value = body.literal;
     } else {
       value = evalExpr(
-        parsedCell.expression,
+        body.expression,
         rAbs,
         c,
         evalCell,

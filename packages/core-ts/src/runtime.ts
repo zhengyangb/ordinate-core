@@ -1,8 +1,11 @@
 export type {
+  Diagnostic,
   ErrorRuntimeValue,
   EvaluationResult,
   ExternalErrorKind,
   ExprNode,
+  CellBodyState,
+  CellDisplayState,
   FormatSpec,
   FunctionCall,
   NumericFormatType,
@@ -20,7 +23,15 @@ export type {
   ViewSelection,
 } from "./runtime/types";
 
-export { parseCellInput, resolveCellInputText, splitCellDisplayMetadata, stripCellDisplayMetadata } from "./runtime/parse";
-export type { CellInputTextView } from "./runtime/parse";
+export { getCellTextView, parseCellInput, parseCellText, resolveCellInputText, splitCellDisplayMetadata, stripCellDisplayMetadata } from "./runtime/parse";
+export type { CellInputTextView, CellTextViewSource } from "./runtime/parse";
 export { evaluateDocument } from "./runtime/eval";
-export { isError, isValidExternalErrorKind, makeError, makeInternalError, projectExternalKind } from "./runtime/errors";
+export {
+  diagnosticFromError,
+  isError,
+  isValidExternalErrorKind,
+  makeError,
+  makeInternalError,
+  projectExternalKind,
+  runtimeErrorFromDiagnostic,
+} from "./runtime/errors";

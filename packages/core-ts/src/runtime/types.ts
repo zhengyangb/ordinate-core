@@ -14,6 +14,11 @@ export interface ErrorRuntimeValue {
   context: Record<string, unknown>;
 }
 
+export interface Diagnostic {
+  code: string;
+  context: Record<string, unknown>;
+}
+
 export interface BlankRuntimeValue {
   kind: "blank";
   value: null;
@@ -133,23 +138,43 @@ export interface ValidDisplayMetadata {
   valid: true;
   format: FormatSpec | null;
   style: StyleSpec | null;
-  rawBlock: string;
-  errors: string[];
 }
 
 export interface InvalidDisplayMetadata {
   valid: false;
   rawBlock: string;
-  errors: string[];
+  issue: Diagnostic;
 }
 
+export type CellBodyState = ValidLiteralCellBody | ValidFormulaCellBody | InvalidCellBody;
+
+export interface ValidLiteralCellBody {
+  valid: true;
+  kind: "literal";
+  literal: RuntimeValue;
+  inputText: string;
+}
+
+export interface ValidFormulaCellBody {
+  valid: true;
+  kind: "formula";
+  expression: ExprNode;
+  expressionText: string;
+  inputText: string;
+}
+
+export interface InvalidCellBody {
+  valid: false;
+  unparsedBodyRaw: string;
+  issue: Diagnostic;
+}
+
+export type CellDisplayState = ParsedDisplayMetadata | null;
+
 export interface ParsedCell {
-  kind: string;
-  literal: RuntimeValue | null;
-  expression: ExprNode | null;
-  cached: RuntimeValue | null;
-  expressionText?: string | null;
-  display?: ParsedDisplayMetadata | null;
+  body: CellBodyState;
+  localDisplay: CellDisplayState;
+  initialCachedValue: RuntimeValue | null;
 }
 
 export interface SheetEvaluation {

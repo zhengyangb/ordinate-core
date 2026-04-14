@@ -81,6 +81,8 @@ type FormulaBarOverlayProps = {
   onRequestEdit: () => void;
   onCancelEdit: () => void;
   onCommitInput: (nextInput: string) => void;
+  onSetLocalFormat: (key: FormatLocalKey, options: FormulaBarData["formatLocalOptions"]) => void;
+  onSetLocalStyle: <Axis extends keyof StyleLocalView>(axis: Axis, value: StyleLocalView[Axis]) => void;
   onDismiss: () => void;
   onTooltipEnter: (text: string, target: HTMLElement, delayMs?: number) => void;
   onTooltipLeave: () => void;
@@ -97,6 +99,8 @@ export default function FormulaBarOverlay({
   onRequestEdit,
   onCancelEdit,
   onCommitInput,
+  onSetLocalFormat,
+  onSetLocalStyle,
   onDismiss,
   onTooltipEnter,
   onTooltipLeave,
@@ -344,7 +348,9 @@ export default function FormulaBarOverlay({
               <span className="formula-subaddress">{formulaBarSnapshot.secondaryAddress}</span>
             </div>
             <div className="formula-meta-lower">
-              <span className="formula-chip formula-chip--inline" title={chipText}>{chipText}</span>
+              <span className="formula-chip-slot">
+                <span className="formula-chip formula-chip--inline" title={chipText}>{chipText}</span>
+              </span>
               <div className="formula-display-meta" aria-label="Display metadata">
                 <div className="formula-format-control">
                   <button
@@ -524,6 +530,7 @@ export default function FormulaBarOverlay({
             localFormatOptions={localFormatOptions}
             inspectedKey={menuPanelKey}
             onInspectKey={setMenuPanelKey}
+            onChange={isInputEditable ? (key) => onSetLocalFormat(key, localFormatOptions) : undefined}
           />
         </div>,
         document.body,
@@ -552,7 +559,10 @@ export default function FormulaBarOverlay({
                 </span>
               </div>
             ) : null}
-            <StylePreviewPanel styleLocal={localStyle} />
+            <StylePreviewPanel
+              styleLocal={localStyle}
+              onChange={isInputEditable ? onSetLocalStyle : undefined}
+            />
           </>
         </div>,
         document.body,

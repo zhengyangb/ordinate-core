@@ -1,9 +1,12 @@
 import {
+  type Diagnostic,
   type ExprNode,
   type FormatSpec,
   type FunctionCall,
   type ParsedDisplayMetadata,
   type ParsedCell,
+  type CellBodyState,
+  type ErrorRuntimeValue,
   type RefSelector,
   type ReferenceExpr,
   type RuntimeValue,
@@ -12,7 +15,7 @@ import {
   type TextColor,
   type TextWeight,
 } from "./types";
-import { makeError, makeInternalError } from "./errors";
+import { diagnosticFromError, makeError, makeInternalError } from "./errors";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
@@ -28,30 +31,59 @@ const ABSOLUTE_RE = /^#([1-9]\d*)$/;
 const UNQUOTED_PATH_COMPONENT_RE = /^[A-Za-z0-9_]+$/;
 const ERROR_LITERAL_RE = /^error\[([a-z][a-z0-9_]*)\]$/;
 
-// Parse a raw cell into literal/formula/cached-formula data.
-export function parseCellInput(text: string): ParsedCell {
+// Parse a raw cell into independent body/display segments.
+export function parseCellText(text: string): ParsedCell {
   const extracted = extractTrailingDisplayMetadata(text);
-  const display = extracted.display;
-  const raw = extracted.expression.trim();
+  const parsedBody = parseCellBody(extracted.expression);
+  return {
+    body: parsedBody.body,
+    localDisplay: extracted.display,
+    initialCachedValue: parsedBody.initialCachedValue,
+  };
+}
+
+// Backward-compatible name for the current public parser entrypoint.
+export function parseCellInput(text: string): ParsedCell {
+  return parseCellText(text);
+}
+
+function parseCellBody(text: string): { body: CellBodyState; initialCachedValue: RuntimeValue | null } {
+  const raw = text.trim();
   if (raw === "") {
     return {
-      kind: "literal",
-      literal: { kind: "blank", value: null },
-      expression: null,
-      cached: null,
-      display,
+      body: {
+        valid: true,
+        kind: "literal",
+        literal: { kind: "blank", value: null },
+        inputText: "",
+      },
+      initialCachedValue: null,
     };
   }
 
   if (raw.startsWith("=")) {
     const exprText = raw.slice(1).trim();
+    const expression = parseExpression(exprText);
+    const parseError = parseExpressionError(expression);
+    if (parseError) {
+      return {
+        body: {
+          valid: false,
+          unparsedBodyRaw: raw,
+          issue: diagnosticFromError(parseError),
+        },
+        initialCachedValue: null,
+      };
+    }
     return {
-      kind: "formula",
-      literal: null,
-      expression: parseExpression(exprText),
-      cached: null,
-      expressionText: exprText,
-      display,
+      body: {
+        valid: true,
+        kind: "formula",
+        expression,
+        expressionText: exprText,
+        inputText: exprText.length > 0 ? `= ${exprText}` : "=",
+      },
+      initialCachedValue: null,
     };
   }
 
@@ -60,23 +92,59 @@ export function parseCellInput(text: string): ParsedCell {
     const cachedText = raw.slice(0, splitIdx).trim();
     const exprText = raw.slice(splitIdx + 1).trim();
     const cached = parseCacheLiteral(cachedText);
+    const expression = parseExpression(exprText);
+    const parseError = parseExpressionError(expression);
+    if (parseError) {
+      return {
+        body: {
+          valid: false,
+          unparsedBodyRaw: raw,
+          issue: diagnosticFromError(parseError),
+        },
+        initialCachedValue: cached,
+      };
+    }
     return {
-      kind: "formula",
-      literal: null,
-      expression: parseExpression(exprText),
-      cached,
-      expressionText: exprText,
-      display,
+      body: {
+        valid: true,
+        kind: "formula",
+        expression,
+        expressionText: exprText,
+        inputText: exprText.length > 0 ? `= ${exprText}` : "=",
+      },
+      initialCachedValue: cached,
     };
   }
 
   return {
-    kind: "literal",
-    literal: parseUserLiteral(raw),
-    expression: null,
-    cached: null,
-    display,
+    body: {
+      valid: true,
+      kind: "literal",
+      literal: parseUserLiteral(raw),
+      inputText: raw,
+    },
+    initialCachedValue: null,
   };
+}
+
+function parseExpressionError(expr: ExprNode | null): ErrorRuntimeValue | null {
+  if (!expr) return null;
+  if (expr.kind === "literal") {
+    const value = expr.value as RuntimeValue;
+    if (value?.kind === "error" && value.internalKind.startsWith("parse_")) {
+      return value;
+    }
+    return null;
+  }
+  if (expr.kind === "call") {
+    const call = expr.value as FunctionCall;
+    for (const arg of call.args) {
+      const err = parseExpressionError(arg);
+      if (err) return err;
+    }
+    return null;
+  }
+  return parseExpressionError(expr.left ?? null) ?? parseExpressionError(expr.right ?? null);
 }
 
 export interface CellInputTextView {
@@ -84,6 +152,65 @@ export interface CellInputTextView {
   bodyText: string;
   inputText: string;
   displayMetaRaw: string | null;
+  parseState?: "parse_ok" | "parse_failed";
+}
+
+export interface CellTextViewSource {
+  body: CellBodyState;
+  localDisplay: ParsedDisplayMetadata | null;
+}
+
+export function getCellTextView(cell: CellTextViewSource): CellInputTextView {
+  const bodyText = renderCellBodyText(cell.body);
+  const displayMetaRaw = renderDisplayMetadataBlock(cell.localDisplay);
+  return {
+    cellText: displayMetaRaw ? `${bodyText}${bodyText.length > 0 ? " " : ""}${displayMetaRaw}` : bodyText,
+    bodyText,
+    inputText: cell.body.valid ? cell.body.inputText : cell.body.unparsedBodyRaw,
+    displayMetaRaw,
+    parseState: cell.body.valid ? "parse_ok" : "parse_failed",
+  };
+}
+
+function renderCellBodyText(body: CellBodyState): string {
+  if (!body.valid) return body.unparsedBodyRaw;
+  return body.inputText;
+}
+
+function renderDisplayMetadataBlock(display: ParsedDisplayMetadata | null): string | null {
+  if (!display) return null;
+  if (!display.valid) return display.rawBlock;
+  const format = display.format ? serializeFormatSpec(display.format) : "";
+  const style = display.style ? serializeStyleSpec(display.style) : "";
+  if (format === "" && style === "") return null;
+  if (style === "") return `{:${format}}`;
+  if (format === "") return `{::${style}}`;
+  return `{:${format}:${style}}`;
+}
+
+function serializeFormatSpec(spec: FormatSpec): string {
+  let out = "";
+  if (spec.sign === "plus") out += "+";
+  else if (spec.sign === "parentheses") out += "()";
+  if (spec.zeroPad) out += "0";
+  if (spec.width !== null) out += `${spec.width}`;
+  if (spec.grouping) out += ",";
+  if (spec.precision !== null) out += `.${spec.precision}`;
+  if (spec.type !== null) out += spec.type;
+  return out;
+}
+
+function serializeStyleSpec(spec: StyleSpec): string {
+  const parts: string[] = [];
+  if (spec.align === "left") parts.push("<");
+  if (spec.align === "right") parts.push(">");
+  if (spec.align === "center") parts.push("^");
+  if (spec.weight === "bold") parts.push("bold");
+  if (spec.weight === "normal") parts.push("normal");
+  if (spec.color === "red") parts.push("red");
+  if (spec.color === "green") parts.push("green");
+  if (spec.color === "blue") parts.push("blue");
+  return parts.join(",");
 }
 
 // Return read/edit-facing input text. Cached formula bodies become formula-marker input.
@@ -92,9 +219,14 @@ export function resolveCellInputText(text: string): CellInputTextView {
   const parsed = parseCellInput(text);
   let inputText = split.contentText;
 
-  if (parsed.kind === "formula" && parsed.expressionText !== undefined && !split.contentText.trim().startsWith("=")) {
-    const exprText = parsed.expressionText?.trim() ?? "";
-    inputText = exprText.length > 0 ? `= ${exprText}` : "=";
+  if (parsed.body.valid) {
+    inputText = parsed.body.inputText;
+  } else if (parsed.initialCachedValue !== null) {
+    const splitIdx = findCacheFormulaSplit(parsed.body.unparsedBodyRaw.trim());
+    if (splitIdx !== null) {
+      const exprText = parsed.body.unparsedBodyRaw.trim().slice(splitIdx + 1).trim();
+      inputText = exprText.length > 0 ? `= ${exprText}` : "=";
+    }
   }
 
   return {
@@ -112,7 +244,7 @@ export function splitCellDisplayMetadata(text: string): {
   const extracted = extractTrailingDisplayMetadata(text);
   return {
     contentText: extracted.expression.trim(),
-    displayMetaRaw: extracted.display?.rawBlock ?? null,
+    displayMetaRaw: extracted.displayRaw,
   };
 }
 
@@ -644,17 +776,18 @@ function isQuoted(text: string): boolean {
 function extractTrailingDisplayMetadata(text: string): {
   expression: string;
   display: ParsedDisplayMetadata | null;
+  displayRaw: string | null;
 } {
   const rightTrimmed = text.replace(/\s+$/, "");
   const block = findTopLevelTrailingDisplayBlock(rightTrimmed);
   if (!block) {
-    return { expression: text, display: null };
+    return { expression: text, display: null, displayRaw: null };
   }
   const rawBlock = rightTrimmed.slice(block.start, block.end + 1);
   const content = rightTrimmed.slice(block.start + 2, block.end);
   const display = parseDisplayMetadata(content, rawBlock);
   const expression = rightTrimmed.slice(0, block.start);
-  return { expression, display };
+  return { expression, display, displayRaw: rawBlock };
 }
 
 function findTopLevelTrailingDisplayBlock(text: string): { start: number; end: number } | null {
@@ -743,8 +876,6 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
       valid: true,
       format: null,
       style: styleSpec.value,
-      rawBlock,
-      errors: [],
     };
   }
 
@@ -762,8 +893,6 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
       valid: true,
       format: formatSpec.value,
       style: null,
-      rawBlock,
-      errors: [],
     };
   }
 
@@ -788,8 +917,6 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
     valid: true,
     format: formatSpec.value,
     style: styleSpec.value,
-    rawBlock,
-    errors: [],
   };
 }
 
@@ -821,8 +948,12 @@ function invalidDisplay(rawBlock: string, error: string): ParsedDisplayMetadata 
   return {
     valid: false,
     rawBlock,
-    errors: [error],
+    issue: diagnostic(error),
   };
+}
+
+function diagnostic(code: string, context: Record<string, unknown> = {}): Diagnostic {
+  return { code, context };
 }
 
 function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string } {

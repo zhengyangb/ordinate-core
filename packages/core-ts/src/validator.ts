@@ -169,7 +169,7 @@ function validateDisplayControlFrame(
     if (raw.trim() === "") continue;
     const parsed = parseCellInput(raw);
     const content = stripCellDisplayMetadata(raw).trim();
-    if (content !== "" || parsed.display === null) {
+    if (content !== "" || parsed.localDisplay === null) {
       result.errors.push({
         message: `Row 1, col ${c + 1}: display control cell must contain only display metadata.`,
         sheet,
@@ -256,19 +256,7 @@ function semanticCellChecks(result: ValidationResult, sheet: string, parsedRows:
     const rowIdx = bodyStart + offset + 1;
     row.cells.forEach((text: string, colIdx: number) => {
       const parsed = parseCellInput(text);
-      if (parsed.kind !== "formula") return;
-      if (
-        parsed.cached &&
-        isError(parsed.cached) &&
-        parsed.cached.internalKind === "invalid_cached_literal"
-      ) {
-        result.errors.push({
-          message: `Row ${rowIdx}, col ${colIdx + 1}: invalid cached literal format.`,
-          sheet,
-          row: rowIdx,
-        });
-      }
-      if (isParseErrorExpr(parsed.expression)) {
+      if (!parsed.body.valid) {
         result.errors.push({
           message: `Row ${rowIdx}, col ${colIdx + 1}: invalid formula expression.`,
           sheet,
@@ -276,7 +264,19 @@ function semanticCellChecks(result: ValidationResult, sheet: string, parsedRows:
         });
         return;
       }
-      if (hasInvalidReference(parsed.expression)) {
+      if (parsed.body.kind !== "formula") return;
+      if (
+        parsed.initialCachedValue &&
+        isError(parsed.initialCachedValue) &&
+        parsed.initialCachedValue.internalKind === "invalid_cached_literal"
+      ) {
+        result.errors.push({
+          message: `Row ${rowIdx}, col ${colIdx + 1}: invalid cached literal format.`,
+          sheet,
+          row: rowIdx,
+        });
+      }
+      if (hasInvalidReference(parsed.body.expression)) {
         result.errors.push({
           message: `Row ${rowIdx}, col ${colIdx + 1}: invalid reference selector syntax.`,
           sheet,

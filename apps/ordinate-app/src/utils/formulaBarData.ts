@@ -1,4 +1,4 @@
-import { resolveCellInputText, splitCellDisplayMetadata, type PresentedCell, type RuntimeValue } from "@ordinate/core";
+import { getCellTextView, type CellTextViewSource, type PresentedCell, type RuntimeValue } from "@ordinate/core";
 
 import type { FormulaBarData, SelectedCell } from "../types/ui";
 import { BLANK_RUNTIME_VALUE, formatLocalView, styleLocalView } from "./appHelpers";
@@ -9,12 +9,7 @@ type RuntimeSheet = {
   values: RuntimeValue[][];
 };
 
-type StateCell = {
-  storedCellText?: string;
-  parsed?: {
-    kind: string;
-  };
-};
+type StateCell = CellTextViewSource;
 
 type StateSheet = {
   headerRowCount?: number;
@@ -38,14 +33,14 @@ type BuildFormulaBarDataParams = {
   absoluteRowPathLookup: Map<number, string>;
 };
 
-function resolveCellTextView(storedCellText: string, fallbackCellText: string, mode: "input" | "body") {
-  const cellText = storedCellText.length > 0 ? storedCellText : fallbackCellText;
-  const inputView = mode === "input"
-    ? resolveCellInputText(cellText)
-    : { inputText: splitCellDisplayMetadata(cellText).contentText };
-  const inputText = inputView.inputText.length > 0 ? inputView.inputText : cellText;
+function resolveCellTextView(cell: StateCell | undefined, fallbackCellText: string, mode: "input" | "body") {
+  if (!cell) {
+    return { cellText: fallbackCellText, inputText: fallbackCellText };
+  }
+  const view = getCellTextView(cell);
+  const inputText = mode === "input" ? view.inputText : view.bodyText;
   return {
-    cellText,
+    cellText: view.cellText,
     inputText,
   };
 }
@@ -76,9 +71,8 @@ export function buildFormulaBarData({
     if (rowNumber < 1 || rowNumber > maxHeaderRow) return null;
 
     const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
-    const storedCellText = rawCell?.storedCellText ?? "";
-    const displayText = currentSheetPresentation?.headerDisplayRows?.[rowNumber - 1]?.[colIndex] ?? storedCellText;
-    const textView = resolveCellTextView(storedCellText, displayText, "body");
+    const displayText = currentSheetPresentation?.headerDisplayRows?.[rowNumber - 1]?.[colIndex] ?? "";
+    const textView = resolveCellTextView(rawCell, displayText, "body");
     return {
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
       secondaryAddress: `${semanticColLabel} / Header Row ${rowNumber}`,
@@ -102,9 +96,8 @@ export function buildFormulaBarData({
 
   if (colIndex < headerColCount) {
     const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
-    const storedCellText = rawCell?.storedCellText ?? "";
-    const displayText = colIndex === 0 ? rowLeaf : (presentedCell?.displayText ?? storedCellText);
-    const textView = resolveCellTextView(storedCellText, displayText, "body");
+    const displayText = colIndex === 0 ? rowLeaf : (presentedCell?.displayText ?? "");
+    const textView = resolveCellTextView(rawCell, displayText, "body");
     return {
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
       secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
@@ -119,10 +112,9 @@ export function buildFormulaBarData({
 
   const runtimeValue = currentSheet.values[rowRel]?.[colIndex];
   const rawCell = currentSheetState.cells[absoluteRowIndex]?.[colIndex];
-  const storedCellText = rawCell?.storedCellText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
   const fallbackCellText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
-  const textView = resolveCellTextView(storedCellText, fallbackCellText, "input");
-  const chip = rawCell?.parsed?.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);
+  const textView = resolveCellTextView(rawCell, fallbackCellText, "input");
+  const chip = rawCell?.body.valid && rawCell.body.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);
 
   return {
     primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
