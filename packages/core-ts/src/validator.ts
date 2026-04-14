@@ -1,5 +1,13 @@
 import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow, type Table } from "./parser";
-import { parseCellInput, stripCellDisplayMetadata, type ExprNode, type FunctionCall, type RuntimeValue } from "./runtime";
+import {
+  parseCellInput,
+  stripCellDisplayMetadata,
+  type Diagnostic,
+  type ExprNode,
+  type FunctionCall,
+  type RuntimeValue,
+} from "./runtime";
+import { describeDisplayMetadataDiagnostic } from "./runtime/displayMetadata";
 import { isError } from "./runtime/errors";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
@@ -10,6 +18,8 @@ export interface ValidationError {
   sheet?: string;
   row?: number;
   col?: number;
+  code?: string;
+  context?: Record<string, unknown>;
 }
 
 export interface SheetSummary {
@@ -77,6 +87,33 @@ export function validateDocument(text: string): ValidationResult {
   return result;
 }
 
+function pushValidationError(
+  result: ValidationResult,
+  error: ValidationError,
+): void {
+  result.errors.push(error);
+}
+
+function pushDiagnosticValidationError(
+  result: ValidationResult,
+  args: {
+    sheet: string;
+    row: number;
+    col?: number;
+    message: string;
+    issue: Diagnostic;
+  },
+): void {
+  pushValidationError(result, {
+    message: args.message,
+    sheet: args.sheet,
+    row: args.row,
+    col: args.col,
+    code: args.issue.code,
+    context: args.issue.context,
+  });
+}
+
 function validateTable(result: ValidationResult, sheet: string, table: Table): SheetSummary {
   const parsedRowsAll: ParsedRow[] = table.rows.map((r) => parseTableRow(r));
   const controlFrame = stripDisplayControlFrame(parsedRowsAll);
@@ -140,6 +177,7 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
   }
 
   const [headerRowCount, headerColumnCount] = headerCounts(parsedRows, columnCount);
+  displayMetadataChecks(result, sheet, parsedRows, headerRowCount);
   semanticCellChecks(result, sheet, parsedRows, headerRowCount);
   const { sectionCount, maxLevel } = sectionStats(result, sheet, parsedRows, headerRowCount);
 
@@ -170,11 +208,21 @@ function validateDisplayControlFrame(
     const parsed = parseCellInput(raw);
     const content = stripCellDisplayMetadata(raw).trim();
     if (content !== "" || parsed.localDisplay === null) {
-      result.errors.push({
+      pushValidationError(result, {
         message: `Row 1, col ${c + 1}: display control cell must contain only display metadata.`,
         sheet,
         row: 1,
         col: c + 1,
+      });
+      continue;
+    }
+    if (parsed.localDisplay.valid === false) {
+      pushDiagnosticValidationError(result, {
+        message: `Row 1, col ${c + 1}: invalid display metadata (${describeDisplayMetadataDiagnostic(parsed.localDisplay.issue)}).`,
+        sheet,
+        row: 1,
+        col: c + 1,
+        issue: parsed.localDisplay.issue,
       });
     }
   }
@@ -257,10 +305,12 @@ function semanticCellChecks(result: ValidationResult, sheet: string, parsedRows:
     row.cells.forEach((text: string, colIdx: number) => {
       const parsed = parseCellInput(text);
       if (!parsed.body.valid) {
-        result.errors.push({
+        pushDiagnosticValidationError(result, {
           message: `Row ${rowIdx}, col ${colIdx + 1}: invalid formula expression.`,
           sheet,
           row: rowIdx,
+          col: colIdx + 1,
+          issue: parsed.body.issue,
         });
         return;
       }
@@ -270,17 +320,46 @@ function semanticCellChecks(result: ValidationResult, sheet: string, parsedRows:
         isError(parsed.initialCachedValue) &&
         parsed.initialCachedValue.internalKind === "invalid_cached_literal"
       ) {
-        result.errors.push({
+        pushValidationError(result, {
           message: `Row ${rowIdx}, col ${colIdx + 1}: invalid cached literal format.`,
           sheet,
           row: rowIdx,
+          col: colIdx + 1,
+          code: "invalid_cached_literal_format",
         });
       }
       if (hasInvalidReference(parsed.body.expression)) {
-        result.errors.push({
+        pushValidationError(result, {
           message: `Row ${rowIdx}, col ${colIdx + 1}: invalid reference selector syntax.`,
           sheet,
           row: rowIdx,
+          col: colIdx + 1,
+          code: "invalid_reference_selector_syntax",
+        });
+      }
+    });
+  });
+}
+
+function displayMetadataChecks(
+  result: ValidationResult,
+  sheet: string,
+  parsedRows: ParsedRow[],
+  headerRowCount: number,
+): void {
+  const separatorRowIndex = headerRowCount > 0 ? headerRowCount : -1;
+  parsedRows.forEach((row, rowZeroIndex) => {
+    if (rowZeroIndex === separatorRowIndex) return;
+    const rowIdx = rowZeroIndex + 1;
+    row.cells.forEach((text: string, colIdx: number) => {
+      const parsed = parseCellInput(text);
+      if (parsed.localDisplay?.valid === false) {
+        pushDiagnosticValidationError(result, {
+          message: `Row ${rowIdx}, col ${colIdx + 1}: invalid display metadata (${describeDisplayMetadataDiagnostic(parsed.localDisplay.issue)}).`,
+          sheet,
+          row: rowIdx,
+          col: colIdx + 1,
+          issue: parsed.localDisplay.issue,
         });
       }
     });

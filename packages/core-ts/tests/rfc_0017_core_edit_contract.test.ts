@@ -422,6 +422,54 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(aOutCleared.styleLayer.local).toBeNull();
   });
 
+  it("rejects invalid local format combinations through structured edit", () => {
+    const state = DocumentState.fromText(EDIT_DOC);
+    const updated = applyBatchAtomic(state, [
+      {
+        op: "set_cell_local_format",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        format: {
+          sign: "default",
+          zeroPad: false,
+          width: null,
+          grouping: false,
+          precision: 2,
+          type: "d",
+        },
+      },
+    ]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) throw new Error("expected failure");
+    expect(updated.error.category).toBe("invalid_operation");
+    expect(updated.error.op).toBe("set_cell_local_format");
+    expect(updated.error.message).toContain("precision is not allowed for integer format");
+  });
+
+  it("rejects scientific grouping through structured edit", () => {
+    const state = DocumentState.fromText(EDIT_DOC);
+    const updated = applyBatchAtomic(state, [
+      {
+        op: "set_cell_local_format",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        format: {
+          sign: "default",
+          zeroPad: false,
+          width: null,
+          grouping: true,
+          precision: 2,
+          type: "e",
+        },
+      },
+    ]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) throw new Error("expected failure");
+    expect(updated.error.category).toBe("invalid_operation");
+    expect(updated.error.op).toBe("set_cell_local_format");
+    expect(updated.error.message).toContain("grouping is not allowed for scientific format");
+  });
+
   it("replaces invalid display metadata when setting structured local metadata", () => {
     const state = DocumentState.fromText(`
 # Sheet

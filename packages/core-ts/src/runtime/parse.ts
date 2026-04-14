@@ -15,6 +15,7 @@ import {
   type TextColor,
   type TextWeight,
 } from "./types";
+import { validateFormatSpec } from "./displayMetadata";
 import { diagnosticFromError, makeError, makeInternalError } from "./errors";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
@@ -886,8 +887,8 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
       return invalidDisplay(rawBlock, "empty_format_spec");
     }
     const formatSpec = parseFormatSpec(format);
-    if ("error" in formatSpec) {
-      return invalidDisplay(rawBlock, formatSpec.error);
+    if ("issue" in formatSpec) {
+      return invalidDisplay(rawBlock, formatSpec.issue);
     }
     return {
       valid: true,
@@ -906,8 +907,8 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
   }
 
   const formatSpec = parseFormatSpec(format);
-  if ("error" in formatSpec) {
-    return invalidDisplay(rawBlock, formatSpec.error);
+  if ("issue" in formatSpec) {
+    return invalidDisplay(rawBlock, formatSpec.issue);
   }
   const styleSpec = parseStyleSpec(style);
   if ("error" in styleSpec) {
@@ -944,11 +945,11 @@ function findTopLevelColon(text: string): number {
   return -1;
 }
 
-function invalidDisplay(rawBlock: string, error: string): ParsedDisplayMetadata {
+function invalidDisplay(rawBlock: string, issue: string | Diagnostic): ParsedDisplayMetadata {
   return {
     valid: false,
     rawBlock,
-    issue: diagnostic(error),
+    issue: typeof issue === "string" ? diagnostic(issue) : issue,
   };
 }
 
@@ -956,10 +957,10 @@ function diagnostic(code: string, context: Record<string, unknown> = {}): Diagno
   return { code, context };
 }
 
-function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string } {
+function parseFormatSpec(spec: string): { value: FormatSpec } | { issue: Diagnostic } {
   const text = spec.trim();
-  if (text === "") return { error: "empty_format_spec" };
-  if (/\s/.test(text)) return { error: "format_spec_contains_whitespace" };
+  if (text === "") return { issue: diagnostic("empty_format_spec") };
+  if (/\s/.test(text)) return { issue: diagnostic("format_spec_contains_whitespace") };
 
   let i = 0;
   let sign: FormatSpec["sign"] = "default";
@@ -987,7 +988,7 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string 
   }
 
   if (zeroPad && width === null) {
-    return { error: "zero_padding_requires_width" };
+    return { issue: validateFormatSpec({ sign, zeroPad, width, grouping: false, precision: null, type: null })! };
   }
 
   let grouping = false;
@@ -1004,7 +1005,7 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string 
       i += 1;
     }
     if (i === pStart) {
-      return { error: "precision_requires_digits" };
+      return { issue: diagnostic("precision_requires_digits") };
     }
     precision = Number(text.slice(pStart, i));
   }
@@ -1016,26 +1017,29 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string 
       type = ch;
       i += 1;
     } else {
-      return { error: `unsupported_format_type:${ch}` };
+      return { issue: diagnostic(`unsupported_format_type:${ch}`) };
     }
   }
 
   if (i !== text.length) {
-    return { error: "invalid_format_spec_trailing_chars" };
+    return { issue: diagnostic("invalid_format_spec_trailing_chars") };
   }
-  if (type === "d" && precision !== null) {
-    return { error: "integer_format_disallows_precision" };
+
+  const value = {
+    sign,
+    zeroPad,
+    width,
+    grouping,
+    precision,
+    type,
+  } satisfies FormatSpec;
+  const compatibilityIssue = validateFormatSpec(value);
+  if (compatibilityIssue) {
+    return { issue: compatibilityIssue };
   }
 
   return {
-    value: {
-      sign,
-      zeroPad,
-      width,
-      grouping,
-      precision,
-      type,
-    },
+    value,
   };
 }
 

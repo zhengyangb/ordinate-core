@@ -1,5 +1,6 @@
 import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
 import { parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
+import { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
 import {
   buildBodyRows,
   buildRowKeys,
@@ -1059,8 +1060,9 @@ function assertFormatSpecOrNull(format: FormatSpec | null): void {
   if (format.type !== null && !["f", "e", "%", "d"].includes(format.type)) {
     throw new Error("format.type must be f, e, %, d, or null");
   }
-  if (format.type === "d" && format.precision !== null) {
-    throw new Error("integer format disallows precision");
+  const issue = validateFormatSpec(format);
+  if (issue) {
+    throw new Error(describeDisplayMetadataDiagnostic(issue));
   }
 }
 

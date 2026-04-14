@@ -164,6 +164,26 @@ Supported components:
 | percent type | `%` | percentage format | `0.125 {:.1%}` |
 | decimal integer type | `d` | decimal integer display | `12345 {:,d}` |
 
+### Format Compatibility Rules
+
+The numeric format grammar is shared across types, but not every component is valid for every type.
+
+| Type | Precision | Grouping | Sign | Width | Zero Pad |
+|---|---|---|---|---|---|
+| `d` | no | yes | yes | yes | yes |
+| `f` | yes | yes | yes | yes | yes |
+| `e` | yes | no | yes | yes | yes |
+| `%` | yes | yes | yes | yes | yes |
+
+Rules:
+
+- unsupported field and type combinations are invalid
+- integer format (`d`) disallows `precision`
+- scientific format (`e`) disallows `grouping`
+- `zeroPad` requires `width`
+- invalid display metadata is preserved in source, but does not produce a local effective format
+- structured edit APIs must reject invalid combinations
+
 ## Supported Style Subset
 
 Current grammar direction:

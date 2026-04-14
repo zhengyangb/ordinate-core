@@ -2013,6 +2013,7 @@ export default function App() {
           </section>
         )}
         <FormulaBarOverlay
+          locale={uiLocale}
           mode={mode}
           phase={cellChromeVisibilityPhase}
           formulaBarSnapshot={formulaBarSnapshot}

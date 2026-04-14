@@ -1,25 +1,15 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import type { UiLocale } from "../i18n/messages";
+import {
+  classifyDisplayMetadataIssue,
+  formatDisplayMetadataErrorMessage,
+  getDisplayMetadataErrorLabel,
+} from "../i18n/displayMetadata";
 import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
 import type { ChromeVisibilityPhase, FormatLocalKey, FormulaBarData, StyleLocalView } from "../types/ui";
 import { selectionDebugLog } from "../utils/selectionDebug";
-
-function classifyDisplayIssue(issue: string): "format" | "style" | "generic" {
-  const normalized = issue.trim().toLowerCase();
-  if (normalized.includes("style") || normalized.startsWith("unsupported_style_item")) {
-    return "style";
-  }
-  if (
-    normalized.includes("format")
-    || normalized.includes("zero_padding")
-    || normalized.includes("precision")
-    || normalized.includes("grouping")
-  ) {
-    return "format";
-  }
-  return "generic";
-}
 
 function MenuIcon({ children }: { children: ReactNode }) {
   return (
@@ -73,6 +63,7 @@ function BannerWarningGlyph() {
 }
 
 type FormulaBarOverlayProps = {
+  locale: UiLocale;
   mode: "table" | "source";
   phase: ChromeVisibilityPhase;
   formulaBarSnapshot: FormulaBarData | null;
@@ -91,6 +82,7 @@ type FormulaBarOverlayProps = {
 };
 
 export default function FormulaBarOverlay({
+  locale,
   mode,
   phase,
   formulaBarSnapshot,
@@ -133,14 +125,8 @@ export default function FormulaBarOverlay({
   const hasCellStyleOverride =
     localStyle.align !== "auto" || localStyle.weight !== "auto" || localStyle.color !== "auto";
   const displayErrors = formulaBarSnapshot?.displayErrors ?? [];
-  const formatErrors = displayErrors.filter((issue) => {
-    const kind = classifyDisplayIssue(issue);
-    return kind === "format" || kind === "generic";
-  });
-  const styleErrors = displayErrors.filter((issue) => {
-    const kind = classifyDisplayIssue(issue);
-    return kind === "style" || kind === "generic";
-  });
+  const formatErrors = displayErrors.filter((issue) => classifyDisplayMetadataIssue(issue) !== "style");
+  const styleErrors = displayErrors.filter((issue) => classifyDisplayMetadataIssue(issue) !== "format");
   const hasFormatDisplayError = formatErrors.length > 0;
   const hasStyleDisplayError = styleErrors.length > 0;
 
@@ -362,14 +348,14 @@ export default function FormulaBarOverlay({
                     ].join(" ").trim()}
                     type="button"
                     aria-label="Format options"
-                    aria-haspopup="menu"
-                    aria-expanded={formatMenuOpen}
-                    onMouseEnter={(event) => {
-                      if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? "Format metadata error" : "Format options", event.currentTarget);
+                      aria-haspopup="menu"
+                      aria-expanded={formatMenuOpen}
+                      onMouseEnter={(event) => {
+                      if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? getDisplayMetadataErrorLabel(locale, formatErrors[0]) : "Format options", event.currentTarget);
                     }}
                     onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
                     onFocus={(event) => {
-                      if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? "Format metadata error" : "Format options", event.currentTarget);
+                      if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? getDisplayMetadataErrorLabel(locale, formatErrors[0]) : "Format options", event.currentTarget);
                     }}
                     onBlur={(event) => onTooltipRelease(event.currentTarget)}
                     onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
@@ -400,14 +386,14 @@ export default function FormulaBarOverlay({
                     ].join(" ").trim()}
                     type="button"
                     aria-label="Style options"
-                    aria-haspopup="menu"
-                    aria-expanded={styleMenuOpen}
-                    onMouseEnter={(event) => {
-                      if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? "Style metadata error" : "Style options", event.currentTarget);
+                      aria-haspopup="menu"
+                      aria-expanded={styleMenuOpen}
+                      onMouseEnter={(event) => {
+                      if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? getDisplayMetadataErrorLabel(locale, styleErrors[0]) : "Style options", event.currentTarget);
                     }}
                     onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
                     onFocus={(event) => {
-                      if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? "Style metadata error" : "Style options", event.currentTarget);
+                      if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? getDisplayMetadataErrorLabel(locale, styleErrors[0]) : "Style options", event.currentTarget);
                     }}
                     onBlur={(event) => onTooltipRelease(event.currentTarget)}
                     onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
@@ -515,10 +501,10 @@ export default function FormulaBarOverlay({
         >
           {hasFormatDisplayError ? (
             <div className="formula-menu-error-banner formula-menu-error-banner--full" role="status" aria-live="polite">
-              <span className="formula-menu-error-icon"><BannerWarningGlyph /></span>
-              <span className="formula-menu-error-copy">
-                <span className="formula-menu-error-title">Format metadata error</span>
-                <span className="formula-menu-error-detail">{formatErrors[0]}</span>
+                <span className="formula-menu-error-icon"><BannerWarningGlyph /></span>
+                <span className="formula-menu-error-copy">
+                <span className="formula-menu-error-title">{getDisplayMetadataErrorLabel(locale, formatErrors[0])}</span>
+                <span className="formula-menu-error-detail">{formatDisplayMetadataErrorMessage(locale, formatErrors[0])}</span>
                 {formatErrors.length > 1 ? (
                   <span className="formula-menu-error-more">{`+${formatErrors.length - 1} more`}</span>
                 ) : null}
@@ -551,8 +537,8 @@ export default function FormulaBarOverlay({
               <div className="formula-menu-error-banner" role="status" aria-live="polite">
                 <span className="formula-menu-error-icon"><BannerWarningGlyph /></span>
                 <span className="formula-menu-error-copy">
-                  <span className="formula-menu-error-title">Style metadata error</span>
-                  <span className="formula-menu-error-detail">{styleErrors[0]}</span>
+                  <span className="formula-menu-error-title">{getDisplayMetadataErrorLabel(locale, styleErrors[0])}</span>
+                  <span className="formula-menu-error-detail">{formatDisplayMetadataErrorMessage(locale, styleErrors[0])}</span>
                   {styleErrors.length > 1 ? (
                     <span className="formula-menu-error-more">{`+${styleErrors.length - 1} more`}</span>
                   ) : null}

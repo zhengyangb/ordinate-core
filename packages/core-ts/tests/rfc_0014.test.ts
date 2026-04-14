@@ -201,6 +201,26 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     if (conflict.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
     expect(conflict.localDisplay.issue.code).toBe("invalid_format_spec_trailing_chars");
 
+    const integerPrecision = parseCellInput("1 {:.2d}");
+    expect(integerPrecision.localDisplay?.valid).toBe(false);
+    if (integerPrecision.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(integerPrecision.localDisplay.issue.code).toBe("invalid_format_combination");
+    expect(integerPrecision.localDisplay.issue.context).toMatchObject({
+      type: "d",
+      field: "precision",
+      reason: "disallowed_for_type",
+    });
+
+    const scientificGrouping = parseCellInput("1 {:,.2e}");
+    expect(scientificGrouping.localDisplay?.valid).toBe(false);
+    if (scientificGrouping.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(scientificGrouping.localDisplay.issue.code).toBe("invalid_format_combination");
+    expect(scientificGrouping.localDisplay.issue.context).toMatchObject({
+      type: "e",
+      field: "grouping",
+      reason: "disallowed_for_type",
+    });
+
     const styleConflict = parseCellInput("1 {:,.2f:>,^}");
     expect(styleConflict.localDisplay?.valid).toBe(false);
     if (styleConflict.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
@@ -428,6 +448,78 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(result.errors.some((e) => e.message.includes("display control cell must contain only display metadata"))).toBe(
       true,
     );
+  });
+
+  it("reports invalid cell and control-frame display metadata through validateDocument", () => {
+    const doc = `
+# Sheet
+| @display | {:bad fmt} | {::purple} |
+| Label    | Value      | Out         |
+| -------  | -----      | ---         |
+| A        | 12.5 {:bad fmt} | = B2 + 1 {::purple} |
+`.trim();
+
+    const result = validateDocument(doc);
+    expect(result.ok).toBe(false);
+
+    expect(
+      result.errors.some(
+        (e) => e.row === 1 && e.col === 2 && e.code === "format_spec_contains_whitespace",
+      ),
+    ).toBe(true);
+    expect(
+      result.errors.some(
+        (e) => e.row === 1 && e.col === 3 && e.code === "unsupported_style_item:purple",
+      ),
+    ).toBe(true);
+    expect(
+      result.errors.some(
+        (e) => e.row === 3 && e.col === 1 && e.code === "format_spec_contains_whitespace",
+      ),
+    ).toBe(true);
+    expect(
+      result.errors.some(
+        (e) => e.row === 3 && e.col === 2 && e.code === "unsupported_style_item:purple",
+      ),
+    ).toBe(true);
+  });
+
+  it("prints human-readable validation detail for invalid format combinations", () => {
+    const doc = `
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:.2d} |
+`.trim();
+
+    const result = validateDocument(doc);
+    expect(result.ok).toBe(false);
+    expect(
+      result.errors.some(
+        (e) =>
+          e.code === "invalid_format_combination"
+          && e.message.includes("precision is not allowed for integer format"),
+      ),
+    ).toBe(true);
+  });
+
+  it("prints human-readable validation detail for invalid scientific grouping", () => {
+    const doc = `
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2e} |
+`.trim();
+
+    const result = validateDocument(doc);
+    expect(result.ok).toBe(false);
+    expect(
+      result.errors.some(
+        (e) =>
+          e.code === "invalid_format_combination"
+          && e.message.includes("grouping is not allowed for scientific format"),
+      ),
+    ).toBe(true);
   });
 
   it("fixture cases: read + serialize canonicalization", () => {

@@ -1,3 +1,4 @@
+import type { Diagnostic } from "@ordinate/core";
 import type { ReactNode } from "react";
 
 export type GridRow = {
@@ -39,7 +40,7 @@ export type FormulaBarData = {
   formatLocalOptions?: FormatLocalOptions | null;
   styleLocal?: StyleLocalView | null;
   displaySource?: "cell" | "column" | "default";
-  displayErrors?: string[];
+  displayErrors?: Diagnostic[];
 };
 
 export type DisplayCellView = {
@@ -47,7 +48,7 @@ export type DisplayCellView = {
   source: "cell" | "column" | "default";
   formatRaw: string | null;
   styleRaw: string | null;
-  errors: string[];
+  errors: Diagnostic[];
 };
 
 export type ChromeVisibilityPhase = "visible" | "hiding" | "hidden";

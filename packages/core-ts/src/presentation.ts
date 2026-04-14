@@ -1,6 +1,6 @@
 import { DocumentState } from "./incremental";
 import { stripCellDisplayMetadata } from "./runtime/parse";
-import { type FormatSpec, type RuntimeValue, type StyleSpec } from "./runtime/types";
+import { type Diagnostic, type FormatSpec, type RuntimeValue, type StyleSpec } from "./runtime/types";
 
 export interface DisplayLayer<T> {
   local: T | null;
@@ -12,7 +12,7 @@ export interface ColumnDisplayDefault {
   formatLayer: DisplayLayer<FormatSpec>;
   styleLayer: DisplayLayer<StyleSpec>;
   valid: boolean;
-  errors: string[];
+  errors: Diagnostic[];
 }
 
 export interface PresentedCell {
@@ -22,7 +22,7 @@ export interface PresentedCell {
   formatLayer: DisplayLayer<FormatSpec>;
   styleLayer: DisplayLayer<StyleSpec>;
   source: "cell" | "column" | "default";
-  errors: string[];
+  errors: Diagnostic[];
 }
 
 export interface SheetPresentation {
@@ -100,9 +100,9 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
             : hasColumnDefault
               ? "column"
               : "default";
-        const errors: string[] = [];
+        const errors: Diagnostic[] = [];
         if (!isHeaderColumn && parsedDisplay && !parsedDisplay.valid) {
-          errors.push(parsedDisplay.issue.code);
+          errors.push(parsedDisplay.issue);
         } else if (!isHeaderColumn && colDefault.valid === false && colDefault.errors.length > 0) {
           errors.push(...colDefault.errors);
         }
@@ -231,7 +231,7 @@ function computeColumnDefaults(sheet: DocumentState["sheets"][number]): ColumnDi
         effective: parsedDisplay.valid ? parsedDisplay.style : null,
       },
       valid: parsedDisplay.valid,
-      errors: parsedDisplay.valid ? [] : [parsedDisplay.issue.code],
+      errors: parsedDisplay.valid ? [] : [parsedDisplay.issue],
     };
   }
   return defaults;
