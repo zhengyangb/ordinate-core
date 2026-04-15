@@ -21,8 +21,7 @@ import {
 
 const FORMAT_GROUPED_2F: FormatSpec = {
   sign: "default",
-  zeroPad: false,
-  width: null,
+  padWidth: null,
   grouping: true,
   precision: 2,
   type: "f",
@@ -430,8 +429,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
         target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
         format: {
           sign: "default",
-          zeroPad: false,
-          width: null,
+          padWidth: null,
           grouping: false,
           precision: 2,
           type: "d",
@@ -454,8 +452,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
         target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
         format: {
           sign: "default",
-          zeroPad: false,
-          width: null,
+          padWidth: null,
           grouping: true,
           precision: 2,
           type: "e",

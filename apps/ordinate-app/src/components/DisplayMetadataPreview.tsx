@@ -90,8 +90,61 @@ type FormatPreviewPanelProps = {
   localFormatOptions: FormatLocalOptions | null;
   inspectedKey: FormatLocalKey;
   onInspectKey?: (key: FormatLocalKey) => void;
-  onChange?: (key: FormatLocalKey) => void;
+  onChange?: (key: FormatLocalKey, options: FormatLocalOptions | null) => void;
 };
+
+const DEFAULT_PRECISION = 2;
+const DEFAULT_WIDTH = 1;
+
+function defaultOptionsForFormatKey(key: Exclude<FormatLocalKey, "auto">): FormatLocalOptions {
+  return {
+    sign: "default",
+    padWidth: null,
+    grouping: false,
+    precision: null,
+  };
+}
+
+function effectiveOptionsForFormatKey(key: FormatLocalKey, options: FormatLocalOptions | null): FormatLocalOptions | null {
+  if (key === "auto") return null;
+  return {
+    ...(defaultOptionsForFormatKey(key)),
+    ...(options ?? {}),
+    precision: key === "integer" ? null : options?.precision ?? defaultOptionsForFormatKey(key).precision,
+  };
+}
+
+function formatSupportsPrecision(key: FormatLocalKey): boolean {
+  return key === "decimal" || key === "scientific" || key === "percent";
+}
+
+function formatSupportsGrouping(key: FormatLocalKey): boolean {
+  return key === "integer" || key === "decimal" || key === "percent";
+}
+
+function switchFormatOptions(
+  nextKey: Exclude<FormatLocalKey, "auto">,
+  currentKey: FormatLocalKey,
+  currentOptions: FormatLocalOptions | null,
+): FormatLocalOptions {
+  const next = defaultOptionsForFormatKey(nextKey);
+  if (!currentOptions || currentKey === "auto") {
+    return next;
+  }
+  next.sign = currentOptions.sign;
+  next.padWidth = currentOptions.padWidth;
+  if (formatSupportsGrouping(nextKey) && formatSupportsGrouping(currentKey)) {
+    next.grouping = currentOptions.grouping;
+  }
+  if (formatSupportsPrecision(nextKey) && formatSupportsPrecision(currentKey)) {
+    next.precision = currentOptions.precision;
+  }
+  return next;
+}
+
+function clampNumber(value: number, min: number): number {
+  return Math.max(min, value);
+}
 
 export function FormatPreviewPanel({
   localFormatKey,
@@ -101,38 +154,38 @@ export function FormatPreviewPanel({
   onChange,
 }: FormatPreviewPanelProps) {
   const hasOverride = localFormatKey !== "auto";
-  const formatFields: Array<{ label: string; value: string; isDefault: boolean }> = [
-    {
-      label: "Precision",
-      value: localFormatOptions?.precision == null ? "Auto" : `${localFormatOptions.precision}`,
-      isDefault: localFormatOptions?.precision == null,
-    },
-    {
-      label: "Grouping",
-      value: localFormatOptions?.grouping ? "On" : "Auto",
-      isDefault: !localFormatOptions?.grouping,
-    },
-    {
-      label: "Sign",
-      value:
-        localFormatOptions?.sign === "default" || localFormatOptions == null
-          ? "Auto"
-          : localFormatOptions.sign === "plus"
-            ? "Plus"
-            : "Parentheses",
-      isDefault: localFormatOptions?.sign == null || localFormatOptions.sign === "default",
-    },
-    {
-      label: "Width",
-      value: localFormatOptions?.width == null ? "Auto" : `${localFormatOptions.width}`,
-      isDefault: localFormatOptions?.width == null,
-    },
-    {
-      label: "Zero Pad",
-      value: localFormatOptions?.zeroPad ? "On" : "Auto",
-      isDefault: !localFormatOptions?.zeroPad,
-    },
-  ];
+  const activeKey = inspectedKey;
+  const previewOptions =
+    activeKey === "auto"
+      ? null
+      : activeKey === localFormatKey
+        ? localFormatOptions
+        : switchFormatOptions(activeKey, localFormatKey, localFormatOptions);
+  const panelOptions = effectiveOptionsForFormatKey(activeKey, previewOptions);
+  const isEditable = Boolean(onChange);
+
+  const commitFormatChange = (nextKey: FormatLocalKey, nextOptions: FormatLocalOptions | null) => {
+    onInspectKey?.(nextKey);
+    onChange?.(nextKey, nextOptions);
+  };
+
+  const updateOptions = (patch: Partial<FormatLocalOptions>) => {
+    if (activeKey === "auto") {
+      throw new Error("format field edit requires a concrete format key");
+    }
+    const base = effectiveOptionsForFormatKey(activeKey, panelOptions);
+    if (!base) {
+      throw new Error("expected concrete format options");
+    }
+    const next: FormatLocalOptions = {
+      ...base,
+      ...patch,
+    };
+    if (activeKey === "integer") {
+      next.precision = null;
+    }
+    commitFormatChange(activeKey, next);
+  };
 
   return (
     <>
@@ -150,7 +203,12 @@ export function FormatPreviewPanel({
             aria-checked={localFormatKey === option.key}
             onClick={() => {
               onInspectKey?.(option.key);
-              onChange?.(option.key);
+              if (!onChange) return;
+              if (option.key === "auto") {
+                onChange("auto", null);
+                return;
+              }
+              onChange(option.key, switchFormatOptions(option.key, localFormatKey, localFormatOptions));
             }}
           >
             <span className="formula-format-option-icon"><FormatOptionGlyph option={option.key} /></span>
@@ -160,20 +218,124 @@ export function FormatPreviewPanel({
       </div>
       {hasOverride ? (
         <div className="formula-format-menu-panel">
-          <div className="formula-format-panel-title">
-            {FORMAT_LOCAL_OPTIONS.find((option) => option.key === inspectedKey)?.label ?? "Auto"}
-          </div>
-          <div className="formula-format-field-list">
-            {formatFields.map((field) => (
-              <div key={field.label} className="formula-format-field">
-                <span className="formula-format-field-label">{field.label}</span>
-                <span className={field.isDefault ? "formula-format-field-value is-default" : "formula-format-field-value"}>
-                  {field.value}
-                </span>
+          {activeKey !== "auto" && panelOptions ? (
+            <div className="formula-format-field-list">
+              {formatSupportsPrecision(activeKey) ? (
+                <div className="formula-style-row">
+                  <span className="formula-style-row-label">Precision</span>
+                  <div className="formula-format-stepper">
+                    <button
+                      type="button"
+                      className={panelOptions.precision == null ? "formula-style-segment is-selected" : "formula-style-segment"}
+                      aria-pressed={panelOptions.precision == null}
+                      disabled={!isEditable}
+                      onClick={() => updateOptions({ precision: null })}
+                    >
+                      Auto
+                    </button>
+                    <button
+                      type="button"
+                      className="formula-format-stepper-button"
+                      disabled={!isEditable || panelOptions.precision == null}
+                      onClick={() => updateOptions({ precision: clampNumber((panelOptions.precision ?? DEFAULT_PRECISION) - 1, 0) })}
+                    >
+                      −
+                    </button>
+                    <span className={panelOptions.precision == null ? "formula-format-stepper-value is-default" : "formula-format-stepper-value"}>
+                      {panelOptions.precision == null ? "Auto" : panelOptions.precision}
+                    </span>
+                    <button
+                      type="button"
+                      className="formula-format-stepper-button"
+                      disabled={!isEditable}
+                      onClick={() => updateOptions({ precision: panelOptions.precision == null ? DEFAULT_PRECISION : panelOptions.precision + 1 })}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {formatSupportsGrouping(activeKey) ? (
+                <div className="formula-style-row">
+                  <span className="formula-style-row-label">Grouping</span>
+                  <div className="formula-style-segmented" role="group" aria-label="Grouping option">
+                    {[
+                      { key: "auto", label: "Auto" },
+                      { key: "on", label: "On" },
+                    ].map((option) => {
+                      const selected = option.key === "auto" ? !panelOptions.grouping : panelOptions.grouping;
+                      return (
+                        <button
+                          key={option.key}
+                          type="button"
+                          className={selected ? "formula-style-segment is-selected" : "formula-style-segment"}
+                          aria-pressed={selected}
+                          disabled={!isEditable}
+                          onClick={() => updateOptions({ grouping: option.key === "on" })}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              <div className="formula-style-row">
+                <span className="formula-style-row-label">Sign</span>
+                <div className="formula-style-segmented" role="group" aria-label="Sign option">
+                  {[
+                    { key: "default", label: "Auto" },
+                    { key: "plus", label: "Plus" },
+                    { key: "parentheses", label: "Paren" },
+                  ].map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={panelOptions.sign === option.key ? "formula-style-segment is-selected" : "formula-style-segment"}
+                      aria-pressed={panelOptions.sign === option.key}
+                      disabled={!isEditable}
+                      onClick={() => updateOptions({ sign: option.key as FormatLocalOptions["sign"] })}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-          <div className="formula-format-panel-footnote">Read-only preview</div>
+              <div className="formula-style-row">
+                <span className="formula-style-row-label">Width</span>
+                <div className="formula-format-stepper">
+                  <button
+                    type="button"
+                    className={panelOptions.padWidth == null ? "formula-style-segment is-selected" : "formula-style-segment"}
+                    aria-pressed={panelOptions.padWidth == null}
+                    disabled={!isEditable}
+                    onClick={() => updateOptions({ padWidth: null })}
+                  >
+                    Auto
+                  </button>
+                  <button
+                    type="button"
+                    className="formula-format-stepper-button"
+                    disabled={!isEditable || panelOptions.padWidth == null || panelOptions.padWidth <= 0}
+                    onClick={() => updateOptions({ padWidth: clampNumber((panelOptions.padWidth ?? DEFAULT_WIDTH) - 1, 0) })}
+                  >
+                    −
+                  </button>
+                  <span className={panelOptions.padWidth == null ? "formula-format-stepper-value is-default" : "formula-format-stepper-value"}>
+                    {panelOptions.padWidth == null ? "Auto" : panelOptions.padWidth}
+                  </span>
+                  <button
+                    type="button"
+                    className="formula-format-stepper-button"
+                    disabled={!isEditable}
+                    onClick={() => updateOptions({ padWidth: panelOptions.padWidth == null ? DEFAULT_WIDTH : panelOptions.padWidth + 1 })}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </>

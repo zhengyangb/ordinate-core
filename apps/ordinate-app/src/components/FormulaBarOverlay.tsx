@@ -491,7 +491,11 @@ export default function FormulaBarOverlay({
       {createPortal(
         <div
           ref={formatMenuRef}
-          className={formatMenuOpen ? "formula-format-menu open" : "formula-format-menu"}
+          className={[
+            "formula-format-menu",
+            formatMenuOpen ? "open" : "",
+            localFormatKey !== "auto" ? "has-detail-panel" : "list-only",
+          ].join(" ").trim()}
           role="menu"
           aria-hidden={!formatMenuOpen}
           style={{
@@ -516,7 +520,7 @@ export default function FormulaBarOverlay({
             localFormatOptions={localFormatOptions}
             inspectedKey={menuPanelKey}
             onInspectKey={setMenuPanelKey}
-            onChange={isInputEditable ? (key) => onSetLocalFormat(key, localFormatOptions) : undefined}
+            onChange={isInputEditable ? (key, options) => onSetLocalFormat(key, options) : undefined}
           />
         </div>,
         document.body,

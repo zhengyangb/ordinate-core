@@ -35,6 +35,10 @@ interface EditorState {
   renameSheet: (sheet: string, newName: string) => void;
   setCellLocalFormat: (target: CoreCellTarget, format: FormatSpec | null) => void;
   setCellLocalStyle: (target: CoreCellTarget, style: StylePatch) => void;
+  insertRow: (sheet: string, rowIndex: number) => void;
+  deleteRow: (sheet: string, rowIndex: number) => void;
+  insertColumn: (sheet: string, colIndex: number) => void;
+  deleteColumn: (sheet: string, colIndex: number) => void;
   exitSourceMode: () => void;
   enterSourceMode: () => void;
 }
@@ -249,6 +253,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   setCellLocalStyle: (target, style) => {
     get().applyCoreEdits([{ op: "set_cell_local_style", target, style }]);
+  },
+  insertRow: (sheet, rowIndex) => {
+    get().applyCoreEdits([{ op: "insert_row", sheet, rowIndex }]);
+  },
+  deleteRow: (sheet, rowIndex) => {
+    get().applyCoreEdits([{ op: "delete_row", sheet, rowIndex }]);
+  },
+  insertColumn: (sheet, colIndex) => {
+    get().applyCoreEdits([{ op: "insert_column", sheet, colIndex }]);
+  },
+  deleteColumn: (sheet, colIndex) => {
+    get().applyCoreEdits([{ op: "delete_column", sheet, colIndex }]);
   },
   exitSourceMode: () => {
     try {

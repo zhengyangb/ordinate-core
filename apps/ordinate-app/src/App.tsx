@@ -22,7 +22,6 @@ import { resolveUiLocale } from "./i18n/messages";
 import { useEditorStore } from "./store/editorStore";
 import type {
   ColumnMetric,
-  ColumnRailMenuView,
   ChromeVisibilityPhase,
   FloatingMenuPosition,
   FloatingTooltip,
@@ -32,6 +31,7 @@ import type {
   GridRow,
   HeaderIndexMetric,
   HeaderOverlayCell,
+  RailMenuView,
   RowIndexMetric,
   SheetHealth,
   SheetIssueViewModel,
@@ -70,15 +70,16 @@ import {
   TOOLTIP_VIEWPORT_MARGIN,
   type FormulaInputMode,
   type RingRect,
+  buildRailMenu,
   buildColumnHasLocalConfig,
-  buildColumnRailMenu,
   buildHeaderMatrix,
   buildSheetHealthByName,
   buildSheetIssueBuckets,
   columnMetricsEqual,
   easeOutQuint,
   queryGridBodyViewport,
-  resolveColumnRailMenuPosition,
+  resolveAnchoredMenuPosition,
+  resolveRailMenuPosition,
   resolveInitialThemeMode,
   ringRectEqual,
   toColFieldId,
@@ -110,8 +111,7 @@ function formatSpecFromLocalKey(key: FormatLocalKey, options: FormatLocalOptions
   };
   return {
     sign: options?.sign ?? "default",
-    zeroPad: options?.zeroPad ?? false,
-    width: options?.width ?? null,
+    padWidth: options?.padWidth ?? null,
     grouping: options?.grouping ?? false,
     precision: key === "integer" ? null : options?.precision ?? null,
     type: typeByKey[key],
@@ -135,6 +135,10 @@ export default function App() {
     setCellInput,
     setCellLocalFormat,
     setCellLocalStyle,
+    insertRow,
+    deleteRow,
+    insertColumn,
+    deleteColumn,
     enterSourceMode,
     exitSourceMode,
   } = useEditorStore();
@@ -149,9 +153,11 @@ export default function App() {
   const [themeMenuPosition, setThemeMenuPosition] = useState<ThemeMenuPosition>({ top: 0, left: 0 });
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [toolMenuPosition, setToolMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
-  const [columnRailMenuOpen, setColumnRailMenuOpen] = useState(false);
-  const [columnRailMenuPosition, setColumnRailMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
-  const [openColumnMenuColIndex, setOpenColumnMenuColIndex] = useState<number | null>(null);
+  const [railMenuOpen, setRailMenuOpen] = useState(false);
+  const [railMenuPosition, setRailMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
+  const [openRailMenuTarget, setOpenRailMenuTarget] = useState<
+    { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number; rowPath: string | null } | null
+  >(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
   const [hasVerticalOverlap, setHasVerticalOverlap] = useState(false);
@@ -175,7 +181,10 @@ export default function App() {
   const themeControlRef = useRef<HTMLDivElement | null>(null);
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolButtonRef = useRef<HTMLButtonElement | null>(null);
-  const columnMenuAnchorRef = useRef<HTMLElement | null>(null);
+  const themeMenuRef = useRef<HTMLDivElement | null>(null);
+  const toolMenuRef = useRef<HTMLDivElement | null>(null);
+  const railMenuAnchorRef = useRef<HTMLElement | null>(null);
+  const railMenuRef = useRef<HTMLDivElement | null>(null);
   const tooltipTimerRef = useRef<number | null>(null);
   const tooltipAnchorRef = useRef<HTMLElement | null>(null);
   const suppressedTooltipTargetRef = useRef<HTMLElement | null>(null);
@@ -266,14 +275,15 @@ export default function App() {
     return buildColumnHasLocalConfig(currentSheetPresentation, sheetColCount);
   }, [currentSheetPresentation, sheetColCount]);
 
-  const columnRailMenu = useMemo<ColumnRailMenuView | null>(() => {
-    return buildColumnRailMenu(
-      openColumnMenuColIndex,
+  const railMenu = useMemo<RailMenuView | null>(() => {
+    return buildRailMenu(
+      openRailMenuTarget,
       sheetColCount,
+      headerColCount,
       currentSheetPresentation,
       columnHasLocalConfig,
     );
-  }, [openColumnMenuColIndex, sheetColCount, currentSheetPresentation, columnHasLocalConfig]);
+  }, [openRailMenuTarget, sheetColCount, headerColCount, currentSheetPresentation, columnHasLocalConfig]);
 
   useEffect(() => {
     if (selectedColumnIndex == null) return;
@@ -282,12 +292,19 @@ export default function App() {
   }, [selectedColumnIndex, sheetColCount]);
 
   useEffect(() => {
-    if (openColumnMenuColIndex == null) return;
-    if (openColumnMenuColIndex >= 0 && openColumnMenuColIndex < sheetColCount) return;
-    setColumnRailMenuOpen(false);
-    setOpenColumnMenuColIndex(null);
-    columnMenuAnchorRef.current = null;
-  }, [openColumnMenuColIndex, sheetColCount]);
+    if (!openRailMenuTarget) return;
+    if (openRailMenuTarget.kind === "column") {
+      if (openRailMenuTarget.colIndex >= 0 && openRailMenuTarget.colIndex < sheetColCount) return;
+    } else {
+      const bodyRowCount = currentSheet?.values.length ?? 0;
+      const minRowNumber = headerRowCount + 1;
+      const maxRowNumber = headerRowCount + bodyRowCount;
+      if (openRailMenuTarget.rowNumber >= minRowNumber && openRailMenuTarget.rowNumber <= maxRowNumber) return;
+    }
+    setRailMenuOpen(false);
+    setOpenRailMenuTarget(null);
+    railMenuAnchorRef.current = null;
+  }, [openRailMenuTarget, sheetColCount, currentSheet, headerRowCount]);
 
   const clearActiveSelection = useCallback(() => {
     selectionDebugLog("clearActiveSelection");
@@ -307,9 +324,9 @@ export default function App() {
   useEffect(() => {
     setSelectedCell(null);
     setSelectedColumnIndex(null);
-    setColumnRailMenuOpen(false);
-    setOpenColumnMenuColIndex(null);
-    columnMenuAnchorRef.current = null;
+    setRailMenuOpen(false);
+    setOpenRailMenuTarget(null);
+    railMenuAnchorRef.current = null;
     setColumnMetrics([]);
     setFormulaInputMode("read");
     selectionRingRectRef.current = null;
@@ -326,9 +343,9 @@ export default function App() {
     setSelectedCell(null);
     setSelectedColumnIndex(null);
     setFormulaInputMode("read");
-    setColumnRailMenuOpen(false);
-    setOpenColumnMenuColIndex(null);
-    columnMenuAnchorRef.current = null;
+    setRailMenuOpen(false);
+    setOpenRailMenuTarget(null);
+    railMenuAnchorRef.current = null;
   }, [isActiveSheetBlocked]);
 
   useEffect(() => {
@@ -354,75 +371,14 @@ export default function App() {
 
     const updatePosition = () => {
       const button = themeButtonRef.current;
-      if (!button) return;
+      const menu = themeMenuRef.current;
+      if (!button || !menu) return;
       const rect = button.getBoundingClientRect();
-      const menuWidth = 148;
-      const nextTop = rect.bottom + 8;
-      const nextLeft = Math.max(12, rect.right - menuWidth);
+      const nextPosition = resolveAnchoredMenuPosition(rect, menu.getBoundingClientRect(), {
+        preferredY: "below",
+        align: "end",
+      });
       setThemeMenuPosition((current) => {
-        if (
-          Math.abs(current.top - nextTop) < POSITION_EPSILON &&
-          Math.abs(current.left - nextLeft) < POSITION_EPSILON
-        ) {
-          return current;
-        }
-        return {
-          top: nextTop,
-          left: nextLeft,
-        };
-      });
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [themeMenuOpen]);
-
-  useEffect(() => {
-    if (!toolMenuOpen) return;
-
-    const updatePosition = () => {
-      const button = toolButtonRef.current;
-      if (!button) return;
-      const rect = button.getBoundingClientRect();
-      const menuWidth = 168;
-      const nextTop = rect.bottom + 8;
-      const nextLeft = Math.max(12, rect.right - menuWidth);
-      setToolMenuPosition((current) => {
-        if (
-          Math.abs(current.top - nextTop) < POSITION_EPSILON &&
-          Math.abs(current.left - nextLeft) < POSITION_EPSILON
-        ) {
-          return current;
-        }
-        return {
-          top: nextTop,
-          left: nextLeft,
-        };
-      });
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [toolMenuOpen]);
-
-  useEffect(() => {
-    if (!columnRailMenuOpen) return;
-
-    const updatePosition = () => {
-      const anchor = columnMenuAnchorRef.current;
-      if (!anchor) return;
-      const nextPosition = resolveColumnRailMenuPosition(anchor.getBoundingClientRect());
-      setColumnRailMenuPosition((current) => {
         if (
           Math.abs(current.top - nextPosition.top) < POSITION_EPSILON &&
           Math.abs(current.left - nextPosition.left) < POSITION_EPSILON
@@ -440,7 +396,67 @@ export default function App() {
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [columnRailMenuOpen, openColumnMenuColIndex]);
+  }, [themeMenuOpen]);
+
+  useEffect(() => {
+    if (!toolMenuOpen) return;
+
+    const updatePosition = () => {
+      const button = toolButtonRef.current;
+      const menu = toolMenuRef.current;
+      if (!button || !menu) return;
+      const rect = button.getBoundingClientRect();
+      const nextPosition = resolveAnchoredMenuPosition(rect, menu.getBoundingClientRect(), {
+        preferredY: "below",
+        align: "end",
+      });
+      setToolMenuPosition((current) => {
+        if (
+          Math.abs(current.top - nextPosition.top) < POSITION_EPSILON &&
+          Math.abs(current.left - nextPosition.left) < POSITION_EPSILON
+        ) {
+          return current;
+        }
+        return nextPosition;
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [toolMenuOpen]);
+
+  useEffect(() => {
+    if (!railMenuOpen || !railMenu) return;
+
+    const updatePosition = () => {
+      const anchor = railMenuAnchorRef.current;
+      const menu = railMenuRef.current;
+      if (!anchor || !menu) return;
+      const nextPosition = resolveRailMenuPosition(anchor.getBoundingClientRect(), menu.getBoundingClientRect());
+      setRailMenuPosition((current) => {
+        if (
+          Math.abs(current.top - nextPosition.top) < POSITION_EPSILON &&
+          Math.abs(current.left - nextPosition.left) < POSITION_EPSILON
+        ) {
+          return current;
+        }
+        return nextPosition;
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [railMenuOpen, railMenu]);
 
   useEffect(() => {
     const dismissTooltip = () =>
@@ -606,10 +622,14 @@ export default function App() {
       if (!target?.closest(".tool-overflow-control") && !target?.closest(".tool-menu")) {
         setToolMenuOpen(false);
       }
-      if (!target?.closest(".column-index-menu-trigger") && !target?.closest(".column-rail-menu")) {
-        setColumnRailMenuOpen(false);
-        setOpenColumnMenuColIndex(null);
-        columnMenuAnchorRef.current = null;
+      if (
+        !target?.closest(".column-index-menu-trigger") &&
+        !target?.closest(".row-index-menu-trigger") &&
+        !target?.closest(".rail-menu")
+      ) {
+        setRailMenuOpen(false);
+        setOpenRailMenuTarget(null);
+        railMenuAnchorRef.current = null;
       }
     };
 
@@ -628,10 +648,10 @@ export default function App() {
         setToolMenuOpen(false);
         return;
       }
-      if (columnRailMenuOpen) {
-        setColumnRailMenuOpen(false);
-        setOpenColumnMenuColIndex(null);
-        columnMenuAnchorRef.current = null;
+      if (railMenuOpen) {
+        setRailMenuOpen(false);
+        setOpenRailMenuTarget(null);
+        railMenuAnchorRef.current = null;
         return;
       }
       if (mode === "source" || isActiveSheetBlocked) return;
@@ -641,7 +661,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, isActiveSheetBlocked, selectedCell, selectedColumnIndex, clearActiveSelection, themeMenuOpen, toolMenuOpen, columnRailMenuOpen]);
+  }, [mode, isActiveSheetBlocked, selectedCell, selectedColumnIndex, clearActiveSelection, themeMenuOpen, toolMenuOpen, railMenuOpen]);
 
   useEffect(() => {
     const handleEnterToEdit = (event: KeyboardEvent) => {
@@ -650,11 +670,11 @@ export default function App() {
       if (event.repeat) return;
       if (mode === "source" || isActiveSheetBlocked) return;
       if (!selectedCell || selectedCell.area !== "body" || formulaInputMode !== "read") return;
-      if (themeMenuOpen || toolMenuOpen || columnRailMenuOpen) return;
+      if (themeMenuOpen || toolMenuOpen || railMenuOpen) return;
       const target = event.target as HTMLElement | null;
       if (
         target?.closest(
-          "input, textarea, [contenteditable='true'], .formula-format-menu, .formula-style-menu, .column-rail-menu, .theme-menu, .tool-menu",
+          "input, textarea, [contenteditable='true'], .formula-format-menu, .formula-style-menu, .rail-menu, .theme-menu, .tool-menu",
         )
       ) {
         return;
@@ -670,7 +690,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleEnterToEdit);
     return () => window.removeEventListener("keydown", handleEnterToEdit);
-  }, [mode, isActiveSheetBlocked, selectedCell, formulaInputMode, themeMenuOpen, toolMenuOpen, columnRailMenuOpen]);
+  }, [mode, isActiveSheetBlocked, selectedCell, formulaInputMode, themeMenuOpen, toolMenuOpen, railMenuOpen]);
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -679,7 +699,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (!selectedCell && selectedColumnIndex == null) return;
       const interactiveRoot = target?.closest(
-        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, .column-index-main, .column-index-menu-trigger, .column-rail-menu, textarea",
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, .column-index-main, .column-index-menu-trigger, .row-index-main, .row-index-menu-trigger, .rail-menu, textarea",
       );
       if (interactiveRoot) return;
       clearActiveSelection();
@@ -1223,6 +1243,17 @@ export default function App() {
     [applyHeaderSelection],
   );
 
+  const defaultBodyRailColIndex = useMemo(() => {
+    if (sheetColCount <= 0) return null;
+    return Math.min(Math.max(headerColCount, 0), sheetColCount - 1);
+  }, [headerColCount, sheetColCount]);
+
+  const closeRailMenu = useCallback(() => {
+    setRailMenuOpen(false);
+    setOpenRailMenuTarget(null);
+    railMenuAnchorRef.current = null;
+  }, []);
+
   const handleColumnRailSelect = useCallback(
     (colIndex: number) => {
       if (mode === "source" || isActiveSheetBlocked) return;
@@ -1231,29 +1262,51 @@ export default function App() {
       setSelectedCell(null);
       setFormulaInputMode("read");
       setFormulaBarSnapshot(null);
+      closeRailMenu();
     },
-    [mode, isActiveSheetBlocked, sheetColCount],
+    [mode, isActiveSheetBlocked, sheetColCount, closeRailMenu],
   );
 
   const handleColumnRailMenuOpen = useCallback(
     (colIndex: number, anchorEl: HTMLElement) => {
       if (mode === "source" || isActiveSheetBlocked) return;
       if (colIndex < 0 || colIndex >= sheetColCount) return;
-      columnMenuAnchorRef.current = anchorEl;
-      setColumnRailMenuPosition(resolveColumnRailMenuPosition(anchorEl.getBoundingClientRect()));
-      setOpenColumnMenuColIndex(colIndex);
-      setColumnRailMenuOpen(true);
+      railMenuAnchorRef.current = anchorEl;
+      const anchorRect = anchorEl.getBoundingClientRect();
+      setRailMenuPosition({
+        top: anchorRect.bottom + FLOATING_MENU_GAP,
+        left: anchorRect.left,
+      });
+      setOpenRailMenuTarget({ kind: "column", colIndex });
+      setRailMenuOpen(true);
       setFormulaInputMode("read");
       setFormulaBarSnapshot(null);
     },
     [mode, isActiveSheetBlocked, sheetColCount],
   );
 
+  const handleRowRailMenuOpen = useCallback(
+    (rowNumber: number, rowPath: string, anchorEl: HTMLElement) => {
+      if (mode === "source" || isActiveSheetBlocked) return;
+      railMenuAnchorRef.current = anchorEl;
+      const anchorRect = anchorEl.getBoundingClientRect();
+      setRailMenuPosition({
+        top: anchorRect.bottom + FLOATING_MENU_GAP,
+        left: anchorRect.left,
+      });
+      setOpenRailMenuTarget({ kind: "row", rowNumber, rowPath });
+      setRailMenuOpen(true);
+      setFormulaInputMode("read");
+      setFormulaBarSnapshot(null);
+    },
+    [mode, isActiveSheetBlocked],
+  );
+
   const handleRowRailSelect = useCallback(
     (rowNumber: number, rowPath: string | null) => {
       if (mode === "source" || isActiveSheetBlocked) return;
-      if (sheetColCount <= 0) return;
-      const targetCol = Math.min(Math.max(headerColCount, 0), sheetColCount - 1);
+      if (defaultBodyRailColIndex == null) return;
+      const targetCol = defaultBodyRailColIndex;
       const colId = toColFieldId(targetCol);
       if (rowPath == null) {
         if (headerRowCount === 0) return;
@@ -1273,12 +1326,13 @@ export default function App() {
       }
       setSelectedColumnIndex(null);
       setFormulaInputMode("read");
+      closeRailMenu();
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
         active.blur();
       }
     },
-    [mode, isActiveSheetBlocked, sheetColCount, headerColCount, headerRowCount, applyHeaderSelection, focusHeaderOverlayCell],
+    [mode, isActiveSheetBlocked, defaultBodyRailColIndex, headerRowCount, applyHeaderSelection, focusHeaderOverlayCell, closeRailMenu],
   );
 
   useEffect(() => {
@@ -1901,6 +1955,92 @@ export default function App() {
     });
   }, [selectedCell, activeSheet, setCellLocalStyle, scheduleSelectionRingSync]);
 
+  const handleInsertRow = useCallback((rowNumber: number, side: "above" | "below") => {
+    if (!activeSheet) {
+      throw new Error("row insertion requires an active sheet");
+    }
+    if (defaultBodyRailColIndex == null) {
+      throw new Error("row insertion requires at least one selectable column");
+    }
+    const rowIndex = side === "above" ? rowNumber - 1 : rowNumber;
+    const nextRowNumber = side === "above" ? rowNumber : rowNumber + 1;
+    insertRow(activeSheet, rowIndex);
+    closeRailMenu();
+    setSelectedColumnIndex(null);
+    setSelectedCell({
+      area: "body",
+      logical: {
+        rAbs: nextRowNumber,
+        cAbs: defaultBodyRailColIndex,
+      },
+      colId: toColFieldId(defaultBodyRailColIndex),
+      rowPath: null,
+    });
+    setFormulaInputMode("read");
+    window.requestAnimationFrame(() => {
+      focusBodyCellAt(nextRowNumber, defaultBodyRailColIndex);
+    });
+  }, [activeSheet, defaultBodyRailColIndex, insertRow, closeRailMenu, focusBodyCellAt]);
+
+  const handleDeleteRow = useCallback((rowNumber: number) => {
+    if (!activeSheet) {
+      throw new Error("row deletion requires an active sheet");
+    }
+    if (defaultBodyRailColIndex == null) {
+      throw new Error("row deletion requires at least one selectable column");
+    }
+    const bodyRowCount = currentSheet?.values.length ?? 0;
+    deleteRow(activeSheet, rowNumber - 1);
+    closeRailMenu();
+    setFormulaInputMode("read");
+    if (bodyRowCount <= 1) {
+      clearActiveSelection();
+      return;
+    }
+    const nextRowNumber = rowNumber < headerRowCount + bodyRowCount ? rowNumber : rowNumber - 1;
+    setSelectedColumnIndex(null);
+    setSelectedCell({
+      area: "body",
+      logical: {
+        rAbs: nextRowNumber,
+        cAbs: defaultBodyRailColIndex,
+      },
+      colId: toColFieldId(defaultBodyRailColIndex),
+      rowPath: null,
+    });
+    window.requestAnimationFrame(() => {
+      focusBodyCellAt(nextRowNumber, defaultBodyRailColIndex);
+    });
+  }, [activeSheet, defaultBodyRailColIndex, currentSheet, deleteRow, closeRailMenu, clearActiveSelection, headerRowCount, focusBodyCellAt]);
+
+  const handleInsertColumn = useCallback((colIndex: number, side: "left" | "right") => {
+    if (!activeSheet) {
+      throw new Error("column insertion requires an active sheet");
+    }
+    const nextColIndex = side === "left" ? colIndex : colIndex + 1;
+    insertColumn(activeSheet, nextColIndex);
+    closeRailMenu();
+    setSelectedCell(null);
+    setSelectedColumnIndex(nextColIndex);
+    setFormulaInputMode("read");
+  }, [activeSheet, insertColumn, closeRailMenu]);
+
+  const handleDeleteColumn = useCallback((colIndex: number) => {
+    if (!activeSheet) {
+      throw new Error("column deletion requires an active sheet");
+    }
+    deleteColumn(activeSheet, colIndex);
+    closeRailMenu();
+    setSelectedCell(null);
+    const nextColIndex = colIndex < sheetColCount - 1 ? colIndex : colIndex - 1;
+    if (nextColIndex >= headerColCount) {
+      setSelectedColumnIndex(nextColIndex);
+    } else {
+      setSelectedColumnIndex(null);
+    }
+    setFormulaInputMode("read");
+  }, [activeSheet, deleteColumn, closeRailMenu, sheetColCount, headerColCount]);
+
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
     if (!selectedCell || selectedCell.area !== "body") return;
@@ -1995,6 +2135,7 @@ export default function App() {
                 handleColumnRailSelect={handleColumnRailSelect}
                 handleColumnRailMenuOpen={handleColumnRailMenuOpen}
                 handleRowRailSelect={handleRowRailSelect}
+                handleRowRailMenuOpen={handleRowRailMenuOpen}
                 handleGridReady={handleGridReady}
                 handleFirstDataRendered={handleFirstDataRendered}
                 handleModelUpdated={handleModelUpdated}
@@ -2035,15 +2176,24 @@ export default function App() {
       <OverlayPortals
         themeMenuOpen={themeMenuOpen}
         themeMenuPosition={themeMenuPosition}
+        themeMenuRef={themeMenuRef}
         themeMode={themeMode}
         setThemeMode={setThemeMode}
         setThemeMenuOpen={setThemeMenuOpen}
         toolMenuOpen={toolMenuOpen}
         toolMenuPosition={toolMenuPosition}
+        toolMenuRef={toolMenuRef}
         overflowTools={overflowTools}
-        columnRailMenuOpen={columnRailMenuOpen}
-        columnRailMenuPosition={columnRailMenuPosition}
-        columnRailMenu={columnRailMenu}
+        railMenuOpen={railMenuOpen}
+        railMenuPosition={railMenuPosition}
+        railMenu={railMenu}
+        railMenuRef={railMenuRef}
+        onInsertRowAbove={(rowNumber) => handleInsertRow(rowNumber, "above")}
+        onInsertRowBelow={(rowNumber) => handleInsertRow(rowNumber, "below")}
+        onDeleteRow={handleDeleteRow}
+        onInsertColumnLeft={(colIndex) => handleInsertColumn(colIndex, "left")}
+        onInsertColumnRight={(colIndex) => handleInsertColumn(colIndex, "right")}
+        onDeleteColumn={handleDeleteColumn}
         tooltip={tooltip}
       />
     </div>

@@ -43,6 +43,7 @@ type TableStageProps = {
   handleColumnRailSelect: (colIndex: number) => void;
   handleColumnRailMenuOpen: (colIndex: number, anchorEl: HTMLElement) => void;
   handleRowRailSelect: (rowNumber: number, rowPath: string | null) => void;
+  handleRowRailMenuOpen: (rowNumber: number, rowPath: string, anchorEl: HTMLElement) => void;
   handleGridReady: (event: GridReadyEvent<GridRow>) => void;
   handleFirstDataRendered: (event: FirstDataRenderedEvent<GridRow>) => void;
   handleModelUpdated: (event: ModelUpdatedEvent<GridRow>) => void;
@@ -108,6 +109,7 @@ export default function TableStage({
   handleColumnRailSelect,
   handleColumnRailMenuOpen,
   handleRowRailSelect,
+  handleRowRailMenuOpen,
   handleGridReady,
   handleFirstDataRendered,
   handleModelUpdated,
@@ -124,6 +126,14 @@ export default function TableStage({
   const pinnedColumnMetrics = columnMetrics.filter((metric) => metric.colIndex < headerColCount);
   const centerColumnMetrics = columnMetrics.filter((metric) => metric.colIndex >= headerColCount);
 
+  const requireRailAnchor = (element: HTMLElement, selector: string) => {
+    const anchor = element.closest<HTMLElement>(selector);
+    if (!anchor) {
+      throw new Error(`missing rail anchor for selector ${selector}`);
+    }
+    return anchor;
+  };
+
   const renderColumnRailCell = (metric: ColumnMetric, left: number, pinned: boolean) => {
     const colNumber = metric.colIndex + 1;
     const isActive = selectedColumnIndex === metric.colIndex;
@@ -136,6 +146,11 @@ export default function TableStage({
         style={{
           left: `${left}px`,
           width: `${metric.width}px`,
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleColumnRailMenuOpen(metric.colIndex, event.currentTarget);
         }}
       >
         <span className="column-index-left-pad" aria-hidden="true" />
@@ -163,7 +178,7 @@ export default function TableStage({
           aria-label={`Open column ${letters} menu`}
           onClick={(event) => {
             event.stopPropagation();
-            handleColumnRailMenuOpen(metric.colIndex, event.currentTarget);
+            handleColumnRailMenuOpen(metric.colIndex, requireRailAnchor(event.currentTarget, ".column-index-cell"));
           }}
         >
           <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
@@ -258,26 +273,26 @@ export default function TableStage({
         </div>
       </div>
 
-      <div className={`row-index-strip ${railsPhaseClass}`} aria-hidden="true">
+      <div className={`row-index-strip ${railsPhaseClass}`}>
         <div className="row-index-shell">
           <div
             className={headerIndexMetrics.length > 0 ? "row-index-header-track" : "row-index-header-track is-empty"}
             style={headerIndexTrackHeight > 0 ? { height: `${headerIndexTrackHeight}px` } : undefined}
           >
-            {headerIndexMetrics.map((row) => (
-              <button
-                key={`row-index-header-${row.number}`}
+              {headerIndexMetrics.map((row) => (
+                <button
+                  key={`row-index-header-${row.number}`}
                 className={selectedRowNumber === row.number ? "row-index-cell is-header is-active" : "row-index-cell is-header"}
                 style={{
                   top: `${row.top}px`,
                   height: `${row.height}px`,
                 }}
-                type="button"
-                onClick={() => handleRowRailSelect(row.number, null)}
-              >
-                {row.number}
-              </button>
-            ))}
+                  type="button"
+                  onClick={() => handleRowRailSelect(row.number, null)}
+                >
+                  {row.number}
+                </button>
+              ))}
           </div>
           <div className="row-index-viewport">
             <div
@@ -286,18 +301,36 @@ export default function TableStage({
               style={rowIndexTrackHeight > 0 ? { height: `${rowIndexTrackHeight}px` } : undefined}
             >
               {rowIndexMetrics.map((row) => (
-                <button
+                <div
                   key={`row-index-${row.rowPath}`}
                   className={selectedRowNumber === row.number ? "row-index-cell is-active" : "row-index-cell"}
                   style={{
                     top: `${row.top}px`,
                     height: `${row.height}px`,
                   }}
-                  type="button"
-                  onClick={() => handleRowRailSelect(row.number, row.rowPath)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleRowRailMenuOpen(row.number, row.rowPath, event.currentTarget);
+                  }}
                 >
-                  {row.number}
-                </button>
+                  <button type="button" className="row-index-main" onClick={() => handleRowRailSelect(row.number, row.rowPath)}>
+                    {row.number}
+                  </button>
+                  <button
+                    type="button"
+                    className="row-index-menu-trigger"
+                    aria-label={`Open row ${row.number} menu`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleRowRailMenuOpen(row.number, row.rowPath, requireRailAnchor(event.currentTarget, ".row-index-cell"));
+                    }}
+                  >
+                    <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                      <path d="M3.2 4.6 6 7.4l2.8-2.8" />
+                    </svg>
+                  </button>
+                </div>
               ))}
             </div>
           </div>

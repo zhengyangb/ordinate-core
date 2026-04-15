@@ -117,8 +117,7 @@ export type TextWeight = "bold" | "normal";
 
 export interface FormatSpec {
   sign: FormatSignPolicy;
-  zeroPad: boolean;
-  width: number | null;
+  padWidth: number | null;
   grouping: boolean;
   precision: number | null;
   type: NumericFormatType | null;

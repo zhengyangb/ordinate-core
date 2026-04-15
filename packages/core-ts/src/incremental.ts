@@ -1041,15 +1041,12 @@ function assertFormatSpecOrNull(format: FormatSpec | null): void {
   if (typeof format !== "object") {
     throw new Error("format spec must be an object or null");
   }
-  assertKnownKeys(format, ["sign", "zeroPad", "width", "grouping", "precision", "type"], "format");
+  assertKnownKeys(format, ["sign", "padWidth", "grouping", "precision", "type"], "format");
   if (!["default", "plus", "parentheses"].includes(format.sign)) {
     throw new Error("format.sign must be default, plus, or parentheses");
   }
-  if (typeof format.zeroPad !== "boolean") {
-    throw new Error("format.zeroPad must be boolean");
-  }
-  if (format.width !== null && (!Number.isInteger(format.width) || format.width < 0)) {
-    throw new Error("format.width must be a non-negative integer or null");
+  if (format.padWidth !== null && (!Number.isInteger(format.padWidth) || format.padWidth < 0)) {
+    throw new Error("format.padWidth must be a non-negative integer or null");
   }
   if (typeof format.grouping !== "boolean") {
     throw new Error("format.grouping must be boolean");

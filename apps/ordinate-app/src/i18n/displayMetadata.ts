@@ -5,11 +5,10 @@ import type { UiLocale } from "./messages";
 export type DisplayMetadataIssueKind = "format" | "style" | "generic";
 
 function fieldLabel(field: string): string {
-  if (field === "zeroPad") return "Zero padding";
+  if (field === "padWidth") return "Width";
   if (field === "precision") return "Precision";
   if (field === "grouping") return "Grouping";
   if (field === "sign") return "Sign";
-  if (field === "width") return "Width";
   return "Format";
 }
 
@@ -30,9 +29,6 @@ export function formatDisplayMetadataErrorMessage(locale: UiLocale, issue: Diagn
     const type = typeof issue.context.type === "string" ? issue.context.type : "default";
     const field = typeof issue.context.field === "string" ? issue.context.field : "format";
     const reason = typeof issue.context.reason === "string" ? issue.context.reason : "disallowed_for_type";
-    if (reason === "requires_width" && field === "zeroPad") {
-      return "Zero padding requires width.";
-    }
     return `${fieldLabel(field)} is not allowed for ${typeLabel(type)} format.`;
   }
   if (issue.code === "format_spec_contains_whitespace") return "Format spec contains whitespace.";

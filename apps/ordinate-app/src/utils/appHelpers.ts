@@ -5,6 +5,7 @@ import type {
   ColumnRailMenuView,
   FloatingMenuPosition,
   HeaderOverlayCell,
+  RailMenuView,
   SheetHealth,
   SheetIssueViewModel,
   ThemeMode,
@@ -27,7 +28,7 @@ export const TOOLTIP_GAP = 8;
 export const TOOLTIP_VIEWPORT_MARGIN = 10;
 export const TOOLTIP_ESTIMATED_HEIGHT = 34;
 export const TOOLTIP_ESTIMATED_WIDTH = 240;
-export const FLOATING_MENU_VIEWPORT_MARGIN = 12;
+export const FLOATING_MENU_VIEWPORT_MARGIN = 24;
 export const FLOATING_MENU_GAP = 8;
 export const COLUMN_RAIL_MENU_MAX_WIDTH_REM = 27;
 export const THEME_STORAGE_KEY = "ordinate-theme-mode";
@@ -225,8 +226,7 @@ export function formatLocalView(format: PresentedCell["formatLayer"]["local"] | 
     formatLocalKey: formatMenuKeyFromType(format.type),
     formatLocalOptions: {
       sign: format.sign,
-      zeroPad: format.zeroPad,
-      width: format.width,
+      padWidth: format.padWidth,
       grouping: format.grouping,
       precision: format.precision,
     },
@@ -322,6 +322,7 @@ export function buildColumnHasLocalConfig(
 export function buildColumnRailMenu(
   openColumnMenuColIndex: number | null,
   sheetColCount: number,
+  headerColCount: number,
   currentSheetPresentation: PresentationSheet | null,
   columnHasLocalConfig: boolean[],
 ): ColumnRailMenuView | null {
@@ -332,31 +333,104 @@ export function buildColumnRailMenu(
   const localStyle = columnDefault?.styleLayer.local;
   const styleLocal = styleLocalView(localStyle);
   return {
+    kind: "column",
     colIndex: openColumnMenuColIndex,
     colLabel: toColumnLetters(openColumnMenuColIndex + 1),
     hasLocalConfig: columnHasLocalConfig[openColumnMenuColIndex] === true,
+    canStructureEdit: openColumnMenuColIndex >= headerColCount,
     ...formatLocalView(columnDefault?.formatLayer.local),
     styleLocal,
   };
 }
 
-export function resolveColumnRailMenuWidthPx(): number {
+export function buildRowRailMenu(
+  rowNumber: number | null,
+  rowPath: string | null,
+): RailMenuView | null {
+  if (rowNumber == null || rowPath == null) {
+    return null;
+  }
+  return {
+    kind: "row",
+    rowNumber,
+    rowPath,
+  };
+}
+
+export function buildRailMenu(
+  target:
+    | { kind: "column"; colIndex: number }
+    | { kind: "row"; rowNumber: number; rowPath: string | null }
+    | null,
+  sheetColCount: number,
+  headerColCount: number,
+  currentSheetPresentation: PresentationSheet | null,
+  columnHasLocalConfig: boolean[],
+): RailMenuView | null {
+  if (!target) return null;
+  if (target.kind === "column") {
+    return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheetPresentation, columnHasLocalConfig);
+  }
+  return buildRowRailMenu(target.rowNumber, target.rowPath);
+}
+
+export function resolveRailMenuWidthPx(kind: RailMenuView["kind"]): number {
   if (typeof window === "undefined") {
-    return COLUMN_RAIL_MENU_MAX_WIDTH_REM * 16;
+    return kind === "row" ? 208 : COLUMN_RAIL_MENU_MAX_WIDTH_REM * 16;
+  }
+  if (kind === "row") {
+    return Math.min(208, window.innerWidth - FLOATING_MENU_VIEWPORT_MARGIN * 2);
   }
   const rootFontPx = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
   const maxWidthPx = COLUMN_RAIL_MENU_MAX_WIDTH_REM * rootFontPx;
   return Math.min(maxWidthPx, window.innerWidth - FLOATING_MENU_VIEWPORT_MARGIN * 2);
 }
 
-export function resolveColumnRailMenuPosition(anchorRect: DOMRect): FloatingMenuPosition {
-  const menuWidth = resolveColumnRailMenuWidthPx();
-  const top = anchorRect.bottom + FLOATING_MENU_GAP;
+export function resolveAnchoredMenuPosition(
+  anchorRect: DOMRect,
+  menuRect: Pick<DOMRect, "width" | "height">,
+  {
+    preferredY = "below",
+    align = "end",
+  }: {
+    preferredY?: "below" | "above";
+    align?: "start" | "end";
+  } = {},
+): FloatingMenuPosition {
+  const menuWidth = menuRect.width;
+  const menuHeight = menuRect.height;
+  const belowTop = anchorRect.bottom + FLOATING_MENU_GAP;
+  const aboveTop = anchorRect.top - menuHeight - FLOATING_MENU_GAP;
+  const canPlaceBelow = belowTop + menuHeight <= window.innerHeight - FLOATING_MENU_VIEWPORT_MARGIN;
+  const canPlaceAbove = aboveTop >= FLOATING_MENU_VIEWPORT_MARGIN;
+  const unclampedTop =
+    preferredY === "below"
+      ? canPlaceBelow || !canPlaceAbove
+        ? belowTop
+        : aboveTop
+      : canPlaceAbove || !canPlaceBelow
+        ? aboveTop
+        : belowTop;
+  const top = Math.max(
+    FLOATING_MENU_VIEWPORT_MARGIN,
+    Math.min(unclampedTop, window.innerHeight - menuHeight - FLOATING_MENU_VIEWPORT_MARGIN),
+  );
+  const preferredLeft = align === "start" ? anchorRect.left : anchorRect.right - menuWidth;
   const left = Math.max(
     FLOATING_MENU_VIEWPORT_MARGIN,
-    Math.min(anchorRect.right - menuWidth, window.innerWidth - menuWidth - FLOATING_MENU_VIEWPORT_MARGIN),
+    Math.min(preferredLeft, window.innerWidth - menuWidth - FLOATING_MENU_VIEWPORT_MARGIN),
   );
   return { top, left };
+}
+
+export function resolveRailMenuPosition(
+  anchorRect: DOMRect,
+  menuRect: Pick<DOMRect, "width" | "height">,
+): FloatingMenuPosition {
+  return resolveAnchoredMenuPosition(anchorRect, menuRect, {
+    preferredY: "below",
+    align: "start",
+  });
 }
 
 export type FormulaInputMode = "read" | "edit";

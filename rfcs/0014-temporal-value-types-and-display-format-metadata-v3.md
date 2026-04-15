@@ -145,7 +145,7 @@ Examples:
 Current grammar direction:
 
 ```text
-[sign][0][width][,][.precision][type]
+[sign][padWidth][,][.precision][type]
 ```
 
 Supported components:
@@ -155,8 +155,7 @@ Supported components:
 | sign policy default | none | default sign behavior | `1234.5 {:,.2f}` |
 | sign policy plus | `+` | always show positive sign | `1234.5 {:+,.2f}` |
 | sign policy parentheses | `()` | show negatives with parentheses | `-1234.5 {:(),.2f}` |
-| zero padding | `0` | zero-pad to width | `42 {:06.2f}` |
-| width | digits | minimum width | `42 {:6.2f}` |
+| pad width | digits | `0` disables inherited padding, positive values zero-pad to width | `42 {:6.2f}` |
 | grouping | `,` | thousands separator | `1234.5 {:,.2f}` |
 | precision | `.N` | decimal precision | `0.125 {:.1%}` |
 | fixed-point type | `f` | fixed decimal format | `1234.5 {:,.2f}` |
@@ -168,19 +167,21 @@ Supported components:
 
 The numeric format grammar is shared across types, but not every component is valid for every type.
 
-| Type | Precision | Grouping | Sign | Width | Zero Pad |
-|---|---|---|---|---|---|
-| `d` | no | yes | yes | yes | yes |
-| `f` | yes | yes | yes | yes | yes |
-| `e` | yes | no | yes | yes | yes |
-| `%` | yes | yes | yes | yes | yes |
+| Type | Precision | Grouping | Sign | Pad Width |
+|---|---|---|---|---|
+| `d` | no | yes | yes | yes |
+| `f` | yes | yes | yes | yes |
+| `e` | yes | no | yes | yes |
+| `%` | yes | yes | yes | yes |
 
 Rules:
 
 - unsupported field and type combinations are invalid
 - integer format (`d`) disallows `precision`
 - scientific format (`e`) disallows `grouping`
-- `zeroPad` requires `width`
+- `padWidth = null` means inherit
+- `padWidth = 0` means explicit local no-padding override
+- `padWidth > 0` means zero-pad to the given width
 - invalid display metadata is preserved in source, but does not produce a local effective format
 - structured edit APIs must reject invalid combinations
 

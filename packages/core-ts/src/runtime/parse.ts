@@ -193,8 +193,7 @@ function serializeFormatSpec(spec: FormatSpec): string {
   let out = "";
   if (spec.sign === "plus") out += "+";
   else if (spec.sign === "parentheses") out += "()";
-  if (spec.zeroPad) out += "0";
-  if (spec.width !== null) out += `${spec.width}`;
+  if (spec.padWidth !== null) out += `${spec.padWidth}`;
   if (spec.grouping) out += ",";
   if (spec.precision !== null) out += `.${spec.precision}`;
   if (spec.type !== null) out += spec.type;
@@ -972,23 +971,13 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { issue: Diagnos
     i += 2;
   }
 
-  let zeroPad = false;
-  if (i < text.length && text[i] === "0") {
-    zeroPad = true;
-    i += 1;
-  }
-
-  let width: number | null = null;
-  const widthStart = i;
+  let padWidth: number | null = null;
+  const padWidthStart = i;
   while (i < text.length && /[0-9]/.test(text[i])) {
     i += 1;
   }
-  if (i > widthStart) {
-    width = Number(text.slice(widthStart, i));
-  }
-
-  if (zeroPad && width === null) {
-    return { issue: validateFormatSpec({ sign, zeroPad, width, grouping: false, precision: null, type: null })! };
+  if (i > padWidthStart) {
+    padWidth = Number(text.slice(padWidthStart, i));
   }
 
   let grouping = false;
@@ -1027,8 +1016,7 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { issue: Diagnos
 
   const value = {
     sign,
-    zeroPad,
-    width,
+    padWidth,
     grouping,
     precision,
     type,

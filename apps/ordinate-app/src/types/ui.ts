@@ -100,8 +100,7 @@ export type FormatLocalKey = "auto" | "integer" | "decimal" | "scientific" | "pe
 
 export type FormatLocalOptions = {
   sign: "default" | "plus" | "parentheses";
-  zeroPad: boolean;
-  width: number | null;
+  padWidth: number | null;
   grouping: boolean;
   precision: number | null;
 };
@@ -113,13 +112,23 @@ export type StyleLocalView = {
 };
 
 export type ColumnRailMenuView = {
+  kind: "column";
   colIndex: number;
   colLabel: string;
   hasLocalConfig: boolean;
+  canStructureEdit: boolean;
   formatLocalKey: FormatLocalKey;
   formatLocalOptions: FormatLocalOptions | null;
   styleLocal: StyleLocalView;
 };
+
+export type RowRailMenuView = {
+  kind: "row";
+  rowNumber: number;
+  rowPath: string;
+};
+
+export type RailMenuView = ColumnRailMenuView | RowRailMenuView;
 
 export type FloatingTooltip = {
   text: string;

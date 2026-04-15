@@ -313,18 +313,15 @@ function formatNumber(value: number, format: FormatSpec): string {
     signedText = `${signPrefix}${numericText}`;
   }
 
-  if (!format.width || signedText.length >= format.width) {
+  if (format.padWidth === null || format.padWidth <= 0 || signedText.length >= format.padWidth) {
     return signedText;
-  }
-  if (!format.zeroPad) {
-    return signedText.padStart(format.width, " ");
   }
   if (signedText.startsWith("-") || signedText.startsWith("+")) {
     const sign = signedText[0];
-    const body = signedText.slice(1).padStart(format.width - 1, "0");
+    const body = signedText.slice(1).padStart(format.padWidth - 1, "0");
     return `${sign}${body}`;
   }
-  return signedText.padStart(format.width, "0");
+  return signedText.padStart(format.padWidth, "0");
 }
 
 function applyGrouping(text: string): string {

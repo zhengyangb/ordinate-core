@@ -18,8 +18,7 @@ set_cell_input_and_local_display_success
     "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Out" },
     "format": {
       "sign": "default",
-      "zeroPad": false,
-      "width": null,
+      "padWidth": null,
       "grouping": true,
       "precision": 2,
       "type": "f"

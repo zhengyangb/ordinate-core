@@ -1,26 +1,22 @@
 import { type Diagnostic, type FormatSpec, type NumericFormatType } from "./types";
 
-type FormatField = "precision" | "grouping" | "sign" | "width" | "zeroPad";
+type FormatField = "precision" | "grouping" | "sign" | "padWidth";
 type FormatCompatibilityType = NumericFormatType | "default";
-type FormatCompatibilityReason = "disallowed_for_type" | "requires_width";
+type FormatCompatibilityReason = "disallowed_for_type";
 
 type FormatCompatibilityRule = Record<FormatField, boolean>;
 
 const FORMAT_COMPATIBILITY: Record<FormatCompatibilityType, FormatCompatibilityRule> = {
-  default: { precision: true, grouping: true, sign: true, width: true, zeroPad: true },
-  d: { precision: false, grouping: true, sign: true, width: true, zeroPad: true },
-  f: { precision: true, grouping: true, sign: true, width: true, zeroPad: true },
-  e: { precision: true, grouping: false, sign: true, width: true, zeroPad: true },
-  "%": { precision: true, grouping: true, sign: true, width: true, zeroPad: true },
+  default: { precision: true, grouping: true, sign: true, padWidth: true },
+  d: { precision: false, grouping: true, sign: true, padWidth: true },
+  f: { precision: true, grouping: true, sign: true, padWidth: true },
+  e: { precision: true, grouping: false, sign: true, padWidth: true },
+  "%": { precision: true, grouping: true, sign: true, padWidth: true },
 };
 
 export function validateFormatSpec(spec: FormatSpec): Diagnostic | null {
   const type = toCompatibilityType(spec.type);
   const rule = FORMAT_COMPATIBILITY[type];
-
-  if (spec.zeroPad && spec.width === null) {
-    return makeFormatCompatibilityDiagnostic(type, "zeroPad", "requires_width");
-  }
 
   if (spec.precision !== null && !rule.precision) {
     return makeFormatCompatibilityDiagnostic(type, "precision", "disallowed_for_type");
@@ -31,11 +27,8 @@ export function validateFormatSpec(spec: FormatSpec): Diagnostic | null {
   if (spec.sign !== "default" && !rule.sign) {
     return makeFormatCompatibilityDiagnostic(type, "sign", "disallowed_for_type");
   }
-  if (spec.width !== null && !rule.width) {
-    return makeFormatCompatibilityDiagnostic(type, "width", "disallowed_for_type");
-  }
-  if (spec.zeroPad && !rule.zeroPad) {
-    return makeFormatCompatibilityDiagnostic(type, "zeroPad", "disallowed_for_type");
+  if (spec.padWidth !== null && !rule.padWidth) {
+    return makeFormatCompatibilityDiagnostic(type, "padWidth", "disallowed_for_type");
   }
 
   return null;
@@ -103,9 +96,6 @@ function describeFormatCompatibilityDiagnostic(context: Record<string, unknown>)
   const field = typeof context.field === "string" ? context.field : "format";
   const reason = typeof context.reason === "string" ? context.reason : "disallowed_for_type";
 
-  if (reason === "requires_width" && field === "zeroPad") {
-    return "zero padding requires width";
-  }
   if (reason === "disallowed_for_type") {
     return `${formatFieldLabel(field)} is not allowed for ${formatTypeLabel(type)} format`;
   }
@@ -113,7 +103,7 @@ function describeFormatCompatibilityDiagnostic(context: Record<string, unknown>)
 }
 
 function formatFieldLabel(field: string): string {
-  if (field === "zeroPad") return "zero padding";
+  if (field === "padWidth") return "width";
   return field;
 }
 

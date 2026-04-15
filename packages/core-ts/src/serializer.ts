@@ -342,8 +342,7 @@ function serializeFormatSpec(spec: FormatSpec): string {
   let out = "";
   if (spec.sign === "plus") out += "+";
   else if (spec.sign === "parentheses") out += "()";
-  if (spec.zeroPad) out += "0";
-  if (spec.width !== null) out += `${spec.width}`;
+  if (spec.padWidth !== null) out += `${spec.padWidth}`;
   if (spec.grouping) out += ",";
   if (spec.precision !== null) out += `.${spec.precision}`;
   if (spec.type !== null) out += spec.type;
