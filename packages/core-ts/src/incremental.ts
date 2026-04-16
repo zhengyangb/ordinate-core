@@ -1,5 +1,5 @@
 import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
-import { parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
+import { getCellTextView, parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
 import { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
 import {
   buildBodyRows,
@@ -320,13 +320,14 @@ export class SheetState {
     const normalizedText = normalizeCellTextForParsing(text, rAbs, c, this.headerRowCount, this.headerColCount);
     const parsed = this.bindParsedCell(parseCellInput(normalizedText));
     cell.body = parsed.body;
-    if (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) {
+    if (kind === ChangeKind.CLEAR) {
       cell.localDisplay = parsed.localDisplay;
     }
     cell.dirty = true;
     cell.cachedValue = null;
 
-    this.updateRowText(rAbs, c, text);
+    const nextRawText = kind === ChangeKind.VALUE ? buildCellRawText(cell.body, cell.localDisplay) : text;
+    this.updateRowText(rAbs, c, nextRawText);
 
     if (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) {
       this.updateDependenciesForCell(rAbs, c);
@@ -1024,6 +1025,10 @@ function createDisplayFromSpecs(format: FormatSpec | null, style: StyleSpec | nu
     format,
     style,
   };
+}
+
+function buildCellRawText(body: CellBodyState, localDisplay: ParsedDisplayMetadata | null): string {
+  return getCellTextView({ body, localDisplay }).cellText;
 }
 
 function applyStylePatch(current: StyleSpec | null, patch: StylePatch): StyleSpec | null {

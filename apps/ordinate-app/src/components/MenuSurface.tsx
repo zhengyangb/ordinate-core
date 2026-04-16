@@ -65,6 +65,7 @@ type MenuOptionProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?: "default" | "danger";
   icon?: ReactNode;
   trailing?: ReactNode;
+  buttonRef?: RefObject<HTMLButtonElement>;
 };
 
 export function MenuOption({
@@ -72,12 +73,14 @@ export function MenuOption({
   tone = "default",
   icon,
   trailing,
+  buttonRef,
   className = "",
   children,
   ...buttonProps
 }: MenuOptionProps) {
   return (
     <button
+      ref={buttonRef}
       {...buttonProps}
       className={[
         "menu-surface-option",

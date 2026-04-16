@@ -685,6 +685,155 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(serializeDocumentState(result.nextDocument)).toContain("= sum(B2");
   });
 
+  it("preserves local display metadata when set_cell_input updates only the body text", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2f:>,blue} |
+`.trim());
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_cell_input",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        input: "= 2 + 1",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const nextSheet = result.nextDocument.sheets[0];
+    const cell = nextSheet.cells[nextSheet.bodyStart][1];
+    expect(cell.body.valid).toBe(true);
+    if (!cell.body.valid) throw new Error("expected valid body");
+    expect(cell.body.kind).toBe("formula");
+    expect(cell.localDisplay?.valid).toBe(true);
+    if (!cell.localDisplay?.valid) throw new Error("expected valid display metadata");
+    expect(cell.localDisplay.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
+    expect(cell.localDisplay.style).toMatchObject({ align: "right", color: "blue" });
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).toContain('= 2 + 1 {:,.2f:>,blue}');
+  });
+
+  it("preserves local display metadata when set_cell_input clears body text to empty input", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2f:>,blue} |
+`.trim());
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_cell_input",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        input: "",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const nextSheet = result.nextDocument.sheets[0];
+    const cell = nextSheet.cells[nextSheet.bodyStart][1];
+    expect(cell.body.valid).toBe(true);
+    if (!cell.body.valid) throw new Error("expected valid body");
+    expect(cell.body.kind).toBe("literal");
+    expect(cell.body.literal.kind).toBe("blank");
+    expect(cell.localDisplay?.valid).toBe(true);
+    if (!cell.localDisplay?.valid) throw new Error("expected valid display metadata");
+    expect(cell.localDisplay.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
+    expect(cell.localDisplay.style).toMatchObject({ align: "right", color: "blue" });
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).toContain('| A    || {:,.2f:>,blue} |');
+    const roundTripped = DocumentState.fromText(output);
+    const roundTrippedCell = roundTripped.sheets[0].cells[roundTripped.sheets[0].bodyStart][1];
+    expect(roundTrippedCell.body.valid).toBe(true);
+    if (!roundTrippedCell.body.valid) throw new Error("expected valid body");
+    expect(roundTrippedCell.body.kind).toBe("literal");
+    expect(roundTrippedCell.body.literal.kind).toBe("blank");
+    expect(roundTrippedCell.localDisplay?.valid).toBe(true);
+  });
+
+  it("preserves invalid local display metadata when set_cell_input updates the body text", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2fd} |
+`.trim());
+
+    const beforeCell = state.sheets[0].cells[state.sheets[0].bodyStart][1];
+    expect(beforeCell.localDisplay?.valid).toBe(false);
+    if (beforeCell.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(beforeCell.localDisplay.rawBlock).toBe("{:,.2fd}");
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_cell_input",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        input: "= 2 + 1",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const nextSheet = result.nextDocument.sheets[0];
+    const cell = nextSheet.cells[nextSheet.bodyStart][1];
+    expect(cell.body.valid).toBe(true);
+    if (!cell.body.valid) throw new Error("expected valid body");
+    expect(cell.body.kind).toBe("formula");
+    expect(cell.localDisplay?.valid).toBe(false);
+    if (cell.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(cell.localDisplay.rawBlock).toBe("{:,.2fd}");
+    expect(cell.localDisplay.issue.code).toBe("invalid_format_spec_trailing_chars");
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).toContain('= 2 + 1 {:,.2fd}');
+  });
+
+  it("clear_cell removes both body and local display metadata", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2f:>,blue} |
+`.trim());
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "clear_cell",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const nextSheet = result.nextDocument.sheets[0];
+    const cell = nextSheet.cells[nextSheet.bodyStart][1];
+    expect(cell.body.valid).toBe(true);
+    if (!cell.body.valid) throw new Error("expected valid body");
+    expect(cell.body.kind).toBe("literal");
+    expect(cell.body.literal.kind).toBe("blank");
+    expect(cell.localDisplay).toBeNull();
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).not.toContain('{:,.2f:>,blue}');
+    const roundTripped = DocumentState.fromText(output);
+    const roundTrippedCell = roundTripped.sheets[0].cells[roundTripped.sheets[0].bodyStart][1];
+    expect(roundTrippedCell.body.valid).toBe(true);
+    if (!roundTrippedCell.body.valid) throw new Error("expected valid body");
+    expect(roundTrippedCell.body.kind).toBe("literal");
+    expect(roundTrippedCell.body.literal.kind).toBe("blank");
+    expect(roundTrippedCell.localDisplay).toBeNull();
+  });
+
   it("returns deterministic target errors for ambiguous labels and invalid structural scope", () => {
     const ambiguous = applyBatchAtomic(DocumentState.fromText(AMBIGUOUS_DOC), [
       {

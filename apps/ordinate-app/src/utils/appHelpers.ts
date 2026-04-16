@@ -433,4 +433,35 @@ export function resolveRailMenuPosition(
   });
 }
 
+export function resolveFlyoutMenuPosition(
+  triggerRect: DOMRect,
+  containerRect: DOMRect,
+  menuRect: Pick<DOMRect, "width" | "height">,
+  { preferredSide = "right" }: { preferredSide?: "right" | "left" } = {},
+): FloatingMenuPosition {
+  const menuWidth = menuRect.width;
+  const menuHeight = menuRect.height;
+  const rightLeft = containerRect.right + FLOATING_MENU_GAP;
+  const leftLeft = containerRect.left - menuWidth - FLOATING_MENU_GAP;
+  const canPlaceRight = rightLeft + menuWidth <= window.innerWidth - FLOATING_MENU_VIEWPORT_MARGIN;
+  const canPlaceLeft = leftLeft >= FLOATING_MENU_VIEWPORT_MARGIN;
+  const unclampedLeft =
+    preferredSide === "right"
+      ? canPlaceRight || !canPlaceLeft
+        ? rightLeft
+        : leftLeft
+      : canPlaceLeft || !canPlaceRight
+        ? leftLeft
+        : rightLeft;
+  const left = Math.max(
+    FLOATING_MENU_VIEWPORT_MARGIN,
+    Math.min(unclampedLeft, window.innerWidth - menuWidth - FLOATING_MENU_VIEWPORT_MARGIN),
+  );
+  const top = Math.max(
+    FLOATING_MENU_VIEWPORT_MARGIN,
+    Math.min(triggerRect.top, window.innerHeight - menuHeight - FLOATING_MENU_VIEWPORT_MARGIN),
+  );
+  return { top, left };
+}
+
 export type FormulaInputMode = "read" | "edit";

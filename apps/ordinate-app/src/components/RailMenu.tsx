@@ -1,6 +1,7 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
-import { FormatOptionGlyph, FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
+import { FormatOptionGlyph } from "./DisplayMetadataPreview";
+import RailMenuDetailPanel from "./RailMenuDetailPanel";
 import { MenuDivider, MenuGroup, MenuHead, MenuOption, MenuSurface, MenuTitle } from "./MenuSurface";
 import type { FloatingMenuPosition, RailMenuView } from "../types/ui";
 
@@ -110,134 +111,111 @@ export default function RailMenu({
 }: RailMenuProps) {
   const [panel, setPanel] = useState<"format" | "style" | null>(null);
   const [columnFormatInspectKey, setColumnFormatInspectKey] = useState<"auto" | "integer" | "decimal" | "scientific" | "percent">("auto");
+  const formatTriggerRef = useRef<HTMLButtonElement>(null);
+  const styleTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open || !railMenu) return;
-    if (railMenu.kind === "row") {
-      setPanel(null);
-      return;
-    }
     setPanel(null);
-    setColumnFormatInspectKey(railMenu.formatLocalKey);
+    if (railMenu.kind === "column") {
+      setColumnFormatInspectKey(railMenu.formatLocalKey);
+    }
   }, [open, railMenu]);
 
-  const columnMenuLayout =
-    railMenu?.kind !== "column"
-      ? "row"
-      : panel === null
-        ? "collapsed"
-        : panel === "style"
-          ? "detail"
-          : columnFormatInspectKey === "auto"
-            ? "format-list"
-            : "detail";
+  const detailAnchorRef = panel === "format" ? formatTriggerRef : styleTriggerRef;
 
   return (
-    <MenuSurface
-      innerRef={railMenuRef}
-      className={[
-        "rail-menu",
-        `rail-menu--${railMenu?.kind ?? "column"}`,
-        railMenu?.kind === "column" ? `rail-menu--layout-${columnMenuLayout}` : "",
-        railMenu?.kind === "column" && panel === "format" ? "rail-menu--panel-format" : "",
-        railMenu?.kind === "column" && panel === "style" ? "rail-menu--panel-style" : "",
-      ].join(" ").trim()}
-      open={open}
-      ariaHidden={!open}
-      style={{ top: `${position.top}px`, left: `${position.left}px` }}
-    >
-      {railMenu ? (
-        <>
-          <MenuHead className="column-rail-menu-head">
-            <MenuTitle className="column-rail-menu-title" index={railMenu.kind === "column" ? railMenu.colIndex + 1 : undefined}>
-              {railMenu.kind === "column" ? `Column ${railMenu.colLabel}` : `Row ${railMenu.rowNumber}`}
-            </MenuTitle>
-          </MenuHead>
-          {railMenu.kind === "column" ? (
-            <div
-              className={[
-                "column-rail-menu-body",
-                panel !== null ? "column-rail-menu-body--two-pane" : "column-rail-menu-body--collapsed",
-              ].join(" ")}
-            >
-              <div className="column-rail-menu-nav" aria-label="Column tools">
-                <MenuGroup className="column-rail-menu-nav-group" role="tablist" ariaLabel="Column metadata views">
-                  <MenuOption
-                    role="tab"
-                    aria-selected={panel === "format"}
-                    active={panel === "format"}
-                    className="column-rail-menu-nav-item"
-                    icon={<FormatOptionGlyph option="decimal" />}
-                    trailing={railMenu.formatLocalKey !== "auto" ? <span className="column-rail-menu-nav-mark" aria-hidden="true" /> : null}
-                    onClick={() => {
-                      setPanel("format");
-                      setColumnFormatInspectKey(railMenu.formatLocalKey);
-                    }}
-                  >
-                    Format
-                  </MenuOption>
-                  <MenuOption
-                    role="tab"
-                    aria-selected={panel === "style"}
-                    active={panel === "style"}
-                    className="column-rail-menu-nav-item"
-                    icon={<StyleRowGlyph />}
-                    trailing={railMenu.styleLocal.align !== "auto" || railMenu.styleLocal.weight !== "auto" || railMenu.styleLocal.color !== "auto" ? (
-                      <span className="column-rail-menu-nav-mark" aria-hidden="true" />
-                    ) : null}
-                    onClick={() => setPanel("style")}
-                  >
-                    Style
-                  </MenuOption>
-                </MenuGroup>
-                {railMenu.canStructureEdit ? <MenuDivider className="column-rail-menu-nav-divider" /> : null}
-                {railMenu.canStructureEdit ? (
-                  <MenuGroup className="column-rail-menu-action-group" ariaLabel="Column structure actions">
-                    <MenuOption className="column-rail-menu-action" icon={<InsertLeftGlyph />} onClick={() => onInsertColumnLeft(railMenu.colIndex)}>
-                      Insert Left
+    <>
+      <MenuSurface
+        innerRef={railMenuRef}
+        className={[
+          "rail-menu",
+          railMenu?.kind === "column" ? "rail-menu--column" : "rail-menu--row",
+        ].join(" ")}
+        open={open}
+        ariaHidden={!open}
+        style={{ top: `${position.top}px`, left: `${position.left}px` }}
+      >
+        {railMenu ? (
+          <>
+            <MenuHead className="column-rail-menu-head">
+              <MenuTitle className="column-rail-menu-title" index={railMenu.kind === "column" ? railMenu.colIndex + 1 : undefined}>
+                {railMenu.kind === "column" ? `Column ${railMenu.colLabel}` : `Row ${railMenu.rowNumber}`}
+              </MenuTitle>
+            </MenuHead>
+            {railMenu.kind === "column" ? (
+              <div className="column-rail-menu-body">
+                <div className="column-rail-menu-nav" aria-label="Column tools">
+                  <MenuGroup className="column-rail-menu-nav-group" role="group" ariaLabel="Column metadata tools">
+                    <MenuOption
+                      buttonRef={formatTriggerRef}
+                      active={panel === "format"}
+                      className="column-rail-menu-nav-item"
+                      icon={<FormatOptionGlyph option="decimal" />}
+                      trailing={railMenu.formatLocalKey !== "auto" ? <span className="column-rail-menu-nav-mark" aria-hidden="true" /> : null}
+                      onClick={() => {
+                        const nextOpen = panel !== "format";
+                        setPanel(nextOpen ? "format" : null);
+                        if (nextOpen) {
+                          setColumnFormatInspectKey(railMenu.formatLocalKey);
+                        }
+                      }}
+                    >
+                      Format
                     </MenuOption>
-                    <MenuOption className="column-rail-menu-action" icon={<InsertRightGlyph />} onClick={() => onInsertColumnRight(railMenu.colIndex)}>
-                      Insert Right
-                    </MenuOption>
-                    <MenuOption className="column-rail-menu-action" icon={<DeleteGlyph />} tone="danger" onClick={() => onDeleteColumn(railMenu.colIndex)}>
-                      Delete Column
+                    <MenuOption
+                      buttonRef={styleTriggerRef}
+                      active={panel === "style"}
+                      className="column-rail-menu-nav-item"
+                      icon={<StyleRowGlyph />}
+                      trailing={railMenu.styleLocal.align !== "auto" || railMenu.styleLocal.weight !== "auto" || railMenu.styleLocal.color !== "auto" ? (
+                        <span className="column-rail-menu-nav-mark" aria-hidden="true" />
+                      ) : null}
+                      onClick={() => setPanel((current) => (current === "style" ? null : "style"))}
+                    >
+                      Style
                     </MenuOption>
                   </MenuGroup>
-                ) : null}
-              </div>
-              {panel !== null ? (
-                <div
-                  className={[
-                    "column-rail-menu-panel",
-                    panel === "style" ? "column-rail-menu-panel--style" : "",
-                    panel === "format" && columnFormatInspectKey !== "auto" ? "has-detail-panel" : "list-only",
-                  ].join(" ").trim()}
-                >
-                  {panel === "format" ? (
-                    <FormatPreviewPanel
-                      localFormatKey={railMenu.formatLocalKey}
-                      localFormatOptions={railMenu.formatLocalOptions}
-                      inspectedKey={columnFormatInspectKey}
-                      onInspectKey={setColumnFormatInspectKey}
-                    />
-                  ) : (
-                    <StylePreviewPanel styleLocal={railMenu.styleLocal} />
-                  )}
+                  {railMenu.canStructureEdit ? <MenuDivider className="column-rail-menu-nav-divider" /> : null}
+                  {railMenu.canStructureEdit ? (
+                    <MenuGroup className="column-rail-menu-action-group" ariaLabel="Column structure actions">
+                      <MenuOption className="column-rail-menu-action" icon={<InsertLeftGlyph />} onClick={() => onInsertColumnLeft(railMenu.colIndex)}>
+                        Insert Left
+                      </MenuOption>
+                      <MenuOption className="column-rail-menu-action" icon={<InsertRightGlyph />} onClick={() => onInsertColumnRight(railMenu.colIndex)}>
+                        Insert Right
+                      </MenuOption>
+                      <MenuOption className="column-rail-menu-action" icon={<DeleteGlyph />} tone="danger" onClick={() => onDeleteColumn(railMenu.colIndex)}>
+                        Delete Column
+                      </MenuOption>
+                    </MenuGroup>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="column-rail-menu-body">
-              <RowStructurePanel
-                rowNumber={railMenu.rowNumber}
-                onInsertAbove={onInsertRowAbove}
-                onInsertBelow={onInsertRowBelow}
-                onDelete={onDeleteRow}
-              />
-            </div>
-          )}
-        </>
+              </div>
+            ) : (
+              <div className="column-rail-menu-body">
+                <RowStructurePanel
+                  rowNumber={railMenu.rowNumber}
+                  onInsertAbove={onInsertRowAbove}
+                  onInsertBelow={onInsertRowBelow}
+                  onDelete={onDeleteRow}
+                />
+              </div>
+            )}
+          </>
+        ) : null}
+      </MenuSurface>
+      {railMenu?.kind === "column" ? (
+        <RailMenuDetailPanel
+          open={open && panel !== null}
+          panel={panel}
+          railMenu={railMenu}
+          anchorRef={detailAnchorRef}
+          containerRef={railMenuRef}
+          inspectedKey={columnFormatInspectKey}
+          onInspectKey={setColumnFormatInspectKey}
+        />
       ) : null}
-    </MenuSurface>
+    </>
   );
 }

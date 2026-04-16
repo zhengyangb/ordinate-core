@@ -188,7 +188,12 @@ export function FormatPreviewPanel({
   };
 
   return (
-    <>
+    <div
+      className={[
+        "formula-format-layout",
+        hasOverride && activeKey !== "auto" && panelOptions ? "has-detail-panel" : "list-only",
+      ].join(" ")}
+    >
       <div className="formula-format-menu-list">
         {FORMAT_LOCAL_OPTIONS.map((option) => (
           <button
@@ -338,7 +343,7 @@ export function FormatPreviewPanel({
           ) : null}
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 

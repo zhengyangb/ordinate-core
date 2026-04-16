@@ -696,26 +696,31 @@ textarea {
 
 .rail-menu--column {
     width: auto;
-    min-width: min(17.5rem, calc(100vw - 3rem));
+    min-width: min(15.5rem, calc(100vw - 3rem));
     max-width: calc(100vw - 3rem);
-}
-
-.rail-menu--column.rail-menu--layout-format-list {
-    min-width: min(26rem, calc(100vw - 3rem));
-}
-
-.rail-menu--column.rail-menu--layout-detail.rail-menu--panel-format {
-    min-width: min(35.5rem, calc(100vw - 3rem));
-}
-
-.rail-menu--column.rail-menu--layout-detail.rail-menu--panel-style {
-    min-width: min(24.5rem, calc(100vw - 3rem));
 }
 
 .rail-menu--row {
     width: auto;
-    min-width: min(17rem, calc(100vw - 3rem));
+    min-width: min(15.5rem, calc(100vw - 3rem));
     max-width: calc(100vw - 3rem);
+}
+
+.rail-menu-detail {
+    width: auto;
+    max-width: calc(100vw - 3rem);
+}
+
+.rail-menu-detail--format-list {
+    min-width: min(10.6rem, calc(100vw - 3rem));
+}
+
+.rail-menu-detail--format-detail {
+    min-width: min(27rem, calc(100vw - 3rem));
+}
+
+.rail-menu-detail--style {
+    min-width: min(16.2rem, calc(100vw - 3rem));
 }
 
 .floating-tooltip {
@@ -905,20 +910,8 @@ textarea {
 }
 
 .column-rail-menu-body {
-    display: grid;
-    gap: 0.16rem;
+    display: block;
     padding: 0.16rem;
-}
-
-.column-rail-menu-body.column-rail-menu-body--collapsed {
-    grid-template-columns: minmax(19rem, auto);
-    align-items: start;
-}
-
-.column-rail-menu-body.column-rail-menu-body--two-pane {
-    grid-template-columns: 10.5rem auto;
-    gap: 0.24rem;
-    align-items: start;
 }
 
 .column-rail-menu-row {
@@ -955,7 +948,7 @@ textarea {
 
 .column-rail-menu-nav {
     display: grid;
-    gap: 0.14rem;
+    gap: 0.16rem;
     padding: 0.02rem;
     align-content: start;
 }
@@ -972,7 +965,7 @@ textarea {
 }
 
 .column-rail-menu-nav-divider {
-    margin: 0.18rem 0.02rem 0.1rem;
+    margin: 0.18rem 0.02rem 0.12rem;
 }
 
 .column-rail-menu-nav-mark {
@@ -1001,34 +994,69 @@ textarea {
     color: var(--chrome-soft);
 }
 
-.column-rail-menu-panel {
+.rail-menu-detail-body {
     display: grid;
-    grid-template-columns: var(--display-meta-menu-nav-width) minmax(0, 1fr);
-    align-items: start;
+    align-content: start;
+}
+
+.rail-menu-detail-body--format {
+    width: fit-content;
+}
+
+.rail-menu-detail-body--format .formula-format-menu-list {
+    gap: 0.12rem;
+    padding: 0.04rem;
+    border-radius: calc(var(--menu-item-radius) + 0.06rem);
+    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
+    align-content: start;
+}
+
+.rail-menu-detail-body--format .formula-format-layout {
     gap: 0.2rem;
+    width: fit-content;
+}
+
+.rail-menu-detail-body--format .formula-format-layout.has-detail-panel {
+    grid-template-columns: var(--display-meta-menu-nav-width) var(--display-meta-menu-detail-width);
+}
+
+.rail-menu-detail-body--format .formula-format-menu-panel {
+    border-radius: calc(var(--menu-item-radius) + 0.06rem);
+    width: min(var(--display-meta-menu-detail-width), 100%);
     min-width: 0;
-    min-height: var(--display-meta-menu-panel-height);
-    justify-self: start;
-    padding-inline-start: 0.04rem;
+    padding: 0.2rem 0.24rem;
+    gap: 0.24rem;
+    overflow: hidden;
+    align-content: start;
+    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
 }
 
-.column-rail-menu-panel.column-rail-menu-panel--style {
-    display: block;
-    width: min(15.25rem, 100%);
+.rail-menu-detail-body--format .formula-format-option {
+    min-height: var(--menu-item-min-height);
+    gap: 0.36rem;
 }
 
-.column-rail-menu-panel.has-detail-panel {
-    grid-template-columns: var(--display-meta-menu-nav-width)
-        var(--display-meta-menu-detail-width);
+.rail-menu-detail-body--format .formula-format-option-icon {
+    width: 0.8rem;
+    height: 0.8rem;
 }
 
-.column-rail-menu-panel.list-only {
-    grid-template-columns: var(--display-meta-menu-nav-width);
+.rail-menu-detail-body--format .formula-style-row {
+    grid-template-columns: 2.8rem minmax(0, 1fr);
+    gap: 0.32rem;
 }
 
-.column-rail-menu-panel .formula-style-menu-panel {
-    grid-column: 1 / -1;
-    width: min(15.25rem, 100%);
+.rail-menu-detail-body--format .formula-style-segment {
+    min-height: 1.62rem;
+    padding: 0.24rem 0.4rem;
+}
+
+.rail-menu-detail-body--style {
+    width: min(var(--display-style-menu-width), calc(100vw - 3rem));
+}
+
+.rail-menu-detail-body--style .formula-style-menu-panel {
+    width: 100%;
     padding: 0.22rem 0.24rem;
     border: 0;
     border-radius: calc(var(--menu-item-radius) + 0.06rem);
@@ -1038,69 +1066,14 @@ textarea {
     min-width: 0;
     gap: 0.28rem;
     align-content: start;
-    justify-self: start;
 }
 
-.column-rail-menu-panel.column-rail-menu-panel--style .formula-style-menu-panel {
-    width: 100%;
-}
-
-.column-rail-menu-panel .formula-format-menu-list {
-    grid-column: 1;
-    gap: 0.12rem;
-    padding: 0.04rem;
-    border-radius: calc(var(--menu-item-radius) + 0.06rem);
-    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
-    align-content: start;
-}
-
-.column-rail-menu-panel .formula-format-menu-panel {
-    grid-column: 2;
-    border-radius: calc(var(--menu-item-radius) + 0.06rem);
-    width: min(var(--display-meta-menu-detail-width), 100%);
-    min-width: 0;
-    padding: 0.18rem 0.22rem;
-    gap: 0.22rem;
-    overflow: hidden;
-    align-content: start;
-    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
-}
-
-.column-rail-menu-panel .formula-format-menu-list:only-child {
-    grid-column: 1 / -1;
-}
-
-.column-rail-menu-panel .formula-format-option {
-    min-height: var(--menu-item-min-height);
-    gap: 0.36rem;
-}
-
-.column-rail-menu-panel .formula-format-option.is-selected {
-    background: var(--menu-active-bg);
-    color: var(--menu-active-ink);
-}
-
-.column-rail-menu-panel .formula-format-option-icon {
-    width: 0.8rem;
-    height: 0.8rem;
-}
-
-.column-rail-menu-panel .formula-format-panel-title {
-    font-size: 0.72rem;
-    color: var(--chrome-soft);
-}
-
-.column-rail-menu-panel .formula-format-field {
-    min-height: 1.34rem;
-    padding: 0.16rem 0.22rem;
-}
-
-.column-rail-menu-panel .formula-style-row {
+.rail-menu-detail-body--style .formula-style-row {
     grid-template-columns: 2.8rem minmax(0, 1fr);
     gap: 0.32rem;
 }
 
-.column-rail-menu-panel .formula-style-segment {
+.rail-menu-detail-body--style .formula-style-segment {
     min-height: 1.62rem;
     padding: 0.24rem 0.4rem;
 }
@@ -3040,9 +3013,6 @@ textarea {
 
 .formula-format-menu {
     position: fixed;
-    display: grid;
-    grid-template-columns: var(--display-meta-menu-nav-width);
-    gap: 0.32rem;
     padding: var(--menu-surface-padding);
     border: var(--menu-surface-border);
     border-radius: var(--menu-surface-radius);
@@ -3064,7 +3034,15 @@ textarea {
     pointer-events: auto;
 }
 
-.formula-format-menu.has-detail-panel {
+.formula-format-layout {
+    display: grid;
+    grid-template-columns: var(--display-meta-menu-nav-width);
+    gap: 0.32rem;
+    width: fit-content;
+    align-content: start;
+}
+
+.formula-format-layout.has-detail-panel {
     grid-template-columns: var(--display-meta-menu-nav-width)
         var(--display-meta-menu-detail-width);
 }
