@@ -1,4 +1,4 @@
-import type { CSSProperties, MutableRefObject } from "react";
+import { useRef, type CSSProperties, type MutableRefObject } from "react";
 
 import { AgGridReact } from "ag-grid-react";
 import {
@@ -36,14 +36,15 @@ type TableStageProps = {
   columnHasLocalConfig: boolean[];
   showSelectionRing: boolean;
   selectionRingRef: MutableRefObject<HTMLDivElement | null>;
+  isSelectionRingTransitioning: boolean;
   suppressAgHeaderFocus: boolean;
   overlayOwnsGridHeader: boolean;
   handleHeaderOverlaySelect: (rowNumber: number, colIndex: number) => void;
   handleHeaderOverlayKeyDown: (event: KeyboardEvent, rowNumber: number, colIndex: number) => void;
   handleColumnRailSelect: (colIndex: number) => void;
   handleColumnRailMenuOpen: (colIndex: number, anchorEl: HTMLElement) => void;
-  handleRowRailSelect: (rowNumber: number, rowPath: string | null) => void;
-  handleRowRailMenuOpen: (rowNumber: number, rowPath: string, anchorEl: HTMLElement) => void;
+  handleRowRailSelect: (rowNumber: number, area: "header" | "body") => void;
+  handleRowRailMenuOpen: (rowNumber: number, anchorEl: HTMLElement) => void;
   handleGridReady: (event: GridReadyEvent<GridRow>) => void;
   handleFirstDataRendered: (event: FirstDataRenderedEvent<GridRow>) => void;
   handleModelUpdated: (event: ModelUpdatedEvent<GridRow>) => void;
@@ -102,6 +103,7 @@ export default function TableStage({
   columnHasLocalConfig,
   showSelectionRing,
   selectionRingRef,
+  isSelectionRingTransitioning,
   suppressAgHeaderFocus,
   overlayOwnsGridHeader,
   handleHeaderOverlaySelect,
@@ -288,7 +290,7 @@ export default function TableStage({
                   height: `${row.height}px`,
                 }}
                   type="button"
-                  onClick={() => handleRowRailSelect(row.number, null)}
+                  onClick={() => handleRowRailSelect(row.number, "header")}
                 >
                   {row.number}
                 </button>
@@ -302,8 +304,12 @@ export default function TableStage({
             >
               {rowIndexMetrics.map((row) => (
                 <div
-                  key={`row-index-${row.rowPath}`}
-                  className={selectedRowNumber === row.number ? "row-index-cell is-active" : "row-index-cell"}
+                  key={`row-index-${row.rowKey}`}
+                  className={
+                    selectedRowNumber === row.number
+                      ? "row-index-cell is-active"
+                      : "row-index-cell"
+                  }
                   style={{
                     top: `${row.top}px`,
                     height: `${row.height}px`,
@@ -311,10 +317,10 @@ export default function TableStage({
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    handleRowRailMenuOpen(row.number, row.rowPath, event.currentTarget);
+                    handleRowRailMenuOpen(row.number, event.currentTarget);
                   }}
                 >
-                  <button type="button" className="row-index-main" onClick={() => handleRowRailSelect(row.number, row.rowPath)}>
+                  <button type="button" className="row-index-main" onClick={() => handleRowRailSelect(row.number, "body")}>
                     {row.number}
                   </button>
                   <button
@@ -323,7 +329,7 @@ export default function TableStage({
                     aria-label={`Open row ${row.number} menu`}
                     onClick={(event) => {
                       event.stopPropagation();
-                      handleRowRailMenuOpen(row.number, row.rowPath, requireRailAnchor(event.currentTarget, ".row-index-cell"));
+                      handleRowRailMenuOpen(row.number, requireRailAnchor(event.currentTarget, ".row-index-cell"));
                     }}
                   >
                     <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
@@ -339,10 +345,32 @@ export default function TableStage({
 
       <div className="grid-shell">
         {showSelectionRing ? (
-          <div ref={selectionRingRef} className="persistent-selection-ring is-hidden" aria-hidden="true" />
+          <div
+            ref={selectionRingRef}
+            className={isSelectionRingTransitioning ? "persistent-selection-ring is-hidden is-structural-transition" : "persistent-selection-ring is-hidden"}
+            aria-hidden="true"
+          />
         ) : null}
         {headerOverlayHeight > 0 ? (
           <>
+            <div
+              className="header-matrix-base header-matrix-base--center"
+              style={
+                {
+                  height: `${headerOverlayHeight}px`,
+                  "--header-overlay-pinned-width": `${Math.max(0, pinnedHeaderWidth)}px`,
+                } as CSSProperties
+              }
+              aria-hidden="true"
+            />
+            <div
+              className="header-matrix-base header-matrix-base--pinned"
+              style={{
+                height: `${headerOverlayHeight}px`,
+                width: `${Math.max(0, pinnedHeaderWidth)}px`,
+              }}
+              aria-hidden="true"
+            />
             <div
               className="header-matrix-overlay header-matrix-overlay--center"
               style={
@@ -394,7 +422,7 @@ export default function TableStage({
               resizable: false,
               suppressMovable: true,
             }}
-            getRowId={(params) => params.data.__rowPath}
+            getRowId={(params) => params.data.__rowKey}
             suppressMovableColumns
             suppressDragLeaveHidesColumns
             suppressColumnVirtualisation

@@ -185,11 +185,7 @@ function computeHeaderDisplayRows(sheet: DocumentState["sheets"][number]): strin
         rowLabels.push(label);
         continue;
       }
-      if (rowIndex === depth - 1) {
-        rowLabels.push(sheet.colLabels[colIndex] ?? `C${colIndex + 1}`);
-      } else {
-        rowLabels.push("");
-      }
+      rowLabels.push("");
     }
     matrix.push(rowLabels);
   }

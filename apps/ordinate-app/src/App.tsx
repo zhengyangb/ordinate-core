@@ -17,6 +17,7 @@ import OverlayPortals from "./components/OverlayPortals";
 import SheetParseErrorPanel from "./components/SheetParseErrorPanel";
 import TableStage from "./components/TableStage";
 import { createAgGridAdapter } from "./grid/agGridAdapter";
+import { useStructureTransition } from "./hooks/useStructureTransition";
 import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
 import { resolveUiLocale } from "./i18n/messages";
 import { useEditorStore } from "./store/editorStore";
@@ -156,7 +157,7 @@ export default function App() {
   const [railMenuOpen, setRailMenuOpen] = useState(false);
   const [railMenuPosition, setRailMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
   const [openRailMenuTarget, setOpenRailMenuTarget] = useState<
-    { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number; rowPath: string | null } | null
+    { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number } | null
   >(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
@@ -167,6 +168,15 @@ export default function App() {
   const [columnMetrics, setColumnMetrics] = useState<ColumnMetric[]>([]);
 
   const gridViewportAdapter = useMemo(() => createAgGridAdapter(), []);
+  const {
+    structureTransitionScope,
+    isSelectionRingTransitioning,
+    isStructureVeilVisible,
+    startRowTransition,
+    startColumnTransition,
+    clearRowTransition,
+    clearColumnTransition,
+  } = useStructureTransition();
   const selectionRingSyncRafRef = useRef<number | null>(null);
   const autoPanRafRef = useRef<number | null>(null);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
@@ -257,10 +267,10 @@ export default function App() {
     if (sheetColCount === 0) return [] as string[];
     const leafRow = headerMatrix[headerMatrix.length - 1] ?? [];
     return Array.from({ length: sheetColCount }, (_, colIndex) => {
-      const label = leafRow[colIndex] ?? currentSheetState?.colLabels[colIndex] ?? `C${colIndex + 1}`;
+      const label = leafRow[colIndex] ?? "";
       return compactColLabel(label);
     });
-  }, [headerMatrix, currentSheetState, sheetColCount]);
+  }, [headerMatrix, sheetColCount]);
 
   const headerSemanticLabels = useMemo(() => {
     if (sheetColCount === 0) return [] as string[];
@@ -336,7 +346,9 @@ export default function App() {
     if (ring) {
       ring.classList.add("is-hidden");
     }
-  }, [activeSheet, mode]);
+    clearRowTransition();
+    clearColumnTransition();
+  }, [activeSheet, mode, clearRowTransition, clearColumnTransition]);
 
   useEffect(() => {
     if (!isActiveSheetBlocked) return;
@@ -735,6 +747,7 @@ export default function App() {
         const rowLeaf = leafLabel(rowPath);
 
         const item: GridRow = {
+          __rowKey: `r${absoluteRowNumber}`,
           __rowPath: rowPath,
           __absoluteRowNumber: absoluteRowNumber,
           __depth: depth,
@@ -791,17 +804,16 @@ export default function App() {
     return map;
   }, [rowData]);
 
-  const rowPathToDisplayedIndex = useMemo(() => {
-    const map = new Map<string, number>();
-    rowData.forEach((row, index) => map.set(row.__rowPath, index));
-    return map;
-  }, [rowData]);
-
   const absoluteRowToDisplayedIndex = useMemo(() => {
     const map = new Map<number, number>();
     rowData.forEach((row, index) => map.set(row.__absoluteRowNumber, index));
     return map;
   }, [rowData]);
+
+  const resolveAbsoluteRowPath = useCallback(
+    (rAbs: number): string | null => (absoluteRowPathLookup.has(rAbs) ? absoluteRowPathLookup.get(rAbs) ?? "" : null),
+    [absoluteRowPathLookup],
+  );
 
 
   useEffect(() => {
@@ -894,18 +906,7 @@ export default function App() {
         return;
       }
 
-      const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
-      if (!rowPath) {
-        selectionRingCellRef.current = null;
-        selectionRingCellKeyRef.current = null;
-        ring.classList.add("is-hidden");
-        selectionRingRectRef.current = null;
-        return;
-      }
-
-      const displayedRowIndex =
-        absoluteRowToDisplayedIndex.get(selectedCell.logical.rAbs) ??
-        rowPathToDisplayedIndex.get(rowPath);
+      const displayedRowIndex = absoluteRowToDisplayedIndex.get(selectedCell.logical.rAbs);
       if (displayedRowIndex == null) {
         selectionRingCellRef.current = null;
         selectionRingCellKeyRef.current = null;
@@ -919,7 +920,7 @@ export default function App() {
         root,
         displayedRowIndex,
         colId,
-        rowPath,
+        rowKey: `r${selectedCell.logical.rAbs}`,
         cachedCell: selectionRingCellRef.current,
         cachedKey: selectionRingCellKeyRef.current,
       });
@@ -952,7 +953,7 @@ export default function App() {
         selectionRingRectRef.current = nextRect;
       }
     },
-    [mode, isActiveSheetBlocked, selectedCell, absoluteRowPathLookup, absoluteRowToDisplayedIndex, rowPathToDisplayedIndex, isGridApiAlive],
+    [mode, isActiveSheetBlocked, selectedCell, resolveAbsoluteRowPath, absoluteRowToDisplayedIndex, isGridApiAlive],
   );
 
   const scheduleSelectionRingSync = useCallback(() => {
@@ -1286,7 +1287,7 @@ export default function App() {
   );
 
   const handleRowRailMenuOpen = useCallback(
-    (rowNumber: number, rowPath: string, anchorEl: HTMLElement) => {
+    (rowNumber: number, anchorEl: HTMLElement) => {
       if (mode === "source" || isActiveSheetBlocked) return;
       railMenuAnchorRef.current = anchorEl;
       const anchorRect = anchorEl.getBoundingClientRect();
@@ -1294,7 +1295,7 @@ export default function App() {
         top: anchorRect.bottom + FLOATING_MENU_GAP,
         left: anchorRect.left,
       });
-      setOpenRailMenuTarget({ kind: "row", rowNumber, rowPath });
+      setOpenRailMenuTarget({ kind: "row", rowNumber });
       setRailMenuOpen(true);
       setFormulaInputMode("read");
       setFormulaBarSnapshot(null);
@@ -1303,17 +1304,18 @@ export default function App() {
   );
 
   const handleRowRailSelect = useCallback(
-    (rowNumber: number, rowPath: string | null) => {
+    (rowNumber: number, area: "header" | "body") => {
       if (mode === "source" || isActiveSheetBlocked) return;
       if (defaultBodyRailColIndex == null) return;
       const targetCol = defaultBodyRailColIndex;
       const colId = toColFieldId(targetCol);
-      if (rowPath == null) {
+      if (area === "header") {
         if (headerRowCount === 0) return;
         const clampedHeaderRow = Math.max(1, Math.min(rowNumber, headerRowCount));
         applyHeaderSelection(clampedHeaderRow, targetCol);
         focusHeaderOverlayCell(clampedHeaderRow, targetCol);
       } else {
+        const rowPath = resolveAbsoluteRowPath(rowNumber);
         setSelectedCell({
           area: "body",
           logical: {
@@ -1332,7 +1334,7 @@ export default function App() {
         active.blur();
       }
     },
-    [mode, isActiveSheetBlocked, defaultBodyRailColIndex, headerRowCount, applyHeaderSelection, focusHeaderOverlayCell, closeRailMenu],
+    [mode, isActiveSheetBlocked, defaultBodyRailColIndex, headerRowCount, applyHeaderSelection, focusHeaderOverlayCell, closeRailMenu, resolveAbsoluteRowPath],
   );
 
   useEffect(() => {
@@ -1607,7 +1609,6 @@ export default function App() {
         sheetColCount,
         headerColCount,
         headerSemanticLabels,
-        absoluteRowPathLookup,
       }),
     [
       currentSheet,
@@ -1618,7 +1619,6 @@ export default function App() {
       sheetColCount,
       headerColCount,
       headerSemanticLabels,
-      absoluteRowPathLookup,
     ],
   );
 
@@ -1635,16 +1635,14 @@ export default function App() {
 
   const autoPanTarget = useMemo<AutoPanTarget | null>(() => {
     if (!formulaBarData || selectedCell?.area !== "body") return null;
-    const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
-    if (!rowPath) return null;
-    const displayedRowIndex = rowPathToDisplayedIndex.get(rowPath);
+    const displayedRowIndex = absoluteRowToDisplayedIndex.get(selectedCell.logical.rAbs);
     if (displayedRowIndex == null) return null;
     return {
-      key: `${selectedCell.logical.rAbs}:${selectedCell.logical.cAbs}:${rowPath}:${displayedRowIndex}`,
+      key: `${selectedCell.logical.rAbs}:${selectedCell.logical.cAbs}:${displayedRowIndex}`,
       displayedRowIndex,
       colId: selectedCell.colId,
     };
-  }, [Boolean(formulaBarData), selectedCell, absoluteRowPathLookup, rowPathToDisplayedIndex]);
+  }, [Boolean(formulaBarData), selectedCell, absoluteRowToDisplayedIndex]);
   const autoPanTargetKey = autoPanTarget?.key ?? null;
 
   const focusBodyCellAt = useCallback(
@@ -1652,12 +1650,11 @@ export default function App() {
       if (mode !== "table" || isActiveSheetBlocked) return;
       if (!isGridApiAlive(gridApiRef.current)) return;
 
-      const rowPath = absoluteRowPathLookup.get(rAbs);
-      if (!rowPath) return;
       const displayedRowIndex = absoluteRowToDisplayedIndex.get(rAbs);
       if (displayedRowIndex == null) return;
 
       const colId = toColFieldId(cAbs);
+      const rowPath = resolveAbsoluteRowPath(rAbs);
       setSelectedCell({
         area: "body",
         logical: {
@@ -1673,19 +1670,17 @@ export default function App() {
         gridApiRef.current?.setFocusedCell(displayedRowIndex, colId);
       });
     },
-    [mode, isActiveSheetBlocked, absoluteRowPathLookup, absoluteRowToDisplayedIndex, isGridApiAlive],
+    [mode, isActiveSheetBlocked, resolveAbsoluteRowPath, absoluteRowToDisplayedIndex, isGridApiAlive],
   );
 
   const focusSelectedBodyCell = useCallback(() => {
     if (mode !== "table" || isActiveSheetBlocked) return;
     if (!selectedCell || selectedCell.area !== "body") return;
     if (!isGridApiAlive(gridApiRef.current)) return;
-    const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(selectedCell.logical.rAbs);
-    if (!rowPath) return;
-    const displayedRowIndex = rowPathToDisplayedIndex.get(rowPath);
+    const displayedRowIndex = absoluteRowToDisplayedIndex.get(selectedCell.logical.rAbs);
     if (displayedRowIndex == null) return;
     gridApiRef.current.setFocusedCell(displayedRowIndex, selectedCell.colId);
-  }, [mode, isActiveSheetBlocked, selectedCell, absoluteRowPathLookup, rowPathToDisplayedIndex, isGridApiAlive]);
+  }, [mode, isActiveSheetBlocked, selectedCell, absoluteRowToDisplayedIndex, isGridApiAlive]);
 
   const handleHeaderOverlayKeyDown = useCallback(
     (keyboardEvent: KeyboardEvent, rowNumber: number, colIndex: number) => {
@@ -1964,6 +1959,7 @@ export default function App() {
     }
     const rowIndex = side === "above" ? rowNumber - 1 : rowNumber;
     const nextRowNumber = side === "above" ? rowNumber : rowNumber + 1;
+    startRowTransition("insert", nextRowNumber);
     insertRow(activeSheet, rowIndex);
     closeRailMenu();
     setSelectedColumnIndex(null);
@@ -1980,7 +1976,7 @@ export default function App() {
     window.requestAnimationFrame(() => {
       focusBodyCellAt(nextRowNumber, defaultBodyRailColIndex);
     });
-  }, [activeSheet, defaultBodyRailColIndex, insertRow, closeRailMenu, focusBodyCellAt]);
+  }, [activeSheet, defaultBodyRailColIndex, startRowTransition, insertRow, closeRailMenu, focusBodyCellAt]);
 
   const handleDeleteRow = useCallback((rowNumber: number) => {
     if (!activeSheet) {
@@ -1990,6 +1986,10 @@ export default function App() {
       throw new Error("row deletion requires at least one selectable column");
     }
     const bodyRowCount = currentSheet?.values.length ?? 0;
+    const nextRowNumber = bodyRowCount <= 1 ? null : rowNumber < headerRowCount + bodyRowCount ? rowNumber : rowNumber - 1;
+    if (nextRowNumber != null) {
+      startRowTransition("delete", nextRowNumber);
+    }
     deleteRow(activeSheet, rowNumber - 1);
     closeRailMenu();
     setFormulaInputMode("read");
@@ -1997,7 +1997,9 @@ export default function App() {
       clearActiveSelection();
       return;
     }
-    const nextRowNumber = rowNumber < headerRowCount + bodyRowCount ? rowNumber : rowNumber - 1;
+    if (nextRowNumber == null) {
+      throw new Error("row deletion expected a next row number");
+    }
     setSelectedColumnIndex(null);
     setSelectedCell({
       area: "body",
@@ -2011,24 +2013,26 @@ export default function App() {
     window.requestAnimationFrame(() => {
       focusBodyCellAt(nextRowNumber, defaultBodyRailColIndex);
     });
-  }, [activeSheet, defaultBodyRailColIndex, currentSheet, deleteRow, closeRailMenu, clearActiveSelection, headerRowCount, focusBodyCellAt]);
+  }, [activeSheet, defaultBodyRailColIndex, currentSheet, startRowTransition, deleteRow, closeRailMenu, clearActiveSelection, headerRowCount, focusBodyCellAt]);
 
   const handleInsertColumn = useCallback((colIndex: number, side: "left" | "right") => {
     if (!activeSheet) {
       throw new Error("column insertion requires an active sheet");
     }
     const nextColIndex = side === "left" ? colIndex : colIndex + 1;
+    startColumnTransition("insert");
     insertColumn(activeSheet, nextColIndex);
     closeRailMenu();
     setSelectedCell(null);
     setSelectedColumnIndex(nextColIndex);
     setFormulaInputMode("read");
-  }, [activeSheet, insertColumn, closeRailMenu]);
+  }, [activeSheet, startColumnTransition, insertColumn, closeRailMenu]);
 
   const handleDeleteColumn = useCallback((colIndex: number) => {
     if (!activeSheet) {
       throw new Error("column deletion requires an active sheet");
     }
+    startColumnTransition("delete");
     deleteColumn(activeSheet, colIndex);
     closeRailMenu();
     setSelectedCell(null);
@@ -2039,7 +2043,7 @@ export default function App() {
       setSelectedColumnIndex(null);
     }
     setFormulaInputMode("read");
-  }, [activeSheet, deleteColumn, closeRailMenu, sheetColCount, headerColCount]);
+  }, [activeSheet, startColumnTransition, deleteColumn, closeRailMenu, sheetColCount, headerColCount]);
 
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -2102,7 +2106,15 @@ export default function App() {
             <textarea value={sourceText} onChange={(event) => setSourceText(event.target.value)} spellCheck={false} />
           </section>
         ) : (
-          <section className="workspace-shell">
+          <section
+            className={
+              isStructureVeilVisible
+                ? structureTransitionScope === "column"
+                  ? "workspace-shell is-structure-transition is-column-transition"
+                  : "workspace-shell is-structure-transition is-row-transition"
+                : "workspace-shell"
+            }
+          >
             {shouldRenderGrid ? (
               <TableStage
                 tableStageClassName={tableStageClassName}
@@ -2130,6 +2142,7 @@ export default function App() {
                 overlayOwnsGridHeader={headerOverlayRows > 0}
                 showSelectionRing={mode === "table" && !isActiveSheetBlocked && selectedCell?.area === "body"}
                 selectionRingRef={selectionRingRef}
+                isSelectionRingTransitioning={isSelectionRingTransitioning}
                 handleHeaderOverlaySelect={handleHeaderOverlaySelect}
                 handleHeaderOverlayKeyDown={handleHeaderOverlayKeyDown}
                 handleColumnRailSelect={handleColumnRailSelect}

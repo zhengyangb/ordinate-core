@@ -75,7 +75,7 @@ export function createAgGridAdapter(): GridViewportAdapter {
         maxBottom = Math.max(maxBottom, top + height);
 
         metrics.push({
-          rowPath: rowNode.data.__rowPath,
+          rowKey: rowNode.data.__rowKey,
           number: rowNode.data.__absoluteRowNumber,
           top,
           height,

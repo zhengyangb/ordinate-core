@@ -294,9 +294,6 @@ export function buildHeaderMatrix(
   const matrixDepth = headerRowCount;
   return Array.from({ length: matrixDepth }, (_, rowIndex) =>
     Array.from({ length: sheetColCount }, (_, colIndex) => {
-      if (rowIndex === matrixDepth - 1) {
-        return currentSheetState.colLabels[colIndex] ?? currentSheet?.colLabels[colIndex] ?? `C${colIndex + 1}`;
-      }
       return "";
     }),
   );
@@ -345,22 +342,21 @@ export function buildColumnRailMenu(
 
 export function buildRowRailMenu(
   rowNumber: number | null,
-  rowPath: string | null,
 ): RailMenuView | null {
-  if (rowNumber == null || rowPath == null) {
+  if (rowNumber == null) {
     return null;
   }
   return {
     kind: "row",
     rowNumber,
-    rowPath,
+    rowPath: null,
   };
 }
 
 export function buildRailMenu(
   target:
     | { kind: "column"; colIndex: number }
-    | { kind: "row"; rowNumber: number; rowPath: string | null }
+    | { kind: "row"; rowNumber: number }
     | null,
   sheetColCount: number,
   headerColCount: number,
@@ -371,7 +367,7 @@ export function buildRailMenu(
   if (target.kind === "column") {
     return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheetPresentation, columnHasLocalConfig);
   }
-  return buildRowRailMenu(target.rowNumber, target.rowPath);
+  return buildRowRailMenu(target.rowNumber);
 }
 
 export function resolveRailMenuWidthPx(kind: RailMenuView["kind"]): number {

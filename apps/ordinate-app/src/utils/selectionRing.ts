@@ -7,7 +7,7 @@ type SelectionRingCellLookup = {
   root: HTMLElement;
   displayedRowIndex: number;
   colId: string;
-  rowPath: string;
+  rowKey: string;
   cachedCell: HTMLElement | null;
   cachedKey: string | null;
 };
@@ -21,19 +21,19 @@ type SelectionRingRectParams = {
   gridRowHeight: number;
 };
 
-export function buildSelectionRingTargetKey(displayedRowIndex: number, colId: string, rowPath: string): string {
-  return `${displayedRowIndex}:${colId}:${rowPath}`;
+export function buildSelectionRingTargetKey(displayedRowIndex: number, colId: string, rowKey: string): string {
+  return `${displayedRowIndex}:${colId}:${rowKey}`;
 }
 
 export function resolveSelectionRingCell({
   root,
   displayedRowIndex,
   colId,
-  rowPath,
+  rowKey,
   cachedCell,
   cachedKey,
 }: SelectionRingCellLookup): { cell: HTMLElement | null; key: string | null } {
-  const nextKey = buildSelectionRingTargetKey(displayedRowIndex, colId, rowPath);
+  const nextKey = buildSelectionRingTargetKey(displayedRowIndex, colId, rowKey);
 
   if (cachedCell && cachedKey === nextKey && cachedCell.isConnected) {
     return { cell: cachedCell, key: nextKey };
@@ -41,9 +41,9 @@ export function resolveSelectionRingCell({
 
   const byRowIndexSelector = `.ag-row[row-index="${displayedRowIndex}"] .ag-cell[col-id="${colId}"]`;
   const targetCellFromRowIndex = root.querySelector<HTMLElement>(byRowIndexSelector);
-  const byRowPathSelector = `.ag-row[row-id="${CSS.escape(rowPath)}"] .ag-cell[col-id="${colId}"]`;
-  const targetCellFromRowPath = root.querySelector<HTMLElement>(byRowPathSelector);
-  const cell = targetCellFromRowIndex ?? targetCellFromRowPath;
+  const byRowKeySelector = `.ag-row[row-id="${CSS.escape(rowKey)}"] .ag-cell[col-id="${colId}"]`;
+  const targetCellFromRowKey = root.querySelector<HTMLElement>(byRowKeySelector);
+  const cell = targetCellFromRowIndex ?? targetCellFromRowKey;
 
   return {
     cell,

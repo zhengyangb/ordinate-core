@@ -165,6 +165,19 @@
     --display-meta-menu-panel-height: 9.6rem;
     --display-style-menu-width: 14.2rem;
     --formula-style-menu-width: 14rem;
+    --structure-flash-row-bg:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, oklch(100% 0 0) 16%, transparent),
+            color-mix(in oklab, var(--accent-soft) 36%, transparent) 32%,
+            color-mix(in oklab, var(--sheet-surface) 54%, transparent)
+        );
+    --structure-flash-column-bg:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, oklch(100% 0 0) 44%, transparent),
+            color-mix(in oklab, oklch(100% 0 0) 18%, transparent)
+        );
 }
 
 :root[data-theme="light"] {
@@ -280,6 +293,19 @@
     );
     --formula-glass-gloss-top: oklch(100% 0 0 / 0.1);
     --formula-glass-gloss-spot: oklch(100% 0 0 / 0.06);
+    --structure-flash-row-bg:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, oklch(100% 0 0) 12%, transparent),
+            color-mix(in oklab, var(--accent-soft) 40%, transparent) 32%,
+            color-mix(in oklab, var(--toolbar-pill) 52%, transparent)
+        );
+    --structure-flash-column-bg:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, oklch(100% 0 0) 32%, transparent),
+            color-mix(in oklab, oklch(100% 0 0) 12%, transparent)
+        );
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1357,6 +1383,27 @@ textarea {
     padding: 0;
 }
 
+.workspace-shell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 20;
+}
+
+.workspace-shell.is-structure-transition::after {
+    animation: workspace-structure-flash 220ms var(--ease-out-expo);
+}
+
+.workspace-shell.is-row-transition::after {
+    background: var(--structure-flash-row-bg);
+}
+
+.workspace-shell.is-column-transition::after {
+    background: var(--structure-flash-column-bg);
+}
+
 .source-shell {
     display: block;
     padding: 0;
@@ -1412,6 +1459,7 @@ textarea {
     border: 0;
     border-radius: 0;
     background: var(--sheet-surface);
+    position: relative;
 }
 
 .table-stage.has-scroll-y {
@@ -1894,11 +1942,19 @@ textarea {
     border: var(--selection-ring-width) solid var(--selection-ring-color);
     border-radius: var(--selection-ring-radius);
     box-shadow:
-        0 0 0 1px color-mix(in oklab, var(--sheet-canvas) 68%, transparent),
+        0 0 0 1px color-mix(in oklab, var(--workspace-frame) 68%, transparent),
         0 0 0 0.5px color-mix(in oklab, var(--accent-strong) 38%, transparent);
     pointer-events: none;
     z-index: 6;
     opacity: 1;
+}
+
+.persistent-selection-ring.is-structural-transition {
+    transition:
+        transform 220ms var(--ease-out-quint),
+        width 220ms var(--ease-out-quint),
+        height 220ms var(--ease-out-quint),
+        opacity 140ms linear;
 }
 
 .persistent-selection-ring.is-hidden {
@@ -1914,6 +1970,29 @@ textarea {
     top: 0;
     z-index: 8;
     pointer-events: none;
+}
+
+.header-matrix-base {
+    position: absolute;
+    top: 0;
+    pointer-events: none;
+}
+
+.header-matrix-base--center {
+    inset-inline: 0;
+    z-index: 6;
+    clip-path: inset(0 0 0 var(--header-overlay-pinned-width, 0px));
+    background: var(--sheet-header-row);
+    box-shadow: inset 0 -1px 0 var(--sheet-grid);
+}
+
+.header-matrix-base--pinned {
+    left: 0;
+    z-index: 7;
+    background: var(--sheet-header-col);
+    box-shadow:
+        inset -1px 0 0 var(--sheet-grid),
+        inset 0 -1px 0 var(--sheet-grid);
 }
 
 .header-matrix-overlay--center {
@@ -2138,6 +2217,18 @@ textarea {
     transition:
         background-color 160ms var(--ease-out-quart),
         color 160ms var(--ease-out-quart);
+}
+
+@keyframes workspace-structure-flash {
+    0% {
+        opacity: 0;
+    }
+    30% {
+        opacity: 0.96;
+    }
+    100% {
+        opacity: 0;
+    }
 }
 
 .data-cell,

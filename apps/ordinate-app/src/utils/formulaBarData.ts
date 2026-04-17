@@ -13,6 +13,7 @@ type StateCell = CellTextViewSource;
 
 type StateSheet = {
   headerRowCount?: number;
+  bodyStart?: number;
   cells: StateCell[][];
 };
 
@@ -30,7 +31,6 @@ type BuildFormulaBarDataParams = {
   sheetColCount: number;
   headerColCount: number;
   headerSemanticLabels: string[];
-  absoluteRowPathLookup: Map<number, string>;
 };
 
 function resolveCellTextView(cell: StateCell | undefined, fallbackCellText: string, mode: "input" | "body") {
@@ -54,7 +54,6 @@ export function buildFormulaBarData({
   sheetColCount,
   headerColCount,
   headerSemanticLabels,
-  absoluteRowPathLookup,
 }: BuildFormulaBarDataParams): FormulaBarData | null {
   if (!currentSheet || !currentSheetState || !selectedCell || isActiveSheetBlocked) return null;
 
@@ -85,11 +84,10 @@ export function buildFormulaBarData({
     };
   }
 
-  const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(rowNumber);
-  if (!rowPath) return null;
-
-  const rowRel = currentSheet.rowPaths.indexOf(rowPath);
-  if (rowRel < 0) return null;
+  const headerRowCount = currentSheetState.headerRowCount ?? 0;
+  const rowRel = rowNumber - headerRowCount - 1;
+  if (rowRel < 0 || rowRel >= currentSheet.rowPaths.length) return null;
+  const rowPath = currentSheet.rowPaths[rowRel] ?? "";
 
   const rowLeaf = leafLabel(rowPath);
   const presentedCell = currentSheetPresentation?.cells?.[rowRel]?.[colIndex];

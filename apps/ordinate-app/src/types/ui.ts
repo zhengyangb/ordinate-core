@@ -2,6 +2,7 @@ import type { Diagnostic } from "@ordinate/core";
 import type { ReactNode } from "react";
 
 export type GridRow = {
+  __rowKey: string;
   __rowPath: string;
   __absoluteRowNumber: number;
   __depth: number;
@@ -54,7 +55,7 @@ export type DisplayCellView = {
 export type ChromeVisibilityPhase = "visible" | "hiding" | "hidden";
 
 export type RowIndexMetric = {
-  rowPath: string;
+  rowKey: string;
   number: number;
   top: number;
   height: number;
@@ -125,7 +126,7 @@ export type ColumnRailMenuView = {
 export type RowRailMenuView = {
   kind: "row";
   rowNumber: number;
-  rowPath: string;
+  rowPath: string | null;
 };
 
 export type RailMenuView = ColumnRailMenuView | RowRailMenuView;

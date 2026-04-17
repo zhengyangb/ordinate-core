@@ -1,6 +1,7 @@
 import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
 import { getCellTextView, parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
 import { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
+import { renderFormulaExpression } from "./runtime/renderFormula";
 import {
   buildBodyRows,
   buildRowKeys,
@@ -503,6 +504,7 @@ export class SheetState {
     this.nextRowId += 1;
 
     this.rebuildMetadata();
+    this.refreshFormulaSourceTexts();
     this.markAllDirty();
     if (eager) {
       this.recalculate();
@@ -521,6 +523,7 @@ export class SheetState {
     this.cells.splice(rowIndex, 1);
     this.rowIds.splice(rowIndex, 1);
     this.rebuildMetadata();
+    this.refreshFormulaSourceTexts();
     this.markAllDirty();
     if (eager) {
       this.recalculate();
@@ -554,6 +557,7 @@ export class SheetState {
     this.nextColId += 1;
 
     this.rebuildMetadata();
+    this.refreshFormulaSourceTexts();
     this.markAllDirty();
     if (eager) {
       this.recalculate();
@@ -579,6 +583,7 @@ export class SheetState {
     this.columnDisplayMetadata.splice(colIndex, 1);
 
     this.rebuildMetadata();
+    this.refreshFormulaSourceTexts();
     this.markAllDirty();
     if (eager) {
       this.recalculate();
@@ -909,6 +914,25 @@ export class SheetState {
     for (let rAbs = 0; rAbs < this.rowCount; rAbs += 1) {
       for (let c = 0; c < this.colCount; c += 1) {
         this.updateDependenciesForCell(rAbs, c);
+      }
+    }
+  }
+
+  // After structural edits, formula ASTs may be rebased to new row/column positions.
+  // Keep the source-facing formula text in sync with the rebased AST so UI/editor
+  // surfaces do not show stale references until a serialize/parse round-trip.
+  private refreshFormulaSourceTexts() {
+    for (let rAbs = 0; rAbs < this.rowCount; rAbs += 1) {
+      for (let c = 0; c < this.colCount; c += 1) {
+        const cell = this.cells[rAbs][c];
+        if (!cell.body.valid || cell.body.kind !== "formula") {
+          continue;
+        }
+        const exprText =
+          renderFormulaExpression(cell.body.expression, this.rowIdToIndex, this.colIdToIndex) ?? cell.body.expressionText;
+        cell.body.expressionText = exprText;
+        cell.body.inputText = exprText.length > 0 ? `= ${exprText}` : "=";
+        this.updateRowText(rAbs, c, buildCellRawText(cell.body, cell.localDisplay));
       }
     }
   }
