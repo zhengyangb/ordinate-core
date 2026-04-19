@@ -162,6 +162,7 @@ export default function App() {
   const [toolMenuPosition, setToolMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
   const [railMenuOpen, setRailMenuOpen] = useState(false);
   const [railMenuPosition, setRailMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
+  const [isIndexRailsHovered, setIsIndexRailsHovered] = useState(false);
   const [openRailMenuTarget, setOpenRailMenuTarget] = useState<
     { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number; hasChildren: boolean } | null
   >(null);
@@ -717,7 +718,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (!selectedCell && selectedColumnIndex == null) return;
       const interactiveRoot = target?.closest(
-        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, .column-index-main, .column-index-menu-trigger, .row-index-main, .row-index-menu-trigger, .rail-menu, textarea",
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, .column-index-main, .row-index-main, .rail-menu, textarea",
       );
       if (interactiveRoot) return;
       clearActiveSelection();
@@ -1261,6 +1262,10 @@ export default function App() {
     setRailMenuOpen(false);
     setOpenRailMenuTarget(null);
     railMenuAnchorRef.current = null;
+  }, []);
+
+  const handleIndexRailsHoverChange = useCallback((hovering: boolean) => {
+    setIsIndexRailsHovered(hovering);
   }, []);
 
   const handleColumnRailSelect = useCallback(
@@ -1831,6 +1836,8 @@ export default function App() {
     mode === "table"
       ? selectedColumnIndex != null
         ? "visible"
+        : isIndexRailsHovered || railMenuOpen
+          ? "visible"
         : formulaBarData
           ? "visible"
           : formulaBarSnapshot
@@ -2168,6 +2175,7 @@ export default function App() {
                 pinnedHeaderWidth={pinnedHeaderWidth}
                 rowIndexTrackHeight={rowIndexTrackHeight}
                 indexRailsPhase={chromeVisibilityPhase}
+                handleIndexRailsHoverChange={handleIndexRailsHoverChange}
                 rowIndexMetrics={rowIndexMetrics}
                 columnTrackRef={columnTrackRef}
                 rowTrackRef={rowTrackRef}

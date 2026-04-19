@@ -1476,7 +1476,7 @@ textarea {
     opacity: 0;
     transform: translateY(2px);
     filter: saturate(0.94);
-    pointer-events: none;
+    pointer-events: auto;
     transition:
         opacity 220ms var(--ease-out-quint),
         transform 260ms var(--ease-out-quint),
@@ -1490,9 +1490,12 @@ textarea {
     pointer-events: auto;
 }
 
+.index-rail:not(.index-rail--visible) .column-index-track,
+.index-rail:not(.index-rail--visible) .row-index-shell {
+    pointer-events: none;
+}
+
 .table-corner {
-    display: inline-grid;
-    place-items: center;
     justify-self: start;
     align-self: start;
     width: calc(var(--index-rail-width-active) + var(--index-rail-gap));
@@ -1500,26 +1503,6 @@ textarea {
     padding-inline-end: var(--index-rail-gap);
     padding-bottom: var(--index-rail-gap);
     transform: translate(-4px, -4px);
-}
-
-.corner-button {
-    display: inline-grid;
-    place-items: center;
-    width: min(2rem, calc(var(--index-rail-height-active) - 2px));
-    height: min(2rem, calc(var(--index-rail-height-active) - 2px));
-    border: 1px solid var(--index-rail-border);
-    border-radius: 999px;
-    background: var(--index-rail-surface);
-    box-shadow:
-        inset 0 1px 0 var(--index-rail-highlight),
-        0 6px 14px color-mix(in oklab, var(--sheet-ink) 10%, transparent);
-}
-
-.corner-dot {
-    width: 0.75rem;
-    height: 0.75rem;
-    border-radius: 999px;
-    border: 2px solid var(--accent);
 }
 
 .column-index-strip {
@@ -1563,10 +1546,9 @@ textarea {
     top: 0;
     height: 100%;
     display: grid;
-    grid-template-columns: 0.88rem minmax(0, 1fr) 0.82rem;
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
-    gap: 0.08rem;
-    padding-inline: 0.12rem;
+    padding-inline: 0.18rem;
     min-width: 0;
     border-inline-end: 1px solid
         color-mix(in oklab, var(--index-rail-border) 78%, transparent);
@@ -1591,12 +1573,6 @@ textarea {
 
 .column-index-cell.is-active {
     background: color-mix(in oklab, var(--accent-soft) 28%, transparent);
-}
-
-.column-index-left-pad {
-    width: 0.88rem;
-    height: 1px;
-    pointer-events: none;
 }
 
 .column-index-main {
@@ -1670,62 +1646,6 @@ textarea {
 
 .column-index-config-badge circle {
     fill: color-mix(in oklab, currentColor 78%, transparent);
-}
-
-.column-index-menu-trigger {
-    display: inline-grid;
-    place-items: center;
-    flex: 0 0 auto;
-    width: 0.82rem;
-    height: 0.82rem;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: color-mix(in oklab, var(--sheet-soft) 90%, var(--chrome-soft));
-    cursor: pointer;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(2px);
-    transition:
-        opacity 140ms var(--ease-out-quart),
-        transform 140ms var(--ease-out-quart),
-        background-color 160ms var(--ease-out-quart),
-        color 160ms var(--ease-out-quart);
-}
-
-.column-index-menu-trigger:hover {
-    background: color-mix(in oklab, var(--menu-hover-bg) 78%, transparent);
-    color: var(--sheet-ink);
-}
-
-.column-index-menu-trigger:focus-visible {
-    outline: none;
-    background: color-mix(in oklab, var(--menu-hover-bg) 86%, transparent);
-    box-shadow: inset 0 0 0 1px
-        color-mix(in oklab, var(--chrome-border) 78%, transparent);
-}
-
-.column-index-menu-trigger svg {
-    width: 0.5rem;
-    height: 0.5rem;
-}
-
-.column-index-menu-trigger path {
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.4;
-}
-
-.column-index-cell:hover .column-index-menu-trigger,
-.column-index-cell:focus-within .column-index-menu-trigger,
-.column-index-cell.is-active .column-index-menu-trigger {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0);
 }
 
 .column-index-cell.is-active .column-index-primary {
@@ -1863,64 +1783,6 @@ textarea {
 
 .row-index-cell:focus-visible {
     outline: none;
-}
-
-.row-index-menu-trigger {
-    position: absolute;
-    top: 50%;
-    right: 0.04rem;
-    display: inline-grid;
-    place-items: center;
-    width: 0.72rem;
-    height: 0.72rem;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: color-mix(in oklab, var(--sheet-soft) 90%, var(--chrome-soft));
-    cursor: pointer;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-50%) translateX(2px);
-    transition:
-        opacity 140ms var(--ease-out-quart),
-        transform 140ms var(--ease-out-quart),
-        background-color 160ms var(--ease-out-quart),
-        color 160ms var(--ease-out-quart);
-}
-
-.row-index-menu-trigger:hover {
-    background: color-mix(in oklab, var(--menu-hover-bg) 78%, transparent);
-    color: var(--sheet-ink);
-}
-
-.row-index-menu-trigger:focus-visible {
-    outline: none;
-    background: color-mix(in oklab, var(--menu-hover-bg) 86%, transparent);
-    box-shadow: inset 0 0 0 1px
-        color-mix(in oklab, var(--chrome-border) 78%, transparent);
-}
-
-.row-index-menu-trigger svg {
-    width: 0.42rem;
-    height: 0.42rem;
-}
-
-.row-index-menu-trigger path {
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.4;
-}
-
-.row-index-cell:hover .row-index-menu-trigger,
-.row-index-cell:focus-within .row-index-menu-trigger,
-.row-index-cell.is-active .row-index-menu-trigger {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(-50%) translateX(0);
 }
 
 .grid-shell {

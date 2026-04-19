@@ -25,6 +25,7 @@ type TableStageProps = {
   pinnedHeaderWidth: number;
   rowIndexTrackHeight: number;
   indexRailsPhase: ChromeVisibilityPhase;
+  handleIndexRailsHoverChange: (hovering: boolean) => void;
   rowIndexMetrics: RowIndexMetric[];
   columnTrackRef: MutableRefObject<HTMLDivElement | null>;
   rowTrackRef: MutableRefObject<HTMLDivElement | null>;
@@ -92,6 +93,7 @@ export default function TableStage({
   pinnedHeaderWidth,
   rowIndexTrackHeight,
   indexRailsPhase,
+  handleIndexRailsHoverChange,
   rowIndexMetrics,
   columnTrackRef,
   rowTrackRef,
@@ -121,6 +123,7 @@ export default function TableStage({
 }: TableStageProps) {
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
   const selectedRowNumber = selectedCell?.logical.rAbs ?? null;
+  const activeColumnIndex = selectedColumnIndex ?? selectedCell?.logical.cAbs ?? null;
   const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < headerColCount);
   const centerOverlayCells = headerOverlayCells.filter((cell) => cell.startCol >= headerColCount);
   const columnTrackWidth = columnMetrics.length === 0 ? 0 : Math.max(...columnMetrics.map((metric) => metric.left + metric.width));
@@ -128,17 +131,9 @@ export default function TableStage({
   const pinnedColumnMetrics = columnMetrics.filter((metric) => metric.colIndex < headerColCount);
   const centerColumnMetrics = columnMetrics.filter((metric) => metric.colIndex >= headerColCount);
 
-  const requireRailAnchor = (element: HTMLElement, selector: string) => {
-    const anchor = element.closest<HTMLElement>(selector);
-    if (!anchor) {
-      throw new Error(`missing rail anchor for selector ${selector}`);
-    }
-    return anchor;
-  };
-
   const renderColumnRailCell = (metric: ColumnMetric, left: number, pinned: boolean) => {
     const colNumber = metric.colIndex + 1;
-    const isActive = selectedColumnIndex === metric.colIndex;
+    const isActive = activeColumnIndex === metric.colIndex;
     const letters = toColumnLetters(colNumber);
     const hasLocalConfig = columnHasLocalConfig[metric.colIndex] === true;
     return (
@@ -155,7 +150,6 @@ export default function TableStage({
           handleColumnRailMenuOpen(metric.colIndex, event.currentTarget);
         }}
       >
-        <span className="column-index-left-pad" aria-hidden="true" />
         <button
           className="column-index-main"
           type="button"
@@ -173,19 +167,6 @@ export default function TableStage({
               <ColumnConfigGlyph />
             </span>
           ) : null}
-        </button>
-        <button
-          className="column-index-menu-trigger"
-          type="button"
-          aria-label={`Open column ${letters} menu`}
-          onClick={(event) => {
-            event.stopPropagation();
-            handleColumnRailMenuOpen(metric.colIndex, requireRailAnchor(event.currentTarget, ".column-index-cell"));
-          }}
-        >
-          <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-            <path d="M3.2 4.6 6 7.4l2.8-2.8" />
-          </svg>
         </button>
       </div>
     );
@@ -248,13 +229,17 @@ export default function TableStage({
 
   return (
     <div className={tableStageClassName} style={tableStageStyle}>
-      <div className={`table-corner ${railsPhaseClass}`}>
-        <button className="corner-button" type="button" tabIndex={-1} aria-label="Corner placeholder">
-          <span className="corner-dot" />
-        </button>
-      </div>
+      <div
+        className={`table-corner ${railsPhaseClass}`}
+        onMouseEnter={() => handleIndexRailsHoverChange(true)}
+        onMouseLeave={() => handleIndexRailsHoverChange(false)}
+      />
 
-      <div className={`column-index-strip ${railsPhaseClass}`}>
+      <div
+        className={`column-index-strip ${railsPhaseClass}`}
+        onMouseEnter={() => handleIndexRailsHoverChange(true)}
+        onMouseLeave={() => handleIndexRailsHoverChange(false)}
+      >
         <div
           className="column-index-track"
           style={columnTrackWidth > 0 ? { width: `${columnTrackWidth}px` } : undefined}
@@ -275,7 +260,11 @@ export default function TableStage({
         </div>
       </div>
 
-      <div className={`row-index-strip ${railsPhaseClass}`}>
+      <div
+        className={`row-index-strip ${railsPhaseClass}`}
+        onMouseEnter={() => handleIndexRailsHoverChange(true)}
+        onMouseLeave={() => handleIndexRailsHoverChange(false)}
+      >
         <div className="row-index-shell">
           <div
             className={headerIndexMetrics.length > 0 ? "row-index-header-track" : "row-index-header-track is-empty"}
@@ -322,19 +311,6 @@ export default function TableStage({
                 >
                   <button type="button" className="row-index-main" onClick={() => handleRowRailSelect(row.number, "body")}>
                     {row.number}
-                  </button>
-                  <button
-                    type="button"
-                    className="row-index-menu-trigger"
-                    aria-label={`Open row ${row.number} menu`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleRowRailMenuOpen(row.number, requireRailAnchor(event.currentTarget, ".row-index-cell"));
-                    }}
-                  >
-                    <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-                      <path d="M3.2 4.6 6 7.4l2.8-2.8" />
-                    </svg>
                   </button>
                 </div>
               ))}
