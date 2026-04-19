@@ -133,15 +133,15 @@ describe("RFC-0009 incremental conformance", () => {
 | Total || = sum(@[#2:#4,2024:2025]) |  |  |
 `.trim();
 
-  const docSections = () =>
+  const docHierarchy = () =>
     `
 # Sheet
 | Item        || 2024 | 2025 | Total |
 | ----        || ---- | ---- | ----- |
-| [Revenue]   ||      |      |       |
-|   Product A  || 2    | 3    | = sum(@["Revenue"."Product A",2024:2025]) |
-| [Cost]      ||      |      |       |
-|   Materials  || 1    | 1    | = sum(@["Cost"."Materials",2024:2025]) |
+| Revenue   ||      |      |       |
+| * Product A || 2    | 3    | = sum(@["Revenue"."Product A",2024:2025]) |
+| Cost      ||      |      |       |
+| * Materials || 1    | 1    | = sum(@["Cost"."Materials",2024:2025]) |
 | Profit      || = @["Revenue"."Product A",2024] - @["Cost"."Materials",2024] | = @["Revenue"."Product A",2025] - @["Cost"."Materials",2025] | = sum(@[Profit,2024:2025]) |
 `.trim();
 
@@ -203,8 +203,8 @@ describe("RFC-0009 incremental conformance", () => {
     ]);
   });
 
-  it("handles section row paths", () => {
-    assertConformance(docSections(), [
+  it("handles hierarchy row paths", () => {
+    assertConformance(docHierarchy(), [
       ["Sheet", "Revenue.Product A", "2025", "4"],
       ["Sheet", "Cost.Materials", "2024", "2"],
     ]);

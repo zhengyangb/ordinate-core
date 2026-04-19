@@ -79,7 +79,7 @@ export function isVisiblePath(path: string, collapsed: Set<string>): boolean {
 }
 
 function normalizeLabel(text: string): string {
-  return text.replace(/^\[|\]$/g, "").trim().toLowerCase();
+  return text.trim().toLowerCase();
 }
 
 export function shouldHideFirstDataColumn(sheet: SheetEvaluation): boolean {

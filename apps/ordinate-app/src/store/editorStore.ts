@@ -47,18 +47,18 @@ const sampleDocument = `# Management Report
 |             || 2024 | 2024 | 2025 | 2025 |
 | Line Item   || H1   | H2   | H1   | H2   |
 | ----------- || ---- | ---- | ---- | ---- |
-| [Revenue]   ||      |      |      |      |
-|   Product A || 120  | 140  | 160  | 180  |
-|   Product B || 80   | 95   | 105  | 120  |
+| Revenue   ||      |      |      |      |
+| * Product A || 120  | 140  | 160  | 180  |
+| * Product B || 80   | 95   | 105  | 120  |
 | Revenue Total || = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] |
-| [Cost of Sales] ||      |      |      |      |
-|   Materials  || 60   | 70   | 82   | 90   |
-|   Fulfillment|| 20   | 25   | 28   | 35   |
+| Cost of Sales ||      |      |      |      |
+| * Materials || 60   | 70   | 82   | 90   |
+| * Fulfillment || 20   | 25   | 28   | 35   |
 | Cost of Sales Total || = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] | = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] | = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] | = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] |
 | Gross Profit || = @["Revenue Total",_] - @["Cost of Sales Total",_] | = @["Revenue Total",_] - @["Cost of Sales Total",_] | = @["Revenue Total",_] - @["Cost of Sales Total",_] | = @["Revenue Total",_] - @["Cost of Sales Total",_] |
-| [Operating Expense] ||      |      |      |      |
-|   Marketing || 15   | 16   | 20   | 22   |
-|   RND       || 18   | 21   | 24   | 26   |
+| Operating Expense ||      |      |      |      |
+| * Marketing || 15   | 16   | 20   | 22   |
+| * RND || 18   | 21   | 24   | 26   |
 | Opex Total || = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] | = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] | = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] | = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] |
 | Operating Profit || = @["Gross Profit",_] - @["Opex Total",_] | = @["Gross Profit",_] - @["Opex Total",_] | = @["Gross Profit",_] - @["Opex Total",_] | = @["Gross Profit",_] - @["Opex Total",_] |
 | Margin Ratio || = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] |
@@ -81,15 +81,15 @@ const sampleDocument = `# Management Report
 # Regional Breakdown
 | Line Item          || Jan | Feb |
 | ------------------ || --- | --- |
-| [North America]    ||     |     |
-|   US               || 100 | 110 |
-|   Canada           || 40  | 45  |
-| [EMEA]             ||     |     |
-|   Germany          || 60  | 70  |
-|   France           || 35  | 38  |
-| [APAC]             ||     |     |
-|   Japan            || 44  | 50  |
-|   Australia        || 22  | 26  |
+| North America    ||     |     |
+| * US               || 100 | 110 |
+| * Canada           || 40  | 45  |
+| EMEA             ||     |     |
+| * Germany          || 60  | 70  |
+| * France           || 35  | 38  |
+| APAC             ||     |     |
+| * Japan            || 44  | 50  |
+| * Australia        || 22  | 26  |
 | Grand Total        || 301 | 339 |
 
 # Quarterly Cube
@@ -97,9 +97,9 @@ const sampleDocument = `# Management Report
 | Line Item   || H1   | H1   | H2   | H2   | H1   | H1   | H2   | H2   |
 |             || Q1   | Q2   | Q3   | Q4   | Q1   | Q2   | Q3   | Q4   |
 | ----------- || ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
-| [Revenue]   ||      |      |      |      |      |      |      |      |
-|   Product A || 58   | 62   | 66   | 71   | 73   | 76   | 79   | 84   |
-|   Product B || 41   | 44   | 46   | 49   | 52   | 55   | 57   | 61   |
+| Revenue   ||      |      |      |      |      |      |      |      |
+| * Product A || 58   | 62   | 66   | 71   | 73   | 76   | 79   | 84   |
+| * Product B || 41   | 44   | 46   | 49   | 52   | 55   | 57   | 61   |
 | Revenue Total || = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] |
 | Gross Margin % || = @["Revenue Total",_] / 120 | = @["Revenue Total",_] / 130 | = @["Revenue Total",_] / 140 | = @["Revenue Total",_] / 150 | = @["Revenue Total",_] / 160 | = @["Revenue Total",_] / 170 | = @["Revenue Total",_] / 180 | = @["Revenue Total",_] / 190 |
 

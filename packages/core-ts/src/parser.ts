@@ -34,6 +34,21 @@ export interface DisplayControlFrameResult {
   rows: ParsedRow[];
 }
 
+export interface ParsedHierarchyLabel {
+  depth: number;
+  content: string;
+}
+
+export interface DerivedHierarchyRow {
+  rowIndex: number;
+  rawDepth: number;
+  depth: number;
+  content: string;
+  path: string[];
+}
+
+const HIERARCHY_PREFIX_RE = /^(\*+)\s+(.*)$/;
+
 export function parseDocument(text: string): Sheet[] {
   const sheets: Sheet[] = [];
   let currentName: string | null = null;
@@ -183,6 +198,47 @@ export function stripDisplayControlFrame(rows: ParsedRow[]): DisplayControlFrame
 
 export function escapeCellText(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+}
+
+export function parseHierarchyLabel(labelRaw: string): ParsedHierarchyLabel {
+  const trimmed = labelRaw.trim();
+  let depth = 0;
+  let content = trimmed;
+
+  const prefixed = HIERARCHY_PREFIX_RE.exec(trimmed);
+  if (prefixed) {
+    depth = prefixed[1].length;
+    content = prefixed[2].trim();
+  }
+
+  return {
+    depth,
+    content,
+  };
+}
+
+export function deriveHierarchyRows(parsedRows: ParsedRow[], bodyStart: number): DerivedHierarchyRow[] {
+  const derived: DerivedHierarchyRow[] = [];
+  let stack: string[] = [];
+
+  parsedRows.slice(bodyStart).forEach((row, offset) => {
+    const rowIndex = bodyStart + offset;
+    const labelRaw = row.rawCells.length > 0 ? row.rawCells[0] : "";
+    const parsed = parseHierarchyLabel(labelRaw);
+    const depth = Math.min(parsed.depth, stack.length);
+    const nextStack = stack.slice(0, depth);
+    nextStack.push(parsed.content);
+    derived.push({
+      rowIndex,
+      rawDepth: parsed.depth,
+      depth,
+      content: parsed.content,
+      path: nextStack.filter((part) => part.length > 0),
+    });
+    stack = nextStack;
+  });
+
+  return derived;
 }
 
 function splitUnescapedPipes(inner: string): { parts: string[]; errors: string[] } {

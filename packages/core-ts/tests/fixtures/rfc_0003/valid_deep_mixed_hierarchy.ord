@@ -1,0 +1,14 @@
+# Operations
+| Item                 || 2024 | 2025 |
+| -------------------- || ---- | ---- |
+| Revenue            ||      |      |
+| * Product          ||      |      |
+| ** Phone             || 100  | 120  |
+| ** Laptop            || 200  | 240  |
+| * Services           || 40   | 45   |
+| Cost               ||      |      |
+| * Fulfillment      ||      |      |
+| ** Last-mile         || 10   | 12   |
+| ** Packaging         || 4    | 5    |
+| * Materials          || 30   | 36   |
+| Operating Profit     || 96   | 112  |

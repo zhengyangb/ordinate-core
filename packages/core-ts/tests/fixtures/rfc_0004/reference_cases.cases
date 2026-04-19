@@ -54,8 +54,8 @@ expect_value: 13
 # Ref
 | Item                  || V |
 | --------------------- || --- |
-| [Revenue]             ||   |
-|   Phone Revenue       || 20 |
+| Revenue             ||   |
+| * Phone Revenue       || 20 |
 | Operating Income      || = @["Revenue"."Phone Revenue",_] + 1 |
 [/doc]
 target_row: Operating Income
@@ -114,14 +114,60 @@ expect_kind: error
 # Ref
 | Item         || V |
 | ------------ || --- |
-| [Revenue]    ||   |
-|   U.S. Sales || 30 |
+| Revenue    ||   |
+| * U.S. Sales          || 30 |
 | Total        || = @["Revenue"."U.S. Sales",_] + 2 |
 [/doc]
 target_row: Total
 target_col: V
 expect_kind: number
 expect_value: 32
+
+=== deep_nested_path_reference
+[doc]
+# Ref
+| Item                  || V |
+| --------------------- || --- |
+| Revenue             ||   |
+| * Product           ||   |
+| ** Phone              || 20 |
+| Total                 || = @["Revenue"."Product".Phone,_] + 1 |
+[/doc]
+target_row: Total
+target_col: V
+expect_kind: number
+expect_value: 21
+
+=== deep_nested_quoted_leaf_reference
+[doc]
+# Ref
+| Item                  || V |
+| --------------------- || --- |
+| Cost                ||   |
+| * Fulfillment       ||   |
+| ** Last-mile          || 14 |
+| Total                 || = @["Cost"."Fulfillment"."Last-mile",_] + 2 |
+[/doc]
+target_row: Total
+target_col: V
+expect_kind: number
+expect_value: 16
+
+=== sibling_nested_paths_resolve_independently
+[doc]
+# Ref
+| Item                  || V |
+| --------------------- || --- |
+| Revenue             ||   |
+| * Product           ||   |
+| ** Phone              || 20 |
+| * Services            || 7 |
+| Check                 || = @["Revenue"."Product".Phone,_] == 20 |
+[/doc]
+target_row: Check
+target_col: V
+expect_kind: boolean
+expect_value: true
 
 === ambiguous_column_label_returns_error
 [doc]

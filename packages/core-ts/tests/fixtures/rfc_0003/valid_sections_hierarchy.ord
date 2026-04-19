@@ -1,11 +1,11 @@
 # Income Statement
 | Line Item              || 2024 | 2025 |
 | ----                   || ---- | ---- |
-| [Revenue]              ||      |      |
-|   [[Product Revenue]]  ||      |      |
-|     Phone Revenue      || 400  | 450  |
-|     Computer Revenue   || 500  | 560  |
-|   Service Revenue      || 200  | 240  |
-| [Cost of Sales]        ||      |      |
-|   Materials            || 400  | 460  |
+| Revenue              ||      |      |
+| * Product Revenue    ||      |      |
+| ** Phone Revenue       || 400  | 450  |
+| ** Computer Revenue    || 500  | 560  |
+| * Service Revenue      || 200  | 240  |
+| Cost of Sales        ||      |      |
+| * Materials            || 400  | 460  |
 | Operating Income       || 500  | 620  |

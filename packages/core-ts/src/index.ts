@@ -15,7 +15,6 @@ export {
   type SheetIR,
   type TableIR,
   type RowIR,
-  type SectionIR,
 } from "./ir";
 
 export {

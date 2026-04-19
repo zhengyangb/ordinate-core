@@ -7,7 +7,6 @@ export type GridRow = {
   __absoluteRowNumber: number;
   __depth: number;
   __hasChildren: boolean;
-  __isSection: boolean;
   __collapsed: boolean;
   [key: string]: string | number | boolean;
 };

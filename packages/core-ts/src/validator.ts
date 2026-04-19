@@ -1,4 +1,4 @@
-import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow, type Table } from "./parser";
+import { deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow, type Table } from "./parser";
 import {
   parseCellInput,
   stripCellDisplayMetadata,
@@ -11,7 +11,6 @@ import { describeDisplayMetadataDiagnostic } from "./runtime/displayMetadata";
 import { isError } from "./runtime/errors";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
-const SECTION_RE = /^(\[+)([^\[\]]+)(\]+)$/;
 
 export interface ValidationError {
   message: string;
@@ -28,8 +27,7 @@ export interface SheetSummary {
   columnCount: number | null;
   headerRowCount: number;
   headerColumnCount: number;
-  sectionCount: number;
-  maxSectionLevel: number;
+  maxHierarchyDepth: number;
 }
 
 export interface ValidationSummary {
@@ -66,8 +64,7 @@ export function validateDocument(text: string): ValidationResult {
         columnCount: null,
         headerRowCount: 0,
         headerColumnCount: 0,
-        sectionCount: 0,
-        maxSectionLevel: 0,
+        maxHierarchyDepth: 0,
       });
       continue;
     }
@@ -131,8 +128,7 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
       columnCount: null,
       headerRowCount: 0,
       headerColumnCount: 0,
-      sectionCount: 0,
-      maxSectionLevel: 0,
+      maxHierarchyDepth: 0,
     };
   }
 
@@ -149,15 +145,14 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
   if (widths.size !== 1) {
     result.errors.push({ message: "Table is not rectangular.", sheet });
     const [headerRowCount, headerColumnCount] = headerCounts(parsedRows, null);
-    const { sectionCount, maxLevel } = sectionStats(result, sheet, parsedRows, headerRowCount);
+    const { maxDepth } = hierarchyStats(result, sheet, parsedRows, headerRowCount);
     return {
       name: sheet,
       rowCount: parsedRows.length,
       columnCount,
       headerRowCount,
       headerColumnCount,
-      sectionCount,
-      maxSectionLevel: maxLevel,
+      maxHierarchyDepth: maxDepth,
     };
   }
 
@@ -179,7 +174,7 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
   const [headerRowCount, headerColumnCount] = headerCounts(parsedRows, columnCount);
   displayMetadataChecks(result, sheet, parsedRows, headerRowCount);
   semanticCellChecks(result, sheet, parsedRows, headerRowCount);
-  const { sectionCount, maxLevel } = sectionStats(result, sheet, parsedRows, headerRowCount);
+  const { maxDepth } = hierarchyStats(result, sheet, parsedRows, headerRowCount);
 
   return {
     name: sheet,
@@ -187,8 +182,7 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
     columnCount,
     headerRowCount,
     headerColumnCount,
-    sectionCount,
-    maxSectionLevel: maxLevel,
+    maxHierarchyDepth: maxDepth,
   };
 }
 
@@ -251,51 +245,29 @@ function headerCounts(parsedRows: ParsedRow[], columnCount: number | null): [num
   return [headerRowCount, headerColumnCount];
 }
 
-function sectionStats(
+function hierarchyStats(
   result: ValidationResult,
   sheet: string,
   parsedRows: ParsedRow[],
   headerRowCount: number,
-): { sectionCount: number; maxLevel: number } {
+) : { maxDepth: number } {
   const bodyStart = headerRowCount > 0 ? headerRowCount + 1 : 0;
-  let stackDepth = 0;
-  let sectionCount = 0;
-  let maxLevel = 0;
+  const derivedRows = deriveHierarchyRows(parsedRows, bodyStart);
+  let maxDepth = 0;
 
-  parsedRows.slice(bodyStart).forEach((row, offset) => {
+  derivedRows.forEach((row, offset) => {
     const rowIdx = bodyStart + offset + 1;
-    const labelRaw = row.rawCells.length > 0 ? row.rawCells[0] : "";
-    const marker = parseSectionMarker(labelRaw.trim());
-    if (marker) {
-      const level = marker[1];
-      if (level > stackDepth + 1) {
-        result.errors.push({
-          message: `Row ${rowIdx}: section level jumps from ${stackDepth} to ${level}.`,
-          sheet,
-          row: rowIdx,
-        });
-        stackDepth = stackDepth + 1;
-      } else {
-        stackDepth = level;
-      }
-      sectionCount += 1;
-      maxLevel = Math.max(maxLevel, stackDepth);
-      return;
-    }
-
-    let indentLevel = indentDepth(labelRaw);
-    if (indentLevel > stackDepth) {
+    if (row.rawDepth > row.depth) {
       result.errors.push({
-        message: `Row ${rowIdx}: row indentation level ${indentLevel} exceeds current section level ${stackDepth}.`,
+        message: `Row ${rowIdx}: row hierarchy depth ${row.rawDepth} exceeds available parent depth ${row.depth}.`,
         sheet,
         row: rowIdx,
       });
-      indentLevel = stackDepth;
     }
-    stackDepth = indentLevel;
+    maxDepth = Math.max(maxDepth, row.depth);
   });
 
-  return { sectionCount, maxLevel };
+  return { maxDepth };
 }
 
 function semanticCellChecks(result: ValidationResult, sheet: string, parsedRows: ParsedRow[], headerRowCount: number): void {
@@ -391,17 +363,4 @@ function hasInvalidReference(expr: ExprNode | null): boolean {
     return call.args.some((arg) => hasInvalidReference(arg));
   }
   return hasInvalidReference(expr.left ?? null) || hasInvalidReference(expr.right ?? null);
-}
-
-function parseSectionMarker(label: string): [string, number] | null {
-  const match = SECTION_RE.exec(label);
-  if (!match) return null;
-  const [opens, name, closes] = match.slice(1);
-  if (opens.length !== closes.length) return null;
-  return [name.trim(), opens.length];
-}
-
-function indentDepth(labelRaw: string): number {
-  const leading = labelRaw.length - labelRaw.trimStart().length;
-  return Math.floor(leading / 2);
 }

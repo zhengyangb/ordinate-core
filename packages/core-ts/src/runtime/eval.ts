@@ -1,4 +1,4 @@
-import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "../parser";
+import { deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "../parser";
 import { parseCellInput, stripCellDisplayMetadata } from "./parse";
 import {
   type EvaluationResult,
@@ -14,7 +14,6 @@ import {
 import { isError, makeInternalError, runtimeErrorFromDiagnostic } from "./errors";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
-const SECTION_RE = /^(\[+)([^\[\]]+)(\]+)$/;
 
 // Evaluate a full document into runtime values.
 export function evaluateDocument(text: string): EvaluationResult {
@@ -648,74 +647,19 @@ function resolveScalarRendered(
 
 // Build row path strings for all body rows.
 export function buildBodyRows(parsedRows: ParsedRow[], bodyStart: number): { rowPaths: string[] } {
-  const sectionStack: string[] = [];
-  const rowPaths: string[] = [];
-  for (const row of parsedRows.slice(bodyStart)) {
-    const labelRaw = row.rawCells.length > 0 ? row.rawCells[0] : "";
-    const marker = parseSectionMarker(labelRaw.trim());
-    if (marker) {
-      const [name, level] = marker;
-      while (sectionStack.length >= level) {
-        sectionStack.pop();
-      }
-      sectionStack.push(name);
-      rowPaths.push(sectionStack.join("."));
-    } else {
-      const indent = indentDepth(labelRaw);
-      while (sectionStack.length > indent) {
-        sectionStack.pop();
-      }
-      const label = labelRaw.trim();
-      const parts = [...sectionStack];
-      if (label) parts.push(label);
-      rowPaths.push(parts.join("."));
-    }
-  }
-  return { rowPaths };
+  return {
+    rowPaths: deriveHierarchyRows(parsedRows, bodyStart).map((row) => row.path.join(".")),
+  };
 }
 
 // Build row keys for reference resolution (path components).
 export function buildRowKeys(parsedRows: ParsedRow[], bodyStart: number): string[][] {
-  const sectionStack: string[] = [];
-  const rowKeys: string[][] = [];
-
-  for (const row of parsedRows.slice(bodyStart)) {
-    const labelRaw = row.rawCells.length > 0 ? row.rawCells[0] : "";
-    const marker = parseSectionMarker(labelRaw.trim());
-    if (marker) {
-      const [name, level] = marker;
-      while (sectionStack.length >= level) {
-        sectionStack.pop();
-      }
-      sectionStack.push(name);
-      rowKeys.push([...sectionStack]);
-      continue;
-    }
-    const indent = indentDepth(labelRaw);
-    while (sectionStack.length > indent) {
-      sectionStack.pop();
-    }
-    const label = labelRaw.trim();
-    if (label) {
-      rowKeys.push([...sectionStack, label]);
-    } else {
-      rowKeys.push([...sectionStack]);
-    }
-  }
-  return rowKeys;
+  return deriveHierarchyRows(parsedRows, bodyStart).map((row) => [...row.path]);
 }
 
 // Collect body row indices that represent data rows.
 export function computeDataRowIndices(parsedRows: ParsedRow[], bodyStart: number): number[] {
-  const indices: number[] = [];
-  parsedRows.slice(bodyStart).forEach((row, offset) => {
-    const absIdx = bodyStart + offset;
-    const labelRaw = row.rawCells.length > 0 ? row.rawCells[0] : "";
-    if (!parseSectionMarker(labelRaw.trim())) {
-      indices.push(absIdx);
-    }
-  });
-  return indices;
+  return parsedRows.slice(bodyStart).map((_, offset) => bodyStart + offset);
 }
 
 // Count header rows using the separator row.
@@ -1039,16 +983,3 @@ function dotProduct(
 }
 
 // Parse a section marker like [Section] or [[Section]].
-function parseSectionMarker(label: string): [string, number] | null {
-  const match = SECTION_RE.exec(label);
-  if (!match) return null;
-  const [opens, name, closes] = match.slice(1);
-  if (opens.length !== closes.length) return null;
-  return [name.trim(), opens.length];
-}
-
-// Compute indentation depth in 2-space steps.
-function indentDepth(labelRaw: string): number {
-  const leading = labelRaw.length - labelRaw.trimStart().length;
-  return Math.floor(leading / 2);
-}

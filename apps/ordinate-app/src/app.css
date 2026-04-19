@@ -2204,12 +2204,12 @@ textarea {
     height: 100%;
 }
 
-.ag-theme-quartz .ag-row.section-row .ag-cell {
+.ag-theme-quartz .ag-row.group-row .ag-cell {
     background: var(--section-bg);
     font-weight: 600;
 }
 
-.ag-theme-quartz .ag-row.section-row .line-item-cell {
+.ag-theme-quartz .ag-row.group-row .line-item-cell {
     background: color-mix(in oklab, var(--section-bg) 90%, var(--line-item-bg));
 }
 

@@ -752,7 +752,6 @@ export default function App() {
           __absoluteRowNumber: absoluteRowNumber,
           __depth: depth,
           __hasChildren: hasChildren,
-          __isSection: hasChildren,
           __collapsed: collapsedPaths.has(rowPath),
           __displayLabel: rowLeaf,
         };

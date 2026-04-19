@@ -435,7 +435,7 @@ export default function TableStage({
             onCellDoubleClicked={handleCellDoubleClicked}
             onCellKeyDown={handleCellKeyDown}
             rowClassRules={{
-              "section-row": (params) => Boolean(params.data?.__isSection),
+              "group-row": (params) => Boolean(params.data?.__hasChildren),
             }}
           />
         </div>
