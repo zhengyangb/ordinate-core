@@ -47,6 +47,9 @@ This roadmap is paired with RFC-0017, which defines the first formal core-edit A
 - `cell display metadata` means cell-local `format/style`
 - `column display defaults` means column-level default `format/style`
 - `format` and `style` are fields, not separate top-level feature families
+- `rowId` means a system-assigned row ID; stable across in-memory edits, not persisted
+- `rowGapIndex` means a sheet-wide semantic row insertion gap index
+- `area` means the structural row area selector (`header` or `body`)
 
 ### Cell Source Terminology
 
@@ -138,6 +141,8 @@ Read/edit APIs must not expose a cached formula `body` directly as `input`.
 - target resolution model (entry-level label/index -> core-level stable identity)
 - atomic batch edit application
 - canonical cell model (input/cache/local display) for both read and write APIs
+- body-row insertion using `area + rowGapIndex + depth`
+- body-row deletion using `rowId`
 - core edits:
   - set cell input
   - clear cell
@@ -153,6 +158,7 @@ Read/edit APIs must not expose a cached formula `body` directly as `input`.
 ### Explicitly Out of Scope
 
 - header promotion/demotion APIs
+- header row insertion/deletion APIs
 - label rename APIs
 - first-class region move/copy APIs
 - explicit transaction handle lifecycle

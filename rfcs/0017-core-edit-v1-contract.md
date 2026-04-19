@@ -178,6 +178,8 @@ Non-normative example edit shape:
 - `{ op: "set_cell_input", target: ..., input: "..." }`
 - `{ op: "set_cell_local_format", target: ..., format: ... }`
 - `{ op: "set_cell_local_style", target: ..., style: ... }`
+- `{ op: "insert_row", sheet: "...", area: "body", rowGapIndex: 3, depth: 1 }`
+- `{ op: "delete_row", sheet: "...", rowId: 7, mode: "subtree" }`
 
 ## Target Resolution Contract
 
@@ -191,6 +193,19 @@ Normative requirement:
 - before mutating authoritative state, each edit target must resolve deterministically against staged state
 - unresolved or ambiguous targets fail the batch
 
+### Row Structural Targeting (V1)
+
+V1 uses two distinct row-target concepts:
+
+- `rowGapIndex`: sheet-wide semantic row insertion gap index
+- `rowId`: system-assigned row ID for an existing row, stable across in-memory edits and not persisted
+
+Normative behavior:
+
+- insertion targets a gap, not an existing row identity
+- deletion targets an existing row identity, not a positional index
+- public V1 row edit APIs must not require callers to mutate by raw logical row index
+
 ### Allowed Host-Facing Target Forms (V1)
 
 V1 may accept:
@@ -203,17 +218,30 @@ Normative behavior:
 - host-facing forms are convenience input only
 - core mutation semantics are defined on resolved targets, not raw host input text
 
+Row structural edits are the exception:
+
+- `insert_row` is defined on (`sheet`, `area`, `rowGapIndex`, `depth`)
+- `delete_row` is defined on (`sheet`, `rowId`, `mode`)
+
 ## Structural Edit Bounds in V1
 
 To keep V1 deterministic, structural edit scope is restricted.
 
 Current working direction:
 
-- row insertion/deletion in V1 is data-region only
+- row insertion/deletion in V1 is body-region only
 - column insertion/deletion in V1 is data-region only
 - structural edits targeting header-structure coordinates fail with `invalid_operation`
-- `insert*` allows append when index equals current region length
-- out-of-range indexes fail with `out_of_bounds`
+- `insert_row` requires explicit `area`
+- V1 accepts `area: "body"` only
+- `area: "header"` fails with `invalid_operation`
+- `insert_row` allows append when `rowGapIndex === rowCount`
+- out-of-range `rowGapIndex` fails with `out_of_bounds`
+- `insert_row` must reject invalid depth jumps
+- `insert_row` must reject implicit adoption of following deeper rows
+- `delete_row` defaults to `mode: "node"`
+- `delete_row` with `mode: "node"` must reject non-leaf rows
+- `delete_row` with `mode: "subtree"` deletes the target row and all nested descendant rows
 
 ## Failure Semantics
 

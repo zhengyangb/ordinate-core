@@ -4,6 +4,7 @@ import { FormatOptionGlyph } from "./DisplayMetadataPreview";
 import RailMenuDetailPanel from "./RailMenuDetailPanel";
 import { MenuDivider, MenuGroup, MenuHead, MenuOption, MenuSurface, MenuTitle } from "./MenuSurface";
 import type { FloatingMenuPosition, RailMenuView } from "../types/ui";
+import type { CoreRowDeleteMode } from "@ordinate/core";
 
 function StyleRowGlyph() {
   return (
@@ -60,14 +61,16 @@ function DeleteGlyph() {
 
 function RowStructurePanel({
   rowNumber,
+  hasChildren,
   onInsertAbove,
   onInsertBelow,
   onDelete,
 }: {
   rowNumber: number;
+  hasChildren: boolean;
   onInsertAbove: (rowNumber: number) => void;
   onInsertBelow: (rowNumber: number) => void;
-  onDelete: (rowNumber: number) => void;
+  onDelete: (rowNumber: number, mode: CoreRowDeleteMode) => void;
 }) {
   return (
     <MenuGroup className="rail-structure-panel">
@@ -77,8 +80,13 @@ function RowStructurePanel({
       <MenuOption className="rail-structure-action" icon={<InsertBelowGlyph />} onClick={() => onInsertBelow(rowNumber)}>
         Insert Below
       </MenuOption>
-      <MenuOption className="rail-structure-action" icon={<DeleteGlyph />} tone="danger" onClick={() => onDelete(rowNumber)}>
-        Delete Row
+      <MenuOption
+        className="rail-structure-action"
+        icon={<DeleteGlyph />}
+        tone="danger"
+        onClick={() => onDelete(rowNumber, hasChildren ? "subtree" : "node")}
+      >
+        {hasChildren ? "Delete Row and Children" : "Delete Row"}
       </MenuOption>
     </MenuGroup>
   );
@@ -91,7 +99,7 @@ type RailMenuProps = {
   railMenuRef: RefObject<HTMLDivElement>;
   onInsertRowAbove: (rowNumber: number) => void;
   onInsertRowBelow: (rowNumber: number) => void;
-  onDeleteRow: (rowNumber: number) => void;
+  onDeleteRow: (rowNumber: number, mode: CoreRowDeleteMode) => void;
   onInsertColumnLeft: (colIndex: number) => void;
   onInsertColumnRight: (colIndex: number) => void;
   onDeleteColumn: (colIndex: number) => void;
@@ -196,6 +204,7 @@ export default function RailMenu({
               <div className="column-rail-menu-body">
                 <RowStructurePanel
                   rowNumber={railMenu.rowNumber}
+                  hasChildren={railMenu.hasChildren}
                   onInsertAbove={onInsertRowAbove}
                   onInsertBelow={onInsertRowBelow}
                   onDelete={onDeleteRow}

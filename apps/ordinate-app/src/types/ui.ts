@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 export type GridRow = {
   __rowKey: string;
+  __rowId: number;
   __rowPath: string;
   __absoluteRowNumber: number;
   __depth: number;
@@ -126,6 +127,7 @@ export type RowRailMenuView = {
   kind: "row";
   rowNumber: number;
   rowPath: string | null;
+  hasChildren: boolean;
 };
 
 export type RailMenuView = ColumnRailMenuView | RowRailMenuView;

@@ -4,6 +4,8 @@ import {
   applyBatchAtomic,
   type CoreCellTarget,
   type CoreEdit,
+  type CoreRowDeleteMode,
+  type CoreRowInsertArea,
   DocumentState,
   resolveDocumentPresentation,
   validateDocument,
@@ -35,8 +37,8 @@ interface EditorState {
   renameSheet: (sheet: string, newName: string) => void;
   setCellLocalFormat: (target: CoreCellTarget, format: FormatSpec | null) => void;
   setCellLocalStyle: (target: CoreCellTarget, style: StylePatch) => void;
-  insertRow: (sheet: string, rowIndex: number) => void;
-  deleteRow: (sheet: string, rowIndex: number) => void;
+  insertRow: (sheet: string, area: CoreRowInsertArea, rowGapIndex: number, depth: number) => void;
+  deleteRow: (sheet: string, rowId: number, mode?: CoreRowDeleteMode) => void;
   insertColumn: (sheet: string, colIndex: number) => void;
   deleteColumn: (sheet: string, colIndex: number) => void;
   exitSourceMode: () => void;
@@ -254,11 +256,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setCellLocalStyle: (target, style) => {
     get().applyCoreEdits([{ op: "set_cell_local_style", target, style }]);
   },
-  insertRow: (sheet, rowIndex) => {
-    get().applyCoreEdits([{ op: "insert_row", sheet, rowIndex }]);
+  insertRow: (sheet, area, rowGapIndex, depth) => {
+    get().applyCoreEdits([{ op: "insert_row", sheet, area, rowGapIndex, depth }]);
   },
-  deleteRow: (sheet, rowIndex) => {
-    get().applyCoreEdits([{ op: "delete_row", sheet, rowIndex }]);
+  deleteRow: (sheet, rowId, mode) => {
+    get().applyCoreEdits([{ op: "delete_row", sheet, rowId, mode }]);
   },
   insertColumn: (sheet, colIndex) => {
     get().applyCoreEdits([{ op: "insert_column", sheet, colIndex }]);

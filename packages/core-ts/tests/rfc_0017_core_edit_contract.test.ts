@@ -847,11 +847,87 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(ambiguous.error.category).toBe("ambiguous_target");
 
     const invalidScope = applyBatchAtomic(DocumentState.fromText(EDIT_DOC), [
-      { op: "insert_row", sheet: "Sheet", rowIndex: 0 },
+      { op: "insert_row", sheet: "Sheet", area: "body", rowGapIndex: 0, depth: 0 },
     ]);
     expect(invalidScope.ok).toBe(false);
     if (invalidScope.ok) throw new Error("expected failure");
     expect(invalidScope.error.category).toBe("invalid_operation");
+  });
+
+  it("uses rowGapIndex + depth for body-row insertion and rejects implicit reparenting", () => {
+    const base = DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Root |
+| * Child A |
+| * Child B |
+`.trim());
+
+    const inserted = applyBatchAtomic(base, [
+      { op: "insert_row", sheet: "Sheet", area: "body", rowGapIndex: 3, depth: 1 },
+    ]);
+    expect(inserted.ok).toBe(true);
+    if (!inserted.ok) throw new Error("expected success");
+    expect(inserted.nextDocument.sheets[0].logicalRows[3]?.rawCells[0]).toBe("*");
+
+    const invalid = applyBatchAtomic(DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Root |
+| * Child A |
+| * Child B |
+`.trim()), [
+      { op: "insert_row", sheet: "Sheet", area: "body", rowGapIndex: 3, depth: 0 },
+    ]);
+    expect(invalid.ok).toBe(false);
+    if (invalid.ok) throw new Error("expected failure");
+    expect(invalid.error.category).toBe("invalid_operation");
+    expect(invalid.error.message).toContain("implicitly adopt following rows");
+  });
+
+  it("deletes leaf rows by rowId and requires subtree mode for non-leaf rows", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Root |
+| * Child A |
+| * Child B |
+`.trim());
+    const sheet = state.sheets[0];
+    const rootRowId = sheet.rowIds[sheet.bodyStart];
+    const childBRowId = sheet.rowIds[sheet.bodyStart + 2];
+
+    const invalid = applyBatchAtomic(state, [
+      { op: "delete_row", sheet: "Sheet", rowId: rootRowId },
+    ]);
+    expect(invalid.ok).toBe(false);
+    if (invalid.ok) throw new Error("expected failure");
+    expect(invalid.error.category).toBe("invalid_operation");
+
+    const leafDeleted = applyBatchAtomic(state, [
+      { op: "delete_row", sheet: "Sheet", rowId: childBRowId },
+    ]);
+    expect(leafDeleted.ok).toBe(true);
+    if (!leafDeleted.ok) throw new Error("expected success");
+    const output = serializeDocumentState(leafDeleted.nextDocument);
+    expect(output).not.toContain("Child B");
+
+    const subtreeDeleted = applyBatchAtomic(DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Root |
+| * Child A |
+| * Child B |
+`.trim()), [
+      { op: "delete_row", sheet: "Sheet", rowId: rootRowId, mode: "subtree" },
+    ]);
+    expect(subtreeDeleted.ok).toBe(true);
+    if (!subtreeDeleted.ok) throw new Error("expected success");
+    expect(serializeDocumentState(subtreeDeleted.nextDocument)).not.toContain("Root");
   });
 
   it("supports fixture-driven .cases for doc + ops + expected doc", () => {

@@ -1,13 +1,13 @@
 import { ChangeKind, DocumentState, SheetState } from "./incremental";
 import { parseCellInput, splitCellDisplayMetadata } from "./runtime";
 import type { FormatSpec, StylePatch } from "./runtime/types";
-
-export type CoreEditErrorCategory =
-  | "invalid_target"
-  | "ambiguous_target"
-  | "out_of_bounds"
-  | "invalid_operation"
-  | "rebase_conflict";
+import { assertInteger, CoreEditFailure, type CoreEditErrorCategory } from "./core_edit_common";
+import {
+  applyDeleteRowEdit,
+  applyInsertRowEdit,
+  type CoreDeleteRowEdit,
+  type CoreInsertRowEdit,
+} from "./core_edit_rows";
 
 export interface CoreEditError {
   category: CoreEditErrorCategory;
@@ -38,8 +38,8 @@ export type CoreEdit =
   | { op: "set_cell_local_style"; target: CoreCellTarget; style: StylePatch }
   | { op: "clear_cell_local_style"; target: CoreCellTarget }
   | { op: "rename_sheet"; sheet: string; newName: string }
-  | { op: "insert_row"; sheet: string; rowIndex: number }
-  | { op: "delete_row"; sheet: string; rowIndex: number }
+  | CoreInsertRowEdit
+  | CoreDeleteRowEdit
   | { op: "insert_column"; sheet: string; colIndex: number }
   | { op: "delete_column"; sheet: string; colIndex: number };
 
@@ -47,18 +47,11 @@ export interface ApplyBatchAtomicOptions {
   recalculate?: boolean;
 }
 
+export type { CoreEditErrorCategory } from "./core_edit_common";
+
 export type ApplyBatchAtomicResult =
   | { ok: true; nextDocument: DocumentState }
   | { ok: false; error: CoreEditError };
-
-class CoreEditFailure extends Error {
-  readonly category: CoreEditErrorCategory;
-
-  constructor(category: CoreEditErrorCategory, message: string) {
-    super(message);
-    this.category = category;
-  }
-}
 
 export function applyBatchAtomic(
   document: DocumentState,
@@ -168,8 +161,7 @@ function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
 
   if (edit.op === "insert_row") {
     const sheet = resolveSheet(document, edit.sheet);
-    assertRowInsertIndex(sheet, edit.rowIndex);
-    sheet.insertRow(edit.rowIndex, false);
+    applyInsertRowEdit(sheet, edit, fail);
     return;
   }
 
@@ -192,8 +184,7 @@ function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
 
   if (edit.op === "delete_row") {
     const sheet = resolveSheet(document, edit.sheet);
-    assertRowDeleteIndex(sheet, edit.rowIndex);
-    sheet.deleteRow(edit.rowIndex, false);
+    applyDeleteRowEdit(sheet, edit, fail);
     return;
   }
 
@@ -209,6 +200,10 @@ function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
     assertColumnDeleteIndex(sheet, edit.colIndex);
     sheet.deleteCol(edit.colIndex, false);
   }
+}
+
+function fail(category: CoreEditErrorCategory, message: string): never {
+  throw new CoreEditFailure(category, message);
 }
 
 function resolveSheet(document: DocumentState, sheetName: string): SheetState {
@@ -229,8 +224,8 @@ function resolveCellTarget(
   const sheet = resolveSheet(document, target.sheet);
 
   if (target.kind === "index") {
-    assertInteger(target.rowIndex, "rowIndex");
-    assertInteger(target.colIndex, "colIndex");
+    assertInteger(target.rowIndex, "rowIndex", fail);
+    assertInteger(target.colIndex, "colIndex", fail);
     if (target.rowIndex < 0 || target.rowIndex >= sheet.rowCount) {
       throw new CoreEditFailure(
         "out_of_bounds",
@@ -297,28 +292,8 @@ function assertDataCell(sheet: SheetState, rowIndex: number, colIndex: number): 
   }
 }
 
-function assertRowInsertIndex(sheet: SheetState, rowIndex: number): void {
-  assertInteger(rowIndex, "rowIndex");
-  if (rowIndex < 0 || rowIndex > sheet.rowCount) {
-    throw new CoreEditFailure("out_of_bounds", `row index ${rowIndex} out of bounds`);
-  }
-  if (rowIndex < sheet.bodyStart) {
-    throw new CoreEditFailure("invalid_operation", "row insertion into header region is not supported");
-  }
-}
-
-function assertRowDeleteIndex(sheet: SheetState, rowIndex: number): void {
-  assertInteger(rowIndex, "rowIndex");
-  if (rowIndex < 0 || rowIndex >= sheet.rowCount) {
-    throw new CoreEditFailure("out_of_bounds", `row index ${rowIndex} out of bounds`);
-  }
-  if (rowIndex < sheet.bodyStart) {
-    throw new CoreEditFailure("invalid_operation", "row deletion in header region is not supported");
-  }
-}
-
 function assertColumnInsertIndex(sheet: SheetState, colIndex: number): void {
-  assertInteger(colIndex, "colIndex");
+  assertInteger(colIndex, "colIndex", fail);
   if (colIndex < 0 || colIndex > sheet.colCount) {
     throw new CoreEditFailure("out_of_bounds", `column index ${colIndex} out of bounds`);
   }
@@ -328,18 +303,12 @@ function assertColumnInsertIndex(sheet: SheetState, colIndex: number): void {
 }
 
 function assertColumnDeleteIndex(sheet: SheetState, colIndex: number): void {
-  assertInteger(colIndex, "colIndex");
+  assertInteger(colIndex, "colIndex", fail);
   if (colIndex < 0 || colIndex >= sheet.colCount) {
     throw new CoreEditFailure("out_of_bounds", `column index ${colIndex} out of bounds`);
   }
   if (colIndex < sheet.headerColCount) {
     throw new CoreEditFailure("invalid_operation", "column deletion in header region is not supported");
-  }
-}
-
-function assertInteger(value: number, name: string): void {
-  if (!Number.isInteger(value)) {
-    throw new CoreEditFailure("invalid_target", `${name} must be an integer`);
   }
 }
 

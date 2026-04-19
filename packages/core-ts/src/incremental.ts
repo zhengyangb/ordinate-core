@@ -476,7 +476,7 @@ export class SheetState {
   }
 
   // Insert a blank row at a logical row index (tentative RFC-0012 behavior).
-  insertRow(rowIndex: number, eager = true) {
+  insertRow(rowIndex: number, eager = true, labelRaw = "") {
     if (rowIndex < this.bodyStart) {
       throw new Error("header row insertion is not supported (tentative)");
     }
@@ -487,6 +487,10 @@ export class SheetState {
     const boundary = this.logicalRows.length > 0 ? this.logicalRows[0].boundary : null;
     const rawCells = Array.from({ length: this.colCount }, () => "");
     const cells = Array.from({ length: this.colCount }, () => "");
+    if (rawCells.length > 0) {
+      rawCells[0] = labelRaw;
+      cells[0] = labelRaw.trim();
+    }
     const newRow: ParsedRow = { rawCells, cells, boundary, errors: [] };
     this.logicalRows.splice(rowIndex, 0, newRow);
 
@@ -513,15 +517,25 @@ export class SheetState {
 
   // Delete a row at a logical row index (tentative RFC-0012 behavior).
   deleteRow(rowIndex: number, eager = true) {
+    this.deleteRows(rowIndex, 1, eager);
+  }
+
+  deleteRows(rowIndex: number, count: number, eager = true) {
     if (rowIndex < this.bodyStart) {
       throw new Error("header row deletion is not supported (tentative)");
     }
     if (rowIndex < 0 || rowIndex >= this.rowCount) {
       throw new Error("row index out of range");
     }
-    this.logicalRows.splice(rowIndex, 1);
-    this.cells.splice(rowIndex, 1);
-    this.rowIds.splice(rowIndex, 1);
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("row delete count must be a positive integer");
+    }
+    if (rowIndex + count > this.rowCount) {
+      throw new Error("row delete range out of range");
+    }
+    this.logicalRows.splice(rowIndex, count);
+    this.cells.splice(rowIndex, count);
+    this.rowIds.splice(rowIndex, count);
     this.rebuildMetadata();
     this.refreshFormulaSourceTexts();
     this.markAllDirty();
@@ -1203,15 +1217,20 @@ export class DocumentState {
   }
 
   // Insert a blank row into a sheet (tentative RFC-0012 behavior).
-  insertRow(sheetName: string, rowIndex: number, eager = true) {
+  insertRow(sheetName: string, rowIndex: number, eager = true, labelRaw = "") {
     const sheet = this.findSheet(sheetName);
-    sheet.insertRow(rowIndex, eager);
+    sheet.insertRow(rowIndex, eager, labelRaw);
   }
 
   // Delete a row from a sheet (tentative RFC-0012 behavior).
   deleteRow(sheetName: string, rowIndex: number, eager = true) {
     const sheet = this.findSheet(sheetName);
     sheet.deleteRow(rowIndex, eager);
+  }
+
+  deleteRows(sheetName: string, rowIndex: number, count: number, eager = true) {
+    const sheet = this.findSheet(sheetName);
+    sheet.deleteRows(rowIndex, count, eager);
   }
 
   // Insert a blank column into a sheet (tentative RFC-0012 behavior).

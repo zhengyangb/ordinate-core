@@ -4,6 +4,7 @@ import type { ReactNode, RefObject } from "react";
 import { AutoIcon, MoonIcon, SunIcon } from "../icons/uiIcons";
 import RailMenu from "./RailMenu";
 import { MenuOption, MenuSurface } from "./MenuSurface";
+import type { CoreRowDeleteMode } from "@ordinate/core";
 import type {
   FloatingMenuPosition,
   FloatingTooltip,
@@ -30,7 +31,7 @@ type OverlayPortalsProps = {
   railMenuRef: RefObject<HTMLDivElement>;
   onInsertRowAbove: (rowNumber: number) => void;
   onInsertRowBelow: (rowNumber: number) => void;
-  onDeleteRow: (rowNumber: number) => void;
+  onDeleteRow: (rowNumber: number, mode: CoreRowDeleteMode) => void;
   onInsertColumnLeft: (colIndex: number) => void;
   onInsertColumnRight: (colIndex: number) => void;
   onDeleteColumn: (colIndex: number) => void;

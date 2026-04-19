@@ -9,7 +9,13 @@ import {
   type ModelUpdatedEvent,
 } from "ag-grid-community";
 
-import { getCellTextView, type FormatSpec, type RuntimeValue, type StylePatch } from "@ordinate/core";
+import {
+  getCellTextView,
+  parseHierarchyLabel,
+  type FormatSpec,
+  type RuntimeValue,
+  type StylePatch,
+} from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
 import ErrorCellChip from "./components/ErrorCellChip";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
@@ -43,11 +49,11 @@ import type {
 import {
   compactColLabel,
   isVisiblePath,
-  leafLabel,
   runtimeKindLabel,
   runtimeValueToText,
   splitPath,
 } from "./utils/sheetView";
+import { resolvePostRowStructureColumnIndex, resolveRowInsert } from "./utils/rowStructureEdits";
 import {
   BLANK_RUNTIME_VALUE,
   CHROME_TRANSITION_MS,
@@ -157,7 +163,7 @@ export default function App() {
   const [railMenuOpen, setRailMenuOpen] = useState(false);
   const [railMenuPosition, setRailMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
   const [openRailMenuTarget, setOpenRailMenuTarget] = useState<
-    { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number } | null
+    { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number; hasChildren: boolean } | null
   >(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
@@ -739,21 +745,24 @@ export default function App() {
     return currentSheet.values
       .map((row, rowIndex) => {
         const rowPath = currentSheet.rowPaths[rowIndex] ?? `R${rowIndex + 1}`;
-        const depth = Math.max(0, splitPath(rowPath).length - 1);
-        const hasChildren = currentSheet.rowPaths.some(
-          (candidate) => candidate !== rowPath && candidate.startsWith(`${rowPath}.`),
-        );
         const absoluteRowNumber = currentSheetState.bodyStart + rowIndex + 1;
-        const rowLeaf = leafLabel(rowPath);
+        const rawHierarchyLabel = currentSheetState.logicalRows[absoluteRowNumber - 1]?.rawCells[0] ?? "";
+        const parsedHierarchy = parseHierarchyLabel(rawHierarchyLabel);
+        const nextRawHierarchyLabel = currentSheetState.logicalRows[absoluteRowNumber]?.rawCells[0] ?? "";
+        const nextParsedHierarchy = parseHierarchyLabel(nextRawHierarchyLabel);
+        const depth = parsedHierarchy.depth;
+        const hasChildren = absoluteRowNumber < currentSheetState.rowCount && nextParsedHierarchy.depth > depth;
+        const rowDisplayLabel = parsedHierarchy.content;
 
         const item: GridRow = {
           __rowKey: `r${absoluteRowNumber}`,
+          __rowId: currentSheetState.rowIds[absoluteRowNumber - 1] ?? absoluteRowNumber,
           __rowPath: rowPath,
           __absoluteRowNumber: absoluteRowNumber,
           __depth: depth,
           __hasChildren: hasChildren,
           __collapsed: collapsedPaths.has(rowPath),
-          __displayLabel: rowLeaf,
+          __displayLabel: rowDisplayLabel,
         };
 
         for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
@@ -765,7 +774,7 @@ export default function App() {
 
           if (colIndex < headerColCount) {
             if (colIndex === 0) {
-              item[field] = rowLeaf;
+              item[field] = rowDisplayLabel;
               item[`__kind_${colIndex}`] = "label";
             } else {
               const headerValue = displayText.length > 0
@@ -1288,18 +1297,20 @@ export default function App() {
   const handleRowRailMenuOpen = useCallback(
     (rowNumber: number, anchorEl: HTMLElement) => {
       if (mode === "source" || isActiveSheetBlocked) return;
+      const row = rowData.find((candidate) => candidate.__absoluteRowNumber === rowNumber);
+      if (!row) return;
       railMenuAnchorRef.current = anchorEl;
       const anchorRect = anchorEl.getBoundingClientRect();
       setRailMenuPosition({
         top: anchorRect.bottom + FLOATING_MENU_GAP,
         left: anchorRect.left,
       });
-      setOpenRailMenuTarget({ kind: "row", rowNumber });
+      setOpenRailMenuTarget({ kind: "row", rowNumber, hasChildren: row.__hasChildren });
       setRailMenuOpen(true);
       setFormulaInputMode("read");
       setFormulaBarSnapshot(null);
     },
-    [mode, isActiveSheetBlocked],
+    [mode, isActiveSheetBlocked, rowData],
   );
 
   const handleRowRailSelect = useCallback(
@@ -1953,43 +1964,71 @@ export default function App() {
     if (!activeSheet) {
       throw new Error("row insertion requires an active sheet");
     }
+    if (!currentSheetState) {
+      throw new Error("row insertion requires current sheet state");
+    }
+    if (!currentSheet) {
+      throw new Error("row insertion requires current sheet evaluation");
+    }
     if (defaultBodyRailColIndex == null) {
       throw new Error("row insertion requires at least one selectable column");
     }
-    const rowIndex = side === "above" ? rowNumber - 1 : rowNumber;
-    const nextRowNumber = side === "above" ? rowNumber : rowNumber + 1;
+    const { rowGapIndex, depth, nextRowNumber, expandParentRowPath } = resolveRowInsert(
+      currentSheetState,
+      currentSheet.rowPaths,
+      rowNumber,
+      side,
+    );
+    if (expandParentRowPath) {
+      setCollapsedPaths((prev) => {
+        if (!prev.has(expandParentRowPath)) {
+          return prev;
+        }
+        const next = new Set(prev);
+        next.delete(expandParentRowPath);
+        return next;
+      });
+    }
+    const nextColIndex = resolvePostRowStructureColumnIndex(selectedCell, defaultBodyRailColIndex);
     startRowTransition("insert", nextRowNumber);
-    insertRow(activeSheet, rowIndex);
+    insertRow(activeSheet, "body", rowGapIndex, depth);
     closeRailMenu();
     setSelectedColumnIndex(null);
     setSelectedCell({
       area: "body",
       logical: {
         rAbs: nextRowNumber,
-        cAbs: defaultBodyRailColIndex,
+        cAbs: nextColIndex,
       },
-      colId: toColFieldId(defaultBodyRailColIndex),
+      colId: toColFieldId(nextColIndex),
       rowPath: null,
     });
     setFormulaInputMode("read");
     window.requestAnimationFrame(() => {
-      focusBodyCellAt(nextRowNumber, defaultBodyRailColIndex);
+      focusBodyCellAt(nextRowNumber, nextColIndex);
     });
-  }, [activeSheet, defaultBodyRailColIndex, startRowTransition, insertRow, closeRailMenu, focusBodyCellAt]);
+  }, [activeSheet, currentSheet, currentSheetState, defaultBodyRailColIndex, selectedCell, startRowTransition, insertRow, closeRailMenu, focusBodyCellAt]);
 
-  const handleDeleteRow = useCallback((rowNumber: number) => {
+  const handleDeleteRow = useCallback((rowNumber: number, mode: "node" | "subtree" = "node") => {
     if (!activeSheet) {
       throw new Error("row deletion requires an active sheet");
     }
+    if (!currentSheetState) {
+      throw new Error("row deletion requires current sheet state");
+    }
     if (defaultBodyRailColIndex == null) {
       throw new Error("row deletion requires at least one selectable column");
+    }
+    const rowId = currentSheetState.rowIds[rowNumber - 1];
+    if (rowId == null) {
+      throw new Error(`row deletion could not resolve rowId for row ${rowNumber}`);
     }
     const bodyRowCount = currentSheet?.values.length ?? 0;
     const nextRowNumber = bodyRowCount <= 1 ? null : rowNumber < headerRowCount + bodyRowCount ? rowNumber : rowNumber - 1;
     if (nextRowNumber != null) {
       startRowTransition("delete", nextRowNumber);
     }
-    deleteRow(activeSheet, rowNumber - 1);
+    deleteRow(activeSheet, rowId, mode);
     closeRailMenu();
     setFormulaInputMode("read");
     if (bodyRowCount <= 1) {
@@ -1999,20 +2038,21 @@ export default function App() {
     if (nextRowNumber == null) {
       throw new Error("row deletion expected a next row number");
     }
+    const nextColIndex = resolvePostRowStructureColumnIndex(selectedCell, defaultBodyRailColIndex);
     setSelectedColumnIndex(null);
     setSelectedCell({
       area: "body",
       logical: {
         rAbs: nextRowNumber,
-        cAbs: defaultBodyRailColIndex,
+        cAbs: nextColIndex,
       },
-      colId: toColFieldId(defaultBodyRailColIndex),
+      colId: toColFieldId(nextColIndex),
       rowPath: null,
     });
     window.requestAnimationFrame(() => {
-      focusBodyCellAt(nextRowNumber, defaultBodyRailColIndex);
+      focusBodyCellAt(nextRowNumber, nextColIndex);
     });
-  }, [activeSheet, defaultBodyRailColIndex, currentSheet, startRowTransition, deleteRow, closeRailMenu, clearActiveSelection, headerRowCount, focusBodyCellAt]);
+  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, startRowTransition, deleteRow, closeRailMenu, clearActiveSelection, headerRowCount, focusBodyCellAt]);
 
   const handleInsertColumn = useCallback((colIndex: number, side: "left" | "right") => {
     if (!activeSheet) {

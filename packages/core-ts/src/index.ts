@@ -16,6 +16,7 @@ export {
   type TableIR,
   type RowIR,
 } from "./ir";
+export { parseHierarchyLabel } from "./parser";
 
 export {
   evaluateDocument,
@@ -56,6 +57,12 @@ export {
   type CoreEditError,
   type CoreEditErrorCategory,
 } from "./core_edit";
+export type {
+  CoreDeleteRowEdit,
+  CoreInsertRowEdit,
+  CoreRowDeleteMode,
+  CoreRowInsertArea,
+} from "./core_edit_rows";
 export type { CellInputTextView, CellTextViewSource } from "./runtime";
 export {
   formatPresentedCell,

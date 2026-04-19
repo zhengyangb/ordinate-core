@@ -47,7 +47,7 @@ export interface DerivedHierarchyRow {
   path: string[];
 }
 
-const HIERARCHY_PREFIX_RE = /^(\*+)\s+(.*)$/;
+const HIERARCHY_PREFIX_RE = /^(\*+)(?:\s+(.*))?$/;
 
 export function parseDocument(text: string): Sheet[] {
   const sheets: Sheet[] = [];
@@ -208,7 +208,7 @@ export function parseHierarchyLabel(labelRaw: string): ParsedHierarchyLabel {
   const prefixed = HIERARCHY_PREFIX_RE.exec(trimmed);
   if (prefixed) {
     depth = prefixed[1].length;
-    content = prefixed[2].trim();
+    content = prefixed[2]?.trim() ?? "";
   }
 
   return {

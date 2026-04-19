@@ -341,22 +341,23 @@ export function buildColumnRailMenu(
 }
 
 export function buildRowRailMenu(
-  rowNumber: number | null,
+  target: { rowNumber: number; hasChildren: boolean } | null,
 ): RailMenuView | null {
-  if (rowNumber == null) {
+  if (target == null) {
     return null;
   }
   return {
     kind: "row",
-    rowNumber,
+    rowNumber: target.rowNumber,
     rowPath: null,
+    hasChildren: target.hasChildren,
   };
 }
 
 export function buildRailMenu(
   target:
     | { kind: "column"; colIndex: number }
-    | { kind: "row"; rowNumber: number }
+    | { kind: "row"; rowNumber: number; hasChildren: boolean }
     | null,
   sheetColCount: number,
   headerColCount: number,
@@ -367,7 +368,7 @@ export function buildRailMenu(
   if (target.kind === "column") {
     return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheetPresentation, columnHasLocalConfig);
   }
-  return buildRowRailMenu(target.rowNumber);
+  return buildRowRailMenu({ rowNumber: target.rowNumber, hasChildren: target.hasChildren });
 }
 
 export function resolveRailMenuWidthPx(kind: RailMenuView["kind"]): number {

@@ -178,7 +178,9 @@ insert_row_success
   {
     "op": "insert_row",
     "sheet": "Sheet",
-    "rowIndex": 3
+    "area": "body",
+    "rowGapIndex": 3,
+    "depth": 0
   }
 ]
 [/ops]
@@ -206,7 +208,7 @@ delete_row_success
   {
     "op": "delete_row",
     "sheet": "Sheet",
-    "rowIndex": 2
+    "rowId": 3
   }
 ]
 [/ops]
@@ -347,7 +349,9 @@ invalid_structural_scope_insert_header_row
   {
     "op": "insert_row",
     "sheet": "Sheet",
-    "rowIndex": 0
+    "area": "body",
+    "rowGapIndex": 0,
+    "depth": 0
   }
 ]
 [/ops]
