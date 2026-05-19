@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { shouldAnimateTableStructure } from "../config/motion";
 
 const ROW_TRANSITION_MS = 260;
 const COLUMN_TRANSITION_MS = 220;
@@ -40,6 +41,10 @@ export function useStructureTransition() {
     if (targetRowNumber <= 0) {
       throw new Error("row transition requires a positive row number");
     }
+    if (!shouldAnimateTableStructure()) {
+      clearRowTransition();
+      return;
+    }
     if (rowTimeoutRef.current != null) {
       window.clearTimeout(rowTimeoutRef.current);
     }
@@ -48,9 +53,13 @@ export function useStructureTransition() {
       rowTimeoutRef.current = null;
       setRowTransition(null);
     }, ROW_TRANSITION_MS);
-  }, []);
+  }, [clearRowTransition]);
 
   const startColumnTransition = useCallback((kind: StructureTransitionColumnKind) => {
+    if (!shouldAnimateTableStructure()) {
+      clearColumnTransition();
+      return;
+    }
     if (columnTimeoutRef.current != null) {
       window.clearTimeout(columnTimeoutRef.current);
     }
@@ -59,7 +68,7 @@ export function useStructureTransition() {
       columnTimeoutRef.current = null;
       setColumnTransition(null);
     }, COLUMN_TRANSITION_MS);
-  }, []);
+  }, [clearColumnTransition]);
 
   useEffect(() => {
     return () => {

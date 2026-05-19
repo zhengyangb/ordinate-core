@@ -144,6 +144,31 @@ Notes:
 - `displayText` belongs to presentation, not to input
 - `displayText` is derived from value + effective display metadata
 
+### 5. Row Structure Surface
+
+V1 row-structure-aware hosts need a minimal readable row surface.
+
+This surface is for UI/CLI/agent consumers. It does not require a specific accessor style. Implementations may expose these fields directly on a row view model or via a read helper, as long as the semantics are stable.
+
+Minimum row fields:
+
+- `rowId`: system-assigned row ID for the current in-memory document
+- `depth`: row hierarchy depth
+- `hasChildren`: whether the row currently has nested descendant rows
+- `subtreeRowCount`: total number of rows in the row subtree, including the row itself
+
+Normative requirements:
+
+- this surface must be derived from the authoritative flat row list plus row depth semantics
+- these fields must not become a second source of truth separate from authoritative row order/depth
+- hosts must not need to recompute `hasChildren` or subtree shape independently from raw row paths
+- `rowId` is stable across in-memory edits but is not persisted to `.ord`
+
+Deferred:
+
+- `parentRowId`
+- richer tree-navigation helpers
+
 ## Unparsed Source Preservation
 
 V1 requires preserving unparsed source to prevent data loss.

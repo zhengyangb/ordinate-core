@@ -11,7 +11,7 @@ import {
 
 import {
   getCellTextView,
-  parseHierarchyLabel,
+  resolveSheetRowStructure,
   type FormatSpec,
   type RuntimeValue,
   type StylePatch,
@@ -22,6 +22,7 @@ import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
 import SheetParseErrorPanel from "./components/SheetParseErrorPanel";
 import TableStage from "./components/TableStage";
+import { shouldAnimateTableStructure } from "./config/motion";
 import { createAgGridAdapter } from "./grid/agGridAdapter";
 import { useStructureTransition } from "./hooks/useStructureTransition";
 import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
@@ -223,6 +224,11 @@ export default function App() {
     if (!presentation || !activeSheet) return null;
     return presentation.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
   }, [presentation, activeSheet]);
+
+  const currentSheetRowStructure = useMemo(() => {
+    if (!currentSheetState) return [];
+    return resolveSheetRowStructure(currentSheetState);
+  }, [currentSheetState]);
 
   const sheetNames = useMemo(() => {
     if (docState?.sheets?.length) {
@@ -743,39 +749,31 @@ export default function App() {
   const rowData: GridRow[] = useMemo(() => {
     if (!currentSheet || !currentSheetState) return [];
 
-    return currentSheet.values
-      .map((row, rowIndex) => {
-        const rowPath = currentSheet.rowPaths[rowIndex] ?? `R${rowIndex + 1}`;
-        const absoluteRowNumber = currentSheetState.bodyStart + rowIndex + 1;
-        const rawHierarchyLabel = currentSheetState.logicalRows[absoluteRowNumber - 1]?.rawCells[0] ?? "";
-        const parsedHierarchy = parseHierarchyLabel(rawHierarchyLabel);
-        const nextRawHierarchyLabel = currentSheetState.logicalRows[absoluteRowNumber]?.rawCells[0] ?? "";
-        const nextParsedHierarchy = parseHierarchyLabel(nextRawHierarchyLabel);
-        const depth = parsedHierarchy.depth;
-        const hasChildren = absoluteRowNumber < currentSheetState.rowCount && nextParsedHierarchy.depth > depth;
-        const rowDisplayLabel = parsedHierarchy.content;
+    return currentSheetRowStructure
+      .map((rowInfo, rowIndex) => {
+        const row = currentSheet.values[rowIndex] ?? [];
 
         const item: GridRow = {
-          __rowKey: `r${absoluteRowNumber}`,
-          __rowId: currentSheetState.rowIds[absoluteRowNumber - 1] ?? absoluteRowNumber,
-          __rowPath: rowPath,
-          __absoluteRowNumber: absoluteRowNumber,
-          __depth: depth,
-          __hasChildren: hasChildren,
-          __collapsed: collapsedPaths.has(rowPath),
-          __displayLabel: rowDisplayLabel,
+          __rowKey: `r${rowInfo.absoluteRowNumber}`,
+          __rowId: rowInfo.rowId,
+          __rowPath: rowInfo.rowPath,
+          __absoluteRowNumber: rowInfo.absoluteRowNumber,
+          __depth: rowInfo.depth,
+          __hasChildren: rowInfo.hasChildren,
+          __collapsed: collapsedPaths.has(rowInfo.rowPath),
+          __displayLabel: rowInfo.label,
         };
 
         for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
           const field = toColFieldId(colIndex);
           const presentedCell = currentSheetPresentation?.cells[rowIndex]?.[colIndex] ?? null;
-          const rawCell = currentSheetState.cells[currentSheetState.bodyStart + rowIndex]?.[colIndex];
+          const rawCell = currentSheetState.cells[rowInfo.absoluteRowIndex]?.[colIndex];
           const runtimeValue = row[colIndex] as RuntimeValue | undefined;
           const displayText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
 
           if (colIndex < headerColCount) {
             if (colIndex === 0) {
-              item[field] = rowDisplayLabel;
+              item[field] = rowInfo.label;
               item[`__kind_${colIndex}`] = "label";
             } else {
               const headerValue = displayText.length > 0
@@ -805,7 +803,7 @@ export default function App() {
         return item;
       })
       .filter((row) => isVisiblePath(row.__rowPath, collapsedPaths));
-  }, [currentSheet, currentSheetState, currentSheetPresentation, collapsedPaths, sheetColCount, headerColCount]);
+  }, [currentSheet, currentSheetState, currentSheetPresentation, currentSheetRowStructure, collapsedPaths, sheetColCount, headerColCount]);
 
   const absoluteRowPathLookup = useMemo(() => {
     const map = new Map<number, string>();
@@ -1880,6 +1878,7 @@ export default function App() {
     [headerOverlayHeight],
   );
   const shouldRenderGrid = Boolean(currentSheet && currentSheetState && activeSheet && !isActiveSheetBlocked);
+  const animateTableStructure = shouldAnimateTableStructure();
   const showGridHeader = headerRowCount > 0;
   const handleRenameSheet = useCallback((sheetName: string, nextName: string): string | null => {
     try {
@@ -1981,8 +1980,7 @@ export default function App() {
       throw new Error("row insertion requires at least one selectable column");
     }
     const { rowGapIndex, depth, nextRowNumber, expandParentRowPath } = resolveRowInsert(
-      currentSheetState,
-      currentSheet.rowPaths,
+      currentSheetRowStructure,
       rowNumber,
       side,
     );
@@ -2014,7 +2012,7 @@ export default function App() {
     window.requestAnimationFrame(() => {
       focusBodyCellAt(nextRowNumber, nextColIndex);
     });
-  }, [activeSheet, currentSheet, currentSheetState, defaultBodyRailColIndex, selectedCell, startRowTransition, insertRow, closeRailMenu, focusBodyCellAt]);
+  }, [activeSheet, currentSheet, currentSheetState, currentSheetRowStructure, defaultBodyRailColIndex, selectedCell, startRowTransition, insertRow, closeRailMenu, focusBodyCellAt]);
 
   const handleDeleteRow = useCallback((rowNumber: number, mode: "node" | "subtree" = "node") => {
     if (!activeSheet) {
@@ -2026,7 +2024,7 @@ export default function App() {
     if (defaultBodyRailColIndex == null) {
       throw new Error("row deletion requires at least one selectable column");
     }
-    const rowId = currentSheetState.rowIds[rowNumber - 1];
+    const rowId = currentSheetRowStructure.find((row) => row.absoluteRowNumber === rowNumber)?.rowId;
     if (rowId == null) {
       throw new Error(`row deletion could not resolve rowId for row ${rowNumber}`);
     }
@@ -2059,7 +2057,7 @@ export default function App() {
     window.requestAnimationFrame(() => {
       focusBodyCellAt(nextRowNumber, nextColIndex);
     });
-  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, startRowTransition, deleteRow, closeRailMenu, clearActiveSelection, headerRowCount, focusBodyCellAt]);
+  }, [activeSheet, currentSheetState, currentSheetRowStructure, defaultBodyRailColIndex, currentSheet, selectedCell, startRowTransition, deleteRow, closeRailMenu, clearActiveSelection, headerRowCount, focusBodyCellAt]);
 
   const handleInsertColumn = useCallback((colIndex: number, side: "left" | "right") => {
     if (!activeSheet) {
@@ -2154,7 +2152,7 @@ export default function App() {
         ) : (
           <section
             className={
-              isStructureVeilVisible
+              animateTableStructure && isStructureVeilVisible
                 ? structureTransitionScope === "column"
                   ? "workspace-shell is-structure-transition is-column-transition"
                   : "workspace-shell is-structure-transition is-row-transition"

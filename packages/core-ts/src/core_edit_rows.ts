@@ -1,6 +1,6 @@
 import type { SheetState } from "./incremental";
-import { parseHierarchyLabel } from "./parser";
 import { assertInteger, type CoreEditErrorCategory } from "./core_edit_common";
+import { resolveSheetRowStructure } from "./row_structure";
 
 export type CoreRowInsertArea = "header" | "body";
 export type CoreRowDeleteMode = "node" | "subtree";
@@ -44,21 +44,28 @@ export function applyInsertRowEdit(sheet: SheetState, edit: CoreInsertRowEdit, f
     fail("out_of_bounds", `rowGapIndex ${edit.rowGapIndex} out of bounds`);
   }
   if (edit.area === "header") {
-    fail("invalid_operation", "header row insertion is not supported in V1");
+    if (edit.depth !== 0) {
+      fail("invalid_operation", "header row insertion requires depth 0");
+    }
+    if (edit.rowGapIndex > sheet.headerRowCount) {
+      fail("invalid_operation", "header row insertion gap must be inside header region");
+    }
+    sheet.insertHeaderRow(edit.rowGapIndex, false);
+    return;
   }
   if (edit.rowGapIndex < sheet.bodyStart) {
     fail("invalid_operation", "body row insertion gap must be inside body region");
   }
 
   const bodyGapIndex = edit.rowGapIndex - sheet.bodyStart;
-  const bodyDepths = deriveBodyDepths(sheet);
+  const rows = resolveSheetRowStructure(sheet);
 
   if (bodyGapIndex === 0) {
     if (edit.depth !== 0) {
       fail("invalid_operation", "first body row must have depth 0");
     }
   } else {
-    const previousDepth = bodyDepths[bodyGapIndex - 1];
+    const previousDepth = rows[bodyGapIndex - 1]?.depth ?? 0;
     if (edit.depth > previousDepth + 1) {
       fail(
         "invalid_operation",
@@ -67,8 +74,8 @@ export function applyInsertRowEdit(sheet: SheetState, edit: CoreInsertRowEdit, f
     }
   }
 
-  if (bodyGapIndex < bodyDepths.length) {
-    const nextDepth = bodyDepths[bodyGapIndex];
+  if (bodyGapIndex < rows.length) {
+    const nextDepth = rows[bodyGapIndex]?.depth ?? 0;
     if (nextDepth > edit.depth) {
       fail(
         "invalid_operation",
@@ -91,10 +98,15 @@ export function applyDeleteRowEdit(sheet: SheetState, edit: CoreDeleteRowEdit, f
     fail("invalid_target", `unknown rowId ${edit.rowId} in sheet '${sheet.name}'`);
   }
   if (rowIndex < sheet.bodyStart) {
-    fail("invalid_operation", "row deletion in header region is not supported in V1");
+    if (mode !== "node") {
+      fail("invalid_operation", "header row deletion does not support subtree mode");
+    }
+    sheet.deleteHeaderRow(rowIndex, false);
+    return;
   }
 
-  const deleteCount = countSubtreeRows(sheet, rowIndex);
+  const bodyRowIndex = rowIndex - sheet.bodyStart;
+  const deleteCount = resolveSheetRowStructure(sheet)[bodyRowIndex]?.subtreeRowCount ?? 1;
   if (mode === "node" && deleteCount > 1) {
     fail(
       "invalid_operation",
@@ -105,24 +117,6 @@ export function applyDeleteRowEdit(sheet: SheetState, edit: CoreDeleteRowEdit, f
   sheet.deleteRows(rowIndex, mode === "subtree" ? deleteCount : 1, false);
 }
 
-function deriveBodyDepths(sheet: SheetState): number[] {
-  return sheet.logicalRows.slice(sheet.bodyStart).map((row) => parseHierarchyLabel(row.rawCells[0] ?? "").depth);
-}
-
 function buildBlankHierarchyLabel(depth: number): string {
   return depth === 0 ? "" : "*".repeat(depth);
-}
-
-function countSubtreeRows(sheet: SheetState, rowIndex: number): number {
-  const bodyDepths = deriveBodyDepths(sheet);
-  const bodyRowIndex = rowIndex - sheet.bodyStart;
-  const currentDepth = bodyDepths[bodyRowIndex];
-  let count = 1;
-  for (let i = bodyRowIndex + 1; i < bodyDepths.length; i += 1) {
-    if (bodyDepths[i] <= currentDepth) {
-      break;
-    }
-    count += 1;
-  }
-  return count;
 }

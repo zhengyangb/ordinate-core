@@ -10,6 +10,7 @@ import {
   themeQuartz,
 } from "ag-grid-community";
 
+import { shouldAnimateTableStructure } from "../config/motion";
 import type { ChromeVisibilityPhase, ColumnMetric, GridRow, HeaderIndexMetric, HeaderOverlayCell, RowIndexMetric, SelectedCell } from "../types/ui";
 
 type TableStageProps = {
@@ -121,6 +122,7 @@ export default function TableStage({
   handleCellDoubleClicked,
   handleCellKeyDown,
 }: TableStageProps) {
+  const animateTableStructure = shouldAnimateTableStructure();
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
   const selectedRowNumber = selectedCell?.logical.rAbs ?? null;
   const activeColumnIndex = selectedColumnIndex ?? selectedCell?.logical.cAbs ?? null;
@@ -323,7 +325,11 @@ export default function TableStage({
         {showSelectionRing ? (
           <div
             ref={selectionRingRef}
-            className={isSelectionRingTransitioning ? "persistent-selection-ring is-hidden is-structural-transition" : "persistent-selection-ring is-hidden"}
+            className={
+              isSelectionRingTransitioning && animateTableStructure
+                ? "persistent-selection-ring is-hidden is-structural-transition"
+                : "persistent-selection-ring is-hidden"
+            }
             aria-hidden="true"
           />
         ) : null}
@@ -383,7 +389,7 @@ export default function TableStage({
           <AgGridReact<GridRow>
             rowData={rowData}
             columnDefs={columnDefs}
-            animateRows
+            animateRows={animateTableStructure}
             // Header layout contract:
             // - the visible spreadsheet header is fully owned by our overlay
             // - `.grid-wrap` reserves that vertical space with padding-top

@@ -15,6 +15,7 @@ import {
   resolveDocumentPresentation,
   resolvePresentationFromText,
   resolveCellInputText,
+  resolveSheetRowStructure,
   serializeDocumentState,
   splitCellDisplayMetadata,
 } from "../src";
@@ -852,6 +853,56 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(invalidScope.ok).toBe(false);
     if (invalidScope.ok) throw new Error("expected failure");
     expect(invalidScope.error.category).toBe("invalid_operation");
+  });
+
+  it("exposes minimal row structure read surface from core", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Revenue |
+| * Product A |
+| ** SKU 1 |
+| * Product B |
+`.trim());
+
+    const rows = resolveSheetRowStructure(state.sheets[0]);
+    expect(rows.map((row) => ({
+      rowId: row.rowId,
+      depth: row.depth,
+      hasChildren: row.hasChildren,
+      subtreeRowCount: row.subtreeRowCount,
+      rowPath: row.rowPath,
+    }))).toEqual([
+      {
+        rowId: state.sheets[0].rowIds[state.sheets[0].bodyStart],
+        depth: 0,
+        hasChildren: true,
+        subtreeRowCount: 4,
+        rowPath: "Revenue",
+      },
+      {
+        rowId: state.sheets[0].rowIds[state.sheets[0].bodyStart + 1],
+        depth: 1,
+        hasChildren: true,
+        subtreeRowCount: 2,
+        rowPath: "Revenue.Product A",
+      },
+      {
+        rowId: state.sheets[0].rowIds[state.sheets[0].bodyStart + 2],
+        depth: 2,
+        hasChildren: false,
+        subtreeRowCount: 1,
+        rowPath: "Revenue.Product A.SKU 1",
+      },
+      {
+        rowId: state.sheets[0].rowIds[state.sheets[0].bodyStart + 3],
+        depth: 1,
+        hasChildren: false,
+        subtreeRowCount: 1,
+        rowPath: "Revenue.Product B",
+      },
+    ]);
   });
 
   it("uses rowGapIndex + depth for body-row insertion and rejects implicit reparenting", () => {

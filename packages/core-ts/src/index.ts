@@ -49,13 +49,24 @@ export {
 export { ChangeKind, DocumentState, SheetState } from "./incremental";
 export { serializeDocumentState } from "./serializer";
 export {
+  resolveSheetRowStructure,
+  type SheetBodyRowStructure,
+} from "./row_structure";
+export {
   applyBatchAtomic,
+  previewDeleteColumn,
+  previewDeleteRow,
   type ApplyBatchAtomicOptions,
   type ApplyBatchAtomicResult,
+  type CoreAffectedFormulaCell,
   type CoreCellTarget,
+  type CoreCellHandle,
+  type CoreDeleteColumnPreview,
+  type CoreDeleteRowPreview,
   type CoreEdit,
   type CoreEditError,
   type CoreEditErrorCategory,
+  type CoreRegionTarget,
 } from "./core_edit";
 export type {
   CoreDeleteRowEdit,

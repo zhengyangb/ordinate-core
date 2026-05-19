@@ -1915,6 +1915,7 @@ textarea {
 
 .header-matrix-cell.has-slot-selection {
     z-index: 2;
+    overflow: visible;
 }
 
 .header-matrix-cell.has-slot-selection::after {
