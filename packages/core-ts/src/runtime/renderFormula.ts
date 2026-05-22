@@ -1,10 +1,16 @@
 import { isError, isValidExternalErrorKind } from "./errors";
 import type { ExprNode, ReferenceExpr, RefSelector, RuntimeValue } from "./types";
 
+export type FormulaRenderContext = {
+  rowLabelPathsByIndex?: string[][];
+  colLabelsByIndex?: string[];
+};
+
 export function renderFormulaExpression(
   node: ExprNode | null | undefined,
   rowIdToIndex: Map<number, number>,
   colIdToIndex: Map<number, number>,
+  context: FormulaRenderContext = {},
   parentPrec = 0,
 ): string | null {
   if (!node) return null;
@@ -27,26 +33,26 @@ export function renderFormulaExpression(
       const spreadsheet = renderSpreadsheetReference(ref, rowIdToIndex, colIdToIndex);
       if (spreadsheet) return spreadsheet;
     }
-    const rowSel = renderSelector(ref.rowSelector, rowIdToIndex);
-    const colSel = renderSelector(ref.colSelector, colIdToIndex);
+    const rowSel = renderSelector(ref.rowSelector, rowIdToIndex, context.rowLabelPathsByIndex);
+    const colSel = renderSelector(ref.colSelector, colIdToIndex, context.colLabelsByIndex?.map((label) => [label]));
     return `@[${rowSel},${colSel}]`;
   }
   if (node.kind === "call") {
     const call = node.value as { name: string; args: ExprNode[] };
-    const args = call.args.map((arg) => renderFormulaExpression(arg, rowIdToIndex, colIdToIndex) ?? "error[generic]");
+    const args = call.args.map((arg) => renderFormulaExpression(arg, rowIdToIndex, colIdToIndex, context) ?? "error[generic]");
     return `${call.name}(${args.join(", ")})`;
   }
   if (node.kind === "unary") {
     const inner =
-      renderFormulaExpression(node.right ?? null, rowIdToIndex, colIdToIndex, precedence("unary")) ?? "error[generic]";
+      renderFormulaExpression(node.right ?? null, rowIdToIndex, colIdToIndex, context, precedence("unary")) ?? "error[generic]";
     const text = `-${inner}`;
     return parentPrec > precedence("unary") ? `(${text})` : text;
   }
   if (node.kind === "binary") {
     const op = String(node.value ?? "");
     const prec = precedence(op);
-    const left = renderFormulaExpression(node.left ?? null, rowIdToIndex, colIdToIndex, prec) ?? "error[generic]";
-    const right = renderFormulaExpression(node.right ?? null, rowIdToIndex, colIdToIndex, prec + 1) ?? "error[generic]";
+    const left = renderFormulaExpression(node.left ?? null, rowIdToIndex, colIdToIndex, context, prec) ?? "error[generic]";
+    const right = renderFormulaExpression(node.right ?? null, rowIdToIndex, colIdToIndex, context, prec + 1) ?? "error[generic]";
     const text = `${left} ${op} ${right}`;
     return parentPrec > prec ? `(${text})` : text;
   }
@@ -62,18 +68,18 @@ function precedence(op: string): number {
   return 0;
 }
 
-function renderSelector(selector: RefSelector, idToIndex: Map<number, number>): string {
+function renderSelector(selector: RefSelector, idToIndex: Map<number, number>, labelsByIndex?: string[][]): string {
   if (selector.kind === "all") return ":";
   if (selector.kind === "range") {
     const [startSel, endSel] = selector.value as [RefSelector | null, RefSelector | null];
-    const startText = startSel ? renderScalarSelector(startSel, idToIndex) : "";
-    const endText = endSel ? renderScalarSelector(endSel, idToIndex) : "";
+    const startText = startSel ? renderScalarSelector(startSel, idToIndex, labelsByIndex) : "";
+    const endText = endSel ? renderScalarSelector(endSel, idToIndex, labelsByIndex) : "";
     return `${startText}:${endText}`;
   }
-  return renderScalarSelector(selector, idToIndex);
+  return renderScalarSelector(selector, idToIndex, labelsByIndex);
 }
 
-function renderScalarSelector(selector: RefSelector, idToIndex: Map<number, number>): string {
+function renderScalarSelector(selector: RefSelector, idToIndex: Map<number, number>, labelsByIndex?: string[][]): string {
   if (selector.kind === "current") return "_";
   if (selector.kind === "offset") {
     const offset = Number(selector.value ?? 0);
@@ -90,6 +96,19 @@ function renderScalarSelector(selector: RefSelector, idToIndex: Map<number, numb
   if (selector.kind === "absolute_id") {
     const idx = idToIndex.get(Number(selector.value));
     if (idx === undefined) return "#?";
+    return `#${idx + 1}`;
+  }
+  if (selector.kind === "label_id") {
+    const idx = idToIndex.get(Number(selector.value));
+    if (idx === undefined) return "#?";
+    const label = labelsByIndex?.[idx];
+    if (label && label.length > 0) {
+      const key = JSON.stringify(label);
+      const matchCount = labelsByIndex?.filter((candidate) => JSON.stringify(candidate) === key).length ?? 0;
+      if (matchCount === 1) {
+        return label.map((p) => quotePathComponent(p)).join(".");
+      }
+    }
     return `#${idx + 1}`;
   }
   if (selector.kind === "label") {

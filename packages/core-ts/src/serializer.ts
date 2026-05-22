@@ -65,6 +65,9 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
   const includeDisplayControlFrame = sheet.columnDisplayMetadata.some((meta) => meta !== null);
   const rowIdToIndex = buildIdIndexMap(sheet.rowIds);
   const colIdToIndex = buildIdIndexMap(sheet.colIds);
+  const rowLabelPathsByIndex = Array.from({ length: sheet.rowCount }, (_, rowIndex) =>
+    rowIndex >= sheet.bodyStart ? (sheet.rowPaths[rowIndex - sheet.bodyStart] ?? "").split(".") : [],
+  );
   const lines: string[] = [];
 
   if (includeDisplayControlFrame) {
@@ -92,7 +95,7 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
       if (rAbs < sheet.headerRowCount || c < sheet.headerColCount) {
         cells.push(encodeTableCellText(c < row.rawCells.length ? row.rawCells[c] : ""));
       } else {
-        cells.push(encodeTableCellText(serializeCellState(cellState, rowIdToIndex, colIdToIndex)));
+        cells.push(encodeTableCellText(serializeCellState(cellState, rowIdToIndex, colIdToIndex, rowLabelPathsByIndex, sheet.colLabels)));
       }
     }
     lines.push(buildRow(cells, rowBoundary));
@@ -105,6 +108,8 @@ function serializeCellState(
   cellState: SheetState["cells"][number][number],
   rowIdToIndex: Map<number, number>,
   colIdToIndex: Map<number, number>,
+  rowLabelPathsByIndex: string[][],
+  colLabelsByIndex: string[],
 ): string {
   const body = cellState.body;
   const displaySuffix = renderDisplayBlock(cellState.localDisplay);
@@ -115,7 +120,10 @@ function serializeCellState(
     return `${serializeLiteralBody(body.literal, body.inputText)}${displaySuffix}`;
   }
 
-  const rhs = renderFormulaExpression(body.expression, rowIdToIndex, colIdToIndex) ?? body.expressionText;
+  const rhs = renderFormulaExpression(body.expression, rowIdToIndex, colIdToIndex, {
+    rowLabelPathsByIndex,
+    colLabelsByIndex,
+  }) ?? body.expressionText;
   if (!cellState.dirty && cellState.cachedValue !== null && cellState.cachedValue.kind !== "blank") {
     return `${serializeValue(cellState.cachedValue)} = ${rhs}${displaySuffix}`;
   }

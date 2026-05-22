@@ -612,7 +612,7 @@ function resolveScalarRendered(
     }
     return { ok: true, index: idx };
   }
-  if (selector.kind === "absolute_id") {
+  if (selector.kind === "absolute_id" || selector.kind === "label_id") {
     if (!idToIndex) {
       return { ok: false, internalKind: "unresolved_reference_absolute_id_missing_index", context: {} };
     }

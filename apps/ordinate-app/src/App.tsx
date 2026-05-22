@@ -141,8 +141,16 @@ export default function App() {
     setActiveSheet,
     renameSheet,
     setCellInput,
+    clearCell,
     setCellLocalFormat,
     setCellLocalStyle,
+    setColumnDefaultFormat,
+    setColumnDefaultStyle,
+    clearColumnDefaultFormat,
+    previewDeleteRow,
+    previewDeleteColumn,
+    convertRowsToHeader,
+    convertRowsToBody,
     insertRow,
     deleteRow,
     insertColumn,
@@ -165,7 +173,7 @@ export default function App() {
   const [railMenuPosition, setRailMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
   const [isIndexRailsHovered, setIsIndexRailsHovered] = useState(false);
   const [openRailMenuTarget, setOpenRailMenuTarget] = useState<
-    { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number; hasChildren: boolean } | null
+    { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number; area: "header" | "body"; hasChildren: boolean } | null
   >(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
@@ -303,10 +311,11 @@ export default function App() {
       openRailMenuTarget,
       sheetColCount,
       headerColCount,
+      currentSheetState,
       currentSheetPresentation,
       columnHasLocalConfig,
     );
-  }, [openRailMenuTarget, sheetColCount, headerColCount, currentSheetPresentation, columnHasLocalConfig]);
+  }, [openRailMenuTarget, sheetColCount, headerColCount, currentSheetState, currentSheetPresentation, columnHasLocalConfig]);
 
   useEffect(() => {
     if (selectedColumnIndex == null) return;
@@ -320,8 +329,8 @@ export default function App() {
       if (openRailMenuTarget.colIndex >= 0 && openRailMenuTarget.colIndex < sheetColCount) return;
     } else {
       const bodyRowCount = currentSheet?.values.length ?? 0;
-      const minRowNumber = headerRowCount + 1;
-      const maxRowNumber = headerRowCount + bodyRowCount;
+      const minRowNumber = openRailMenuTarget.area === "header" ? 1 : headerRowCount + 1;
+      const maxRowNumber = openRailMenuTarget.area === "header" ? headerRowCount : headerRowCount + bodyRowCount;
       if (openRailMenuTarget.rowNumber >= minRowNumber && openRailMenuTarget.rowNumber <= maxRowNumber) return;
     }
     setRailMenuOpen(false);
@@ -694,7 +703,7 @@ export default function App() {
       if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.repeat) return;
       if (mode === "source" || isActiveSheetBlocked) return;
-      if (!selectedCell || selectedCell.area !== "body" || formulaInputMode !== "read") return;
+      if (!selectedCell || formulaInputMode !== "read") return;
       if (themeMenuOpen || toolMenuOpen || railMenuOpen) return;
       const target = event.target as HTMLElement | null;
       if (
@@ -724,7 +733,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (!selectedCell && selectedColumnIndex == null) return;
       const interactiveRoot = target?.closest(
-        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, .column-index-main, .row-index-main, .rail-menu, textarea",
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-tab, .column-index-cell, .column-index-main, .row-index-cell, .row-index-main, .rail-menu, textarea",
       );
       if (interactiveRoot) return;
       clearActiveSelection();
@@ -1251,6 +1260,19 @@ export default function App() {
     [applyHeaderSelection],
   );
 
+  const handleHeaderOverlayDoubleClick = useCallback(
+    (rowNumber: number, colIndex: number) => {
+      if (mode === "source" || isActiveSheetBlocked) return;
+      applyHeaderSelection(rowNumber, colIndex);
+      setFormulaInputMode("edit");
+      selectionDebugLog("header doubleClick edit request", {
+        rowNumber,
+        colIndex,
+      });
+    },
+    [mode, isActiveSheetBlocked, applyHeaderSelection],
+  );
+
   const defaultBodyRailColIndex = useMemo(() => {
     if (sheetColCount <= 0) return null;
     return Math.min(Math.max(headerColCount, 0), sheetColCount - 1);
@@ -1298,17 +1320,17 @@ export default function App() {
   );
 
   const handleRowRailMenuOpen = useCallback(
-    (rowNumber: number, anchorEl: HTMLElement) => {
+    (rowNumber: number, area: "header" | "body", anchorEl: HTMLElement) => {
       if (mode === "source" || isActiveSheetBlocked) return;
-      const row = rowData.find((candidate) => candidate.__absoluteRowNumber === rowNumber);
-      if (!row) return;
+      const row = area === "body" ? rowData.find((candidate) => candidate.__absoluteRowNumber === rowNumber) : null;
+      if (area === "body" && !row) return;
       railMenuAnchorRef.current = anchorEl;
       const anchorRect = anchorEl.getBoundingClientRect();
       setRailMenuPosition({
         top: anchorRect.bottom + FLOATING_MENU_GAP,
         left: anchorRect.left,
       });
-      setOpenRailMenuTarget({ kind: "row", rowNumber, hasChildren: row.__hasChildren });
+      setOpenRailMenuTarget({ kind: "row", rowNumber, area, hasChildren: row?.__hasChildren ?? false });
       setRailMenuOpen(true);
       setFormulaInputMode("read");
       setFormulaBarSnapshot(null);
@@ -1880,6 +1902,15 @@ export default function App() {
   const shouldRenderGrid = Boolean(currentSheet && currentSheetState && activeSheet && !isActiveSheetBlocked);
   const animateTableStructure = shouldAnimateTableStructure();
   const showGridHeader = headerRowCount > 0;
+  const isFormulaBarInputEditable = Boolean(selectedCell && activeSheet && !isActiveSheetBlocked);
+  const areFormulaBarDisplayControlsEditable = Boolean(
+    selectedCell &&
+      selectedCell.area === "body" &&
+      activeSheet &&
+      !isActiveSheetBlocked &&
+      selectedCell.logical.rAbs > headerRowCount &&
+      selectedCell.logical.cAbs >= headerColCount,
+  );
   const handleRenameSheet = useCallback((sheetName: string, nextName: string): string | null => {
     try {
       renameSheet(sheetName, nextName);
@@ -1889,21 +1920,31 @@ export default function App() {
     }
   }, [renameSheet]);
   const handleCommitFormulaInput = useCallback((nextInput: string) => {
-    if (!selectedCell || selectedCell.area !== "body") {
-      throw new Error("formula input commit requires a selected body cell");
+    if (!selectedCell) {
+      throw new Error("formula input commit requires a selected cell");
     }
     if (!activeSheet) {
       throw new Error("formula input commit requires an active sheet");
     }
-    setCellInput(
-      {
-        kind: "index",
-        sheet: activeSheet,
-        rowIndex: selectedCell.logical.rAbs - 1,
-        colIndex: selectedCell.logical.cAbs,
-      },
-      nextInput,
-    );
+    const target = {
+      kind: "index" as const,
+      sheet: activeSheet,
+      rowIndex: selectedCell.logical.rAbs - 1,
+      colIndex: selectedCell.logical.cAbs,
+    };
+    if (nextInput === "") {
+      clearCell(target);
+    } else {
+      const input =
+        selectedCell.area === "body" && selectedCell.logical.cAbs === 0 && headerColCount > 0
+          ? (() => {
+              const row = currentSheetRowStructure.find((candidate) => candidate.absoluteRowNumber === selectedCell.logical.rAbs);
+              if (!row || row.depth <= 0 || /^\*+(?:\s|$)/.test(nextInput.trim())) return nextInput;
+              return `${"*".repeat(row.depth)} ${nextInput}`;
+            })()
+          : nextInput;
+      setCellInput(target, input);
+    }
     selectionDebugLog("commit formula input", {
       sheet: activeSheet,
       rAbs: selectedCell.logical.rAbs,
@@ -1912,13 +1953,17 @@ export default function App() {
     });
     setFormulaInputMode("read");
     window.requestAnimationFrame(() => {
-      focusSelectedBodyCell();
+      if (selectedCell.area === "header") {
+        focusHeaderOverlayCell(selectedCell.logical.rAbs, selectedCell.logical.cAbs);
+      } else {
+        focusSelectedBodyCell();
+      }
     });
-  }, [selectedCell, activeSheet, setCellInput, focusSelectedBodyCell]);
+  }, [selectedCell, activeSheet, headerColCount, currentSheetRowStructure, clearCell, setCellInput, focusHeaderOverlayCell, focusSelectedBodyCell]);
 
   const handleSetCellLocalFormat = useCallback((key: FormatLocalKey, options: FormatLocalOptions | null | undefined) => {
-    if (!selectedCell || selectedCell.area !== "body") {
-      throw new Error("format edit requires a selected body cell");
+    if (!selectedCell || selectedCell.area !== "body" || selectedCell.logical.rAbs <= headerRowCount || selectedCell.logical.cAbs < headerColCount) {
+      throw new Error("format edit requires a selected data cell");
     }
     if (!activeSheet) {
       throw new Error("format edit requires an active sheet");
@@ -1936,14 +1981,14 @@ export default function App() {
     window.requestAnimationFrame(() => {
       scheduleSelectionRingSync();
     });
-  }, [selectedCell, activeSheet, setCellLocalFormat, scheduleSelectionRingSync]);
+  }, [selectedCell, activeSheet, headerRowCount, headerColCount, setCellLocalFormat, scheduleSelectionRingSync]);
 
   const handleSetCellLocalStyle = useCallback(<Axis extends "align" | "weight" | "color">(
     axis: Axis,
     value: NonNullable<FormulaBarData["styleLocal"]>[Axis],
   ) => {
-    if (!selectedCell || selectedCell.area !== "body") {
-      throw new Error("style edit requires a selected body cell");
+    if (!selectedCell || selectedCell.area !== "body" || selectedCell.logical.rAbs <= headerRowCount || selectedCell.logical.cAbs < headerColCount) {
+      throw new Error("style edit requires a selected data cell");
     }
     if (!activeSheet) {
       throw new Error("style edit requires an active sheet");
@@ -1964,7 +2009,40 @@ export default function App() {
     window.requestAnimationFrame(() => {
       scheduleSelectionRingSync();
     });
-  }, [selectedCell, activeSheet, setCellLocalStyle, scheduleSelectionRingSync]);
+  }, [selectedCell, activeSheet, headerRowCount, headerColCount, setCellLocalStyle, scheduleSelectionRingSync]);
+
+  const handleSetColumnDefaultFormat = useCallback((colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => {
+    if (!activeSheet) {
+      throw new Error("column format edit requires an active sheet");
+    }
+    if (key === "auto") {
+      clearColumnDefaultFormat(activeSheet, colId);
+    } else {
+      setColumnDefaultFormat(activeSheet, colId, formatSpecFromLocalKey(key, options));
+    }
+    setFormulaInputMode("read");
+    window.requestAnimationFrame(() => {
+      scheduleSelectionRingSync();
+    });
+  }, [activeSheet, clearColumnDefaultFormat, setColumnDefaultFormat, scheduleSelectionRingSync]);
+
+  const handleSetColumnDefaultStyle = useCallback(<Axis extends "align" | "weight" | "color">(
+    colId: number,
+    axis: Axis,
+    value: NonNullable<FormulaBarData["styleLocal"]>[Axis],
+  ) => {
+    if (!activeSheet) {
+      throw new Error("column style edit requires an active sheet");
+    }
+    const patch: StylePatch = {
+      [axis]: value === "auto" ? null : value,
+    };
+    setColumnDefaultStyle(activeSheet, colId, patch);
+    setFormulaInputMode("read");
+    window.requestAnimationFrame(() => {
+      scheduleSelectionRingSync();
+    });
+  }, [activeSheet, setColumnDefaultStyle, scheduleSelectionRingSync]);
 
   const handleInsertRow = useCallback((rowNumber: number, side: "above" | "below") => {
     if (!activeSheet) {
@@ -2014,19 +2092,51 @@ export default function App() {
     });
   }, [activeSheet, currentSheet, currentSheetState, currentSheetRowStructure, defaultBodyRailColIndex, selectedCell, startRowTransition, insertRow, closeRailMenu, focusBodyCellAt]);
 
-  const handleDeleteRow = useCallback((rowNumber: number, mode: "node" | "subtree" = "node") => {
+  const handleDeleteRow = useCallback((rowNumber: number, area: "header" | "body", rowId: number, mode: "node" | "subtree" = "node") => {
     if (!activeSheet) {
       throw new Error("row deletion requires an active sheet");
     }
     if (!currentSheetState) {
       throw new Error("row deletion requires current sheet state");
     }
-    if (defaultBodyRailColIndex == null) {
+    if (area === "body" && defaultBodyRailColIndex == null) {
       throw new Error("row deletion requires at least one selectable column");
     }
-    const rowId = currentSheetRowStructure.find((row) => row.absoluteRowNumber === rowNumber)?.rowId;
-    if (rowId == null) {
-      throw new Error(`row deletion could not resolve rowId for row ${rowNumber}`);
+    const preview = previewDeleteRow(activeSheet, rowId, mode);
+    if (
+      preview.affectedFormulaCellCount > 0 &&
+      !window.confirm(`Delete this row? ${preview.affectedFormulaCellCount} formula cell(s) reference the deleted row(s).`)
+    ) {
+      closeRailMenu();
+      return;
+    }
+    if (area === "header") {
+      const nextHeaderRowNumber = headerRowCount <= 1 ? null : Math.min(rowNumber, headerRowCount - 1);
+      deleteRow(activeSheet, rowId, mode);
+      closeRailMenu();
+      setFormulaInputMode("read");
+      setSelectedColumnIndex(null);
+      if (nextHeaderRowNumber == null) {
+        clearActiveSelection();
+        return;
+      }
+      const nextColIndex = selectedCell?.logical.cAbs ?? defaultBodyRailColIndex ?? 0;
+      setSelectedCell({
+        area: "header",
+        logical: {
+          rAbs: nextHeaderRowNumber,
+          cAbs: nextColIndex,
+        },
+        colId: toColFieldId(nextColIndex),
+        rowPath: null,
+      });
+      window.requestAnimationFrame(() => {
+        focusHeaderOverlayCell(nextHeaderRowNumber, nextColIndex);
+      });
+      return;
+    }
+    if (defaultBodyRailColIndex == null) {
+      throw new Error("row deletion requires at least one selectable column");
     }
     const bodyRowCount = currentSheet?.values.length ?? 0;
     const nextRowNumber = bodyRowCount <= 1 ? null : rowNumber < headerRowCount + bodyRowCount ? rowNumber : rowNumber - 1;
@@ -2057,7 +2167,27 @@ export default function App() {
     window.requestAnimationFrame(() => {
       focusBodyCellAt(nextRowNumber, nextColIndex);
     });
-  }, [activeSheet, currentSheetState, currentSheetRowStructure, defaultBodyRailColIndex, currentSheet, selectedCell, startRowTransition, deleteRow, closeRailMenu, clearActiveSelection, headerRowCount, focusBodyCellAt]);
+  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, previewDeleteRow, deleteRow, closeRailMenu, headerRowCount, clearActiveSelection, focusHeaderOverlayCell, startRowTransition, focusBodyCellAt]);
+
+  const handleConvertRowsToHeader = useCallback((rowId: number) => {
+    if (!activeSheet) {
+      throw new Error("row conversion requires an active sheet");
+    }
+    convertRowsToHeader(activeSheet, [rowId]);
+    closeRailMenu();
+    clearActiveSelection();
+    setFormulaInputMode("read");
+  }, [activeSheet, convertRowsToHeader, closeRailMenu, clearActiveSelection]);
+
+  const handleConvertRowsToBody = useCallback((rowId: number) => {
+    if (!activeSheet) {
+      throw new Error("row conversion requires an active sheet");
+    }
+    convertRowsToBody(activeSheet, [rowId], 0);
+    closeRailMenu();
+    clearActiveSelection();
+    setFormulaInputMode("read");
+  }, [activeSheet, convertRowsToBody, closeRailMenu, clearActiveSelection]);
 
   const handleInsertColumn = useCallback((colIndex: number, side: "left" | "right") => {
     if (!activeSheet) {
@@ -2076,6 +2206,14 @@ export default function App() {
     if (!activeSheet) {
       throw new Error("column deletion requires an active sheet");
     }
+    const preview = previewDeleteColumn(activeSheet, colIndex);
+    if (
+      preview.affectedFormulaCellCount > 0 &&
+      !window.confirm(`Delete this column? ${preview.affectedFormulaCellCount} formula cell(s) reference the deleted column.`)
+    ) {
+      closeRailMenu();
+      return;
+    }
     startColumnTransition("delete");
     deleteColumn(activeSheet, colIndex);
     closeRailMenu();
@@ -2087,11 +2225,11 @@ export default function App() {
       setSelectedColumnIndex(null);
     }
     setFormulaInputMode("read");
-  }, [activeSheet, startColumnTransition, deleteColumn, closeRailMenu, sheetColCount, headerColCount]);
+  }, [activeSheet, previewDeleteColumn, startColumnTransition, deleteColumn, closeRailMenu, sheetColCount, headerColCount]);
 
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
-    if (!selectedCell || selectedCell.area !== "body") return;
+    if (!selectedCell) return;
     setFormulaInputMode("edit");
     selectionDebugLog("request formula edit", {
       rAbs: selectedCell.logical.rAbs,
@@ -2189,6 +2327,7 @@ export default function App() {
                 selectionRingRef={selectionRingRef}
                 isSelectionRingTransitioning={isSelectionRingTransitioning}
                 handleHeaderOverlaySelect={handleHeaderOverlaySelect}
+                handleHeaderOverlayDoubleClick={handleHeaderOverlayDoubleClick}
                 handleHeaderOverlayKeyDown={handleHeaderOverlayKeyDown}
                 handleColumnRailSelect={handleColumnRailSelect}
                 handleColumnRailMenuOpen={handleColumnRailMenuOpen}
@@ -2217,7 +2356,8 @@ export default function App() {
           phase={cellChromeVisibilityPhase}
           formulaBarSnapshot={formulaBarSnapshot}
           inputMode={formulaInputMode}
-          isInputEditable={Boolean(selectedCell && selectedCell.area === "body" && activeSheet && !isActiveSheetBlocked)}
+          isInputEditable={isFormulaBarInputEditable}
+          areDisplayControlsEditable={areFormulaBarDisplayControlsEditable}
           onRequestEdit={handleRequestFormulaEdit}
           onCancelEdit={handleCancelFormulaEdit}
           onCommitInput={handleCommitFormulaInput}
@@ -2252,6 +2392,10 @@ export default function App() {
         onInsertColumnLeft={(colIndex) => handleInsertColumn(colIndex, "left")}
         onInsertColumnRight={(colIndex) => handleInsertColumn(colIndex, "right")}
         onDeleteColumn={handleDeleteColumn}
+        onConvertRowsToHeader={handleConvertRowsToHeader}
+        onConvertRowsToBody={handleConvertRowsToBody}
+        onSetColumnDefaultFormat={handleSetColumnDefaultFormat}
+        onSetColumnDefaultStyle={handleSetColumnDefaultStyle}
         tooltip={tooltip}
       />
     </div>

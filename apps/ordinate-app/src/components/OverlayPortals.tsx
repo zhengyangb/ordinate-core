@@ -8,7 +8,10 @@ import type { CoreRowDeleteMode } from "@ordinate/core";
 import type {
   FloatingMenuPosition,
   FloatingTooltip,
+  FormatLocalKey,
+  FormatLocalOptions,
   RailMenuView,
+  StyleLocalView,
   ThemeMenuPosition,
   ThemeMode,
   ToolSpec,
@@ -31,10 +34,14 @@ type OverlayPortalsProps = {
   railMenuRef: RefObject<HTMLDivElement>;
   onInsertRowAbove: (rowNumber: number) => void;
   onInsertRowBelow: (rowNumber: number) => void;
-  onDeleteRow: (rowNumber: number, mode: CoreRowDeleteMode) => void;
+  onDeleteRow: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
   onInsertColumnLeft: (colIndex: number) => void;
   onInsertColumnRight: (colIndex: number) => void;
   onDeleteColumn: (colIndex: number) => void;
+  onConvertRowsToHeader: (rowId: number) => void;
+  onConvertRowsToBody: (rowId: number) => void;
+  onSetColumnDefaultFormat: (colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
+  onSetColumnDefaultStyle: <Axis extends keyof StyleLocalView>(colId: number, axis: Axis, value: StyleLocalView[Axis]) => void;
   tooltip: FloatingTooltip | null;
 };
 
@@ -59,6 +66,10 @@ export default function OverlayPortals({
   onInsertColumnLeft,
   onInsertColumnRight,
   onDeleteColumn,
+  onConvertRowsToHeader,
+  onConvertRowsToBody,
+  onSetColumnDefaultFormat,
+  onSetColumnDefaultStyle,
   tooltip,
 }: OverlayPortalsProps) {
   return (
@@ -125,6 +136,10 @@ export default function OverlayPortals({
           onInsertColumnLeft={onInsertColumnLeft}
           onInsertColumnRight={onInsertColumnRight}
           onDeleteColumn={onDeleteColumn}
+          onConvertRowsToHeader={onConvertRowsToHeader}
+          onConvertRowsToBody={onConvertRowsToBody}
+          onSetColumnDefaultFormat={onSetColumnDefaultFormat}
+          onSetColumnDefaultStyle={onSetColumnDefaultStyle}
         />,
         document.body,
       )}

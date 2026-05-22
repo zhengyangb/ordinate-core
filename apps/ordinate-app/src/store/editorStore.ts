@@ -4,11 +4,16 @@ import {
   applyBatchAtomic,
   type CoreCellTarget,
   type CoreEdit,
+  type CoreRegionTarget,
   type CoreRowDeleteMode,
   type CoreRowInsertArea,
   DocumentState,
+  previewDeleteColumn,
+  previewDeleteRow,
   resolveDocumentPresentation,
   validateDocument,
+  type CoreDeleteColumnPreview,
+  type CoreDeleteRowPreview,
   type EvaluationResult,
   type FormatSpec,
   type PresentationResult,
@@ -34,9 +39,22 @@ interface EditorState {
   setActiveSheet: (sheetName: string) => void;
   applyCoreEdits: (edits: CoreEdit[], nextActiveSheetHint?: string | null) => void;
   setCellInput: (target: CoreCellTarget, input: string) => void;
+  clearCell: (target: CoreCellTarget) => void;
   renameSheet: (sheet: string, newName: string) => void;
   setCellLocalFormat: (target: CoreCellTarget, format: FormatSpec | null) => void;
+  clearCellLocalFormat: (target: CoreCellTarget) => void;
   setCellLocalStyle: (target: CoreCellTarget, style: StylePatch) => void;
+  clearCellLocalStyle: (target: CoreCellTarget) => void;
+  setColumnDefaultFormat: (sheet: string, colId: number, format: FormatSpec | null) => void;
+  clearColumnDefaultFormat: (sheet: string, colId: number) => void;
+  setColumnDefaultStyle: (sheet: string, colId: number, style: StylePatch) => void;
+  clearColumnDefaultStyle: (sheet: string, colId: number) => void;
+  setRegion: (target: CoreRegionTarget, values: string[][]) => void;
+  clearRegion: (target: CoreRegionTarget) => void;
+  convertRowsToHeader: (sheet: string, rowIds: number[]) => void;
+  convertRowsToBody: (sheet: string, rowIds: number[], depth: number) => void;
+  previewDeleteRow: (sheet: string, rowId: number, mode?: CoreRowDeleteMode) => CoreDeleteRowPreview;
+  previewDeleteColumn: (sheet: string, colIndex: number) => CoreDeleteColumnPreview;
   insertRow: (sheet: string, area: CoreRowInsertArea, rowGapIndex: number, depth: number) => void;
   deleteRow: (sheet: string, rowId: number, mode?: CoreRowDeleteMode) => void;
   insertColumn: (sheet: string, colIndex: number) => void;
@@ -245,6 +263,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setCellInput: (target, input) => {
     get().applyCoreEdits([{ op: "set_cell_input", target, input }]);
   },
+  clearCell: (target) => {
+    get().applyCoreEdits([{ op: "clear_cell", target }]);
+  },
   renameSheet: (sheet, newName) => {
     const { activeSheet } = get();
     const nextActiveSheetHint = activeSheet === sheet ? newName.trim() : activeSheet;
@@ -253,8 +274,52 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setCellLocalFormat: (target, format) => {
     get().applyCoreEdits([{ op: "set_cell_local_format", target, format }]);
   },
+  clearCellLocalFormat: (target) => {
+    get().applyCoreEdits([{ op: "clear_cell_local_format", target }]);
+  },
   setCellLocalStyle: (target, style) => {
     get().applyCoreEdits([{ op: "set_cell_local_style", target, style }]);
+  },
+  clearCellLocalStyle: (target) => {
+    get().applyCoreEdits([{ op: "clear_cell_local_style", target }]);
+  },
+  setColumnDefaultFormat: (sheet, colId, format) => {
+    get().applyCoreEdits([{ op: "set_column_default_format", sheet, colId, format }]);
+  },
+  clearColumnDefaultFormat: (sheet, colId) => {
+    get().applyCoreEdits([{ op: "clear_column_default_format", sheet, colId }]);
+  },
+  setColumnDefaultStyle: (sheet, colId, style) => {
+    get().applyCoreEdits([{ op: "set_column_default_style", sheet, colId, style }]);
+  },
+  clearColumnDefaultStyle: (sheet, colId) => {
+    get().applyCoreEdits([{ op: "clear_column_default_style", sheet, colId }]);
+  },
+  setRegion: (target, values) => {
+    get().applyCoreEdits([{ op: "set_region", target, values }]);
+  },
+  clearRegion: (target) => {
+    get().applyCoreEdits([{ op: "clear_region", target }]);
+  },
+  convertRowsToHeader: (sheet, rowIds) => {
+    get().applyCoreEdits([{ op: "convert_rows_to_header", sheet, rowIds }]);
+  },
+  convertRowsToBody: (sheet, rowIds, depth) => {
+    get().applyCoreEdits([{ op: "convert_rows_to_body", sheet, rowIds, depth }]);
+  },
+  previewDeleteRow: (sheet, rowId, mode) => {
+    const { docState } = get();
+    if (!docState) {
+      throw new Error("cannot preview row deletion without an active document state");
+    }
+    return previewDeleteRow(docState, { op: "delete_row", sheet, rowId, mode });
+  },
+  previewDeleteColumn: (sheet, colIndex) => {
+    const { docState } = get();
+    if (!docState) {
+      throw new Error("cannot preview column deletion without an active document state");
+    }
+    return previewDeleteColumn(docState, { sheet, colIndex });
   },
   insertRow: (sheet, area, rowGapIndex, depth) => {
     get().applyCoreEdits([{ op: "insert_row", sheet, area, rowGapIndex, depth }]);

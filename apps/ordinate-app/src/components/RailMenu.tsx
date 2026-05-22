@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { FormatOptionGlyph } from "./DisplayMetadataPreview";
 import RailMenuDetailPanel from "./RailMenuDetailPanel";
 import { MenuDivider, MenuGroup, MenuHead, MenuOption, MenuSurface, MenuTitle } from "./MenuSurface";
-import type { FloatingMenuPosition, RailMenuView } from "../types/ui";
+import type { FloatingMenuPosition, FormatLocalKey, FormatLocalOptions, RailMenuView, StyleLocalView } from "../types/ui";
 import type { CoreRowDeleteMode } from "@ordinate/core";
 
 function StyleRowGlyph() {
@@ -60,33 +60,49 @@ function DeleteGlyph() {
 }
 
 function RowStructurePanel({
-  rowNumber,
-  hasChildren,
+  railMenu,
   onInsertAbove,
   onInsertBelow,
   onDelete,
+  onConvertRowsToHeader,
+  onConvertRowsToBody,
 }: {
-  rowNumber: number;
-  hasChildren: boolean;
+  railMenu: Extract<RailMenuView, { kind: "row" }>;
   onInsertAbove: (rowNumber: number) => void;
   onInsertBelow: (rowNumber: number) => void;
-  onDelete: (rowNumber: number, mode: CoreRowDeleteMode) => void;
+  onDelete: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
+  onConvertRowsToHeader: (rowId: number) => void;
+  onConvertRowsToBody: (rowId: number) => void;
 }) {
   return (
     <MenuGroup className="rail-structure-panel">
-      <MenuOption className="rail-structure-action" icon={<InsertAboveGlyph />} onClick={() => onInsertAbove(rowNumber)}>
-        Insert Above
-      </MenuOption>
-      <MenuOption className="rail-structure-action" icon={<InsertBelowGlyph />} onClick={() => onInsertBelow(rowNumber)}>
-        Insert Below
-      </MenuOption>
+      {railMenu.area === "body" ? (
+        <>
+          <MenuOption className="rail-structure-action" icon={<InsertAboveGlyph />} onClick={() => onInsertAbove(railMenu.rowNumber)}>
+            Insert Above
+          </MenuOption>
+          <MenuOption className="rail-structure-action" icon={<InsertBelowGlyph />} onClick={() => onInsertBelow(railMenu.rowNumber)}>
+            Insert Below
+          </MenuOption>
+        </>
+      ) : null}
+      {railMenu.canConvertToHeader ? (
+        <MenuOption className="rail-structure-action" icon={<InsertAboveGlyph />} onClick={() => onConvertRowsToHeader(railMenu.rowId)}>
+          Use Row as Header
+        </MenuOption>
+      ) : null}
+      {railMenu.canConvertToBody ? (
+        <MenuOption className="rail-structure-action" icon={<InsertBelowGlyph />} onClick={() => onConvertRowsToBody(railMenu.rowId)}>
+          Move Header Row to Body
+        </MenuOption>
+      ) : null}
       <MenuOption
         className="rail-structure-action"
         icon={<DeleteGlyph />}
         tone="danger"
-        onClick={() => onDelete(rowNumber, hasChildren ? "subtree" : "node")}
+        onClick={() => onDelete(railMenu.rowNumber, railMenu.area, railMenu.rowId, railMenu.hasChildren ? "subtree" : "node")}
       >
-        {hasChildren ? "Delete Row and Children" : "Delete Row"}
+        {railMenu.hasChildren ? "Delete Row and Children" : "Delete Row"}
       </MenuOption>
     </MenuGroup>
   );
@@ -99,10 +115,14 @@ type RailMenuProps = {
   railMenuRef: RefObject<HTMLDivElement>;
   onInsertRowAbove: (rowNumber: number) => void;
   onInsertRowBelow: (rowNumber: number) => void;
-  onDeleteRow: (rowNumber: number, mode: CoreRowDeleteMode) => void;
+  onDeleteRow: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
   onInsertColumnLeft: (colIndex: number) => void;
   onInsertColumnRight: (colIndex: number) => void;
   onDeleteColumn: (colIndex: number) => void;
+  onConvertRowsToHeader: (rowId: number) => void;
+  onConvertRowsToBody: (rowId: number) => void;
+  onSetColumnDefaultFormat: (colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
+  onSetColumnDefaultStyle: <Axis extends keyof StyleLocalView>(colId: number, axis: Axis, value: StyleLocalView[Axis]) => void;
 };
 
 export default function RailMenu({
@@ -116,6 +136,10 @@ export default function RailMenu({
   onInsertColumnLeft,
   onInsertColumnRight,
   onDeleteColumn,
+  onConvertRowsToHeader,
+  onConvertRowsToBody,
+  onSetColumnDefaultFormat,
+  onSetColumnDefaultStyle,
 }: RailMenuProps) {
   const [panel, setPanel] = useState<"format" | "style" | null>(null);
   const [columnFormatInspectKey, setColumnFormatInspectKey] = useState<"auto" | "integer" | "decimal" | "scientific" | "percent">("auto");
@@ -203,11 +227,12 @@ export default function RailMenu({
             ) : (
               <div className="column-rail-menu-body">
                 <RowStructurePanel
-                  rowNumber={railMenu.rowNumber}
-                  hasChildren={railMenu.hasChildren}
+                  railMenu={railMenu}
                   onInsertAbove={onInsertRowAbove}
                   onInsertBelow={onInsertRowBelow}
                   onDelete={onDeleteRow}
+                  onConvertRowsToHeader={onConvertRowsToHeader}
+                  onConvertRowsToBody={onConvertRowsToBody}
                 />
               </div>
             )}
@@ -223,6 +248,8 @@ export default function RailMenu({
           containerRef={railMenuRef}
           inspectedKey={columnFormatInspectKey}
           onInspectKey={setColumnFormatInspectKey}
+          onSetColumnDefaultFormat={onSetColumnDefaultFormat}
+          onSetColumnDefaultStyle={onSetColumnDefaultStyle}
         />
       ) : null}
     </>

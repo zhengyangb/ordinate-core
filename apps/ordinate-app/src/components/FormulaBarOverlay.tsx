@@ -69,6 +69,7 @@ type FormulaBarOverlayProps = {
   formulaBarSnapshot: FormulaBarData | null;
   inputMode: "read" | "edit";
   isInputEditable: boolean;
+  areDisplayControlsEditable: boolean;
   onRequestEdit: () => void;
   onCancelEdit: () => void;
   onCommitInput: (nextInput: string) => void;
@@ -88,6 +89,7 @@ export default function FormulaBarOverlay({
   formulaBarSnapshot,
   inputMode,
   isInputEditable,
+  areDisplayControlsEditable,
   onRequestEdit,
   onCancelEdit,
   onCommitInput,
@@ -112,6 +114,12 @@ export default function FormulaBarOverlay({
   const [isComposingInput, setIsComposingInput] = useState(false);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
   const isEditingInput = inputMode === "edit";
+
+  useEffect(() => {
+    if (areDisplayControlsEditable) return;
+    setFormatMenuOpen(false);
+    setStyleMenuOpen(false);
+  }, [areDisplayControlsEditable]);
 
   const localFormatKey = formulaBarSnapshot?.formatLocalKey ?? "auto";
   const localFormatOptions = formulaBarSnapshot?.formatLocalOptions ?? null;
@@ -345,21 +353,24 @@ export default function FormulaBarOverlay({
                       "formula-format-button",
                       formatMenuOpen ? "active" : "",
                       hasFormatDisplayError ? "is-warning" : "",
+                      !areDisplayControlsEditable ? "is-disabled" : "",
                     ].join(" ").trim()}
                     type="button"
                     aria-label="Format options"
-                      aria-haspopup="menu"
-                      aria-expanded={formatMenuOpen}
-                      onMouseEnter={(event) => {
-                      if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? getDisplayMetadataErrorLabel(locale, formatErrors[0]) : "Format options", event.currentTarget);
+                    aria-haspopup="menu"
+                    aria-expanded={formatMenuOpen}
+                    disabled={!areDisplayControlsEditable}
+                    onMouseEnter={(event) => {
+                      if (areDisplayControlsEditable && !formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? getDisplayMetadataErrorLabel(locale, formatErrors[0]) : "Format options", event.currentTarget);
                     }}
                     onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
                     onFocus={(event) => {
-                      if (!formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? getDisplayMetadataErrorLabel(locale, formatErrors[0]) : "Format options", event.currentTarget);
+                      if (areDisplayControlsEditable && !formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? getDisplayMetadataErrorLabel(locale, formatErrors[0]) : "Format options", event.currentTarget);
                     }}
                     onBlur={(event) => onTooltipRelease(event.currentTarget)}
                     onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
                     onClick={() => {
+                      if (!areDisplayControlsEditable) return;
                       setStyleMenuOpen(false);
                       setMenuPanelKey(localFormatKey);
                       setFormatMenuOpen((open) => !open);
@@ -383,21 +394,24 @@ export default function FormulaBarOverlay({
                       "formula-style-button",
                       styleMenuOpen ? "active" : "",
                       hasStyleDisplayError ? "is-warning" : "",
+                      !areDisplayControlsEditable ? "is-disabled" : "",
                     ].join(" ").trim()}
                     type="button"
                     aria-label="Style options"
                       aria-haspopup="menu"
                       aria-expanded={styleMenuOpen}
+                      disabled={!areDisplayControlsEditable}
                       onMouseEnter={(event) => {
-                      if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? getDisplayMetadataErrorLabel(locale, styleErrors[0]) : "Style options", event.currentTarget);
+                      if (areDisplayControlsEditable && !styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? getDisplayMetadataErrorLabel(locale, styleErrors[0]) : "Style options", event.currentTarget);
                     }}
                     onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
                     onFocus={(event) => {
-                      if (!styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? getDisplayMetadataErrorLabel(locale, styleErrors[0]) : "Style options", event.currentTarget);
+                      if (areDisplayControlsEditable && !styleMenuOpen) onTooltipEnter(hasStyleDisplayError ? getDisplayMetadataErrorLabel(locale, styleErrors[0]) : "Style options", event.currentTarget);
                     }}
                     onBlur={(event) => onTooltipRelease(event.currentTarget)}
                     onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
                     onClick={() => {
+                      if (!areDisplayControlsEditable) return;
                       setFormatMenuOpen(false);
                       setStyleMenuOpen((open) => !open);
                     }}
@@ -520,7 +534,7 @@ export default function FormulaBarOverlay({
             localFormatOptions={localFormatOptions}
             inspectedKey={menuPanelKey}
             onInspectKey={setMenuPanelKey}
-            onChange={isInputEditable ? (key, options) => onSetLocalFormat(key, options) : undefined}
+            onChange={areDisplayControlsEditable ? (key, options) => onSetLocalFormat(key, options) : undefined}
           />
         </div>,
         document.body,
@@ -551,7 +565,7 @@ export default function FormulaBarOverlay({
             ) : null}
             <StylePreviewPanel
               styleLocal={localStyle}
-              onChange={isInputEditable ? onSetLocalStyle : undefined}
+              onChange={areDisplayControlsEditable ? onSetLocalStyle : undefined}
             />
           </>
         </div>,

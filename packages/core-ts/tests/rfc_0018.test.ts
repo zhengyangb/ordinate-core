@@ -71,6 +71,36 @@ describe("RFC-0018 header surface editing and row area operations", () => {
     expect(roundTripped.sheets[0].rowPaths).toEqual(["Revenue"]);
   });
 
+  it("refreshes bound formula input text after a label edit", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item  || 2024 | Out |
+| ----- || ---- | --- |
+| Group ||      |     |
+| * A   || 1    |     |
+| Total || 0    | = @[Group.A,2024] |
+`.trim());
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_cell_input",
+        target: { kind: "index", sheet: "Sheet", rowIndex: 2, colIndex: 0 },
+        input: "* Alpha",
+      },
+    ]);
+
+    expect(result.ok, result.ok ? undefined : result.error.message).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const sheet = result.nextDocument.sheets[0];
+    expect(sheet.cells[3][2].body.valid).toBe(true);
+    if (!sheet.cells[3][2].body.valid || sheet.cells[3][2].body.kind !== "formula") {
+      throw new Error("expected formula cell");
+    }
+    expect(sheet.cells[3][2].body.inputText).toBe("= @[Group.Alpha,2024]");
+    expect(serializeDocumentState(result.nextDocument)).toContain("= @[Group.Alpha,2024]");
+  });
+
   it("clears header and label cell input as semantic empty cells", () => {
     const state = DocumentState.fromText(`
 # Sheet
@@ -453,6 +483,31 @@ describe("RFC-0018 header surface editing and row area operations", () => {
     const roundTripped = DocumentState.fromText(serializeDocumentState(result.nextDocument));
     expect(roundTripped.sheets[0].headerRowCount).toBe(1);
     expect(roundTripped.sheets[0].rowPaths).toEqual(["Dept", "A"]);
+  });
+
+  it("can round-trip a promoted parent row back to body above its children", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || 2024 |
+| ---- || ---- |
+| A    ||      |
+| * B  || 1    |
+`.trim());
+    const sheet = state.sheets[0];
+
+    const promoted = applyBatchAtomic(state, [
+      { op: "convert_rows_to_header", sheet: "Sheet", rowIds: [sheet.rowIds[1]] },
+    ]);
+    expect(promoted.ok, promoted.ok ? undefined : promoted.error.message).toBe(true);
+    if (!promoted.ok) throw new Error("expected success");
+
+    const promotedSheet = promoted.nextDocument.sheets[0];
+    const demoted = applyBatchAtomic(promoted.nextDocument, [
+      { op: "convert_rows_to_body", sheet: "Sheet", rowIds: [promotedSheet.rowIds[1]], depth: 0 },
+    ]);
+    expect(demoted.ok, demoted.ok ? undefined : demoted.error.message).toBe(true);
+    if (!demoted.ok) throw new Error("expected success");
+    expect(demoted.nextDocument.sheets[0].rowPaths).toEqual(["A", "A.B"]);
   });
 
   it("rejects row conversion for non-contiguous or non-boundary rows", () => {

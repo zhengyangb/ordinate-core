@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
 import { MenuSurface } from "./MenuSurface";
 import { POSITION_EPSILON, resolveFlyoutMenuPosition } from "../utils/appHelpers";
-import type { ColumnRailMenuView, FloatingMenuPosition, FormatLocalKey } from "../types/ui";
+import type { ColumnRailMenuView, FloatingMenuPosition, FormatLocalKey, FormatLocalOptions, StyleLocalView } from "../types/ui";
 
 type RailMenuDetailPanelProps = {
   open: boolean;
@@ -13,6 +13,8 @@ type RailMenuDetailPanelProps = {
   containerRef: RefObject<HTMLElement>;
   inspectedKey: FormatLocalKey;
   onInspectKey: (key: FormatLocalKey) => void;
+  onSetColumnDefaultFormat: (colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
+  onSetColumnDefaultStyle: <Axis extends keyof StyleLocalView>(colId: number, axis: Axis, value: StyleLocalView[Axis]) => void;
 };
 
 export default function RailMenuDetailPanel({
@@ -23,6 +25,8 @@ export default function RailMenuDetailPanel({
   containerRef,
   inspectedKey,
   onInspectKey,
+  onSetColumnDefaultFormat,
+  onSetColumnDefaultStyle,
 }: RailMenuDetailPanelProps) {
   const detailRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
@@ -94,9 +98,13 @@ export default function RailMenuDetailPanel({
             localFormatOptions={railMenu.formatLocalOptions}
             inspectedKey={inspectedKey}
             onInspectKey={onInspectKey}
+            onChange={(key, options) => onSetColumnDefaultFormat(railMenu.colId, key, options)}
           />
         ) : (
-          <StylePreviewPanel styleLocal={railMenu.styleLocal} />
+          <StylePreviewPanel
+            styleLocal={railMenu.styleLocal}
+            onChange={(axis, value) => onSetColumnDefaultStyle(railMenu.colId, axis, value)}
+          />
         )}
       </div>
     </MenuSurface>

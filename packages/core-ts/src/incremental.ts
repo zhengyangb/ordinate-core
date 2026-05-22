@@ -469,6 +469,18 @@ export class SheetState {
         }
         return { kind: "absolute_id", value: ids[index] };
       }
+      if (selector.kind === "label") {
+        const key = axis === "row"
+          ? JSON.stringify(selector.value as string[])
+          : (selector.value as string[]).join(".");
+        const matches = axis === "row" ? this.rowMap.get(key) ?? [] : this.colMap.get(key) ?? [];
+        if (matches.length !== 1) {
+          return selector;
+        }
+        const ids = axis === "row" ? this.rowIds : this.colIds;
+        const id = ids[matches[0]];
+        return id == null ? selector : { kind: "label_id", value: id };
+      }
       if (selector.kind === "absolute_fixed") {
         return selector;
       }
@@ -593,12 +605,6 @@ export class SheetState {
     if (!Number.isInteger(depth) || depth < 0) {
       throw new Error("depth must be non-negative");
     }
-    const firstBodyDepth = this.bodyStart < this.rowCount
-      ? parseHierarchyLabel(this.logicalRows[this.bodyStart].rawCells[0] ?? "").depth
-      : null;
-    if (firstBodyDepth !== null && firstBodyDepth > depth) {
-      throw new Error(`row depth ${depth} would implicitly adopt following rows at depth ${firstBodyDepth}`);
-    }
     this.headerRowCount -= count;
     this.bodyStart = this.headerRowCount > 0 ? this.headerRowCount : 0;
     for (let offset = 0; offset < count; offset += 1) {
@@ -699,6 +705,7 @@ export class SheetState {
 
     const newPath = [...parentParts, newLabel].join(".");
     this.applyRowAlias(rowPath, newPath);
+    this.refreshFormulaSourceTexts();
 
     if (eager) {
       this.recalculate();
@@ -732,6 +739,7 @@ export class SheetState {
     this.rebuildMetadata();
     this.markAllDirty();
     this.applyColAlias(oldLabel, newLabel);
+    this.refreshFormulaSourceTexts();
 
     if (eager) {
       this.recalculate();
@@ -1048,7 +1056,12 @@ export class SheetState {
           continue;
         }
         const exprText =
-          renderFormulaExpression(cell.body.expression, this.rowIdToIndex, this.colIdToIndex) ?? cell.body.expressionText;
+          renderFormulaExpression(cell.body.expression, this.rowIdToIndex, this.colIdToIndex, {
+            rowLabelPathsByIndex: Array.from({ length: this.rowCount }, (_, rowIndex) =>
+              rowIndex >= this.bodyStart ? (this.rowPaths[rowIndex - this.bodyStart] ?? "").split(".") : [],
+            ),
+            colLabelsByIndex: this.colLabels,
+          }) ?? cell.body.expressionText;
         cell.body.expressionText = exprText;
         cell.body.inputText = exprText.length > 0 ? `= ${exprText}` : "=";
         this.updateRowText(rAbs, c, buildCellRawText(cell.body, cell.localDisplay));

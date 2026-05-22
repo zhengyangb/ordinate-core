@@ -56,7 +56,11 @@ type StateCell = CellTextViewSource;
 
 type StateSheet = {
   colCount: number;
+  rowIds?: number[];
+  colIds?: number[];
   colLabels: string[];
+  headerRowCount?: number;
+  bodyStart?: number;
   cells: StateCell[][];
 };
 
@@ -320,6 +324,7 @@ export function buildColumnRailMenu(
   openColumnMenuColIndex: number | null,
   sheetColCount: number,
   headerColCount: number,
+  currentSheetState: StateSheet | null,
   currentSheetPresentation: PresentationSheet | null,
   columnHasLocalConfig: boolean[],
 ): ColumnRailMenuView | null {
@@ -327,11 +332,16 @@ export function buildColumnRailMenu(
     return null;
   }
   const columnDefault = currentSheetPresentation?.columnDefaults[openColumnMenuColIndex];
+  const colId = currentSheetState?.colIds?.[openColumnMenuColIndex];
+  if (colId == null) {
+    return null;
+  }
   const localStyle = columnDefault?.styleLayer.local;
   const styleLocal = styleLocalView(localStyle);
   return {
     kind: "column",
     colIndex: openColumnMenuColIndex,
+    colId,
     colLabel: toColumnLetters(openColumnMenuColIndex + 1),
     hasLocalConfig: columnHasLocalConfig[openColumnMenuColIndex] === true,
     canStructureEdit: openColumnMenuColIndex >= headerColCount,
@@ -341,34 +351,47 @@ export function buildColumnRailMenu(
 }
 
 export function buildRowRailMenu(
-  target: { rowNumber: number; hasChildren: boolean } | null,
+  target: { rowNumber: number; area: "header" | "body"; hasChildren: boolean } | null,
+  currentSheetState: StateSheet | null,
 ): RailMenuView | null {
   if (target == null) {
     return null;
   }
+  const rowIndex = target.rowNumber - 1;
+  const rowId = currentSheetState?.rowIds?.[rowIndex];
+  if (rowId == null) {
+    return null;
+  }
+  const headerRowCount = currentSheetState?.headerRowCount ?? 0;
+  const bodyStart = currentSheetState?.bodyStart ?? headerRowCount;
   return {
     kind: "row",
+    area: target.area,
     rowNumber: target.rowNumber,
+    rowId,
     rowPath: null,
     hasChildren: target.hasChildren,
+    canConvertToHeader: target.area === "body" && rowIndex === bodyStart,
+    canConvertToBody: target.area === "header" && headerRowCount > 0 && rowIndex === headerRowCount - 1,
   };
 }
 
 export function buildRailMenu(
   target:
     | { kind: "column"; colIndex: number }
-    | { kind: "row"; rowNumber: number; hasChildren: boolean }
+    | { kind: "row"; rowNumber: number; area: "header" | "body"; hasChildren: boolean }
     | null,
   sheetColCount: number,
   headerColCount: number,
+  currentSheetState: StateSheet | null,
   currentSheetPresentation: PresentationSheet | null,
   columnHasLocalConfig: boolean[],
 ): RailMenuView | null {
   if (!target) return null;
   if (target.kind === "column") {
-    return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheetPresentation, columnHasLocalConfig);
+    return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheetState, currentSheetPresentation, columnHasLocalConfig);
   }
-  return buildRowRailMenu({ rowNumber: target.rowNumber, hasChildren: target.hasChildren });
+  return buildRowRailMenu({ rowNumber: target.rowNumber, area: target.area, hasChildren: target.hasChildren }, currentSheetState);
 }
 
 export function resolveRailMenuWidthPx(kind: RailMenuView["kind"]): number {

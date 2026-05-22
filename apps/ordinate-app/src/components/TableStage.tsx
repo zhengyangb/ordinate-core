@@ -42,11 +42,12 @@ type TableStageProps = {
   suppressAgHeaderFocus: boolean;
   overlayOwnsGridHeader: boolean;
   handleHeaderOverlaySelect: (rowNumber: number, colIndex: number) => void;
+  handleHeaderOverlayDoubleClick: (rowNumber: number, colIndex: number) => void;
   handleHeaderOverlayKeyDown: (event: KeyboardEvent, rowNumber: number, colIndex: number) => void;
   handleColumnRailSelect: (colIndex: number) => void;
   handleColumnRailMenuOpen: (colIndex: number, anchorEl: HTMLElement) => void;
   handleRowRailSelect: (rowNumber: number, area: "header" | "body") => void;
-  handleRowRailMenuOpen: (rowNumber: number, anchorEl: HTMLElement) => void;
+  handleRowRailMenuOpen: (rowNumber: number, area: "header" | "body", anchorEl: HTMLElement) => void;
   handleGridReady: (event: GridReadyEvent<GridRow>) => void;
   handleFirstDataRendered: (event: FirstDataRenderedEvent<GridRow>) => void;
   handleModelUpdated: (event: ModelUpdatedEvent<GridRow>) => void;
@@ -110,6 +111,7 @@ export default function TableStage({
   suppressAgHeaderFocus,
   overlayOwnsGridHeader,
   handleHeaderOverlaySelect,
+  handleHeaderOverlayDoubleClick,
   handleHeaderOverlayKeyDown,
   handleColumnRailSelect,
   handleColumnRailMenuOpen,
@@ -218,6 +220,16 @@ export default function TableStage({
           handleHeaderOverlaySelect(cell.rowNumber, colIndex);
           requestAnimationFrame(() => target.focus());
         }}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const target = event.currentTarget;
+          const rect = target.getBoundingClientRect();
+          const localX = Math.min(Math.max(0, event.clientX - rect.left), Math.max(0, rect.width - 1));
+          const ratio = rect.width > 0 ? localX / rect.width : 0;
+          const slot = Math.min(span - 1, Math.floor(ratio * span));
+          handleHeaderOverlayDoubleClick(cell.rowNumber, cell.startCol + slot);
+        }}
         onKeyDown={(event) => {
           const spanSize = Math.max(1, cell.endCol - cell.startCol + 1);
           const selectedColIndex = selectedSlot >= 0 ? cell.startCol + selectedSlot : cell.startCol + spanSize - 1;
@@ -280,8 +292,13 @@ export default function TableStage({
                   top: `${row.top}px`,
                   height: `${row.height}px`,
                 }}
-                  type="button"
-                  onClick={() => handleRowRailSelect(row.number, "header")}
+                type="button"
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleRowRailMenuOpen(row.number, "header", event.currentTarget);
+                }}
+                onClick={() => handleRowRailSelect(row.number, "header")}
                 >
                   {row.number}
                 </button>
@@ -308,7 +325,7 @@ export default function TableStage({
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    handleRowRailMenuOpen(row.number, event.currentTarget);
+                    handleRowRailMenuOpen(row.number, "body", event.currentTarget);
                   }}
                 >
                   <button type="button" className="row-index-main" onClick={() => handleRowRailSelect(row.number, "body")}>

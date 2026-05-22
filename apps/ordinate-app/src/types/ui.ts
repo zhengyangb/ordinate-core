@@ -115,6 +115,7 @@ export type StyleLocalView = {
 export type ColumnRailMenuView = {
   kind: "column";
   colIndex: number;
+  colId: number;
   colLabel: string;
   hasLocalConfig: boolean;
   canStructureEdit: boolean;
@@ -125,9 +126,13 @@ export type ColumnRailMenuView = {
 
 export type RowRailMenuView = {
   kind: "row";
+  area: "header" | "body";
   rowNumber: number;
+  rowId: number;
   rowPath: string | null;
   hasChildren: boolean;
+  canConvertToHeader: boolean;
+  canConvertToBody: boolean;
 };
 
 export type RailMenuView = ColumnRailMenuView | RowRailMenuView;

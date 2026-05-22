@@ -373,6 +373,7 @@ export function StylePreviewPanel({ styleLocal, onChange }: StylePreviewPanelPro
                 option.key === "normal" ? "is-weight-regular" : "",
               ].join(" ").trim()}
               aria-pressed={styleLocal.weight === option.key}
+              disabled={!onChange}
               onClick={(event) => {
                 event.preventDefault();
                 onChange?.("weight", option.key as StyleLocalView["weight"]);
@@ -397,6 +398,7 @@ export function StylePreviewPanel({ styleLocal, onChange }: StylePreviewPanelPro
               type="button"
               className={styleLocal.align === option.key ? "formula-style-segment is-selected" : "formula-style-segment"}
               aria-pressed={styleLocal.align === option.key}
+              disabled={!onChange}
               onClick={(event) => {
                 event.preventDefault();
                 onChange?.("align", option.key as StyleLocalView["align"]);
@@ -425,6 +427,7 @@ export function StylePreviewPanel({ styleLocal, onChange }: StylePreviewPanelPro
                 option.tone ? `is-tone-${option.tone}` : "",
               ].join(" ").trim()}
               aria-pressed={styleLocal.color === option.key}
+              disabled={!onChange}
               onClick={(event) => {
                 event.preventDefault();
                 onChange?.("color", option.key as StyleLocalView["color"]);
