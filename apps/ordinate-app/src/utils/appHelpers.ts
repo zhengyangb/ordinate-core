@@ -199,6 +199,13 @@ export function queryGridBodyViewport(root: HTMLElement): HTMLElement | null {
   );
 }
 
+export function queryGridHorizontalViewport(root: HTMLElement): HTMLElement | null {
+  return (
+    root.querySelector<HTMLElement>(".ag-body-horizontal-scroll-viewport") ??
+    root.querySelector<HTMLElement>(".ag-center-cols-viewport")
+  );
+}
+
 export function easeOutQuint(progress: number): number {
   return 1 - (1 - progress) ** 5;
 }

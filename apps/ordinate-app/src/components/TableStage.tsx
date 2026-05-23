@@ -1,9 +1,10 @@
-import { useRef, type CSSProperties, type MutableRefObject } from "react";
+import { useRef, type CSSProperties, type MutableRefObject, type PointerEvent as ReactPointerEvent } from "react";
 
 import { AgGridReact } from "ag-grid-react";
 import {
   type ColDef,
   type ColGroupDef,
+  type CellMouseDownEvent,
   type FirstDataRenderedEvent,
   type GridReadyEvent,
   type ModelUpdatedEvent,
@@ -29,6 +30,7 @@ type TableStageProps = {
   handleIndexRailsHoverChange: (hovering: boolean) => void;
   rowIndexMetrics: RowIndexMetric[];
   columnTrackRef: MutableRefObject<HTMLDivElement | null>;
+  headerCenterTrackRef: MutableRefObject<HTMLDivElement | null>;
   rowTrackRef: MutableRefObject<HTMLDivElement | null>;
   gridWrapRef: MutableRefObject<HTMLDivElement | null>;
   rowData: GridRow[];
@@ -38,10 +40,11 @@ type TableStageProps = {
   columnHasLocalConfig: boolean[];
   showSelectionRing: boolean;
   selectionRingRef: MutableRefObject<HTMLDivElement | null>;
+  selectionRangeRef: MutableRefObject<HTMLDivElement | null>;
   isSelectionRingTransitioning: boolean;
   suppressAgHeaderFocus: boolean;
   overlayOwnsGridHeader: boolean;
-  handleHeaderOverlaySelect: (rowNumber: number, colIndex: number) => void;
+  handleHeaderOverlaySelect: (rowNumber: number, colIndex: number, event?: ReactPointerEvent<HTMLElement>) => void;
   handleHeaderOverlayDoubleClick: (rowNumber: number, colIndex: number) => void;
   handleHeaderOverlayKeyDown: (event: KeyboardEvent, rowNumber: number, colIndex: number) => void;
   handleColumnRailSelect: (colIndex: number) => void;
@@ -52,6 +55,7 @@ type TableStageProps = {
   handleFirstDataRendered: (event: FirstDataRenderedEvent<GridRow>) => void;
   handleModelUpdated: (event: ModelUpdatedEvent<GridRow>) => void;
   handleCellFocused: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
+  handleCellMouseDown: (event: CellMouseDownEvent<GridRow>) => void;
   handleCellDoubleClicked: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
   handleCellKeyDown: (event: {
     rowIndex: number | null;
@@ -98,6 +102,7 @@ export default function TableStage({
   handleIndexRailsHoverChange,
   rowIndexMetrics,
   columnTrackRef,
+  headerCenterTrackRef,
   rowTrackRef,
   gridWrapRef,
   rowData,
@@ -107,6 +112,7 @@ export default function TableStage({
   columnHasLocalConfig,
   showSelectionRing,
   selectionRingRef,
+  selectionRangeRef,
   isSelectionRingTransitioning,
   suppressAgHeaderFocus,
   overlayOwnsGridHeader,
@@ -121,6 +127,7 @@ export default function TableStage({
   handleFirstDataRendered,
   handleModelUpdated,
   handleCellFocused,
+  handleCellMouseDown,
   handleCellDoubleClicked,
   handleCellKeyDown,
 }: TableStageProps) {
@@ -176,7 +183,7 @@ export default function TableStage({
     );
   };
 
-  const renderOverlayCell = (cell: HeaderOverlayCell) => {
+  const renderOverlayCell = (cell: HeaderOverlayCell, leftOffset = 0) => {
     const span = Math.max(1, cell.endCol - cell.startCol + 1);
     const selectedSlot =
       selectedCell?.area === "header" &&
@@ -189,7 +196,7 @@ export default function TableStage({
       "--overlay-slot-count"?: string;
       "--overlay-slot-index"?: string;
     } = {
-      left: `${cell.left}px`,
+      left: `${cell.left - leftOffset}px`,
       top: `${cell.top}px`,
       width: `${cell.width}px`,
       height: `${cell.height}px`,
@@ -208,7 +215,7 @@ export default function TableStage({
         data-end-col={cell.endCol}
         type="button"
         style={style}
-        onMouseDown={(event) => {
+        onPointerDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
           const target = event.currentTarget;
@@ -217,7 +224,7 @@ export default function TableStage({
           const ratio = rect.width > 0 ? localX / rect.width : 0;
           const slot = Math.min(span - 1, Math.floor(ratio * span));
           const colIndex = cell.startCol + slot;
-          handleHeaderOverlaySelect(cell.rowNumber, colIndex);
+          handleHeaderOverlaySelect(cell.rowNumber, colIndex, event);
           requestAnimationFrame(() => target.focus());
         }}
         onDoubleClick={(event) => {
@@ -340,15 +347,18 @@ export default function TableStage({
 
       <div className="grid-shell">
         {showSelectionRing ? (
-          <div
-            ref={selectionRingRef}
-            className={
-              isSelectionRingTransitioning && animateTableStructure
-                ? "persistent-selection-ring is-hidden is-structural-transition"
-                : "persistent-selection-ring is-hidden"
-            }
-            aria-hidden="true"
-          />
+          <>
+            <div ref={selectionRangeRef} className="persistent-range-selection is-hidden" aria-hidden="true" />
+            <div
+              ref={selectionRingRef}
+              className={
+                isSelectionRingTransitioning && animateTableStructure
+                  ? "persistent-selection-ring is-hidden is-structural-transition"
+                  : "persistent-selection-ring is-hidden"
+              }
+              aria-hidden="true"
+            />
+          </>
         ) : null}
         {headerOverlayHeight > 0 ? (
           <>
@@ -375,19 +385,27 @@ export default function TableStage({
               style={
                 {
                   height: `${headerOverlayHeight}px`,
+                  left: `${Math.max(0, pinnedHeaderWidth)}px`,
+                  width: `${centerTrackWidth}px`,
                   "--header-overlay-pinned-width": `${Math.max(0, pinnedHeaderWidth)}px`,
                 } as CSSProperties
               }
               aria-hidden="true"
             >
-              {centerOverlayCells.map(renderOverlayCell)}
+              <div
+                ref={headerCenterTrackRef}
+                className="header-matrix-center-scroll-layer"
+                style={centerTrackWidth > 0 ? { width: `${centerTrackWidth}px` } : undefined}
+              >
+                {centerOverlayCells.map((cell) => renderOverlayCell(cell, pinnedHeaderWidth))}
+              </div>
             </div>
             <div
               className="header-matrix-overlay header-matrix-overlay--pinned"
               style={{ height: `${headerOverlayHeight}px` }}
               aria-hidden="true"
             >
-              {pinnedOverlayCells.map(renderOverlayCell)}
+              {pinnedOverlayCells.map((cell) => renderOverlayCell(cell))}
             </div>
           </>
         ) : null}
@@ -431,6 +449,7 @@ export default function TableStage({
             onFirstDataRendered={handleFirstDataRendered}
             onModelUpdated={handleModelUpdated}
             onCellFocused={handleCellFocused}
+            onCellMouseDown={handleCellMouseDown}
             onCellDoubleClicked={handleCellDoubleClicked}
             onCellKeyDown={handleCellKeyDown}
             rowClassRules={{

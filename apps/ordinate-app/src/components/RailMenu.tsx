@@ -68,24 +68,20 @@ function RowStructurePanel({
   onConvertRowsToBody,
 }: {
   railMenu: Extract<RailMenuView, { kind: "row" }>;
-  onInsertAbove: (rowNumber: number) => void;
-  onInsertBelow: (rowNumber: number) => void;
+  onInsertAbove: (rowNumber: number, area: "header" | "body") => void;
+  onInsertBelow: (rowNumber: number, area: "header" | "body") => void;
   onDelete: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
   onConvertRowsToHeader: (rowId: number) => void;
   onConvertRowsToBody: (rowId: number) => void;
 }) {
   return (
     <MenuGroup className="rail-structure-panel">
-      {railMenu.area === "body" ? (
-        <>
-          <MenuOption className="rail-structure-action" icon={<InsertAboveGlyph />} onClick={() => onInsertAbove(railMenu.rowNumber)}>
-            Insert Above
-          </MenuOption>
-          <MenuOption className="rail-structure-action" icon={<InsertBelowGlyph />} onClick={() => onInsertBelow(railMenu.rowNumber)}>
-            Insert Below
-          </MenuOption>
-        </>
-      ) : null}
+      <MenuOption className="rail-structure-action" icon={<InsertAboveGlyph />} onClick={() => onInsertAbove(railMenu.rowNumber, railMenu.area)}>
+        Insert Above
+      </MenuOption>
+      <MenuOption className="rail-structure-action" icon={<InsertBelowGlyph />} onClick={() => onInsertBelow(railMenu.rowNumber, railMenu.area)}>
+        Insert Below
+      </MenuOption>
       {railMenu.canConvertToHeader ? (
         <MenuOption className="rail-structure-action" icon={<InsertAboveGlyph />} onClick={() => onConvertRowsToHeader(railMenu.rowId)}>
           Use Row as Header
@@ -113,8 +109,8 @@ type RailMenuProps = {
   position: FloatingMenuPosition;
   railMenu: RailMenuView | null;
   railMenuRef: RefObject<HTMLDivElement>;
-  onInsertRowAbove: (rowNumber: number) => void;
-  onInsertRowBelow: (rowNumber: number) => void;
+  onInsertRowAbove: (rowNumber: number, area: "header" | "body") => void;
+  onInsertRowBelow: (rowNumber: number, area: "header" | "body") => void;
   onDeleteRow: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
   onInsertColumnLeft: (colIndex: number) => void;
   onInsertColumnRight: (colIndex: number) => void;

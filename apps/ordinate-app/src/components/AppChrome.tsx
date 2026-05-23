@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject, type SetStateAction } from "react";
 
-import { CodeIcon, MoreIcon, PlusIcon } from "../icons/uiIcons";
+import { CodeIcon, MoreIcon, PageSetupIcon, PlusIcon } from "../icons/uiIcons";
 import type { SheetHealth, ToolSpec } from "../types/ui";
 
 type AppChromeProps = {
@@ -21,6 +21,9 @@ type AppChromeProps = {
   themeControlRef: RefObject<HTMLDivElement>;
   themeButtonRef: RefObject<HTMLButtonElement>;
   toolButtonRef: RefObject<HTMLButtonElement>;
+  sheetSetupOpen: boolean;
+  sheetSetupButtonRef: RefObject<HTMLButtonElement>;
+  onToggleSheetSetup: () => void;
   onEnterSourceMode: () => void;
   onExitSourceMode: () => void;
   onTooltipEnter: (text: string, target: HTMLElement, delayMs?: number) => void;
@@ -49,6 +52,9 @@ export default function AppChrome({
   themeControlRef,
   themeButtonRef,
   toolButtonRef,
+  sheetSetupOpen,
+  sheetSetupButtonRef,
+  onToggleSheetSetup,
   onEnterSourceMode,
   onExitSourceMode,
   onTooltipEnter,
@@ -124,6 +130,28 @@ export default function AppChrome({
         </div>
 
         <nav className="toolbar-tools" aria-label="Placeholder toolbar">
+          <button
+            ref={sheetSetupButtonRef}
+            className={sheetSetupOpen ? "tool-button sheet-setup-button active" : "tool-button sheet-setup-button"}
+            type="button"
+            disabled={mode !== "table" || !activeSheet}
+            onClick={onToggleSheetSetup}
+            aria-label="Sheet setup"
+            aria-haspopup="menu"
+            aria-expanded={sheetSetupOpen}
+            onMouseEnter={(event) => onTooltipEnter("Sheet setup", event.currentTarget)}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => {
+              if (!sheetSetupOpen) onTooltipEnter("Sheet setup", event.currentTarget);
+            }}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+          >
+            <span className="tool-icon">
+              <PageSetupIcon />
+            </span>
+          </button>
+
           {visibleTools.map((item) => (
             <button
               key={item.label}

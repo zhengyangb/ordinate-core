@@ -20,7 +20,7 @@
     --grid-row-height: 38px;
     --selection-ring-color: var(--accent-strong);
     --selection-ring-width: 2px;
-    --selection-ring-radius: 0.62rem;
+    --selection-ring-radius: 0.24rem;
     --selection-ring-inset-header: -2px;
     --selection-ring-inset-cell: -3px;
 
@@ -654,7 +654,8 @@ textarea {
     flex: 0 0 auto;
 }
 
-.theme-button.active {
+.theme-button.active,
+.sheet-setup-button.active {
     background: color-mix(
         in oklab,
         var(--toolbar-pill) 74%,
@@ -701,6 +702,8 @@ textarea {
 
 .theme-menu,
 .tool-menu,
+.sheet-setup-menu,
+.selection-menu,
 .rail-menu {
     width: auto;
 }
@@ -714,10 +717,26 @@ textarea {
     z-index: 122;
 }
 
+.sheet-setup-menu {
+    min-width: min(18.4rem, calc(100vw - 3rem));
+    padding: 0.48rem;
+    z-index: 122;
+}
+
+.selection-menu {
+    min-width: min(12rem, calc(100vw - 3rem));
+    z-index: 124;
+}
+
 .menu-surface.open {
     opacity: 1;
     transform: translateY(0) scale(1);
     pointer-events: auto;
+}
+
+.menu-surface-option:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .rail-menu--column {
@@ -747,6 +766,97 @@ textarea {
 
 .rail-menu-detail--style {
     min-width: min(16.2rem, calc(100vw - 3rem));
+}
+
+.menu-surface-head.sheet-setup-head {
+    padding: 0.14rem 0.32rem 0.42rem;
+}
+
+.menu-surface-group.sheet-setup-body {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.46rem;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 58%, transparent);
+    border-radius: calc(var(--menu-surface-radius) - 0.18rem);
+    background: color-mix(in oklab, var(--toolbar-pill) 38%, transparent);
+}
+
+.sheet-setup-row {
+    display: grid;
+    grid-template-columns: minmax(7.4rem, 1fr) 7rem;
+    align-items: center;
+    gap: 0.8rem;
+    min-height: 1.95rem;
+}
+
+.sheet-setup-label {
+    min-width: 0;
+    color: var(--chrome-ink);
+    font-size: 0.78rem;
+    font-weight: 620;
+}
+
+.sheet-setup-stepper {
+    display: grid;
+    grid-template-columns: 1.92rem 3.16rem 1.92rem;
+    align-items: center;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 82%, transparent);
+    border-radius: 0.58rem;
+    background: color-mix(in oklab, var(--toolbar-pill) 68%, transparent);
+}
+
+.sheet-setup-stepper-button,
+.sheet-setup-number {
+    height: 1.86rem;
+    border: 0;
+    background: transparent;
+    color: var(--chrome-ink);
+    font: inherit;
+}
+
+.sheet-setup-stepper-button {
+    display: inline-grid;
+    place-items: center;
+    font-size: 1rem;
+    cursor: default;
+}
+
+.sheet-setup-stepper-button:hover:not(:disabled) {
+    background: var(--menu-hover-bg);
+    color: var(--menu-hover-ink);
+}
+
+.sheet-setup-stepper-button:disabled {
+    color: var(--chrome-faint);
+}
+
+.sheet-setup-number {
+    width: 3.16rem;
+    border-inline: 1px solid color-mix(in oklab, var(--chrome-border) 62%, transparent);
+    text-align: center;
+    font-size: 0.78rem;
+    outline: none;
+    appearance: textfield;
+}
+
+.sheet-setup-number::-webkit-inner-spin-button,
+.sheet-setup-number::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+}
+
+.sheet-setup-number:focus {
+    background: color-mix(in oklab, var(--sheet-surface) 78%, transparent);
+}
+
+.sheet-setup-number--readonly {
+    width: 7rem;
+    height: 1.86rem;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 72%, transparent);
+    border-radius: 0.58rem;
+    background: color-mix(in oklab, var(--toolbar-pill) 50%, transparent);
+    color: var(--chrome-soft);
 }
 
 .floating-tooltip {
@@ -1804,8 +1914,8 @@ textarea {
     border: var(--selection-ring-width) solid var(--selection-ring-color);
     border-radius: var(--selection-ring-radius);
     box-shadow:
-        0 0 0 1px color-mix(in oklab, var(--workspace-frame) 68%, transparent),
-        0 0 0 0.5px color-mix(in oklab, var(--accent-strong) 38%, transparent);
+        0 0 0 1px color-mix(in oklab, var(--workspace-frame) 54%, transparent),
+        0 0 0 0.5px color-mix(in oklab, var(--accent-strong) 28%, transparent);
     pointer-events: none;
     z-index: 6;
     opacity: 1;
@@ -1820,6 +1930,29 @@ textarea {
 }
 
 .persistent-selection-ring.is-hidden {
+    transform: translate3d(-9999px, -9999px, 0) !important;
+    width: 0 !important;
+    height: 0 !important;
+    opacity: 0;
+}
+
+.persistent-range-selection {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    transform: translate3d(-9999px, -9999px, 0);
+    will-change: transform, width, height;
+    border: 1px solid color-mix(in oklab, var(--accent-strong) 62%, transparent);
+    background: color-mix(in oklab, var(--accent-soft) 34%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 18%, transparent);
+    pointer-events: none;
+    z-index: 5;
+    opacity: 1;
+}
+
+.persistent-range-selection.is-hidden {
     transform: translate3d(-9999px, -9999px, 0) !important;
     width: 0 !important;
     height: 0 !important;
@@ -1858,8 +1991,15 @@ textarea {
 }
 
 .header-matrix-overlay--center {
+    right: auto;
     z-index: 8;
-    clip-path: inset(0 0 0 var(--header-overlay-pinned-width, 0px));
+    overflow: hidden;
+}
+
+.header-matrix-center-scroll-layer {
+    position: relative;
+    height: 100%;
+    will-change: transform;
 }
 
 .header-matrix-overlay--pinned {
@@ -2031,6 +2171,10 @@ textarea {
 .ag-theme-quartz .ag-cell,
 .ag-theme-quartz .ag-header-cell {
     padding-block: 0.18rem;
+}
+
+.ag-theme-quartz .ag-cell {
+    overflow: hidden !important;
 }
 
 .line-item-header {
@@ -2287,7 +2431,7 @@ textarea {
     border-color: transparent !important;
     border-style: solid !important;
     box-shadow: none !important;
-    overflow: visible !important;
+    overflow: hidden !important;
     position: relative;
     z-index: 4;
 }
@@ -2377,6 +2521,7 @@ textarea {
     outline: none !important;
     box-shadow: none !important;
     border-color: transparent !important;
+    overflow: hidden !important;
 }
 
 .ag-theme-quartz .ag-cell-focus .tree-cell,
@@ -2528,11 +2673,13 @@ textarea {
 
 .formula-bar {
     --formula-control-height: 2.18rem;
+    --formula-track-inset-y: 0.42rem;
+    --formula-track-inset-x: 0.78rem;
     display: grid;
     grid-template-columns: minmax(9.4rem, 24%) minmax(0, 1fr);
     align-items: center;
     gap: 0.4rem;
-    padding: 0.34rem 0.42rem 0.34rem 1.28rem;
+    padding: var(--formula-track-inset-y) var(--formula-track-inset-x) var(--formula-track-inset-y) 1.28rem;
     position: relative;
     border: 0;
     border-radius: inherit;
@@ -2720,7 +2867,7 @@ textarea {
 .formula-source-row {
     display: flex;
     align-items: center;
-    gap: 0.24rem;
+    gap: 0.34rem;
     min-width: 0;
     width: 100%;
 }
@@ -2772,6 +2919,41 @@ textarea {
 }
 
 .formula-dismiss-button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 50%, transparent);
+}
+
+.formula-apply-selection-button {
+    flex: 0 0 auto;
+    height: var(--formula-control-height);
+    max-width: 11rem;
+    min-width: 0;
+    border: 1px solid color-mix(in oklab, var(--accent) 32%, var(--glass-border));
+    border-radius: 999px;
+    padding: 0 0.82rem;
+    background: color-mix(in oklab, var(--accent-soft) 54%, var(--formula-dismiss-bg));
+    color: color-mix(in oklab, var(--accent-strong) 82%, var(--sheet-ink));
+    font: 600 0.76rem/1 var(--font-body);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        background-color 140ms var(--ease-out-quart),
+        color 140ms var(--ease-out-quart),
+        transform 140ms var(--ease-out-quart);
+}
+
+.formula-apply-selection-button:hover {
+    background: color-mix(in oklab, var(--accent-soft) 72%, var(--formula-dismiss-bg-hover));
+    color: color-mix(in oklab, var(--accent-strong) 92%, var(--sheet-ink));
+}
+
+.formula-apply-selection-button:active {
+    transform: scale(0.98);
+}
+
+.formula-apply-selection-button:focus-visible {
     outline: none;
     box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 50%, transparent);
 }
@@ -3603,7 +3785,7 @@ textarea:focus-visible,
     }
 
     .formula-bar-shell {
-        width: calc(100vw - 1rem);
+        width: calc(100% - 1rem);
     }
 
     .column-index-secondary {
@@ -3613,7 +3795,7 @@ textarea:focus-visible,
 
 @media (max-width: 980px) {
     .formula-bar-shell {
-        width: calc(100vw - 1rem);
+        width: calc(100% - 1rem);
         border-radius: 1.02rem;
     }
 
@@ -3629,6 +3811,10 @@ textarea:focus-visible,
 
     .formula-source-row {
         width: 100%;
+    }
+
+    .formula-apply-selection-button {
+        max-width: min(11rem, 34vw);
     }
 
     .formula-subaddress {
@@ -3674,6 +3860,15 @@ textarea:focus-visible,
 
     .formula-source {
         font-size: 0.82rem;
+    }
+
+    .formula-source-row {
+        gap: 0.28rem;
+    }
+
+    .formula-apply-selection-button {
+        max-width: min(10.2rem, 38vw);
+        padding-inline: 0.68rem;
     }
 
     textarea {

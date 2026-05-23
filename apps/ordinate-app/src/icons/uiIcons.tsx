@@ -97,6 +97,18 @@ function OrganizeIcon() {
   );
 }
 
+export function PageSetupIcon() {
+  return (
+    <ToolbarIcon>
+      <rect x="3.2" y="3.8" width="13.6" height="12.4" rx="2" fill="none" stroke="currentColor" strokeWidth="1.35" />
+      <path d="M3.2 7.4h13.6M7 3.8v12.4" fill="none" stroke="currentColor" strokeWidth="1.15" />
+      <path d="M9.8 10.2h4.2M9.8 12.7h2.8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.25" />
+      <circle cx="14.6" cy="14.5" r="1.9" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M14.6 13.5v2M13.6 14.5h2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.05" />
+    </ToolbarIcon>
+  );
+}
+
 export function PlusIcon() {
   return (
     <ToolbarIcon>

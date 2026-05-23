@@ -73,6 +73,8 @@ type FormulaBarOverlayProps = {
   onRequestEdit: () => void;
   onCancelEdit: () => void;
   onCommitInput: (nextInput: string) => void;
+  canApplyToSelection: boolean;
+  onApplyToSelection: (nextInput: string) => void;
   onSetLocalFormat: (key: FormatLocalKey, options: FormulaBarData["formatLocalOptions"]) => void;
   onSetLocalStyle: <Axis extends keyof StyleLocalView>(axis: Axis, value: StyleLocalView[Axis]) => void;
   onDismiss: () => void;
@@ -93,6 +95,8 @@ export default function FormulaBarOverlay({
   onRequestEdit,
   onCancelEdit,
   onCommitInput,
+  canApplyToSelection,
+  onApplyToSelection,
   onSetLocalFormat,
   onSetLocalStyle,
   onDismiss,
@@ -326,6 +330,13 @@ export default function FormulaBarOverlay({
     setIsComposingInput(false);
   };
 
+  const applyInputToSelection = () => {
+    if (!formulaBarSnapshot || !isInputEditable || !canApplyToSelection || isComposingInput) return;
+    selectionDebugLog("formula applyToSelection", { draftInput });
+    onApplyToSelection(inputMode === "edit" ? draftInput : formulaBarSnapshot.inputText);
+    setIsComposingInput(false);
+  };
+
   if (mode !== "table" || phase === "hidden" || !formulaBarSnapshot) return null;
 
   return (
@@ -444,6 +455,10 @@ export default function FormulaBarOverlay({
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     event.stopPropagation();
+                    if (event.metaKey || event.ctrlKey) {
+                      applyInputToSelection();
+                      return;
+                    }
                     commitEditInput();
                     return;
                   }
@@ -499,6 +514,25 @@ export default function FormulaBarOverlay({
                 </svg>
               </span>
             </button>
+            {canApplyToSelection ? (
+              <button
+                className="formula-apply-selection-button"
+                type="button"
+                aria-label="Apply to selection"
+                onMouseEnter={(event) => onTooltipEnter("Apply to selection", event.currentTarget)}
+                onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+                onFocus={(event) => onTooltipEnter("Apply to selection", event.currentTarget)}
+                onBlur={(event) => onTooltipRelease(event.currentTarget)}
+                onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+                onClick={() => {
+                  setFormatMenuOpen(false);
+                  setStyleMenuOpen(false);
+                  applyInputToSelection();
+                }}
+              >
+                Apply to selection
+              </button>
+            ) : null}
           </div>
         </div>
       </aside>

@@ -3,6 +3,7 @@ import type { ReactNode, RefObject } from "react";
 
 import { AutoIcon, MoonIcon, SunIcon } from "../icons/uiIcons";
 import RailMenu from "./RailMenu";
+import SheetSetupMenu from "./SheetSetupMenu";
 import { MenuOption, MenuSurface } from "./MenuSurface";
 import type { CoreRowDeleteMode } from "@ordinate/core";
 import type {
@@ -32,8 +33,20 @@ type OverlayPortalsProps = {
   railMenuPosition: FloatingMenuPosition;
   railMenu: RailMenuView | null;
   railMenuRef: RefObject<HTMLDivElement>;
-  onInsertRowAbove: (rowNumber: number) => void;
-  onInsertRowBelow: (rowNumber: number) => void;
+  sheetSetupOpen: boolean;
+  sheetSetupPosition: FloatingMenuPosition;
+  sheetSetupMenuRef: RefObject<HTMLDivElement>;
+  headerRowCount: number;
+  maxHeaderRowCount: number;
+  headerColCount: number;
+  onSetHeaderRowCount: (count: number) => void;
+  selectionMenuOpen: boolean;
+  selectionMenuPosition: FloatingMenuPosition;
+  selectionMenuRef: RefObject<HTMLDivElement>;
+  canClearSelection: boolean;
+  onClearSelection: () => void;
+  onInsertRowAbove: (rowNumber: number, area: "header" | "body") => void;
+  onInsertRowBelow: (rowNumber: number, area: "header" | "body") => void;
   onDeleteRow: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
   onInsertColumnLeft: (colIndex: number) => void;
   onInsertColumnRight: (colIndex: number) => void;
@@ -60,6 +73,18 @@ export default function OverlayPortals({
   railMenuPosition,
   railMenu,
   railMenuRef,
+  sheetSetupOpen,
+  sheetSetupPosition,
+  sheetSetupMenuRef,
+  headerRowCount,
+  maxHeaderRowCount,
+  headerColCount,
+  onSetHeaderRowCount,
+  selectionMenuOpen,
+  selectionMenuPosition,
+  selectionMenuRef,
+  canClearSelection,
+  onClearSelection,
   onInsertRowAbove,
   onInsertRowBelow,
   onDeleteRow,
@@ -141,6 +166,34 @@ export default function OverlayPortals({
           onSetColumnDefaultFormat={onSetColumnDefaultFormat}
           onSetColumnDefaultStyle={onSetColumnDefaultStyle}
         />,
+        document.body,
+      )}
+
+      {createPortal(
+        <SheetSetupMenu
+          open={sheetSetupOpen}
+          position={sheetSetupPosition}
+          menuRef={sheetSetupMenuRef}
+          headerRowCount={headerRowCount}
+          maxHeaderRowCount={maxHeaderRowCount}
+          headerColCount={headerColCount}
+          onSetHeaderRowCount={onSetHeaderRowCount}
+        />,
+        document.body,
+      )}
+
+      {createPortal(
+        <MenuSurface
+          innerRef={selectionMenuRef}
+          className="selection-menu"
+          open={selectionMenuOpen}
+          ariaHidden={!selectionMenuOpen}
+          style={{ top: `${selectionMenuPosition.top}px`, left: `${selectionMenuPosition.left}px` }}
+        >
+          <MenuOption role="menuitem" tone="danger" disabled={!canClearSelection} onClick={onClearSelection}>
+            Clear selection
+          </MenuOption>
+        </MenuSurface>,
         document.body,
       )}
 

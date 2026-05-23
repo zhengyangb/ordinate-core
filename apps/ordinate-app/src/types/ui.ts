@@ -17,6 +17,36 @@ export type LogicalCell = {
   cAbs: number;
 };
 
+export type Rect = {
+  rowStart: number;
+  rowEnd: number;
+  colStart: number;
+  colEnd: number;
+};
+
+export type SheetSelection =
+  | {
+      kind: "cell";
+      focus: LogicalCell;
+      anchor: LogicalCell;
+      range: Rect;
+    }
+  | {
+      kind: "range";
+      focus: LogicalCell;
+      anchor: LogicalCell;
+      range: Rect;
+    }
+  | {
+      kind: "column";
+      colIndex: number;
+    }
+  | {
+      kind: "row";
+      rowNumber: number;
+      area: "header" | "body";
+    };
+
 export type SelectedCell = {
   area: "header" | "body";
   logical: LogicalCell;
