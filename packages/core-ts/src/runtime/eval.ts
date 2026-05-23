@@ -709,11 +709,12 @@ function evalFunctionCall(
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
 ): RuntimeValue {
-  const name = call.name;
+  const originalName = call.name;
+  const name = originalName.toLowerCase();
   const args = call.args;
 
   if (name === "sum") {
-    if (args.length !== 1) return makeInternalError("invalid_function_call", { function: name, expectedArgs: 1, got: args.length });
+    if (args.length !== 1) return makeInternalError("invalid_function_call", { function: originalName, expectedArgs: 1, got: args.length });
     const [argKind, argVal] = evalArgValue(
       args[0],
       rowIdx,
@@ -731,12 +732,12 @@ function evalFunctionCall(
       colIdToIndex,
     );
     if (argKind === "error") return argVal as RuntimeValue;
-    if (argKind !== "view") return makeInternalError("invalid_function_call", { function: name, argumentKind: argKind });
+    if (argKind !== "view") return makeInternalError("invalid_function_call", { function: originalName, argumentKind: argKind });
     return sumView(argVal as ViewSelection, evalCell);
   }
 
   if (name === "abs") {
-    if (args.length !== 1) return makeInternalError("invalid_function_call", { function: name, expectedArgs: 1, got: args.length });
+    if (args.length !== 1) return makeInternalError("invalid_function_call", { function: originalName, expectedArgs: 1, got: args.length });
     const value = evalScalarArg(
       args[0],
       rowIdx,
@@ -754,12 +755,12 @@ function evalFunctionCall(
       colIdToIndex,
     );
     if (isError(value)) return value;
-    if (value.kind !== "number") return makeInternalError("invalid_function_call", { function: name, argumentKind: value.kind });
+    if (value.kind !== "number") return makeInternalError("invalid_function_call", { function: originalName, argumentKind: value.kind });
     return { kind: "number", value: Math.abs(value.value as number) };
   }
 
   if (name === "not") {
-    if (args.length !== 1) return makeInternalError("invalid_function_call", { function: name, expectedArgs: 1, got: args.length });
+    if (args.length !== 1) return makeInternalError("invalid_function_call", { function: originalName, expectedArgs: 1, got: args.length });
     const value = evalScalarArg(
       args[0],
       rowIdx,
@@ -777,12 +778,12 @@ function evalFunctionCall(
       colIdToIndex,
     );
     if (isError(value)) return value;
-    if (value.kind !== "boolean") return makeInternalError("invalid_function_call", { function: name, argumentKind: value.kind });
+    if (value.kind !== "boolean") return makeInternalError("invalid_function_call", { function: originalName, argumentKind: value.kind });
     return { kind: "boolean", value: !value.value };
   }
 
-  if (name === "dotProduct") {
-    if (args.length !== 2) return makeInternalError("invalid_function_call", { function: name, expectedArgs: 2, got: args.length });
+  if (name === "dotproduct") {
+    if (args.length !== 2) return makeInternalError("invalid_function_call", { function: originalName, expectedArgs: 2, got: args.length });
     const [leftKind, leftVal] = evalArgValue(
       args[0],
       rowIdx,
@@ -818,12 +819,12 @@ function evalFunctionCall(
     );
     if (rightKind === "error") return rightVal as RuntimeValue;
     if (leftKind !== "view" || rightKind !== "view") {
-      return makeInternalError("invalid_function_call", { function: name, leftKind, rightKind });
+      return makeInternalError("invalid_function_call", { function: originalName, leftKind, rightKind });
     }
     return dotProduct(leftVal as ViewSelection, rightVal as ViewSelection, evalCell);
   }
 
-  return makeInternalError("unknown_function", { function: name });
+  return makeInternalError("unknown_function", { function: originalName });
 }
 
 // Evaluate an argument into either scalar or view.

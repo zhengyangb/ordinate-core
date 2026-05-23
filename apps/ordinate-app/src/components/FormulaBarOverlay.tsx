@@ -10,6 +10,7 @@ import {
 import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
 import type { ChromeVisibilityPhase, FormatLocalKey, FormulaBarData, StyleLocalView } from "../types/ui";
 import { selectionDebugLog } from "../utils/selectionDebug";
+import { applyFormulaReferencePick } from "../utils/formulaPointMode";
 
 function MenuIcon({ children }: { children: ReactNode }) {
   return (
@@ -73,6 +74,8 @@ type FormulaBarOverlayProps = {
   onRequestEdit: () => void;
   onCancelEdit: () => void;
   onCommitInput: (nextInput: string) => void;
+  onDraftInputChange: (nextInput: string) => void;
+  pointReferenceRequest: { id: number; gestureId: number; text: string } | null;
   canApplyToSelection: boolean;
   onApplyToSelection: (nextInput: string) => void;
   onSetLocalFormat: (key: FormatLocalKey, options: FormulaBarData["formatLocalOptions"]) => void;
@@ -95,6 +98,8 @@ export default function FormulaBarOverlay({
   onRequestEdit,
   onCancelEdit,
   onCommitInput,
+  onDraftInputChange,
+  pointReferenceRequest,
   canApplyToSelection,
   onApplyToSelection,
   onSetLocalFormat,
@@ -117,6 +122,7 @@ export default function FormulaBarOverlay({
   const [draftInput, setDraftInput] = useState("");
   const [isComposingInput, setIsComposingInput] = useState(false);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
+  const activePointReplacementRef = useRef<{ gestureId: number; start: number; end: number } | null>(null);
   const isEditingInput = inputMode === "edit";
 
   useEffect(() => {
@@ -145,12 +151,52 @@ export default function FormulaBarOverlay({
   useEffect(() => {
     if (!formulaBarSnapshot) {
       setDraftInput("");
+      onDraftInputChange("");
+      activePointReplacementRef.current = null;
       setIsComposingInput(false);
       return;
     }
     setDraftInput(formulaBarSnapshot.inputText);
+    onDraftInputChange(formulaBarSnapshot.inputText);
+    activePointReplacementRef.current = null;
     setIsComposingInput(false);
-  }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.inputText]);
+  }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.inputText, onDraftInputChange]);
+
+  useEffect(() => {
+    if (!pointReferenceRequest || !isEditingInput) return;
+    const input = sourceInputRef.current;
+    const activeReplacement = activePointReplacementRef.current;
+    const shouldReplaceActivePointText = activeReplacement != null;
+    const selectionStart = shouldReplaceActivePointText
+      ? activeReplacement.start
+      : input?.selectionStart ?? draftInput.length;
+    const selectionEnd = shouldReplaceActivePointText
+      ? activeReplacement.end
+      : input?.selectionEnd ?? selectionStart;
+    let edit;
+    try {
+      edit = applyFormulaReferencePick(draftInput, selectionStart, selectionEnd, pointReferenceRequest.text);
+    } catch (error) {
+      selectionDebugLog("formula point reference rejected", {
+        text: pointReferenceRequest.text,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    setDraftInput(edit.nextDraft);
+    onDraftInputChange(edit.nextDraft);
+    activePointReplacementRef.current = {
+      gestureId: pointReferenceRequest.gestureId,
+      start: edit.selectionStart - pointReferenceRequest.text.length,
+      end: edit.selectionStart,
+    };
+    window.requestAnimationFrame(() => {
+      const nextInput = sourceInputRef.current;
+      if (!nextInput) return;
+      nextInput.focus();
+      nextInput.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+    });
+  }, [pointReferenceRequest?.id]);
 
   useEffect(() => {
     setMenuPanelKey(localFormatKey);
@@ -307,6 +353,8 @@ export default function FormulaBarOverlay({
 
   const cancelEditInput = () => {
     setDraftInput(formulaBarSnapshot?.inputText ?? "");
+    onDraftInputChange(formulaBarSnapshot?.inputText ?? "");
+    activePointReplacementRef.current = null;
     setIsComposingInput(false);
     onCancelEdit();
   };
@@ -327,6 +375,7 @@ export default function FormulaBarOverlay({
     }
     selectionDebugLog("formula commitEditInput apply", { draftInput });
     onCommitInput(draftInput);
+    activePointReplacementRef.current = null;
     setIsComposingInput(false);
   };
 
@@ -334,6 +383,7 @@ export default function FormulaBarOverlay({
     if (!formulaBarSnapshot || !isInputEditable || !canApplyToSelection || isComposingInput) return;
     selectionDebugLog("formula applyToSelection", { draftInput });
     onApplyToSelection(inputMode === "edit" ? draftInput : formulaBarSnapshot.inputText);
+    activePointReplacementRef.current = null;
     setIsComposingInput(false);
   };
 
@@ -448,7 +498,11 @@ export default function FormulaBarOverlay({
                 className="formula-source formula-source-input is-editing"
                 value={draftInput}
                 spellCheck={false}
-                onChange={(event) => setDraftInput(event.target.value)}
+                onChange={(event) => {
+                  setDraftInput(event.target.value);
+                  onDraftInputChange(event.target.value);
+                  activePointReplacementRef.current = null;
+                }}
                 onCompositionStart={() => setIsComposingInput(true)}
                 onCompositionEnd={() => setIsComposingInput(false)}
                 onKeyDown={(event) => {

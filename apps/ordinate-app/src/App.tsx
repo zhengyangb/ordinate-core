@@ -42,6 +42,7 @@ import type {
   HeaderOverlayCell,
   LogicalCell,
   RailMenuView,
+  Rect,
   RowIndexMetric,
   SheetSelection,
   SheetHealth,
@@ -113,6 +114,7 @@ import {
   makeRangeSelection,
   makeRangeSelectionWithFocus,
 } from "./utils/selectionModel";
+import { formatA1ReferenceForRect, makeFormulaPointRect } from "./utils/formulaPointMode";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -120,6 +122,12 @@ type AutoPanTarget = {
   key: string;
   displayedRowIndex: number;
   colId: string;
+};
+
+type FormulaPointPick = {
+  anchor: LogicalCell;
+  focus: LogicalCell;
+  range: Rect;
 };
 
 const SELECTION_DRAG_SCROLL_EDGE_PX = 48;
@@ -180,6 +188,9 @@ export default function App() {
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<SheetSelection | null>(null);
   const [formulaInputMode, setFormulaInputMode] = useState<FormulaInputMode>("read");
+  const [formulaDraftInput, setFormulaDraftInput] = useState("");
+  const [formulaPointPick, setFormulaPointPick] = useState<FormulaPointPick | null>(null);
+  const [formulaPointReferenceRequest, setFormulaPointReferenceRequest] = useState<{ id: number; gestureId: number; text: string } | null>(null);
   const [formulaBarSnapshot, setFormulaBarSnapshot] = useState<FormulaBarData | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
@@ -219,11 +230,15 @@ export default function App() {
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
   const selectionRingRef = useRef<HTMLDivElement | null>(null);
   const selectionRangeRef = useRef<HTMLDivElement | null>(null);
+  const formulaPointRangeRef = useRef<HTMLDivElement | null>(null);
   const selectionRingRectRef = useRef<RingRect | null>(null);
   const selectionRingCellRef = useRef<HTMLElement | null>(null);
   const selectionRingCellKeyRef = useRef<string | null>(null);
   const selectionRangeRectRef = useRef<RingRect | null>(null);
+  const formulaPointRangeRectRef = useRef<RingRect | null>(null);
   const selectionDragRef = useRef<{ anchor: LogicalCell; focus: LogicalCell } | null>(null);
+  const formulaPointDragRef = useRef<{ anchor: LogicalCell; focus: LogicalCell; gestureId: number } | null>(null);
+  const formulaPointGestureIdRef = useRef(0);
   const selectionDragPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const selectionAutoScrollRafRef = useRef<number | null>(null);
   const suppressCellFocusSelectionUntilRef = useRef(0);
@@ -386,6 +401,7 @@ export default function App() {
     setSelectedCell(null);
     setSelectedColumnIndex(null);
     setSelectionMenuOpen(false);
+    setFormulaPointPick(null);
     setFormulaInputMode("read");
     const active = document.activeElement;
     if (active instanceof HTMLElement) {
@@ -409,10 +425,13 @@ export default function App() {
     setFormulaInputMode("read");
     selectionRingRectRef.current = null;
     selectionRangeRectRef.current = null;
+    formulaPointRangeRectRef.current = null;
     selectionRingCellRef.current = null;
     selectionRingCellKeyRef.current = null;
     selectionRingRef.current?.classList.add("is-hidden");
     selectionRangeRef.current?.classList.add("is-hidden");
+    formulaPointRangeRef.current?.classList.add("is-hidden");
+    setFormulaPointPick(null);
     clearRowTransition();
     clearColumnTransition();
   }, [activeSheet, mode, clearRowTransition, clearColumnTransition]);
@@ -422,6 +441,7 @@ export default function App() {
     setSelectedCell(null);
     setSelectedColumnIndex(null);
     setFormulaInputMode("read");
+    setFormulaPointPick(null);
     setRailMenuOpen(false);
     setSheetSetupOpen(false);
     setSelectionMenuOpen(false);
@@ -939,6 +959,11 @@ export default function App() {
 
   const selectedRange = useMemo(() => getSelectionRange(selection), [selection]);
   const isRangeSelection = selection?.kind === "range";
+  const canStartFormulaPointPick = useCallback(() => {
+    if (formulaInputMode !== "edit" || !selectedCell || !activeSheet || isActiveSheetBlocked) return false;
+    const liveDraft = document.querySelector<HTMLInputElement>(".formula-source-input.is-editing")?.value ?? formulaDraftInput;
+    return liveDraft.trimStart().startsWith("=");
+  }, [formulaInputMode, selectedCell, activeSheet, isActiveSheetBlocked, formulaDraftInput]);
   const selectedColumnIndex = useMemo(() => {
     if (selection?.kind === "column") return selection.colIndex;
     const firstBodyRow = headerRowCount + 1;
@@ -1039,6 +1064,17 @@ export default function App() {
     selectionRingRef.current?.classList.add("is-hidden");
     selectionRangeRef.current?.classList.add("is-hidden");
   }, []);
+
+  const hideFormulaPointOverlay = useCallback(() => {
+    formulaPointRangeRectRef.current = null;
+    formulaPointRangeRef.current?.classList.add("is-hidden");
+  }, []);
+
+  useEffect(() => {
+    if (formulaInputMode === "edit") return;
+    setFormulaPointPick(null);
+    hideFormulaPointOverlay();
+  }, [formulaInputMode, hideFormulaPointOverlay]);
 
   const resolveLogicalCellRect = useCallback(
     (root: HTMLElement, gridShell: HTMLElement, cell: LogicalCell): RingRect | null => {
@@ -1165,6 +1201,53 @@ export default function App() {
     [mode, isActiveSheetBlocked, selectedCell, selectedRange, isRangeSelection, hideSelectionOverlays, resolveLogicalCellRect],
   );
 
+  const syncFormulaPointOverlay = useCallback(
+    (root: HTMLElement | null) => {
+      const overlay = formulaPointRangeRef.current;
+      if (!overlay) return;
+      if (mode === "source" || isActiveSheetBlocked || !root || !formulaPointPick) {
+        hideFormulaPointOverlay();
+        return;
+      }
+
+      const gridShell = root.closest<HTMLElement>(".grid-shell");
+      if (!gridShell) {
+        hideFormulaPointOverlay();
+        return;
+      }
+
+      const startRect = resolveLogicalCellRect(root, gridShell, {
+        rAbs: formulaPointPick.range.rowStart,
+        cAbs: formulaPointPick.range.colStart,
+      });
+      const endRect = resolveLogicalCellRect(root, gridShell, {
+        rAbs: formulaPointPick.range.rowEnd,
+        cAbs: formulaPointPick.range.colEnd,
+      });
+      if (!startRect || !endRect) {
+        hideFormulaPointOverlay();
+        return;
+      }
+
+      const left = Math.min(startRect.left, endRect.left);
+      const top = Math.min(startRect.top, endRect.top);
+      const pointRect = {
+        left,
+        top,
+        width: Math.max(startRect.left + startRect.width, endRect.left + endRect.width) - left,
+        height: Math.max(startRect.top + startRect.height, endRect.top + endRect.height) - top,
+      };
+      overlay.classList.remove("is-hidden");
+      if (!ringRectEqual(formulaPointRangeRectRef.current, pointRect)) {
+        overlay.style.transform = `translate3d(${pointRect.left}px, ${pointRect.top}px, 0)`;
+        overlay.style.width = `${pointRect.width}px`;
+        overlay.style.height = `${pointRect.height}px`;
+        formulaPointRangeRectRef.current = pointRect;
+      }
+    },
+    [mode, isActiveSheetBlocked, formulaPointPick, hideFormulaPointOverlay, resolveLogicalCellRect],
+  );
+
   const scheduleSelectionRingSync = useCallback(() => {
     if (selectionRingSyncRafRef.current != null) {
       window.cancelAnimationFrame(selectionRingSyncRafRef.current);
@@ -1172,8 +1255,9 @@ export default function App() {
     selectionRingSyncRafRef.current = window.requestAnimationFrame(() => {
       selectionRingSyncRafRef.current = null;
       syncSelectionRing(gridWrapRef.current);
+      syncFormulaPointOverlay(gridWrapRef.current);
     });
-  }, [syncSelectionRing]);
+  }, [syncSelectionRing, syncFormulaPointOverlay]);
 
   useEffect(() => {
     return () => {
@@ -1441,6 +1525,37 @@ export default function App() {
     [colIndexLookup, rowData],
   );
 
+  const requestFormulaPointReference = useCallback(
+    (anchor: LogicalCell, focus: LogicalCell, gestureId: number) => {
+      if (!canStartFormulaPointPick()) return false;
+      const range = makeFormulaPointRect(anchor, focus);
+      setFormulaPointPick({ anchor, focus, range });
+      setFormulaPointReferenceRequest((current) => ({
+        id: (current?.id ?? 0) + 1,
+        gestureId,
+        text: formatA1ReferenceForRect(range),
+      }));
+      scheduleSelectionRingSync();
+      return true;
+    },
+    [canStartFormulaPointPick, scheduleSelectionRingSync],
+  );
+
+  const beginFormulaPointGesture = useCallback(
+    (logical: LogicalCell) => {
+      const gestureId = formulaPointGestureIdRef.current + 1;
+      formulaPointGestureIdRef.current = gestureId;
+      if (!requestFormulaPointReference(logical, logical, gestureId)) return false;
+      formulaPointDragRef.current = { anchor: logical, focus: logical, gestureId };
+      suppressCellFocusSelectionUntilRef.current = performance.now() + 320;
+      setRailMenuOpen(false);
+      setOpenRailMenuTarget(null);
+      railMenuAnchorRef.current = null;
+      return true;
+    },
+    [requestFormulaPointReference],
+  );
+
   const beginSelectionGesture = useCallback(
     (logical: LogicalCell, extend: boolean, drag: boolean) => {
       const anchor =
@@ -1461,6 +1576,25 @@ export default function App() {
     },
     [selection],
   );
+
+  useEffect(() => {
+    const root = gridWrapRef.current;
+    if (!root || mode === "source" || isActiveSheetBlocked) return;
+
+    const handleFormulaPointMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest(".ag-cell, .header-matrix-cell")) return;
+      const logical = resolveLogicalCellFromPoint(event.clientX, event.clientY);
+      if (!logical) return;
+      if (!beginFormulaPointGesture(logical)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    root.addEventListener("mousedown", handleFormulaPointMouseDown, true);
+    return () => root.removeEventListener("mousedown", handleFormulaPointMouseDown, true);
+  }, [mode, isActiveSheetBlocked, resolveLogicalCellFromPoint, beginFormulaPointGesture]);
 
   const setKeyboardSelection = useCallback(
     (logical: LogicalCell, extend: boolean) => {
@@ -1635,6 +1769,18 @@ export default function App() {
     };
 
     const handlePointerMove = (event: PointerEvent) => {
+      const formulaDrag = formulaPointDragRef.current;
+      if (formulaDrag) {
+        const logical =
+          resolveLogicalCellFromPoint(event.clientX, event.clientY) ??
+          resolveClampedLogicalCellFromPoint(event.clientX, event.clientY);
+        if (logical && (logical.rAbs !== formulaDrag.focus.rAbs || logical.cAbs !== formulaDrag.focus.cAbs)) {
+          formulaPointDragRef.current = { ...formulaDrag, focus: logical };
+          requestFormulaPointReference(formulaDrag.anchor, logical, formulaDrag.gestureId);
+        }
+        event.preventDefault();
+        return;
+      }
       if (!selectionDragRef.current) return;
       selectionDragPointRef.current = { clientX: event.clientX, clientY: event.clientY };
       updateSelectionDragFromPoint(event.clientX, event.clientY);
@@ -1643,6 +1789,7 @@ export default function App() {
     };
 
     const handlePointerUp = () => {
+      formulaPointDragRef.current = null;
       selectionDragRef.current = null;
       stopSelectionAutoScroll();
     };
@@ -1656,7 +1803,7 @@ export default function App() {
       window.removeEventListener("pointercancel", handlePointerUp);
       stopSelectionAutoScroll();
     };
-  }, [resolveLogicalCellFromPoint]);
+  }, [resolveLogicalCellFromPoint, requestFormulaPointReference]);
 
   const applyHeaderSelection = useCallback(
     (rowNumber: number, colIndex: number) => {
@@ -1696,6 +1843,9 @@ export default function App() {
   const handleHeaderOverlaySelect = useCallback(
     (rowNumber: number, colIndex: number, event?: { shiftKey: boolean; button?: number }) => {
       if (event && event.button != null && event.button !== 0) return;
+      if (event && beginFormulaPointGesture({ rAbs: rowNumber, cAbs: colIndex })) {
+        return;
+      }
       if (event) {
         beginSelectionGesture({ rAbs: rowNumber, cAbs: colIndex }, event.shiftKey, true);
       } else {
@@ -1706,7 +1856,7 @@ export default function App() {
         active.blur();
       }
     },
-    [applyHeaderSelection, beginSelectionGesture],
+    [applyHeaderSelection, beginFormulaPointGesture, beginSelectionGesture],
   );
 
   const handleHeaderOverlayDoubleClick = useCallback(
@@ -1920,14 +2070,15 @@ export default function App() {
         headerCenterTrack.style.transform = `translateX(${-left}px)`;
       }
       syncSelectionRing(root);
+      syncFormulaPointOverlay(root);
       setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
       setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
     });
-  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, headerOverlayHeight, syncSelectionRing, gridViewportAdapter]);
+  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, headerOverlayHeight, syncSelectionRing, syncFormulaPointOverlay, gridViewportAdapter]);
 
   useEffect(() => {
     scheduleSelectionRingSync();
-  }, [scheduleSelectionRingSync, selectedCell, selectedRange, rowData.length, headerOverlayHeight]);
+  }, [scheduleSelectionRingSync, selectedCell, selectedRange, formulaPointPick, rowData.length, headerOverlayHeight]);
 
   const handleCellMouseDown = useCallback(
     (event: CellMouseDownEvent<GridRow>) => {
@@ -1940,17 +2091,24 @@ export default function App() {
       if (!colNumber || event.rowIndex == null) return;
       const row = rowData[event.rowIndex];
       if (!row) return;
+      const logical = {
+        rAbs: row.__absoluteRowNumber,
+        cAbs: colNumber - 1,
+      };
+
+      if (beginFormulaPointGesture(logical)) {
+        mouseEvent?.preventDefault();
+        mouseEvent?.stopPropagation();
+        return;
+      }
 
       beginSelectionGesture(
-        {
-          rAbs: row.__absoluteRowNumber,
-          cAbs: colNumber - 1,
-        },
+        logical,
         mouseEvent?.shiftKey === true,
         true,
       );
     },
-    [mode, isActiveSheetBlocked, colIndexLookup, rowData, beginSelectionGesture],
+    [mode, isActiveSheetBlocked, colIndexLookup, rowData, beginFormulaPointGesture, beginSelectionGesture],
   );
 
   const handleCellFocused = useCallback(
@@ -2515,6 +2673,8 @@ export default function App() {
       nextInput,
     });
     setFormulaInputMode("read");
+    setFormulaDraftInput(nextInput);
+    setFormulaPointPick(null);
     window.requestAnimationFrame(() => {
       if (selectedCell.area === "header") {
         focusHeaderOverlayCell(selectedCell.logical.rAbs, selectedCell.logical.cAbs);
@@ -2544,6 +2704,8 @@ export default function App() {
       setRegion(target, values);
     }
     setFormulaInputMode("read");
+    setFormulaDraftInput(nextInput);
+    setFormulaPointPick(null);
     window.requestAnimationFrame(() => {
       if (selectedCell?.area === "header") {
         focusHeaderOverlayCell(selectedCell.logical.rAbs, selectedCell.logical.cAbs);
@@ -2930,20 +3092,24 @@ export default function App() {
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
     if (!selectedCell) return;
+    setFormulaDraftInput(formulaBarSnapshot?.inputText ?? "");
+    setFormulaPointPick(null);
     setFormulaInputMode("edit");
     selectionDebugLog("request formula edit", {
       rAbs: selectedCell.logical.rAbs,
       cAbs: selectedCell.logical.cAbs,
     });
-  }, [mode, isActiveSheetBlocked, selectedCell]);
+  }, [mode, isActiveSheetBlocked, selectedCell, formulaBarSnapshot?.inputText]);
 
   const handleCancelFormulaEdit = useCallback(() => {
     setFormulaInputMode("read");
+    setFormulaDraftInput(formulaBarSnapshot?.inputText ?? "");
+    setFormulaPointPick(null);
     window.requestAnimationFrame(() => {
       focusSelectedBodyCell();
     });
     selectionDebugLog("cancel formula edit");
-  }, [focusSelectedBodyCell]);
+  }, [formulaBarSnapshot?.inputText, focusSelectedBodyCell]);
 
   return (
     <div className="page">
@@ -3034,6 +3200,7 @@ export default function App() {
                 showSelectionRing={mode === "table" && !isActiveSheetBlocked && Boolean(selectedCell)}
                 selectionRingRef={selectionRingRef}
                 selectionRangeRef={selectionRangeRef}
+                formulaPointRangeRef={formulaPointRangeRef}
                 isSelectionRingTransitioning={isSelectionRingTransitioning}
                 handleHeaderOverlaySelect={handleHeaderOverlaySelect}
                 handleHeaderOverlayDoubleClick={handleHeaderOverlayDoubleClick}
@@ -3071,6 +3238,8 @@ export default function App() {
           onRequestEdit={handleRequestFormulaEdit}
           onCancelEdit={handleCancelFormulaEdit}
           onCommitInput={handleCommitFormulaInput}
+          onDraftInputChange={setFormulaDraftInput}
+          pointReferenceRequest={formulaPointReferenceRequest}
           canApplyToSelection={canApplyFormulaInputToSelection}
           onApplyToSelection={handleApplyFormulaInputToSelection}
           onSetLocalFormat={handleSetCellLocalFormat}

@@ -33,6 +33,23 @@ describe("RFC-0013 dual reference styles", () => {
     expect(scalarAt(doc, "F", "Out")).toEqual({ kind: "number", value: 2 });
   });
 
+  it("evaluates built-in function names case-insensitively", () => {
+    const doc = `
+# Sheet
+| Item || V1 | V2 | Out |
+| ---- || --- | --- | --- |
+| A    || 10 | 2 | = ABS(-5) |
+| B    || = B2 + C2 | 4 | = SUM(B2:B3) |
+| C    || true | false | = NOT(false) |
+| D    || 3 | 4 | = DOTPRODUCT(B2:C2, B5:C5) |
+`.trim();
+
+    expect(scalarAt(doc, "A", "Out")).toEqual({ kind: "number", value: 5 });
+    expect(scalarAt(doc, "B", "Out")).toEqual({ kind: "number", value: 22 });
+    expect(scalarAt(doc, "C", "Out")).toEqual({ kind: "boolean", value: true });
+    expect(scalarAt(doc, "D", "Out")).toEqual({ kind: "number", value: 38 });
+  });
+
   it("keeps spreadsheet token-like text as literal outside formula context", () => {
     const doc = `
 # Sheet

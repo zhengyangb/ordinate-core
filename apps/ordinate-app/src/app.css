@@ -1952,7 +1952,32 @@ textarea {
     opacity: 1;
 }
 
+.formula-point-range-selection {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    transform: translate3d(-9999px, -9999px, 0);
+    will-change: transform, width, height;
+    border: 2px solid color-mix(in oklab, var(--accent-strong) 78%, white 6%);
+    background: color-mix(in oklab, var(--accent-soft) 24%, transparent);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 20%, transparent),
+        0 0 0 1px color-mix(in oklab, var(--sheet-surface) 64%, transparent);
+    pointer-events: none;
+    z-index: 7;
+    opacity: 1;
+}
+
 .persistent-range-selection.is-hidden {
+    transform: translate3d(-9999px, -9999px, 0) !important;
+    width: 0 !important;
+    height: 0 !important;
+    opacity: 0;
+}
+
+.formula-point-range-selection.is-hidden {
     transform: translate3d(-9999px, -9999px, 0) !important;
     width: 0 !important;
     height: 0 !important;

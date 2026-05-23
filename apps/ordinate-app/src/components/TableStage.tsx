@@ -41,6 +41,7 @@ type TableStageProps = {
   showSelectionRing: boolean;
   selectionRingRef: MutableRefObject<HTMLDivElement | null>;
   selectionRangeRef: MutableRefObject<HTMLDivElement | null>;
+  formulaPointRangeRef: MutableRefObject<HTMLDivElement | null>;
   isSelectionRingTransitioning: boolean;
   suppressAgHeaderFocus: boolean;
   overlayOwnsGridHeader: boolean;
@@ -113,6 +114,7 @@ export default function TableStage({
   showSelectionRing,
   selectionRingRef,
   selectionRangeRef,
+  formulaPointRangeRef,
   isSelectionRingTransitioning,
   suppressAgHeaderFocus,
   overlayOwnsGridHeader,
@@ -349,6 +351,7 @@ export default function TableStage({
         {showSelectionRing ? (
           <>
             <div ref={selectionRangeRef} className="persistent-range-selection is-hidden" aria-hidden="true" />
+            <div ref={formulaPointRangeRef} className="formula-point-range-selection is-hidden" aria-hidden="true" />
             <div
               ref={selectionRingRef}
               className={
