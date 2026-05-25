@@ -5,6 +5,14 @@ Core library for Ordinate documents.
 Primary implementation: TypeScript (`packages/core-ts`).
 Python (`src/ordinate_core`) is a frozen reference and is not actively maintained.
 
+## Specification Boundaries
+
+Ordinate RFCs in `rfcs/` define the core document format, semantic model, parser and serializer behavior, evaluation semantics, and public core library edit contracts.
+
+Application-specific editor behavior is specified separately under `apps/ordinate-app/docs/features/`. This includes UI workflows, editor sessions, command boundaries, undo/redo UX, file open/save behavior, host integration, and future desktop packaging.
+
+Do not fold app feature behavior into core RFCs unless it changes the `.ord` format or the public core library contract.
+
 Current capabilities:
 - parse sheets and pipe tables from text
 - validate RFC-0002 structural rules

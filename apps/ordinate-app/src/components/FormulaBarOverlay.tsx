@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { UiLocale } from "../i18n/messages";
@@ -10,7 +10,16 @@ import {
 import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
 import type { ChromeVisibilityPhase, FormatLocalKey, FormulaBarData, StyleLocalView } from "../types/ui";
 import { selectionDebugLog } from "../utils/selectionDebug";
-import { applyFormulaReferencePick } from "../utils/formulaPointMode";
+import {
+  applyFormulaPointPickToState,
+  applyFormulaReferencePick,
+  findReferenceTokenForSelection,
+  syncFormulaPointSelectionState,
+  tokenizeFormulaReferences,
+  type FormulaPointGestureReplacement,
+  type FormulaPointReplacementTarget,
+  type FormulaReferenceView,
+} from "../utils/formulaPointMode";
 
 function MenuIcon({ children }: { children: ReactNode }) {
   return (
@@ -63,6 +72,94 @@ function BannerWarningGlyph() {
   );
 }
 
+function getEditableSelectionOffsets(editor: HTMLTextAreaElement): { start: number; end: number } {
+  return {
+    start: editor.selectionStart,
+    end: editor.selectionEnd,
+  };
+}
+
+function setEditableSelectionOffsets(editor: HTMLTextAreaElement, start: number, end: number) {
+  const textLength = editor.value.length;
+  const targetStart = Math.max(0, Math.min(start, textLength));
+  const targetEnd = Math.max(0, Math.min(end, textLength));
+  editor.setSelectionRange(targetStart, targetEnd);
+}
+
+function measureTextareaTextWidth(editor: HTMLTextAreaElement, text: string): number {
+  const style = window.getComputedStyle(editor);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Formula editor requires canvas text measurement.");
+  context.font = style.font;
+  return context.measureText(text).width;
+}
+
+function ensureTextareaOffsetVisible(editor: HTMLTextAreaElement, offset: number) {
+  const style = window.getComputedStyle(editor);
+  const paddingLeft = Number.parseFloat(style.paddingLeft) || 0;
+  const paddingRight = Number.parseFloat(style.paddingRight) || 0;
+  const guard = 12;
+  const textWidth = measureTextareaTextWidth(editor, editor.value.slice(0, Math.max(0, Math.min(offset, editor.value.length))));
+  const caretX = paddingLeft + textWidth;
+  const visibleLeft = editor.scrollLeft + paddingLeft + guard;
+  const visibleRight = editor.scrollLeft + editor.clientWidth - paddingRight - guard;
+
+  if (caretX > visibleRight) {
+    editor.scrollLeft = Math.max(0, caretX - editor.clientWidth + paddingRight + guard);
+    return;
+  }
+  if (caretX < visibleLeft) {
+    editor.scrollLeft = Math.max(0, caretX - paddingLeft - guard);
+  }
+}
+
+function renderFormulaDraftWithTokens(
+  draft: string,
+  referenceViews: FormulaReferenceView[],
+  activeReferenceTokenId: string | null,
+  onTokenPointerDown: (tokenId: string) => void,
+) {
+  if (draft.length === 0) {
+    return null;
+  }
+  const viewsById = new Map(referenceViews.map((view) => [view.id, view]));
+  const tokens = tokenizeFormulaReferences(draft);
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  tokens.forEach((token) => {
+    if (cursor < token.start) {
+      nodes.push(<span key={`text-${cursor}`}>{draft.slice(cursor, token.start)}</span>);
+    }
+    const view = viewsById.get(token.id);
+    nodes.push(
+      <span
+        key={token.id}
+        className={token.id === activeReferenceTokenId ? "formula-reference-token is-active" : "formula-reference-token"}
+        data-token-id={token.id}
+        data-color-index={view?.colorIndex ?? 0}
+        contentEditable={false}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onTokenPointerDown(token.id);
+        }}
+        onMouseUp={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
+        {token.text}
+      </span>,
+    );
+    cursor = token.end;
+  });
+  if (cursor < draft.length) {
+    nodes.push(<span key={`text-${cursor}`}>{draft.slice(cursor)}</span>);
+  }
+  return nodes;
+}
+
 type FormulaBarOverlayProps = {
   locale: UiLocale;
   mode: "table" | "source";
@@ -76,6 +173,10 @@ type FormulaBarOverlayProps = {
   onCommitInput: (nextInput: string) => void;
   onDraftInputChange: (nextInput: string) => void;
   pointReferenceRequest: { id: number; gestureId: number; text: string } | null;
+  referenceViews: FormulaReferenceView[];
+  activeReferenceTokenId: string | null;
+  onActiveReferenceTokenChange: (tokenId: string | null) => void;
+  onCancelPointPick: () => void;
   canApplyToSelection: boolean;
   onApplyToSelection: (nextInput: string) => void;
   onSetLocalFormat: (key: FormatLocalKey, options: FormulaBarData["formatLocalOptions"]) => void;
@@ -100,6 +201,10 @@ export default function FormulaBarOverlay({
   onCommitInput,
   onDraftInputChange,
   pointReferenceRequest,
+  referenceViews,
+  activeReferenceTokenId,
+  onActiveReferenceTokenChange,
+  onCancelPointPick,
   canApplyToSelection,
   onApplyToSelection,
   onSetLocalFormat,
@@ -119,11 +224,72 @@ export default function FormulaBarOverlay({
   const [styleMenuPosition, setStyleMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const styleButtonRef = useRef<HTMLButtonElement | null>(null);
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
+  const referenceMenuRef = useRef<HTMLDivElement | null>(null);
   const [draftInput, setDraftInput] = useState("");
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [isComposingInput, setIsComposingInput] = useState(false);
-  const sourceInputRef = useRef<HTMLInputElement | null>(null);
-  const activePointReplacementRef = useRef<{ gestureId: number; start: number; end: number } | null>(null);
+  const [referencePopoverCaretLeft, setReferencePopoverCaretLeft] = useState<number | null>(null);
+  const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const sourcePlainInputRef = useRef<HTMLInputElement | null>(null);
+  const tokenBackdropRef = useRef<HTMLDivElement | null>(null);
+  const appliedPointReferenceRequestIdRef = useRef<number | null>(null);
+  const pointGestureReplacementRef = useRef<FormulaPointGestureReplacement | null>(null);
+  const pointTokenReplacementRef = useRef<FormulaPointReplacementTarget | null>(null);
+  const syncedActiveReferenceTokenIdRef = useRef<string | null>(null);
+  const draftInputRef = useRef(draftInput);
+  const referenceViewsRef = useRef(referenceViews);
+  const activeReferenceViewRef = useRef<FormulaReferenceView | null>(null);
+  const explicitReferenceViewRef = useRef<FormulaReferenceView | null>(null);
+  const editSessionAddressRef = useRef<string | null>(null);
+  const focusEditorAt = (start: number, end = start) => {
+    const editor = sourceEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    setEditableSelectionOffsets(editor, start, end);
+    ensureTextareaOffsetVisible(editor, end);
+    syncEditorBackdropScroll();
+    window.requestAnimationFrame(() => {
+      const nextEditor = sourceEditorRef.current;
+      if (!nextEditor) return;
+      nextEditor.focus();
+      setEditableSelectionOffsets(nextEditor, start, end);
+      ensureTextareaOffsetVisible(nextEditor, end);
+      syncEditorBackdropScroll();
+    });
+  };
+  const syncEditorBackdropScroll = () => {
+    const editor = sourceEditorRef.current;
+    const backdrop = tokenBackdropRef.current;
+    if (!editor || !backdrop) return;
+    backdrop.scrollLeft = editor.scrollLeft;
+  };
   const isEditingInput = inputMode === "edit";
+  const isFormulaDraft = draftInput.trimStart().startsWith("=");
+  const activeReferenceView = useMemo(
+    () => referenceViews.find((view) => view.id === activeReferenceTokenId) ?? null,
+    [activeReferenceTokenId, referenceViews],
+  );
+  const referenceOptionGroups = useMemo(() => {
+    if (!activeReferenceView) return [];
+    return [
+      {
+        key: "legacy",
+        label: "Legacy A1",
+        options: activeReferenceView.options.filter((option) => option.style === "spreadsheet-a1"),
+      },
+      {
+        key: "alternate",
+        label: "Ordinate styles",
+        options: activeReferenceView.options.filter((option) => option.style !== "spreadsheet-a1"),
+      },
+    ].filter((group) => group.options.length > 0);
+  }, [activeReferenceView]);
+
+  useEffect(() => {
+    draftInputRef.current = draftInput;
+    referenceViewsRef.current = referenceViews;
+    activeReferenceViewRef.current = activeReferenceView;
+  }, [activeReferenceView, draftInput, referenceViews]);
 
   useEffect(() => {
     if (areDisplayControlsEditable) return;
@@ -152,71 +318,294 @@ export default function FormulaBarOverlay({
     if (!formulaBarSnapshot) {
       setDraftInput("");
       onDraftInputChange("");
-      activePointReplacementRef.current = null;
+      setDraftError(null);
+      onActiveReferenceTokenChange(null);
       setIsComposingInput(false);
+      appliedPointReferenceRequestIdRef.current = null;
+      pointGestureReplacementRef.current = null;
+      pointTokenReplacementRef.current = null;
+      syncedActiveReferenceTokenIdRef.current = null;
+      explicitReferenceViewRef.current = null;
+      editSessionAddressRef.current = null;
       return;
+    }
+    if (isEditingInput) {
+      if (editSessionAddressRef.current == null) {
+        editSessionAddressRef.current = formulaBarSnapshot.primaryAddress;
+      } else if (editSessionAddressRef.current !== formulaBarSnapshot.primaryAddress) {
+        return;
+      }
+    } else {
+      editSessionAddressRef.current = null;
     }
     setDraftInput(formulaBarSnapshot.inputText);
     onDraftInputChange(formulaBarSnapshot.inputText);
-    activePointReplacementRef.current = null;
+    setDraftError(null);
+    onActiveReferenceTokenChange(null);
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
     setIsComposingInput(false);
-  }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.inputText, onDraftInputChange]);
+    appliedPointReferenceRequestIdRef.current = null;
+    syncedActiveReferenceTokenIdRef.current = null;
+    explicitReferenceViewRef.current = null;
+  }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.inputText, isEditingInput, onActiveReferenceTokenChange, onDraftInputChange]);
 
   useEffect(() => {
     if (!pointReferenceRequest || !isEditingInput) return;
-    const input = sourceInputRef.current;
-    const activeReplacement = activePointReplacementRef.current;
-    const shouldReplaceActivePointText = activeReplacement != null;
-    const selectionStart = shouldReplaceActivePointText
-      ? activeReplacement.start
-      : input?.selectionStart ?? draftInput.length;
-    const selectionEnd = shouldReplaceActivePointText
-      ? activeReplacement.end
-      : input?.selectionEnd ?? selectionStart;
-    let edit;
+    if (appliedPointReferenceRequestIdRef.current === pointReferenceRequest.id) return;
+    appliedPointReferenceRequestIdRef.current = pointReferenceRequest.id;
+    if (!draftInput.trimStart().startsWith("=")) return;
+    const editor = sourceEditorRef.current;
+    const editorSelection = editor
+      ? getEditableSelectionOffsets(editor)
+      : { start: draftInput.length, end: draftInput.length };
+    let application;
     try {
-      edit = applyFormulaReferencePick(draftInput, selectionStart, selectionEnd, pointReferenceRequest.text);
+      application = applyFormulaPointPickToState(
+        {
+          draft: draftInput,
+          selectionStart: editorSelection.start,
+          selectionEnd: editorSelection.end,
+          activeTokenId: activeReferenceTokenId,
+          armedToken: pointTokenReplacementRef.current,
+          gestureReplacement: pointGestureReplacementRef.current,
+        },
+        pointReferenceRequest.text,
+        pointReferenceRequest.gestureId,
+      );
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setDraftError(message);
       selectionDebugLog("formula point reference rejected", {
         text: pointReferenceRequest.text,
-        message: error instanceof Error ? error.message : String(error),
+        message,
       });
       return;
     }
+    const { edit, nextState } = application;
+    pointGestureReplacementRef.current = nextState.gestureReplacement;
+    setDraftError(null);
     setDraftInput(edit.nextDraft);
     onDraftInputChange(edit.nextDraft);
-    activePointReplacementRef.current = {
+    selectionDebugLog("formula point reference applied", {
       gestureId: pointReferenceRequest.gestureId,
-      start: edit.selectionStart - pointReferenceRequest.text.length,
-      end: edit.selectionStart,
-    };
-    window.requestAnimationFrame(() => {
-      const nextInput = sourceInputRef.current;
-      if (!nextInput) return;
-      nextInput.focus();
-      nextInput.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+      text: pointReferenceRequest.text,
+      nextDraft: edit.nextDraft,
+      selectionStart: edit.selectionStart,
+      selectionEnd: edit.selectionEnd,
     });
-  }, [pointReferenceRequest?.id]);
+    syncedActiveReferenceTokenIdRef.current = nextState.activeTokenId;
+    pointTokenReplacementRef.current = nextState.armedToken;
+    onActiveReferenceTokenChange(nextState.activeTokenId);
+    window.requestAnimationFrame(() => {
+      focusEditorAt(edit.selectionStart, edit.selectionEnd);
+    });
+  }, [activeReferenceTokenId, draftInput, isEditingInput, onActiveReferenceTokenChange, onDraftInputChange, pointReferenceRequest?.id]);
+
+  useEffect(() => {
+    if (isFormulaDraft) return;
+    setDraftError(null);
+    syncedActiveReferenceTokenIdRef.current = null;
+    explicitReferenceViewRef.current = null;
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
+    onActiveReferenceTokenChange(null);
+    onCancelPointPick();
+  }, [isFormulaDraft, onActiveReferenceTokenChange, onCancelPointPick]);
 
   useEffect(() => {
     setMenuPanelKey(localFormatKey);
   }, [localFormatKey, formulaBarSnapshot?.primaryAddress]);
 
   useEffect(() => {
-    if (!isEditingInput) return;
-    const input = sourceInputRef.current;
-    if (!input) return;
-    input.focus();
-    const cursor = input.value.length;
-    input.setSelectionRange(cursor, cursor);
+    if (!isEditingInput || !isFormulaDraft) return;
+    const editor = sourceEditorRef.current;
+    if (!editor) return;
+    const cursor = draftInput.length;
+    focusEditorAt(cursor);
     const raf = window.requestAnimationFrame(() => {
-      input.focus();
-      input.setSelectionRange(cursor, cursor);
+      focusEditorAt(cursor);
     });
     return () => {
       window.cancelAnimationFrame(raf);
     };
-  }, [isEditingInput]);
+  }, [draftInput.length, isEditingInput, isFormulaDraft]);
+
+  useEffect(() => {
+    if (!isEditingInput || isFormulaDraft) return;
+    const input = sourcePlainInputRef.current;
+    if (!input) return;
+    const cursor = draftInput.length;
+    input.focus();
+    input.setSelectionRange(cursor, cursor);
+    const raf = window.requestAnimationFrame(() => {
+      const nextInput = sourcePlainInputRef.current;
+      if (!nextInput) return;
+      nextInput.focus();
+      nextInput.setSelectionRange(cursor, cursor);
+    });
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [draftInput.length, isEditingInput, isFormulaDraft]);
+
+  useEffect(() => {
+    if (!isEditingInput || !isFormulaDraft) return;
+    let editor: HTMLTextAreaElement | null = null;
+    let rafId: number | null = null;
+    let installed = false;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!editor) return;
+      if (document.activeElement !== editor && !editor.contains(document.activeElement)) return;
+      const activeReference = activeReferenceViewRef.current;
+      if (event.key === "Escape" && activeReference) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        syncedActiveReferenceTokenIdRef.current = null;
+        explicitReferenceViewRef.current = null;
+        pointTokenReplacementRef.current = null;
+        onActiveReferenceTokenChange(null);
+        onCancelPointPick();
+        setDraftError(null);
+        focusEditorAt(activeReference.end);
+        return;
+      }
+      if (
+        event.shiftKey ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        (event.key !== "ArrowRight" && event.key !== "ArrowLeft")
+      ) {
+        return;
+      }
+      const selection = getEditableSelectionOffsets(editor);
+      const selectedToken = findReferenceTokenForSelection(draftInputRef.current, selection.start, selection.end);
+      const boundaryReferenceView =
+        activeReferenceViewRef.current ??
+        (selectedToken ? referenceViewsRef.current.find((view) => view.id === selectedToken.id) ?? null : null);
+      if (!boundaryReferenceView) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const nextCaret = event.key === "ArrowRight" ? boundaryReferenceView.end : boundaryReferenceView.start;
+      syncedActiveReferenceTokenIdRef.current = null;
+      explicitReferenceViewRef.current = null;
+      pointTokenReplacementRef.current = null;
+      onActiveReferenceTokenChange(null);
+      onCancelPointPick();
+      setDraftError(null);
+      focusEditorAt(nextCaret);
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (!editor) return;
+      if (document.activeElement !== editor && !editor.contains(document.activeElement)) return;
+      if (
+        event.shiftKey ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        (event.key !== "ArrowRight" && event.key !== "ArrowLeft")
+      ) {
+        return;
+      }
+      const explicitReferenceView = explicitReferenceViewRef.current;
+      if (!explicitReferenceView) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const nextCaret = event.key === "ArrowRight" ? explicitReferenceView.end : explicitReferenceView.start;
+      syncedActiveReferenceTokenIdRef.current = null;
+      explicitReferenceViewRef.current = null;
+      pointTokenReplacementRef.current = null;
+      onActiveReferenceTokenChange(null);
+      onCancelPointPick();
+      setDraftError(null);
+      focusEditorAt(nextCaret);
+    };
+    const install = () => {
+      editor = sourceEditorRef.current;
+      if (!editor) {
+        rafId = window.requestAnimationFrame(install);
+        return;
+      }
+      installed = true;
+      editor.addEventListener("keydown", handleKeyDown, { capture: true });
+      editor.addEventListener("keyup", handleKeyUp, { capture: true });
+      window.addEventListener("keydown", handleKeyDown, { capture: true });
+      window.addEventListener("keyup", handleKeyUp, { capture: true });
+    };
+    install();
+    return () => {
+      if (rafId != null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      if (!installed || !editor) return;
+      editor.removeEventListener("keydown", handleKeyDown, { capture: true });
+      editor.removeEventListener("keyup", handleKeyUp, { capture: true });
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+      window.removeEventListener("keyup", handleKeyUp, { capture: true });
+    };
+  }, [isEditingInput, isFormulaDraft, onActiveReferenceTokenChange, onCancelPointPick]);
+
+  useEffect(() => {
+    if (!isEditingInput || !isFormulaDraft || !activeReferenceView) {
+      syncedActiveReferenceTokenIdRef.current = null;
+      return;
+    }
+    if (syncedActiveReferenceTokenIdRef.current === activeReferenceView.id) return;
+    syncedActiveReferenceTokenIdRef.current = activeReferenceView.id;
+    pointTokenReplacementRef.current = {
+      tokenId: activeReferenceView.id,
+      start: activeReferenceView.start,
+      end: activeReferenceView.end,
+    };
+    const editor = sourceEditorRef.current;
+    if (!editor) return;
+    window.requestAnimationFrame(() => {
+      focusEditorAt(activeReferenceView.end);
+    });
+  }, [activeReferenceView?.id, activeReferenceView?.start, activeReferenceView?.end, isEditingInput, isFormulaDraft]);
+
+  useEffect(() => {
+    if (!isEditingInput || !isFormulaDraft || !activeReferenceView) {
+      setReferencePopoverCaretLeft(null);
+      return;
+    }
+    let rafId: number | null = null;
+    const updateCaretPosition = () => {
+      const editorWrap = sourceEditorRef.current?.closest<HTMLElement>(".formula-editor-wrap");
+      const menu = referenceMenuRef.current;
+      if (!editorWrap || !menu) return;
+      const token = editorWrap.querySelector<HTMLElement>(
+        `.formula-token-backdrop .formula-reference-token[data-token-id="${CSS.escape(activeReferenceView.id)}"]`,
+      );
+      if (!token) {
+        setReferencePopoverCaretLeft(null);
+        return;
+      }
+      const tokenRect = token.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      const nextLeft = Math.max(18, Math.min(tokenRect.left + tokenRect.width / 2 - menuRect.left, menuRect.width - 18));
+      setReferencePopoverCaretLeft((current) => (current != null && Math.abs(current - nextLeft) < 0.5 ? current : nextLeft));
+    };
+    const schedule = () => {
+      if (rafId != null) window.cancelAnimationFrame(rafId);
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        updateCaretPosition();
+      });
+    };
+    schedule();
+    window.addEventListener("resize", schedule);
+    window.addEventListener("scroll", schedule, true);
+    return () => {
+      if (rafId != null) window.cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
+    };
+  }, [activeReferenceView, isEditingInput, isFormulaDraft]);
 
   useEffect(() => {
     if (!formatMenuOpen) return;
@@ -339,6 +728,7 @@ export default function FormulaBarOverlay({
     if (mode !== "table" || phase !== "visible" || !formulaBarSnapshot) {
       setFormatMenuOpen(false);
       setStyleMenuOpen(false);
+      setDraftError(null);
       setIsComposingInput(false);
     }
   }, [mode, phase, formulaBarSnapshot]);
@@ -354,7 +744,10 @@ export default function FormulaBarOverlay({
   const cancelEditInput = () => {
     setDraftInput(formulaBarSnapshot?.inputText ?? "");
     onDraftInputChange(formulaBarSnapshot?.inputText ?? "");
-    activePointReplacementRef.current = null;
+    setDraftError(null);
+    onActiveReferenceTokenChange(null);
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
     setIsComposingInput(false);
     onCancelEdit();
   };
@@ -375,7 +768,10 @@ export default function FormulaBarOverlay({
     }
     selectionDebugLog("formula commitEditInput apply", { draftInput });
     onCommitInput(draftInput);
-    activePointReplacementRef.current = null;
+    setDraftError(null);
+    onActiveReferenceTokenChange(null);
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
     setIsComposingInput(false);
   };
 
@@ -383,8 +779,174 @@ export default function FormulaBarOverlay({
     if (!formulaBarSnapshot || !isInputEditable || !canApplyToSelection || isComposingInput) return;
     selectionDebugLog("formula applyToSelection", { draftInput });
     onApplyToSelection(inputMode === "edit" ? draftInput : formulaBarSnapshot.inputText);
-    activePointReplacementRef.current = null;
+    setDraftError(null);
+    onActiveReferenceTokenChange(null);
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
     setIsComposingInput(false);
+  };
+
+  const syncActiveReferenceFromSelection = () => {
+    const editor = sourceEditorRef.current;
+    if (!editor) return;
+    const selection = getEditableSelectionOffsets(editor);
+    const explicitReferenceView = explicitReferenceViewRef.current;
+    if (
+      explicitReferenceView &&
+      selection.start === selection.end &&
+      (selection.start === explicitReferenceView.start || selection.start === explicitReferenceView.end)
+    ) {
+      pointTokenReplacementRef.current = {
+        tokenId: explicitReferenceView.id,
+        start: explicitReferenceView.start,
+        end: explicitReferenceView.end,
+      };
+      if (activeReferenceTokenId !== explicitReferenceView.id) {
+        syncedActiveReferenceTokenIdRef.current = explicitReferenceView.id;
+        onActiveReferenceTokenChange(explicitReferenceView.id);
+      }
+      return;
+    }
+    const nextSelectionState = syncFormulaPointSelectionState(
+      draftInput,
+      selection.start,
+      selection.end,
+      activeReferenceTokenId,
+      pointTokenReplacementRef.current,
+    );
+    pointTokenReplacementRef.current = nextSelectionState.armedToken;
+    if (nextSelectionState.activeTokenId === activeReferenceTokenId) return;
+    syncedActiveReferenceTokenIdRef.current = nextSelectionState.activeTokenId;
+    if (!nextSelectionState.activeTokenId) {
+      explicitReferenceViewRef.current = null;
+    }
+    onActiveReferenceTokenChange(nextSelectionState.activeTokenId);
+  };
+
+  const applyEditorTextReplacement = (start: number, end: number, text: string) => {
+    const safeStart = Math.max(0, Math.min(start, end, draftInput.length));
+    const safeEnd = Math.max(0, Math.min(Math.max(start, end), draftInput.length));
+    const nextInput = `${draftInput.slice(0, safeStart)}${text}${draftInput.slice(safeEnd)}`;
+    const nextCaret = safeStart + text.length;
+    setDraftError(null);
+    setDraftInput(nextInput);
+    onDraftInputChange(nextInput);
+    syncedActiveReferenceTokenIdRef.current = null;
+    explicitReferenceViewRef.current = null;
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
+    onActiveReferenceTokenChange(null);
+    window.requestAnimationFrame(() => {
+      focusEditorAt(nextCaret);
+    });
+  };
+
+  const handleEditorBeforeInput = (event: FormEvent<HTMLTextAreaElement>) => {
+    const nativeEvent = event.nativeEvent as InputEvent;
+    if (isComposingInput || nativeEvent.isComposing) return;
+    const editor = sourceEditorRef.current;
+    if (!editor) return;
+    const selection = getEditableSelectionOffsets(editor);
+    if (nativeEvent.inputType === "insertText") {
+      event.preventDefault();
+      applyEditorTextReplacement(selection.start, selection.end, nativeEvent.data ?? "");
+      return;
+    }
+    if (nativeEvent.inputType === "deleteContentBackward") {
+      event.preventDefault();
+      const start = selection.start === selection.end ? Math.max(0, selection.start - 1) : selection.start;
+      applyEditorTextReplacement(start, selection.end, "");
+      return;
+    }
+    if (nativeEvent.inputType === "deleteContentForward") {
+      event.preventDefault();
+      const end = selection.start === selection.end ? Math.min(draftInput.length, selection.end + 1) : selection.end;
+      applyEditorTextReplacement(selection.start, end, "");
+      return;
+    }
+  };
+
+  const handleEditorInput = (event: FormEvent<HTMLTextAreaElement>) => {
+    event.preventDefault();
+    if (isComposingInput) return;
+    const editor = sourceEditorRef.current;
+    if (!editor) return;
+    const nextInput = editor.value;
+    if (nextInput === draftInput) return;
+    const explicitReferenceView = explicitReferenceViewRef.current;
+    if (explicitReferenceView && draftInput.length > 0 && nextInput.endsWith(draftInput)) {
+      const insertedPrefix = nextInput.slice(0, nextInput.length - draftInput.length);
+      if (insertedPrefix.length > 0) {
+        const nextCaret = explicitReferenceView.end + insertedPrefix.length;
+        const correctedInput = `${draftInput.slice(0, explicitReferenceView.end)}${insertedPrefix}${draftInput.slice(explicitReferenceView.end)}`;
+        setDraftError(null);
+        setDraftInput(correctedInput);
+        onDraftInputChange(correctedInput);
+        syncedActiveReferenceTokenIdRef.current = null;
+        explicitReferenceViewRef.current = null;
+        pointGestureReplacementRef.current = null;
+        pointTokenReplacementRef.current = null;
+        onActiveReferenceTokenChange(null);
+        window.requestAnimationFrame(() => {
+          focusEditorAt(nextCaret);
+        });
+        return;
+      }
+    }
+    const selection = getEditableSelectionOffsets(editor);
+    setDraftError(null);
+    setDraftInput(nextInput);
+    onDraftInputChange(nextInput);
+    syncedActiveReferenceTokenIdRef.current = null;
+    explicitReferenceViewRef.current = null;
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
+    onActiveReferenceTokenChange(null);
+    window.requestAnimationFrame(() => {
+      focusEditorAt(selection.start, selection.end);
+    });
+  };
+
+  const selectReferenceToken = (tokenId: string) => {
+    const token = referenceViews.find((view) => view.id === tokenId);
+    if (!token) return;
+    syncedActiveReferenceTokenIdRef.current = tokenId;
+    explicitReferenceViewRef.current = token;
+    pointTokenReplacementRef.current = {
+      tokenId: token.id,
+      start: token.start,
+      end: token.end,
+    };
+    onActiveReferenceTokenChange(tokenId);
+    focusEditorAt(token.end);
+    window.requestAnimationFrame(() => {
+      focusEditorAt(token.end);
+    });
+  };
+
+  const applyReferenceOption = (optionText: string) => {
+    if (!activeReferenceView) return;
+    const edit = applyFormulaReferencePick(
+      draftInput,
+      activeReferenceView.start,
+      activeReferenceView.end,
+      optionText,
+      activeReferenceView.id,
+    );
+    setDraftError(null);
+    setDraftInput(edit.nextDraft);
+    onDraftInputChange(edit.nextDraft);
+    const nextTokenId = `ref-${edit.tokenStart}-${edit.tokenEnd}`;
+    syncedActiveReferenceTokenIdRef.current = nextTokenId;
+    pointTokenReplacementRef.current = {
+      tokenId: nextTokenId,
+      start: edit.tokenStart,
+      end: edit.tokenEnd,
+    };
+    onActiveReferenceTokenChange(nextTokenId);
+    window.requestAnimationFrame(() => {
+      focusEditorAt(edit.tokenStart, edit.tokenEnd);
+    });
   };
 
   if (mode !== "table" || phase === "hidden" || !formulaBarSnapshot) return null;
@@ -492,19 +1054,173 @@ export default function FormulaBarOverlay({
             </div>
           </div>
           <div className="formula-source-row">
-            {isEditingInput ? (
+            {isEditingInput && isFormulaDraft ? (
+              <div className="formula-editor-wrap">
+                <div
+                  className={draftError ? "formula-source formula-source-editor is-editing has-error" : "formula-source formula-source-editor is-editing"}
+                >
+                  <div ref={tokenBackdropRef} className="formula-token-backdrop" aria-hidden="true">
+                    {renderFormulaDraftWithTokens(draftInput, referenceViews, activeReferenceTokenId, selectReferenceToken)}
+                  </div>
+                  <textarea
+                    ref={sourceEditorRef}
+                    className="formula-source-textarea"
+                    value={draftInput}
+                    rows={1}
+                    wrap="off"
+                    spellCheck={false}
+                    onScroll={syncEditorBackdropScroll}
+                    onBeforeInput={handleEditorBeforeInput}
+                    onInput={handleEditorInput}
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      const editor = sourceEditorRef.current;
+                      if (!editor) return;
+                      const selection = getEditableSelectionOffsets(editor);
+                      applyEditorTextReplacement(selection.start, selection.end, event.clipboardData.getData("text/plain"));
+                    }}
+                    onMouseUp={syncActiveReferenceFromSelection}
+                    onSelect={syncActiveReferenceFromSelection}
+                    onKeyUp={syncActiveReferenceFromSelection}
+                    onCompositionStart={() => setIsComposingInput(true)}
+                    onCompositionEnd={() => setIsComposingInput(false)}
+                    onChange={(event) => {
+                      setDraftError(null);
+                      setDraftInput(event.currentTarget.value);
+                      onDraftInputChange(event.currentTarget.value);
+                      syncedActiveReferenceTokenIdRef.current = null;
+                      explicitReferenceViewRef.current = null;
+                      pointGestureReplacementRef.current = null;
+                      onActiveReferenceTokenChange(null);
+                    }}
+                    onKeyDown={(event) => {
+                  let selectedReferenceView: FormulaReferenceView | null = null;
+                  if (
+                    !event.shiftKey &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.altKey &&
+                    (event.key === "ArrowRight" || event.key === "ArrowLeft")
+                  ) {
+                    const editor = sourceEditorRef.current;
+                    if (editor) {
+                      const selection = getEditableSelectionOffsets(editor);
+                      const selectedToken = findReferenceTokenForSelection(draftInput, selection.start, selection.end);
+                      selectedReferenceView = selectedToken
+                        ? referenceViews.find((view) => view.id === selectedToken.id) ?? null
+                        : null;
+                    }
+                  }
+                  const boundaryReferenceView = activeReferenceView ?? selectedReferenceView;
+                  if (
+                    boundaryReferenceView &&
+                    !event.shiftKey &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.altKey &&
+                    (event.key === "ArrowRight" || event.key === "ArrowLeft")
+                  ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const nextCaret = event.key === "ArrowRight" ? boundaryReferenceView.end : boundaryReferenceView.start;
+                    syncedActiveReferenceTokenIdRef.current = null;
+                    onActiveReferenceTokenChange(null);
+                    onCancelPointPick();
+                    setDraftError(null);
+                    focusEditorAt(nextCaret);
+                    return;
+                  }
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (event.metaKey || event.ctrlKey) {
+                      applyInputToSelection();
+                      return;
+                    }
+                    commitEditInput();
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (activeReferenceView) {
+                      onActiveReferenceTokenChange(null);
+                      onCancelPointPick();
+                      setDraftError(null);
+                      focusEditorAt(activeReferenceView.end);
+                      return;
+                    }
+                    cancelEditInput();
+                  }
+                }}
+                    aria-label="Edit selected cell input"
+                    aria-multiline={false}
+                  />
+                </div>
+              {draftError ? <div className="formula-draft-error" role="alert">{draftError}</div> : null}
+              {activeReferenceView && referenceOptionGroups.length > 0 ? (
+                <div
+                  ref={referenceMenuRef}
+                  className="reference-options-popover"
+                  role="menu"
+                  aria-label="Reference options"
+                  style={
+                    referencePopoverCaretLeft == null
+                      ? undefined
+                      : ({ "--reference-popover-caret-left": `${referencePopoverCaretLeft}px` } as CSSProperties)
+                  }
+                >
+                  {referenceOptionGroups.map((group) => (
+                    <div key={group.key} className="reference-option-group" role="group" aria-label={group.label}>
+                      <div className="reference-option-group-label">{group.label}</div>
+                      <div className="reference-option-group-items">
+                        {group.options.map((option) => (
+                          <button
+                            key={option.style}
+                            className={option.text === activeReferenceView.text ? "reference-option active" : "reference-option"}
+                            type="button"
+                            role="menuitem"
+                            disabled={!option.text}
+                            title={option.disabledReason ?? option.text ?? undefined}
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                            onClick={() => {
+                              if (!option.text) return;
+                              applyReferenceOption(option.text);
+                            }}
+                          >
+                            <span className="reference-option-label">{option.label}</span>
+                            <span className="reference-option-preview">{option.text ?? option.disabledReason}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            ) : isEditingInput ? (
               <input
-                ref={sourceInputRef}
+                ref={sourcePlainInputRef}
                 className="formula-source formula-source-input is-editing"
                 value={draftInput}
                 spellCheck={false}
-                onChange={(event) => {
-                  setDraftInput(event.target.value);
-                  onDraftInputChange(event.target.value);
-                  activePointReplacementRef.current = null;
-                }}
+                aria-label="Edit selected cell input"
                 onCompositionStart={() => setIsComposingInput(true)}
                 onCompositionEnd={() => setIsComposingInput(false)}
+                onChange={(event) => {
+                  const nextInput = event.currentTarget.value;
+                  setDraftError(null);
+                  setDraftInput(nextInput);
+                  onDraftInputChange(nextInput);
+                  syncedActiveReferenceTokenIdRef.current = null;
+                  explicitReferenceViewRef.current = null;
+                  pointGestureReplacementRef.current = null;
+                  pointTokenReplacementRef.current = null;
+                  onActiveReferenceTokenChange(null);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
@@ -522,7 +1238,6 @@ export default function FormulaBarOverlay({
                     cancelEditInput();
                   }
                 }}
-                aria-label="Edit selected cell input"
               />
             ) : (
               <button
@@ -540,7 +1255,7 @@ export default function FormulaBarOverlay({
                 onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
                 aria-label={isInputEditable ? "Edit selected cell input" : "Cell input (read-only)"}
               >
-                {formulaBarSnapshot.inputText.length > 0 ? formulaBarSnapshot.inputText : "(blank)"}
+                {formulaBarSnapshot.inputText}
               </button>
             )}
             <button

@@ -57,21 +57,8 @@ function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
     allCells.push(cells);
   }
 
-  const colLabels: string[] = [];
-  for (let c = 0; c < colCount; c += 1) {
-    if (headerRowCount > 0) {
-      const headerRow = logicalRows[headerRowCount - 1];
-      const rawHeader = c < headerRow.rawCells.length ? headerRow.rawCells[c] : "";
-      const label = stripCellDisplayMetadata(rawHeader).trim();
-      if (label !== "") {
-        colLabels.push(label);
-        continue;
-      }
-    }
-    {
-      colLabels.push(`C${c + 1}`);
-    }
-  }
+  const colLabelPaths = buildColumnLabelPaths(logicalRows, headerRowCount, colCount);
+  const colLabels = buildColumnLabels(colLabelPaths);
 
   const { rowPaths } = buildBodyRows(logicalRows, bodyStart);
   const rowKeys = buildRowKeys(logicalRows, bodyStart);
@@ -84,12 +71,7 @@ function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
     rowMap.set(k, list);
   });
 
-  const colMap = new Map<string, number[]>();
-  colLabels.forEach((label, idx) => {
-    const list = colMap.get(label) ?? [];
-    list.push(idx);
-    colMap.set(label, list);
-  });
+  const colMap = buildColumnLabelMap(colLabelPaths, colLabels);
 
   const bodyRowCount = logicalRows.length - bodyStart;
   const dataRowIndices = computeDataRowIndices(logicalRows, bodyStart);
@@ -655,6 +637,40 @@ export function buildBodyRows(parsedRows: ParsedRow[], bodyStart: number): { row
 // Build row keys for reference resolution (path components).
 export function buildRowKeys(parsedRows: ParsedRow[], bodyStart: number): string[][] {
   return deriveHierarchyRows(parsedRows, bodyStart).map((row) => [...row.path]);
+}
+
+export function buildColumnLabelPaths(logicalRows: ParsedRow[], headerRowCount: number, colCount: number): string[][] {
+  return Array.from({ length: colCount }, (_, colIndex) => {
+    if (headerRowCount <= 0) return [`C${colIndex + 1}`];
+    const path: string[] = [];
+    for (let rowIndex = 0; rowIndex < headerRowCount; rowIndex += 1) {
+      const headerRow = logicalRows[rowIndex];
+      const rawHeader = headerRow && colIndex < headerRow.rawCells.length ? headerRow.rawCells[colIndex] : "";
+      const label = stripCellDisplayMetadata(rawHeader).trim();
+      if (label.length > 0) path.push(label);
+    }
+    return path.length > 0 ? path : [`C${colIndex + 1}`];
+  });
+}
+
+export function buildColumnLabels(colLabelPaths: string[][]): string[] {
+  return colLabelPaths.map((path, index) => path[path.length - 1] ?? `C${index + 1}`);
+}
+
+export function buildColumnLabelMap(colLabelPaths: string[][], colLabels: string[]): Map<string, number[]> {
+  const map = new Map<string, number[]>();
+  colLabelPaths.forEach((path, index) => {
+    const key = path.join(".");
+    const existing = map.get(key) ?? [];
+    existing.push(index);
+    map.set(key, existing);
+  });
+  colLabels.forEach((label, index) => {
+    const existing = map.get(label) ?? [];
+    if (!existing.includes(index)) existing.push(index);
+    map.set(label, existing);
+  });
+  return map;
 }
 
 // Collect body row indices that represent data rows.

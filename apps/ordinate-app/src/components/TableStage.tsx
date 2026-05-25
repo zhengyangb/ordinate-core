@@ -14,6 +14,12 @@ import {
 import { shouldAnimateTableStructure } from "../config/motion";
 import type { ChromeVisibilityPhase, ColumnMetric, GridRow, HeaderIndexMetric, HeaderOverlayCell, RowIndexMetric, SelectedCell } from "../types/ui";
 
+type FormulaReferenceOverlay = {
+  tokenId: string;
+  colorIndex: number;
+  active: boolean;
+};
+
 type TableStageProps = {
   tableStageClassName: string;
   tableStageStyle: CSSProperties;
@@ -41,7 +47,9 @@ type TableStageProps = {
   showSelectionRing: boolean;
   selectionRingRef: MutableRefObject<HTMLDivElement | null>;
   selectionRangeRef: MutableRefObject<HTMLDivElement | null>;
-  formulaPointRangeRef: MutableRefObject<HTMLDivElement | null>;
+  formulaReferenceOverlayLayerRef: MutableRefObject<HTMLDivElement | null>;
+  formulaReferenceOverlays: FormulaReferenceOverlay[];
+  onFormulaReferenceOverlaySelect: (tokenId: string) => void;
   isSelectionRingTransitioning: boolean;
   suppressAgHeaderFocus: boolean;
   overlayOwnsGridHeader: boolean;
@@ -114,7 +122,9 @@ export default function TableStage({
   showSelectionRing,
   selectionRingRef,
   selectionRangeRef,
-  formulaPointRangeRef,
+  formulaReferenceOverlayLayerRef,
+  formulaReferenceOverlays,
+  onFormulaReferenceOverlaySelect,
   isSelectionRingTransitioning,
   suppressAgHeaderFocus,
   overlayOwnsGridHeader,
@@ -351,7 +361,23 @@ export default function TableStage({
         {showSelectionRing ? (
           <>
             <div ref={selectionRangeRef} className="persistent-range-selection is-hidden" aria-hidden="true" />
-            <div ref={formulaPointRangeRef} className="formula-point-range-selection is-hidden" aria-hidden="true" />
+            <div ref={formulaReferenceOverlayLayerRef} className="formula-reference-overlay-layer">
+              {formulaReferenceOverlays.map((overlay) => (
+                <button
+                  key={overlay.tokenId}
+                  className={overlay.active ? "formula-reference-range is-hidden is-active" : "formula-reference-range is-hidden"}
+                  data-token-id={overlay.tokenId}
+                  data-color-index={overlay.colorIndex}
+                  type="button"
+                  aria-label="Select formula reference"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onFormulaReferenceOverlaySelect(overlay.tokenId);
+                  }}
+                />
+              ))}
+            </div>
             <div
               ref={selectionRingRef}
               className={

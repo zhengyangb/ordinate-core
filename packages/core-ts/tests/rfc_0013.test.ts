@@ -50,6 +50,23 @@ describe("RFC-0013 dual reference styles", () => {
     expect(scalarAt(doc, "D", "Out")).toEqual({ kind: "number", value: 38 });
   });
 
+  it("resolves multi-row header labels as namespaced column paths", () => {
+    const doc = `
+# Sheet
+| Item || 2024 | 2024 | 2025 | 2025 |
+|      || H1   | H2   | H1   | H2   |
+| ---- || ---  | ---  | ---  | ---  |
+| A    || 1    | 2    | 3    | 4    |
+| B    || 0    | 0    | 0    | = @[A,2025.H1] |
+`.trim();
+
+    const result = evaluateDocument(doc);
+    const sheet = result.sheets[0];
+    const row = sheet.rowPaths.indexOf("B");
+    const value = sheet.values[row][4];
+    expect({ kind: value.kind, value: value.value }).toEqual({ kind: "number", value: 3 });
+  });
+
   it("keeps spreadsheet token-like text as literal outside formula context", () => {
     const doc = `
 # Sheet

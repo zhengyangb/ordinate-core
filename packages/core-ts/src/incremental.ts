@@ -4,6 +4,9 @@ import { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime
 import { renderFormulaExpression } from "./runtime/renderFormula";
 import {
   buildBodyRows,
+  buildColumnLabelMap,
+  buildColumnLabelPaths,
+  buildColumnLabels,
   buildRowKeys,
   computeDataRowIndices,
   evalExpr,
@@ -186,21 +189,8 @@ export class SheetState {
     const bodyStart = headerRowCount > 0 ? headerRowCount : 0;
     const columnDisplayMetadata = extractColumnDisplayMetadataFromControlRow(controlFrame.controlRow, colCount);
 
-    const colLabels: string[] = [];
-    for (let c = 0; c < colCount; c += 1) {
-      if (headerRowCount > 0) {
-        const headerRow = logicalRows[headerRowCount - 1];
-        const rawHeader = c < headerRow.rawCells.length ? headerRow.rawCells[c] : "";
-        const label = stripCellDisplayMetadata(rawHeader).trim();
-        if (label !== "") {
-          colLabels.push(label);
-          continue;
-        }
-      }
-      {
-        colLabels.push(`C${c + 1}`);
-      }
-    }
+    const colLabelPaths = buildColumnLabelPaths(logicalRows, headerRowCount, colCount);
+    const colLabels = buildColumnLabels(colLabelPaths);
 
     const { rowPaths } = buildBodyRows(logicalRows, bodyStart);
     const rowKeys = buildRowKeys(logicalRows, bodyStart);
@@ -213,12 +203,7 @@ export class SheetState {
       rowMap.set(k, list);
     });
 
-    const colMap = new Map<string, number[]>();
-    colLabels.forEach((label, idx) => {
-      const list = colMap.get(label) ?? [];
-      list.push(idx);
-      colMap.set(label, list);
-    });
+    const colMap = buildColumnLabelMap(colLabelPaths, colLabels);
 
     const bodyRowCount = logicalRows.length - bodyStart;
     const dataRowIndices = computeDataRowIndices(logicalRows, bodyStart);
@@ -922,21 +907,8 @@ export class SheetState {
   private rebuildMetadata() {
     const colCount = this.logicalRows.reduce((m, r) => Math.max(m, r.cells.length), 0);
     this.colCount = colCount;
-    const colLabels: string[] = [];
-    for (let c = 0; c < colCount; c += 1) {
-      if (this.headerRowCount > 0) {
-        const headerRow = this.logicalRows[this.headerRowCount - 1];
-        const rawHeader = c < headerRow.rawCells.length ? headerRow.rawCells[c] : "";
-        const label = stripCellDisplayMetadata(rawHeader).trim();
-        if (label !== "") {
-          colLabels.push(label);
-          continue;
-        }
-      }
-      {
-        colLabels.push(`C${c + 1}`);
-      }
-    }
+    const colLabelPaths = buildColumnLabelPaths(this.logicalRows, this.headerRowCount, colCount);
+    const colLabels = buildColumnLabels(colLabelPaths);
     this.colLabels = colLabels;
 
     const { rowPaths } = buildBodyRows(this.logicalRows, this.bodyStart);
@@ -953,13 +925,7 @@ export class SheetState {
     });
     this.rowMap = rowMap;
 
-    const colMap = new Map<string, number[]>();
-    colLabels.forEach((label, idx) => {
-      const list = colMap.get(label) ?? [];
-      list.push(idx);
-      colMap.set(label, list);
-    });
-    this.colMap = colMap;
+    this.colMap = buildColumnLabelMap(colLabelPaths, colLabels);
 
     this.dataRowIndices = computeDataRowIndices(this.logicalRows, this.bodyStart);
     this.dataColIndices = Array.from({ length: colCount - this.headerColCount }, (_, i) => i + this.headerColCount);
