@@ -2545,6 +2545,22 @@ export default function App() {
     gridApiRef.current.setFocusedCell(displayedRowIndex, selectedCell.colId);
   }, [mode, isActiveSheetBlocked, selectedCell, absoluteRowToDisplayedIndex, isGridApiAlive]);
 
+  useEffect(() => {
+    if (mode !== "table" || isActiveSheetBlocked) return;
+    if (!isRangeSelection || !selectedCell || selectedCell.area !== "body") return;
+    if (!isGridApiAlive(gridApiRef.current)) return;
+
+    const displayedRowIndex = absoluteRowToDisplayedIndex.get(selectedCell.logical.rAbs);
+    if (displayedRowIndex == null) return;
+
+    suppressCellFocusSelectionUntilRef.current = performance.now() + 320;
+    const frame = window.requestAnimationFrame(() => {
+      if (!isGridApiAlive(gridApiRef.current)) return;
+      gridApiRef.current.setFocusedCell(displayedRowIndex, selectedCell.colId);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [mode, isActiveSheetBlocked, isRangeSelection, selectedCell, absoluteRowToDisplayedIndex, isGridApiAlive]);
+
   const handleHeaderOverlayKeyDown = useCallback(
     (keyboardEvent: KeyboardEvent, rowNumber: number, colIndex: number) => {
       if (mode === "source" || isActiveSheetBlocked || formulaInputMode !== "read") return;

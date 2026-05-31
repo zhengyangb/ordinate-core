@@ -1917,7 +1917,7 @@ textarea {
         0 0 0 1px color-mix(in oklab, var(--workspace-frame) 54%, transparent),
         0 0 0 0.5px color-mix(in oklab, var(--accent-strong) 28%, transparent);
     pointer-events: none;
-    z-index: 7;
+    z-index: 11;
     opacity: 1;
 }
 
@@ -1951,7 +1951,7 @@ textarea {
         inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 26%, transparent),
         0 0 0 1px color-mix(in oklab, var(--workspace-frame) 58%, transparent);
     pointer-events: none;
-    z-index: 6;
+    z-index: 10;
     opacity: 1;
 }
 
@@ -1959,7 +1959,7 @@ textarea {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    z-index: 8;
+    z-index: 12;
 }
 
 .formula-reference-range {

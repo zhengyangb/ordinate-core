@@ -30,6 +30,10 @@ This RFC does not define:
 - internal storage layout
 - wire protocol or network API
 - collaborative merge protocol
+- editor session lifecycle
+- undo/redo UX or history storage
+- file watching or external modification handling
+- desktop host integration
 
 ## Core Principle
 
@@ -37,7 +41,8 @@ Adopt capability in layers:
 
 1. deterministic core editing semantics first
 2. structure-aware semantics second
-3. advanced transaction/concurrency and ecosystem integration third
+
+Host/editor concerns such as undo/redo, stale async job handling, file watching, desktop host integration, and external modification conflict handling are outside this core editing roadmap unless a later core RFC identifies a concrete public core-library contract need.
 
 This roadmap is paired with RFC-0017, which defines the first formal core-edit API contract.
 
@@ -189,31 +194,23 @@ Read/edit APIs must not expose a cached formula `body` directly as `input`.
 - structural edit + reference rebasing behavior covered by conformance suite
 - ambiguous rename/rebind behavior deterministic and documented
 
-## Milestone V3: Advanced Transactions and Integration
+## Deferred Host and Editor Concerns
 
-### Scope
+The following topics are important for application hosts, but they are not immediate core edit milestones:
 
-- explicit transaction handles (`begin/apply/commit/abort`) if needed by host applications
-- optimistic version checks (`expectedVersion`) to prevent stale async writes
+- editor session lifecycle
+- command boundaries for undo/redo
+- undo/redo UX and history storage
+- stale async job handling
+- file watching and external modification conflict handling
+- desktop host integration
 - operation-log based replay hooks
 - checkpointing strategy guidance for long edit histories
+- collaborative conflict handling
 
-### Exit Criteria
+These topics should be specified in application feature specs or future host-integration specs unless they require a concrete change to the `.ord` format or the public core library contract.
 
-- deterministic conflict rejection behavior in async host integration
-- replay reproducibility validated from operation log + checkpoints
-
-## Why Version Checks Exist
-
-JavaScript single-thread execution does not remove stale async write risk.
-
-Example:
-
-- user makes edit A
-- async action based on older snapshot returns later
-- older result overwrites newer state unless version check rejects it
-
-Version checks are therefore a state-correctness mechanism, not a traditional lock.
+If a later core RFC standardizes transaction handles, version checks, or replay semantics, it must explain why the concern belongs in the core library contract rather than the host/editor layer.
 
 ## Normative vs Non-Normative Boundaries
 
@@ -244,6 +241,5 @@ Scalable path:
 
 ## Open Questions
 
-- whether V3 transaction handles are necessary for all host environments
 - whether region move/copy should be required API or optional convenience layer
 - whether display metadata edit APIs should accept patch-style updates or full replacement objects
