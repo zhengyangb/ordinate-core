@@ -97,6 +97,14 @@ export interface ViewSelection {
   colIndices: number[];
 }
 
+export interface RuntimeView {
+  kind: "view";
+  dimension: 0 | 1 | 2;
+  rowCount: number;
+  colCount: number;
+  values: RuntimeValue[];
+}
+
 export interface FunctionCall {
   name: string;
   args: ExprNode[];

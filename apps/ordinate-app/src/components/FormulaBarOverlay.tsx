@@ -1,5 +1,6 @@
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { getStandardFunctionMetadata, listStandardFunctionMetadata, type FunctionMetadata } from "@ordinate/core";
 
 import type { UiLocale } from "../i18n/messages";
 import {
@@ -72,10 +73,262 @@ function BannerWarningGlyph() {
   );
 }
 
+function FunctionGlyph() {
+  return (
+    <MenuIcon>
+      <path d="M5.2 15.2c1.1-1.5 1.62-3.4 1.62-5.6V7.9c0-2.24 1.08-3.5 3.08-3.5.6 0 1.1.08 1.5.24" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.35" />
+      <path d="M4.15 8.15h6.05M10.7 10.25l3.95 4.25M14.65 10.25l-3.95 4.25" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.35" />
+    </MenuIcon>
+  );
+}
+
+type FormulaAssistantNameContext = {
+  kind: "name";
+  query: string;
+  start: number;
+  end: number;
+};
+
+type FormulaAssistantCallContext = {
+  kind: "call";
+  name: string;
+  argumentIndex: number;
+};
+
+type FormulaAssistantContext = FormulaAssistantNameContext | FormulaAssistantCallContext | null;
+type FormulaAssistantParameter = FunctionMetadata["signatures"][number]["parameters"][number];
+type FormulaFunctionSuggestion = {
+  key: string;
+  metadata: FunctionMetadata;
+  displayName: string;
+  insertName: string;
+  isAlias: boolean;
+};
+
 function getEditableSelectionOffsets(editor: HTMLTextAreaElement): { start: number; end: number } {
   return {
     start: editor.selectionStart,
     end: editor.selectionEnd,
+  };
+}
+
+function isImeKeyboardEvent(event: ReactKeyboardEvent<HTMLElement>): boolean {
+  const nativeEvent = event.nativeEvent as KeyboardEvent & { keyCode?: number };
+  return nativeEvent.isComposing || nativeEvent.keyCode === 229;
+}
+
+function isImeNativeKeyboardEvent(event: KeyboardEvent): boolean {
+  return event.isComposing || event.keyCode === 229;
+}
+
+function isEscapeKey(key: string): boolean {
+  return key === "Escape" || key === "Esc";
+}
+
+function normalizeFunctionSearchText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+const MIN_FUNCTION_AUTOCOMPLETE_QUERY_LENGTH = 2;
+
+function isFormulaFunctionNameChar(char: string): boolean {
+  return /[A-Za-z0-9_]/.test(char);
+}
+
+function isFormulaFunctionNameStart(char: string): boolean {
+  return /[A-Za-z_]/.test(char);
+}
+
+function isFunctionNameBoundary(char: string | undefined): boolean {
+  if (char == null) return true;
+  return /\s|[=+\-*/^(),<>]/.test(char);
+}
+
+function scanFormulaLexicalState(text: string, end: number): { inString: boolean; referenceDepth: number } {
+  let inString = false;
+  let referenceDepth = 0;
+  const limit = Math.max(0, Math.min(end, text.length));
+  for (let index = 0; index < limit; index += 1) {
+    const char = text[index];
+    const prev = text[index - 1];
+    if (inString) {
+      if (char === "\"" && prev !== "\\") inString = false;
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "@" && text[index + 1] === "[") {
+      referenceDepth += 1;
+      index += 1;
+      continue;
+    }
+    if (char === "]" && referenceDepth > 0) {
+      referenceDepth -= 1;
+    }
+  }
+  return { inString, referenceDepth };
+}
+
+function resolveFunctionNameContext(draft: string, caret: number): FormulaAssistantNameContext | null {
+  const formulaStart = draft.search(/\S/);
+  if (formulaStart < 0 || draft[formulaStart] !== "=") return null;
+  const safeCaret = Math.max(0, Math.min(caret, draft.length));
+  const state = scanFormulaLexicalState(draft, safeCaret);
+  if (state.inString || state.referenceDepth > 0) return null;
+
+  let start = safeCaret;
+  while (start > formulaStart + 1 && isFormulaFunctionNameChar(draft[start - 1])) {
+    start -= 1;
+  }
+  const query = draft.slice(start, safeCaret);
+  if (query.length > 0 && !isFormulaFunctionNameStart(query[0])) return null;
+  if (!isFunctionNameBoundary(draft[start - 1])) return null;
+  const after = draft[safeCaret];
+  if (after && isFormulaFunctionNameChar(after)) return null;
+  return { kind: "name", query, start, end: safeCaret };
+}
+
+function resolveActiveFunctionCallContext(draft: string, caret: number): FormulaAssistantCallContext | null {
+  const formulaStart = draft.search(/\S/);
+  if (formulaStart < 0 || draft[formulaStart] !== "=") return null;
+  const safeCaret = Math.max(0, Math.min(caret, draft.length));
+  const stack: FormulaAssistantCallContext[] = [];
+  let inString = false;
+  let referenceDepth = 0;
+
+  for (let index = formulaStart + 1; index < safeCaret; index += 1) {
+    const char = draft[index];
+    const prev = draft[index - 1];
+    if (inString) {
+      if (char === "\"" && prev !== "\\") inString = false;
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "@" && draft[index + 1] === "[") {
+      referenceDepth += 1;
+      index += 1;
+      continue;
+    }
+    if (referenceDepth > 0) {
+      if (char === "]") referenceDepth -= 1;
+      continue;
+    }
+    if (isFormulaFunctionNameStart(char)) {
+      let end = index + 1;
+      while (end < safeCaret && isFormulaFunctionNameChar(draft[end])) {
+        end += 1;
+      }
+      let next = end;
+      while (next < safeCaret && /\s/.test(draft[next])) next += 1;
+      if (draft[next] === "(" && getStandardFunctionMetadata(draft.slice(index, end))) {
+        stack.push({ kind: "call", name: draft.slice(index, end), argumentIndex: 0 });
+        index = next;
+        continue;
+      }
+      index = end - 1;
+      continue;
+    }
+    if (char === "," && stack.length > 0) {
+      const top = stack[stack.length - 1];
+      stack[stack.length - 1] = { ...top, argumentIndex: top.argumentIndex + 1 };
+      continue;
+    }
+    if (char === ")" && stack.length > 0) {
+      stack.pop();
+    }
+  }
+
+  return stack[stack.length - 1] ?? null;
+}
+
+function typeLabelForFormulaAssistant(type: string): string {
+  if (type.startsWith("view")) return "range";
+  if (type === "Scalar[number]") return "number";
+  if (type === "Scalar[boolean]") return "boolean";
+  return type;
+}
+
+function returnLabelForFormulaAssistant(metadata: FunctionMetadata): string {
+  return typeLabelForFormulaAssistant(metadata.signatures[0]?.returns ?? "value");
+}
+
+function iconForFormulaAssistant(category: FunctionMetadata["category"]): string {
+  void category;
+  return "ƒ";
+}
+
+function categoryLabelForFormulaAssistant(category: FunctionMetadata["category"]): string {
+  if (category === "aggregate") return "Aggregate";
+  if (category === "numeric") return "Math";
+  if (category === "logical") return "Logic";
+  return "Vector";
+}
+
+function summaryLabelForFormulaAssistant(metadata: FunctionMetadata): string {
+  const firstSentence = metadata.summary.split(/[.;]/, 1)[0]?.trim();
+  return firstSentence || categoryLabelForFormulaAssistant(metadata.category);
+}
+
+function buildFunctionSuggestions(functions: readonly FunctionMetadata[], query: string): FormulaFunctionSuggestion[] {
+  const normalizedQuery = normalizeFunctionSearchText(query);
+  const suggestions: FormulaFunctionSuggestion[] = [];
+  for (const metadata of functions) {
+    const names = normalizedQuery ? [metadata.name, ...(metadata.aliases ?? [])] : [metadata.name];
+    for (const name of names) {
+      if (normalizedQuery && !name.toLowerCase().startsWith(normalizedQuery)) continue;
+      suggestions.push({
+        key: `${metadata.name}:${name}`,
+        metadata,
+        displayName: name,
+        insertName: name,
+        isAlias: name !== metadata.name,
+      });
+    }
+  }
+  return suggestions;
+}
+
+function signatureForFormulaAssistant(metadata: FunctionMetadata) {
+  return metadata.signatures[0] ?? null;
+}
+
+function activeParameterIndexForFormulaAssistant(metadata: FunctionMetadata, argumentIndex: number): number {
+  const signature = signatureForFormulaAssistant(metadata);
+  if (!signature || signature.parameters.length === 0) return -1;
+  return Math.min(Math.max(argumentIndex, 0), signature.parameters.length - 1);
+}
+
+function parameterLabelForFormulaAssistant(parameter: FormulaAssistantParameter): string {
+  return `${parameter.name} ${typeLabelForFormulaAssistant(parameter.type)}`;
+}
+
+function getSingleTextInsertion(previousText: string, nextText: string): { start: number; text: string } | null {
+  if (nextText.length <= previousText.length) return null;
+  let prefixLength = 0;
+  while (
+    prefixLength < previousText.length &&
+    prefixLength < nextText.length &&
+    previousText[prefixLength] === nextText[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+  let suffixLength = 0;
+  while (
+    suffixLength < previousText.length - prefixLength &&
+    suffixLength < nextText.length - prefixLength &&
+    previousText[previousText.length - 1 - suffixLength] === nextText[nextText.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+  if (previousText.length !== prefixLength + suffixLength) return null;
+  return {
+    start: prefixLength,
+    text: nextText.slice(prefixLength, nextText.length - suffixLength),
   };
 }
 
@@ -84,6 +337,22 @@ function setEditableSelectionOffsets(editor: HTMLTextAreaElement, start: number,
   const targetStart = Math.max(0, Math.min(start, textLength));
   const targetEnd = Math.max(0, Math.min(end, textLength));
   editor.setSelectionRange(targetStart, targetEnd);
+}
+
+function resolveEditorNavigationCaret(
+  selection: { start: number; end: number },
+  textLength: number,
+  key: string,
+): number | null {
+  if (key === "Home") return 0;
+  if (key === "End") return textLength;
+  if (key === "ArrowLeft") {
+    return selection.start === selection.end ? Math.max(0, selection.start - 1) : selection.start;
+  }
+  if (key === "ArrowRight") {
+    return selection.start === selection.end ? Math.min(textLength, selection.end + 1) : selection.end;
+  }
+  return null;
 }
 
 function measureTextareaTextWidth(editor: HTMLTextAreaElement, text: string): number {
@@ -229,9 +498,15 @@ export default function FormulaBarOverlay({
   const [draftError, setDraftError] = useState<string | null>(null);
   const [isComposingInput, setIsComposingInput] = useState(false);
   const [referencePopoverCaretLeft, setReferencePopoverCaretLeft] = useState<number | null>(null);
+  const [functionAssistantPinned, setFunctionAssistantPinned] = useState(false);
+  const [functionSignatureExpanded, setFunctionSignatureExpanded] = useState(false);
+  const [functionAssistantSelectedIndex, setFunctionAssistantSelectedIndex] = useState(0);
+  const [functionAssistantDismissedKey, setFunctionAssistantDismissedKey] = useState<string | null>(null);
+  const [editorSelection, setEditorSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const sourcePlainInputRef = useRef<HTMLInputElement | null>(null);
   const tokenBackdropRef = useRef<HTMLDivElement | null>(null);
+  const functionAssistantListRef = useRef<HTMLDivElement | null>(null);
   const appliedPointReferenceRequestIdRef = useRef<number | null>(null);
   const pointGestureReplacementRef = useRef<FormulaPointGestureReplacement | null>(null);
   const pointTokenReplacementRef = useRef<FormulaPointReplacementTarget | null>(null);
@@ -241,11 +516,16 @@ export default function FormulaBarOverlay({
   const activeReferenceViewRef = useRef<FormulaReferenceView | null>(null);
   const explicitReferenceViewRef = useRef<FormulaReferenceView | null>(null);
   const editSessionAddressRef = useRef<string | null>(null);
+  const focusedEditSessionRef = useRef<string | null>(null);
+  const pendingEditorSelectionRef = useRef<{ start: number; end: number } | null>(null);
+  const pendingEditorSelectionTokenRef = useRef(0);
+  const guardedFunctionCloseParenRef = useRef<number | null>(null);
   const focusEditorAt = (start: number, end = start) => {
     const editor = sourceEditorRef.current;
-    if (!editor) return;
+    if (!editor) return false;
     editor.focus();
     setEditableSelectionOffsets(editor, start, end);
+    setEditorSelection({ start, end });
     ensureTextareaOffsetVisible(editor, end);
     syncEditorBackdropScroll();
     window.requestAnimationFrame(() => {
@@ -253,8 +533,54 @@ export default function FormulaBarOverlay({
       if (!nextEditor) return;
       nextEditor.focus();
       setEditableSelectionOffsets(nextEditor, start, end);
+      setEditorSelection({ start, end });
       ensureTextareaOffsetVisible(nextEditor, end);
       syncEditorBackdropScroll();
+    });
+    return true;
+  };
+  const cancelPendingEditorSelectionRestore = () => {
+    pendingEditorSelectionTokenRef.current += 1;
+    pendingEditorSelectionRef.current = null;
+  };
+  const restorePendingEditorSelection = (remainingAttempts: number, token: number) => {
+    window.requestAnimationFrame(() => {
+      if (pendingEditorSelectionTokenRef.current !== token) return;
+      const pendingSelection = pendingEditorSelectionRef.current;
+      if (!pendingSelection) return;
+      const restored = focusEditorAt(pendingSelection.start, pendingSelection.end);
+      if (remainingAttempts <= 0) {
+        if (restored) pendingEditorSelectionRef.current = null;
+        return;
+      }
+      restorePendingEditorSelection(remainingAttempts - 1, token);
+    });
+  };
+  const requestEditorSelectionRestore = (start: number, end = start) => {
+    pendingEditorSelectionTokenRef.current += 1;
+    const token = pendingEditorSelectionTokenRef.current;
+    pendingEditorSelectionRef.current = { start, end };
+    setEditorSelection({ start, end });
+    restorePendingEditorSelection(2, token);
+  };
+  const focusSourceInputControl = (remainingAttempts = 4) => {
+    window.requestAnimationFrame(() => {
+      const formulaEditor = sourceEditorRef.current;
+      if (formulaEditor) {
+        formulaEditor.focus();
+        setEditableSelectionOffsets(formulaEditor, editorSelection.start, editorSelection.end);
+        ensureTextareaOffsetVisible(formulaEditor, editorSelection.end);
+        syncEditorBackdropScroll();
+        return;
+      }
+      const plainInput = sourcePlainInputRef.current;
+      if (plainInput) {
+        plainInput.focus();
+        const caret = plainInput.value.length;
+        plainInput.setSelectionRange(caret, caret);
+        return;
+      }
+      if (remainingAttempts > 0) focusSourceInputControl(remainingAttempts - 1);
     });
   };
   const syncEditorBackdropScroll = () => {
@@ -265,10 +591,62 @@ export default function FormulaBarOverlay({
   };
   const isEditingInput = inputMode === "edit";
   const isFormulaDraft = draftInput.trimStart().startsWith("=");
+  const standardFunctions = useMemo(() => listStandardFunctionMetadata(), []);
   const activeReferenceView = useMemo(
     () => referenceViews.find((view) => view.id === activeReferenceTokenId) ?? null,
     [activeReferenceTokenId, referenceViews],
   );
+  const functionAssistantContext = useMemo<FormulaAssistantContext>(() => {
+    if (!isEditingInput || !isFormulaDraft || activeReferenceView) return null;
+    const caret = editorSelection.end;
+    const nameContext = resolveFunctionNameContext(draftInput, caret);
+    const callContext = resolveActiveFunctionCallContext(draftInput, caret);
+    if (nameContext && (nameContext.query.length > 0 || !callContext)) return nameContext;
+    return callContext ?? nameContext;
+  }, [activeReferenceView, draftInput, editorSelection.end, isEditingInput, isFormulaDraft]);
+  const functionNameContext = functionAssistantContext?.kind === "name" ? functionAssistantContext : null;
+  const functionCallContext = functionAssistantContext?.kind === "call" ? functionAssistantContext : null;
+  const functionSearchQuery = normalizeFunctionSearchText(functionNameContext?.query ?? "");
+  const functionSuggestions = useMemo(() => {
+    return buildFunctionSuggestions(standardFunctions, functionSearchQuery);
+  }, [functionSearchQuery, standardFunctions]);
+  const activeCallMetadata = functionCallContext ? getStandardFunctionMetadata(functionCallContext.name) : null;
+  const functionAssistantContextKey = functionNameContext
+    ? `name:${functionNameContext.start}:${functionNameContext.query}`
+    : functionCallContext
+      ? `call:${functionCallContext.name}:${functionCallContext.argumentIndex}`
+      : null;
+  const isFunctionAssistantAutoVisible =
+    Boolean(functionNameContext && functionSearchQuery.length >= MIN_FUNCTION_AUTOCOMPLETE_QUERY_LENGTH && functionSuggestions.length > 0) ||
+    Boolean(functionCallContext);
+  const shouldShowFunctionList = functionAssistantPinned;
+  const shouldShowFunctionCompact =
+    Boolean(functionNameContext && functionSearchQuery.length >= MIN_FUNCTION_AUTOCOMPLETE_QUERY_LENGTH && functionSuggestions.length > 0) &&
+    !functionAssistantPinned;
+  const functionAssistantMode = shouldShowFunctionList ? "list" : shouldShowFunctionCompact ? "compact" : functionSignatureExpanded ? "signature-expanded" : "signature";
+  const selectedSuggestion = functionSuggestions[Math.min(functionAssistantSelectedIndex, Math.max(0, functionSuggestions.length - 1))] ?? null;
+  const selectedFunctionMetadata =
+    shouldShowFunctionList ? selectedSuggestion?.metadata ?? null : activeCallMetadata ?? selectedSuggestion?.metadata ?? null;
+  const selectedFunctionDisplayName = functionCallContext?.name ?? selectedSuggestion?.displayName ?? selectedFunctionMetadata?.name ?? "";
+  const selectedFunctionSignature = selectedFunctionMetadata ? signatureForFormulaAssistant(selectedFunctionMetadata) : null;
+  const activeFunctionParameterIndex =
+    selectedFunctionMetadata && functionCallContext
+      ? activeParameterIndexForFormulaAssistant(selectedFunctionMetadata, functionCallContext.argumentIndex)
+      : -1;
+  const activeFunctionParameter =
+    selectedFunctionSignature && activeFunctionParameterIndex >= 0
+      ? selectedFunctionSignature.parameters[activeFunctionParameterIndex]
+      : null;
+  const shouldShowFunctionAssistant =
+    !isComposingInput &&
+    !activeReferenceView &&
+    (functionAssistantPinned ||
+      (isFunctionAssistantAutoVisible && functionAssistantContextKey !== functionAssistantDismissedKey));
+  const dismissFunctionAssistant = () => {
+    setFunctionAssistantPinned(false);
+    setFunctionSignatureExpanded(false);
+    setFunctionAssistantDismissedKey(functionAssistantContextKey);
+  };
   const referenceOptionGroups = useMemo(() => {
     if (!activeReferenceView) return [];
     return [
@@ -284,6 +662,34 @@ export default function FormulaBarOverlay({
       },
     ].filter((group) => group.options.length > 0);
   }, [activeReferenceView]);
+
+  useEffect(() => {
+    setFunctionAssistantSelectedIndex(0);
+  }, [functionSearchQuery]);
+
+  useEffect(() => {
+    if (!functionCallContext) setFunctionSignatureExpanded(false);
+  }, [functionCallContext]);
+
+  useEffect(() => {
+    if (!shouldShowFunctionAssistant) return;
+    const handleFunctionAssistantEscape = (event: KeyboardEvent) => {
+      if (isImeNativeKeyboardEvent(event) || !isEscapeKey(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dismissFunctionAssistant();
+    };
+    document.addEventListener("keydown", handleFunctionAssistantEscape, true);
+    return () => document.removeEventListener("keydown", handleFunctionAssistantEscape, true);
+  }, [functionAssistantContextKey, shouldShowFunctionAssistant]);
+
+  useEffect(() => {
+    if (!shouldShowFunctionList) return;
+    window.requestAnimationFrame(() => {
+      const activeOption = functionAssistantListRef.current?.querySelector('[aria-selected="true"]');
+      activeOption?.scrollIntoView({ block: "nearest" });
+    });
+  }, [functionAssistantSelectedIndex, functionSuggestions.length, shouldShowFunctionList]);
 
   useEffect(() => {
     draftInputRef.current = draftInput;
@@ -327,6 +733,7 @@ export default function FormulaBarOverlay({
       syncedActiveReferenceTokenIdRef.current = null;
       explicitReferenceViewRef.current = null;
       editSessionAddressRef.current = null;
+      focusedEditSessionRef.current = null;
       return;
     }
     if (isEditingInput) {
@@ -349,6 +756,13 @@ export default function FormulaBarOverlay({
     syncedActiveReferenceTokenIdRef.current = null;
     explicitReferenceViewRef.current = null;
   }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.inputText, isEditingInput, onActiveReferenceTokenChange, onDraftInputChange]);
+
+  useLayoutEffect(() => {
+    const pendingSelection = pendingEditorSelectionRef.current;
+    if (!pendingSelection || !isEditingInput || !isFormulaDraft) return;
+    const token = pendingEditorSelectionTokenRef.current;
+    restorePendingEditorSelection(1, token);
+  }, [draftInput, isEditingInput, isFormulaDraft]);
 
   useEffect(() => {
     if (!pointReferenceRequest || !isEditingInput) return;
@@ -418,36 +832,29 @@ export default function FormulaBarOverlay({
   }, [localFormatKey, formulaBarSnapshot?.primaryAddress]);
 
   useEffect(() => {
-    if (!isEditingInput || !isFormulaDraft) return;
-    const editor = sourceEditorRef.current;
-    if (!editor) return;
+    const primaryAddress = formulaBarSnapshot?.primaryAddress;
+    if (!primaryAddress || !isEditingInput) {
+      focusedEditSessionRef.current = null;
+      return;
+    }
+    const sessionKey = `${primaryAddress}:${isFormulaDraft ? "formula" : "plain"}`;
+    if (focusedEditSessionRef.current === sessionKey) return;
+    focusedEditSessionRef.current = sessionKey;
     const cursor = draftInput.length;
-    focusEditorAt(cursor);
     const raf = window.requestAnimationFrame(() => {
-      focusEditorAt(cursor);
+      if (isFormulaDraft) {
+        focusEditorAt(cursor);
+        return;
+      }
+      const input = sourcePlainInputRef.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(cursor, cursor);
     });
     return () => {
       window.cancelAnimationFrame(raf);
     };
-  }, [draftInput.length, isEditingInput, isFormulaDraft]);
-
-  useEffect(() => {
-    if (!isEditingInput || isFormulaDraft) return;
-    const input = sourcePlainInputRef.current;
-    if (!input) return;
-    const cursor = draftInput.length;
-    input.focus();
-    input.setSelectionRange(cursor, cursor);
-    const raf = window.requestAnimationFrame(() => {
-      const nextInput = sourcePlainInputRef.current;
-      if (!nextInput) return;
-      nextInput.focus();
-      nextInput.setSelectionRange(cursor, cursor);
-    });
-    return () => {
-      window.cancelAnimationFrame(raf);
-    };
-  }, [draftInput.length, isEditingInput, isFormulaDraft]);
+  }, [draftInput.length, formulaBarSnapshot?.primaryAddress, isEditingInput, isFormulaDraft]);
 
   useEffect(() => {
     if (!isEditingInput || !isFormulaDraft) return;
@@ -748,6 +1155,7 @@ export default function FormulaBarOverlay({
     onActiveReferenceTokenChange(null);
     pointGestureReplacementRef.current = null;
     pointTokenReplacementRef.current = null;
+    guardedFunctionCloseParenRef.current = null;
     setIsComposingInput(false);
     onCancelEdit();
   };
@@ -772,6 +1180,7 @@ export default function FormulaBarOverlay({
     onActiveReferenceTokenChange(null);
     pointGestureReplacementRef.current = null;
     pointTokenReplacementRef.current = null;
+    guardedFunctionCloseParenRef.current = null;
     setIsComposingInput(false);
   };
 
@@ -783,6 +1192,7 @@ export default function FormulaBarOverlay({
     onActiveReferenceTokenChange(null);
     pointGestureReplacementRef.current = null;
     pointTokenReplacementRef.current = null;
+    guardedFunctionCloseParenRef.current = null;
     setIsComposingInput(false);
   };
 
@@ -790,6 +1200,7 @@ export default function FormulaBarOverlay({
     const editor = sourceEditorRef.current;
     if (!editor) return;
     const selection = getEditableSelectionOffsets(editor);
+    setEditorSelection(selection);
     const explicitReferenceView = explicitReferenceViewRef.current;
     if (
       explicitReferenceView &&
@@ -824,10 +1235,29 @@ export default function FormulaBarOverlay({
   };
 
   const applyEditorTextReplacement = (start: number, end: number, text: string) => {
+    cancelPendingEditorSelectionRestore();
+    setFunctionAssistantPinned(false);
+    setFunctionSignatureExpanded(false);
     const safeStart = Math.max(0, Math.min(start, end, draftInput.length));
     const safeEnd = Math.max(0, Math.min(Math.max(start, end), draftInput.length));
-    const nextInput = `${draftInput.slice(0, safeStart)}${text}${draftInput.slice(safeEnd)}`;
-    const nextCaret = safeStart + text.length;
+    const guardedCloseParen = guardedFunctionCloseParenRef.current;
+    const shouldRedirectBeforeGuardedCloseParen =
+      text.length > 0 &&
+      safeStart === safeEnd &&
+      guardedCloseParen !== null &&
+      safeStart === guardedCloseParen + 1 &&
+      draftInput[guardedCloseParen] === ")";
+    const replacementStart = shouldRedirectBeforeGuardedCloseParen ? guardedCloseParen : safeStart;
+    const replacementEnd = shouldRedirectBeforeGuardedCloseParen ? guardedCloseParen : safeEnd;
+    const nextInput = `${draftInput.slice(0, replacementStart)}${text}${draftInput.slice(replacementEnd)}`;
+    const nextCaret = replacementStart + text.length;
+    if (guardedCloseParen !== null) {
+      if (replacementStart <= guardedCloseParen && replacementEnd <= guardedCloseParen) {
+        guardedFunctionCloseParenRef.current = guardedCloseParen + text.length - (replacementEnd - replacementStart);
+      } else if (replacementStart <= guardedCloseParen && replacementEnd > guardedCloseParen) {
+        guardedFunctionCloseParenRef.current = null;
+      }
+    }
     setDraftError(null);
     setDraftInput(nextInput);
     onDraftInputChange(nextInput);
@@ -836,9 +1266,42 @@ export default function FormulaBarOverlay({
     pointGestureReplacementRef.current = null;
     pointTokenReplacementRef.current = null;
     onActiveReferenceTokenChange(null);
-    window.requestAnimationFrame(() => {
-      focusEditorAt(nextCaret);
-    });
+    requestEditorSelectionRestore(nextCaret);
+  };
+
+  const insertFunctionCall = (suggestion: FormulaFunctionSuggestion) => {
+    const callText = `${suggestion.insertName}()`;
+    if (!isFormulaDraft) {
+      const nextInput = `= ${callText}`;
+      const caret = nextInput.length - 1;
+      setDraftError(null);
+      setDraftInput(nextInput);
+      onDraftInputChange(nextInput);
+      setFunctionAssistantPinned(false);
+      setFunctionSignatureExpanded(false);
+      guardedFunctionCloseParenRef.current = caret;
+      requestEditorSelectionRestore(caret);
+      return;
+    }
+
+    const replacementStart = functionNameContext?.start ?? editorSelection.start;
+    const replacementEnd = functionNameContext?.end ?? editorSelection.end;
+    const safeStart = Math.max(0, Math.min(replacementStart, replacementEnd, draftInput.length));
+    const safeEnd = Math.max(0, Math.min(Math.max(replacementStart, replacementEnd), draftInput.length));
+    const nextInput = `${draftInput.slice(0, safeStart)}${callText}${draftInput.slice(safeEnd)}`;
+    const caret = safeStart + callText.length - 1;
+    setDraftError(null);
+    setDraftInput(nextInput);
+    onDraftInputChange(nextInput);
+    syncedActiveReferenceTokenIdRef.current = null;
+    explicitReferenceViewRef.current = null;
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
+    onActiveReferenceTokenChange(null);
+    setFunctionAssistantPinned(false);
+    setFunctionSignatureExpanded(false);
+    guardedFunctionCloseParenRef.current = caret;
+    requestEditorSelectionRestore(caret);
   };
 
   const handleEditorBeforeInput = (event: FormEvent<HTMLTextAreaElement>) => {
@@ -873,6 +1336,80 @@ export default function FormulaBarOverlay({
     if (!editor) return;
     const nextInput = editor.value;
     if (nextInput === draftInput) return;
+    cancelPendingEditorSelectionRestore();
+    const singleInsertion = getSingleTextInsertion(draftInput, nextInput);
+    if (singleInsertion && isFormulaDraft) {
+      if (draftInput[singleInsertion.start] === ")") {
+        const nextCaret = singleInsertion.start + singleInsertion.text.length;
+        guardedFunctionCloseParenRef.current = nextCaret;
+        setDraftError(null);
+        setDraftInput(nextInput);
+        onDraftInputChange(nextInput);
+        setFunctionAssistantPinned(false);
+        setFunctionSignatureExpanded(false);
+        syncedActiveReferenceTokenIdRef.current = null;
+        explicitReferenceViewRef.current = null;
+        pointGestureReplacementRef.current = null;
+        pointTokenReplacementRef.current = null;
+        onActiveReferenceTokenChange(null);
+        requestEditorSelectionRestore(nextCaret);
+        return;
+      }
+      if (draftInput[singleInsertion.start - 1] === ")" && !/^[+\-*/^&=<>)]/.test(singleInsertion.text)) {
+        const closeParenIndex = singleInsertion.start - 1;
+        const correctedInput = `${draftInput.slice(0, closeParenIndex)}${singleInsertion.text}${draftInput.slice(closeParenIndex)}`;
+        const nextCaret = closeParenIndex + singleInsertion.text.length;
+        guardedFunctionCloseParenRef.current = nextCaret;
+        setDraftError(null);
+        setDraftInput(correctedInput);
+        onDraftInputChange(correctedInput);
+        setFunctionAssistantPinned(false);
+        setFunctionSignatureExpanded(false);
+        syncedActiveReferenceTokenIdRef.current = null;
+        explicitReferenceViewRef.current = null;
+        pointGestureReplacementRef.current = null;
+        pointTokenReplacementRef.current = null;
+        onActiveReferenceTokenChange(null);
+        requestEditorSelectionRestore(nextCaret);
+        return;
+      }
+    }
+    const guardedCloseParen = guardedFunctionCloseParenRef.current;
+    if (guardedCloseParen !== null && draftInput[guardedCloseParen] === ")" && nextInput.length > draftInput.length) {
+      const insertedLength = nextInput.length - draftInput.length;
+      const beforeClose = draftInput.slice(0, guardedCloseParen);
+      const closeAndAfter = draftInput.slice(guardedCloseParen);
+      const throughClose = draftInput.slice(0, guardedCloseParen + 1);
+      const afterClose = draftInput.slice(guardedCloseParen + 1);
+      const beforeCloseInsertion =
+        nextInput.startsWith(beforeClose) &&
+        nextInput.endsWith(closeAndAfter) &&
+        nextInput.length === beforeClose.length + insertedLength + closeAndAfter.length;
+      const afterCloseInsertion =
+        nextInput.startsWith(throughClose) &&
+        nextInput.endsWith(afterClose) &&
+        nextInput.length === throughClose.length + insertedLength + afterClose.length;
+      if (beforeCloseInsertion || afterCloseInsertion) {
+        const insertedText = beforeCloseInsertion
+          ? nextInput.slice(guardedCloseParen, guardedCloseParen + insertedLength)
+          : nextInput.slice(guardedCloseParen + 1, guardedCloseParen + 1 + insertedLength);
+        const correctedInput = `${beforeClose}${insertedText}${closeAndAfter}`;
+        const nextCaret = guardedCloseParen + insertedText.length;
+        guardedFunctionCloseParenRef.current = guardedCloseParen + insertedText.length;
+        setDraftError(null);
+        setDraftInput(correctedInput);
+        onDraftInputChange(correctedInput);
+        setFunctionAssistantPinned(false);
+        setFunctionSignatureExpanded(false);
+        syncedActiveReferenceTokenIdRef.current = null;
+        explicitReferenceViewRef.current = null;
+        pointGestureReplacementRef.current = null;
+        pointTokenReplacementRef.current = null;
+        onActiveReferenceTokenChange(null);
+        requestEditorSelectionRestore(nextCaret);
+        return;
+      }
+    }
     const explicitReferenceView = explicitReferenceViewRef.current;
     if (explicitReferenceView && draftInput.length > 0 && nextInput.endsWith(draftInput)) {
       const insertedPrefix = nextInput.slice(0, nextInput.length - draftInput.length);
@@ -882,14 +1419,14 @@ export default function FormulaBarOverlay({
         setDraftError(null);
         setDraftInput(correctedInput);
         onDraftInputChange(correctedInput);
+        setFunctionAssistantPinned(false);
+        setFunctionSignatureExpanded(false);
         syncedActiveReferenceTokenIdRef.current = null;
         explicitReferenceViewRef.current = null;
         pointGestureReplacementRef.current = null;
         pointTokenReplacementRef.current = null;
         onActiveReferenceTokenChange(null);
-        window.requestAnimationFrame(() => {
-          focusEditorAt(nextCaret);
-        });
+        requestEditorSelectionRestore(nextCaret);
         return;
       }
     }
@@ -897,14 +1434,89 @@ export default function FormulaBarOverlay({
     setDraftError(null);
     setDraftInput(nextInput);
     onDraftInputChange(nextInput);
+    setFunctionAssistantPinned(false);
+    setFunctionSignatureExpanded(false);
     syncedActiveReferenceTokenIdRef.current = null;
     explicitReferenceViewRef.current = null;
     pointGestureReplacementRef.current = null;
     pointTokenReplacementRef.current = null;
     onActiveReferenceTokenChange(null);
-    window.requestAnimationFrame(() => {
-      focusEditorAt(selection.start, selection.end);
-    });
+    requestEditorSelectionRestore(selection.start, selection.end);
+  };
+
+  const beginInputComposition = () => {
+    cancelPendingEditorSelectionRestore();
+    guardedFunctionCloseParenRef.current = null;
+    setIsComposingInput(true);
+    setFunctionAssistantPinned(false);
+    setFunctionSignatureExpanded(false);
+  };
+
+  const endFormulaInputComposition = (editor: HTMLTextAreaElement) => {
+    cancelPendingEditorSelectionRestore();
+    const selection = getEditableSelectionOffsets(editor);
+    setIsComposingInput(false);
+    setDraftError(null);
+    setDraftInput(editor.value);
+    onDraftInputChange(editor.value);
+    setEditorSelection(selection);
+    syncedActiveReferenceTokenIdRef.current = null;
+    explicitReferenceViewRef.current = null;
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
+    onActiveReferenceTokenChange(null);
+  };
+
+  const endPlainInputComposition = (input: HTMLInputElement) => {
+    cancelPendingEditorSelectionRestore();
+    setIsComposingInput(false);
+    setDraftError(null);
+    setDraftInput(input.value);
+    onDraftInputChange(input.value);
+    syncedActiveReferenceTokenIdRef.current = null;
+    explicitReferenceViewRef.current = null;
+    pointGestureReplacementRef.current = null;
+    pointTokenReplacementRef.current = null;
+    onActiveReferenceTokenChange(null);
+  };
+
+  const handleFunctionAssistantKeyDown = (event: ReactKeyboardEvent<HTMLElement>): boolean => {
+    if (!shouldShowFunctionAssistant) return false;
+    if (functionCallContext && !functionAssistantPinned && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      event.preventDefault();
+      event.stopPropagation();
+      setFunctionSignatureExpanded(event.key === "ArrowDown");
+      return true;
+    }
+    if (shouldShowFunctionCompact && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && event.key === "ArrowDown") {
+      event.preventDefault();
+      event.stopPropagation();
+      setFunctionAssistantPinned(true);
+      setFunctionAssistantDismissedKey(null);
+      return true;
+    }
+    if (shouldShowFunctionList && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === "ArrowDown" || event.key === "ArrowUp") && functionSuggestions.length > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      setFunctionAssistantSelectedIndex((index) => {
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        return Math.max(0, Math.min(functionSuggestions.length - 1, index + delta));
+      });
+      return true;
+    }
+    if ((functionNameContext || functionAssistantPinned) && selectedSuggestion && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === "Enter" || event.key === "Tab")) {
+      event.preventDefault();
+      event.stopPropagation();
+      insertFunctionCall(selectedSuggestion);
+      return true;
+    }
+    if (isEscapeKey(event.key) && !activeReferenceView) {
+      event.preventDefault();
+      event.stopPropagation();
+      dismissFunctionAssistant();
+      return true;
+    }
+    return false;
   };
 
   const selectReferenceToken = (tokenId: string) => {
@@ -1050,6 +1662,48 @@ export default function FormulaBarOverlay({
                     </span>
                   </button>
                 </div>
+                <div className="formula-function-control">
+                  <button
+                    className={[
+                      "formula-function-button",
+                      functionAssistantPinned ? "active" : "",
+                      !isInputEditable ? "is-disabled" : "",
+                    ].join(" ").trim()}
+                    type="button"
+                    aria-label="Function assistant"
+                    aria-haspopup="dialog"
+                    aria-expanded={shouldShowFunctionAssistant}
+                    disabled={!isInputEditable}
+                    onMouseEnter={(event) => {
+                      if (isInputEditable && !functionAssistantPinned) onTooltipEnter("Function assistant", event.currentTarget);
+                    }}
+                    onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+                    onFocus={(event) => {
+                      if (isInputEditable && !functionAssistantPinned) onTooltipEnter("Function assistant", event.currentTarget);
+                    }}
+                    onBlur={(event) => onTooltipRelease(event.currentTarget)}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      onTooltipSuppress(event.currentTarget);
+                    }}
+                    onClick={() => {
+                      if (!isInputEditable) return;
+                      setFormatMenuOpen(false);
+                      setStyleMenuOpen(false);
+                      if (!isEditingInput) {
+                        onRequestEdit();
+                      }
+                      setFunctionAssistantSelectedIndex(0);
+                      setFunctionAssistantDismissedKey(null);
+                      setFunctionAssistantPinned((open) => !open);
+                      focusSourceInputControl();
+                    }}
+                  >
+                    <span className="formula-function-icon">
+                      <FunctionGlyph />
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1074,6 +1728,7 @@ export default function FormulaBarOverlay({
                     onInput={handleEditorInput}
                     onPaste={(event) => {
                       event.preventDefault();
+                      cancelPendingEditorSelectionRestore();
                       const editor = sourceEditorRef.current;
                       if (!editor) return;
                       const selection = getEditableSelectionOffsets(editor);
@@ -1082,9 +1737,12 @@ export default function FormulaBarOverlay({
                     onMouseUp={syncActiveReferenceFromSelection}
                     onSelect={syncActiveReferenceFromSelection}
                     onKeyUp={syncActiveReferenceFromSelection}
-                    onCompositionStart={() => setIsComposingInput(true)}
-                    onCompositionEnd={() => setIsComposingInput(false)}
+                    onCompositionStart={beginInputComposition}
+                    onCompositionEnd={(event) => endFormulaInputComposition(event.currentTarget)}
                     onChange={(event) => {
+                      cancelPendingEditorSelectionRestore();
+                      setFunctionAssistantPinned(false);
+                      setFunctionSignatureExpanded(false);
                       setDraftError(null);
                       setDraftInput(event.currentTarget.value);
                       onDraftInputChange(event.currentTarget.value);
@@ -1094,6 +1752,16 @@ export default function FormulaBarOverlay({
                       onActiveReferenceTokenChange(null);
                     }}
                     onKeyDown={(event) => {
+                  if (isComposingInput || isImeKeyboardEvent(event)) {
+                    return;
+                  }
+                  if (event.key === "ArrowRight" || event.key === "ArrowLeft" || event.key === "Home" || event.key === "End") {
+                    cancelPendingEditorSelectionRestore();
+                    guardedFunctionCloseParenRef.current = null;
+                  }
+                  if (handleFunctionAssistantKeyDown(event)) {
+                    return;
+                  }
                   let selectedReferenceView: FormulaReferenceView | null = null;
                   if (
                     !event.shiftKey &&
@@ -1130,6 +1798,26 @@ export default function FormulaBarOverlay({
                     focusEditorAt(nextCaret);
                     return;
                   }
+                  if (
+                    !event.shiftKey &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.altKey &&
+                    (event.key === "ArrowRight" || event.key === "ArrowLeft" || event.key === "Home" || event.key === "End")
+                  ) {
+                    const editor = sourceEditorRef.current;
+                    if (editor) {
+                      const selection = getEditableSelectionOffsets(editor);
+                      const nextCaret = resolveEditorNavigationCaret(selection, draftInput.length, event.key);
+                      if (nextCaret !== null) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setDraftError(null);
+                        focusEditorAt(nextCaret);
+                        return;
+                      }
+                    }
+                  }
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -1140,7 +1828,7 @@ export default function FormulaBarOverlay({
                     commitEditInput();
                     return;
                   }
-                  if (event.key === "Escape") {
+                  if (isEscapeKey(event.key)) {
                     event.preventDefault();
                     event.stopPropagation();
                     if (activeReferenceView) {
@@ -1208,9 +1896,12 @@ export default function FormulaBarOverlay({
                 value={draftInput}
                 spellCheck={false}
                 aria-label="Edit selected cell input"
-                onCompositionStart={() => setIsComposingInput(true)}
-                onCompositionEnd={() => setIsComposingInput(false)}
+                onCompositionStart={beginInputComposition}
+                onCompositionEnd={(event) => endPlainInputComposition(event.currentTarget)}
                 onChange={(event) => {
+                  cancelPendingEditorSelectionRestore();
+                  setFunctionAssistantPinned(false);
+                  setFunctionSignatureExpanded(false);
                   const nextInput = event.currentTarget.value;
                   setDraftError(null);
                   setDraftInput(nextInput);
@@ -1222,6 +1913,12 @@ export default function FormulaBarOverlay({
                   onActiveReferenceTokenChange(null);
                 }}
                 onKeyDown={(event) => {
+                  if (isComposingInput || isImeKeyboardEvent(event)) {
+                    return;
+                  }
+                  if (handleFunctionAssistantKeyDown(event)) {
+                    return;
+                  }
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -1232,9 +1929,13 @@ export default function FormulaBarOverlay({
                     commitEditInput();
                     return;
                   }
-                  if (event.key === "Escape") {
+                  if (isEscapeKey(event.key)) {
                     event.preventDefault();
                     event.stopPropagation();
+                    if (shouldShowFunctionAssistant) {
+                      dismissFunctionAssistant();
+                      return;
+                    }
                     cancelEditInput();
                   }
                 }}
@@ -1258,6 +1959,153 @@ export default function FormulaBarOverlay({
                 {formulaBarSnapshot.inputText}
               </button>
             )}
+            {shouldShowFunctionAssistant && selectedFunctionMetadata ? (
+              <div
+                className="formula-assistant-popover"
+                data-mode={functionAssistantMode}
+                role="dialog"
+                aria-label="Formula assistant"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+              >
+                {shouldShowFunctionList ? (
+                  <div className="formula-assistant-list-panel">
+                    <div ref={functionAssistantListRef} className="formula-assistant-list" role="listbox" aria-label="Functions">
+                      {functionSuggestions.length > 0 ? (
+                        functionSuggestions.map((suggestion, index) => (
+                          <button
+                            key={suggestion.key}
+                            className={
+                              index === functionAssistantSelectedIndex
+                                ? "formula-assistant-option is-active"
+                                : "formula-assistant-option"
+                            }
+                            type="button"
+                            role="option"
+                            aria-selected={index === functionAssistantSelectedIndex}
+                            onMouseEnter={() => setFunctionAssistantSelectedIndex(index)}
+                            onClick={() => insertFunctionCall(suggestion)}
+                          >
+                            <span className="formula-assistant-option-main">
+                              <span className="formula-assistant-option-icon" aria-hidden="true">
+                                {iconForFormulaAssistant(suggestion.metadata.category)}
+                              </span>
+                              <span className="formula-assistant-option-name">{suggestion.displayName}</span>
+                            </span>
+                            <span className="formula-assistant-option-summary">{summaryLabelForFormulaAssistant(suggestion.metadata)}</span>
+                            <span className="formula-assistant-option-category">{categoryLabelForFormulaAssistant(suggestion.metadata.category)}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="formula-assistant-empty">No matching functions</div>
+                      )}
+                    </div>
+                    <div className="formula-assistant-footer" aria-hidden="true">
+                      <span>↑↓ Select</span>
+                      <span>↵ Insert</span>
+                      <span>esc Close</span>
+                    </div>
+                  </div>
+                ) : shouldShowFunctionCompact ? (
+                  <div className="formula-assistant-compact">
+                    <span className="formula-assistant-compact-main">
+                      <span className="formula-assistant-option-icon" aria-hidden="true">
+                        {iconForFormulaAssistant(selectedFunctionMetadata.category)}
+                      </span>
+                      <span className="formula-assistant-compact-signature">
+                        <span className="formula-assistant-compact-name">{selectedFunctionDisplayName}</span>
+                        <span>(</span>
+                        <span>{typeLabelForFormulaAssistant(selectedFunctionMetadata.signatures[0]?.parameters[0]?.type ?? "value")}</span>
+                        <span>)</span>
+                      </span>
+                    </span>
+                    <span className="formula-assistant-compact-action">
+                      <kbd>Tab</kbd>
+                      <span>Insert</span>
+                    </span>
+                    <button
+                      className="formula-assistant-expand-button"
+                      type="button"
+                      aria-label="Expand function suggestions"
+                      onClick={() => {
+                        setFunctionAssistantPinned(true);
+                        setFunctionAssistantDismissedKey(null);
+                      }}
+                    >
+                      <kbd>↓</kbd>
+                      <span>Expand</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className={functionSignatureExpanded ? "formula-assistant-signature-panel is-expanded" : "formula-assistant-signature-panel"}>
+                    <div className="formula-assistant-signature-head">
+                      <div className="formula-assistant-signature-line">
+                        <span className="formula-assistant-signature-name">{selectedFunctionDisplayName}</span>
+                        <span>(</span>
+                        {selectedFunctionSignature?.parameters.map((parameter, index) => (
+                          <span key={parameter.name} className="formula-assistant-signature-param-wrap">
+                            {index > 0 ? <span className="formula-assistant-punctuation">, </span> : null}
+                            <span className={index === activeFunctionParameterIndex ? "formula-assistant-param is-active" : "formula-assistant-param"}>
+                              {parameter.name}
+                            </span>
+                          </span>
+                        ))}
+                        <span>)</span>
+                        <span className="formula-assistant-return">{` -> ${selectedFunctionSignature?.returns ?? "value"}`}</span>
+                      </div>
+                      <button
+                        className="formula-assistant-signature-toggle"
+                        type="button"
+                        aria-label={functionSignatureExpanded ? "Collapse function help" : "Expand function help"}
+                        onClick={() => setFunctionSignatureExpanded((expanded) => !expanded)}
+                      >
+                        <kbd>{functionSignatureExpanded ? "↑" : "↓"}</kbd>
+                        {functionSignatureExpanded ? <span>Collapse</span> : null}
+                      </button>
+                    </div>
+                    {functionSignatureExpanded ? (
+                      <div className="formula-assistant-signature-grid">
+                        <div className="formula-assistant-signature-column">
+                          <span className="formula-assistant-signature-column-label">Parameter</span>
+                          {selectedFunctionSignature?.parameters.map((parameter, index) => (
+                            <div key={parameter.name} className={index === activeFunctionParameterIndex ? "formula-assistant-param-detail is-active" : "formula-assistant-param-detail"}>
+                              <span className="formula-assistant-param-name">{parameterLabelForFormulaAssistant(parameter)}</span>
+                              <span className="formula-assistant-param-type">{parameter.summary}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="formula-assistant-signature-column">
+                          <span className="formula-assistant-signature-column-label">Description</span>
+                          <span className="formula-assistant-signature-description">{selectedFunctionMetadata.summary}</span>
+                        </div>
+                        <div className="formula-assistant-signature-column">
+                          <span className="formula-assistant-signature-column-label">Example</span>
+                          {selectedFunctionMetadata.examples[0] ? (
+                            <span className="formula-assistant-signature-example">{selectedFunctionMetadata.examples[0].expression}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : activeFunctionParameter ? (
+                      <div className="formula-assistant-active-param">
+                        <div className="formula-assistant-active-param-name">{parameterLabelForFormulaAssistant(activeFunctionParameter)}</div>
+                        <div className="formula-assistant-active-param-summary">{activeFunctionParameter.summary}</div>
+                      </div>
+                    ) : (
+                      <div className="formula-assistant-active-param">
+                        <div className="formula-assistant-active-param-name">{selectedFunctionDisplayName}</div>
+                        <div className="formula-assistant-active-param-summary">{selectedFunctionMetadata.summary}</div>
+                      </div>
+                    )}
+                    <div className="formula-assistant-signature-footer">
+                      <span>{`${Math.max(activeFunctionParameterIndex + 1, 0)} / ${selectedFunctionSignature?.parameters.length ?? 0} parameters`}</span>
+                      <span>returns {returnLabelForFormulaAssistant(selectedFunctionMetadata)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
             <button
               className="formula-dismiss-button"
               type="button"

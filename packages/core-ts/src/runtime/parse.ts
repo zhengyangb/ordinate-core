@@ -273,6 +273,11 @@ function tokenizeExpr(text: string): [string, string][] {
       i += 1;
       continue;
     }
+    if (ch === "*" && i + 1 < text.length && text[i + 1] === "*") {
+      out.push(["**", "**"]);
+      i += 2;
+      continue;
+    }
     if ("()+-*/,".includes(ch)) {
       out.push([ch, ch]);
       i += 1;
@@ -356,7 +361,7 @@ function tokenizeExpr(text: string): [string, string][] {
       i = spreadsheetToken.next;
       continue;
     }
-    if (/\d/.test(ch) || (ch === "-" && i + 1 < text.length && /\d/.test(text[i + 1]))) {
+    if (/\d/.test(ch)) {
       let j = i + 1;
       while (j < text.length && /[\d.]/.test(text[j])) j += 1;
       out.push(["NUMBER", text.slice(i, j)]);
@@ -497,7 +502,15 @@ class ExprParser {
     if (this.match("-")) {
       return { kind: "unary", value: "-", right: this.parseUnary() };
     }
-    return this.parsePrimary();
+    return this.parsePower();
+  }
+
+  private parsePower(): ExprNode {
+    const left = this.parsePrimary();
+    if (!this.match("**")) {
+      return left;
+    }
+    return { kind: "binary", value: "**", left, right: this.parseUnary() };
   }
 
   private parsePrimary(): ExprNode {
@@ -552,10 +565,11 @@ class ExprParser {
     if (!this.match("(")) {
       return { kind: "literal", value: makeInternalError("parse_function_call_missing_open_paren", { name }) };
     }
+    const args: ExprNode[] = [];
     if (this.match(")")) {
-      return { kind: "literal", value: makeInternalError("parse_function_call_empty_args", { name }) };
+      return { kind: "call", value: { name, args } as FunctionCall };
     }
-    const args: ExprNode[] = [this.parseExpression()];
+    args.push(this.parseExpression());
     while (this.match(",")) {
       args.push(this.parseExpression());
     }

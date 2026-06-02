@@ -127,10 +127,15 @@ The V1 standard function set is:
 - `max`
 - `count`
 - `counta`
+- `sumsq`
 - `and`
 - `or`
 - `abs`
+- `sign`
 - `round`
+- `roundup`
+- `rounddown`
+- `trunc`
 - `floor`
 - `ceil`
 - `mod`
@@ -141,6 +146,8 @@ The V1 standard function set is:
 - `lcm`
 - `not`
 - `dotProduct`
+
+`sumproduct` is a compatibility alias for `dotProduct`, not a separate function definition.
 
 Implementations may stage delivery, but conformance to this RFC requires the full V1 function set.
 
@@ -303,6 +310,26 @@ Semantics:
 
 `counta(empty_view) = 0`.
 
+### `sumsq`
+
+Contract:
+
+```text
+sumsq(x: view[d<=2]) -> number
+```
+
+Semantics:
+
+- flatten `x` in row-major order
+- accept numeric values
+- ignore `blank`
+- reject `string`
+- reject `boolean`
+- propagate `error`
+- square each numeric value and return the sum of those squares
+
+`sumsq(empty_view) = 0`.
+
 ## Boolean Aggregate Functions
 
 Boolean aggregate functions accept one argument:
@@ -369,6 +396,20 @@ abs(x: Scalar[number]) -> number
 
 Returns the absolute value of `x`.
 
+### `sign`
+
+Contract:
+
+```text
+sign(x: Scalar[number]) -> number
+```
+
+Returns:
+
+- `-1` when `x < 0`
+- `0` when `x = 0`
+- `1` when `x > 0`
+
 ### `round`
 
 Contract:
@@ -387,6 +428,61 @@ Examples:
 
 - `round(12.345, 2) -> 12.35`
 - `round(1234, -2) -> 1200`
+
+### `roundup`
+
+Contract:
+
+```text
+roundup(x: Scalar[number], digits: Scalar[number]) -> number
+```
+
+Returns `x` rounded away from zero to `digits` decimal places.
+
+`digits` must be an integer.
+
+Examples:
+
+- `roundup(12.341, 2) -> 12.35`
+- `roundup(-12.341, 2) -> -12.35`
+
+### `rounddown`
+
+Contract:
+
+```text
+rounddown(x: Scalar[number], digits: Scalar[number]) -> number
+```
+
+Returns `x` rounded toward zero to `digits` decimal places.
+
+`digits` must be an integer.
+
+Examples:
+
+- `rounddown(12.349, 2) -> 12.34`
+- `rounddown(-12.349, 2) -> -12.34`
+
+### `trunc`
+
+Contracts:
+
+```text
+trunc(x: Scalar[number]) -> number
+trunc(x: Scalar[number], digits: Scalar[number]) -> number
+```
+
+Returns `x` truncated toward zero.
+
+When omitted, `digits` defaults to `0`.
+
+`digits` must be an integer.
+
+Examples:
+
+- `trunc(12.9) -> 12`
+- `trunc(12.987, 2) -> 12.98`
+- `trunc(-12.987, 2) -> -12.98`
 
 ### `floor`
 
@@ -524,6 +620,12 @@ Contract:
 dotProduct(x: view[d=1], y: view[d=1]) -> number
 ```
 
+Alias:
+
+```text
+sumproduct(x: view[d=1], y: view[d=1]) -> number
+```
+
 Semantics:
 
 - both arguments must be one-dimensional views
@@ -533,6 +635,8 @@ Semantics:
 - propagate `error`
 
 `blank`, `boolean`, and `string` elements are invalid.
+
+`sumproduct` has exactly the same semantics as `dotProduct`.
 
 ## Exponentiation Operator
 
@@ -601,9 +705,14 @@ Structured error kind modeling follows RFC-0015.
 = max(@[#2:#10,#2])
 = count(@[:,2025])
 = counta(@[:,2025])
+= sumsq(@["Values",:])
 = product(@["Factors",:])
 = abs(-3)
+= sign(-3)
 = round(12.345, 2)
+= roundup(12.341, 2)
+= rounddown(12.349, 2)
+= trunc(12.987, 2)
 = floor(12.9)
 = ceil(12.1)
 = mod(10, 3)
@@ -617,6 +726,7 @@ Structured error kind modeling follows RFC-0015.
 = and(@["Flags",:])
 = or(@["Flags",:])
 = dotProduct(@["Price",:], @["Qty",:])
+= sumproduct(@["Price",:], @["Qty",:])
 ```
 
 ## Deferred Topics

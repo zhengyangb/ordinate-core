@@ -27,6 +27,14 @@ export { getCellTextView, parseCellInput, parseCellText, resolveCellInputText, s
 export type { CellInputTextView, CellTextViewSource } from "./runtime/parse";
 export { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
 export { evaluateDocument } from "./runtime/eval";
+export { getStandardFunctionMetadata, listStandardFunctionMetadata } from "./runtime/functions";
+export type {
+  FunctionCategory,
+  FunctionExample,
+  FunctionMetadata,
+  FunctionParameter,
+  FunctionSignature,
+} from "./runtime/functions";
 export {
   diagnosticFromError,
   isError,

@@ -7,13 +7,26 @@ import {
   type ReferenceExpr,
   type RefSelector,
   type RuntimeValue,
+  type RuntimeView,
   type SheetEvaluation,
-  type BooleanRuntimeValue,
   type ViewSelection,
 } from "./types";
 import { isError, makeInternalError, runtimeErrorFromDiagnostic } from "./errors";
+import { evalArithmetic, evalPower } from "./arithmetic";
+import { evalFunctionCall } from "./functions";
+import type { EvaluatedArgument } from "./functions/args";
+import {
+  isRuntimeView,
+  makeRuntimeView,
+  materializeViewSelection,
+  runtimeViewScalarValue,
+  runtimeViewShapeContext,
+  runtimeViewShapesMatch,
+} from "./view";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
+
+type ExpressionValue = RuntimeValue | RuntimeView;
 
 // Evaluate a full document into runtime values.
 export function evaluateDocument(text: string): EvaluationResult {
@@ -148,6 +161,41 @@ export function evalExpr(
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
 ): RuntimeValue {
+  const value = evalExpressionValue(
+    node,
+    rowIdx,
+    colIdx,
+    evalCell,
+    rowMap,
+    colMap,
+    rowCount,
+    colCount,
+    bodyStart,
+    bodyRowCount,
+    dataRowIndices,
+    dataColIndices,
+    rowIdToIndex,
+    colIdToIndex,
+  );
+  return expressionValueToScalarResult(value, "final_result");
+}
+
+function evalExpressionValue(
+  node: ExprNode | null,
+  rowIdx: number,
+  colIdx: number,
+  evalCell: (r: number, c: number) => RuntimeValue,
+  rowMap: Map<string, number[]>,
+  colMap: Map<string, number[]>,
+  rowCount: number,
+  colCount: number,
+  bodyStart: number,
+  bodyRowCount: number,
+  dataRowIndices: number[],
+  dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
+): ExpressionValue {
   if (!node) {
     return makeInternalError("parse_expression_empty");
   }
@@ -176,36 +224,53 @@ export function evalExpr(
     if (!resolved.ok) {
       return makeInternalError(resolved.internalKind, resolved.context);
     }
-    const view = resolved.view;
-    if (view.rowIndices.length !== 1 || view.colIndices.length !== 1) {
-      return makeInternalError("invalid_view");
-    }
-    return evalCell(view.rowIndices[0], view.colIndices[0]);
+    return materializeViewSelection(resolved.view, evalCell);
   }
 
   if (node.kind === "call") {
     const call = node.value as FunctionCall;
-    return evalFunctionCall(
-      call,
-      rowIdx,
-      colIdx,
+    return evalFunctionCall(call, {
       evalCell,
-      rowMap,
-      colMap,
-      rowCount,
-      colCount,
-      bodyStart,
-      bodyRowCount,
-      dataRowIndices,
-      dataColIndices,
-      rowIdToIndex,
-      colIdToIndex,
-    );
+      evalArgValue: (arg) =>
+        evalArgValue(
+          arg,
+          rowIdx,
+          colIdx,
+          evalCell,
+          rowMap,
+          colMap,
+          rowCount,
+          colCount,
+          bodyStart,
+          bodyRowCount,
+          dataRowIndices,
+          dataColIndices,
+          rowIdToIndex,
+          colIdToIndex,
+        ),
+      evalScalarArg: (arg) =>
+        evalScalarArg(
+          arg,
+          rowIdx,
+          colIdx,
+          evalCell,
+          rowMap,
+          colMap,
+          rowCount,
+          colCount,
+          bodyStart,
+          bodyRowCount,
+          dataRowIndices,
+          dataColIndices,
+          rowIdToIndex,
+          colIdToIndex,
+        ),
+    });
   }
 
   if (node.kind === "unary") {
     const op = node.value as string;
-    const right = evalExpr(
+    const rightValue = evalExpressionValue(
       node.right ?? null,
       rowIdx,
       colIdx,
@@ -221,6 +286,7 @@ export function evalExpr(
       rowIdToIndex,
       colIdToIndex,
     );
+    const right = expressionValueToScalarResult(rightValue, "unary_operand");
     if (isError(right)) {
       return right;
     }
@@ -236,7 +302,7 @@ export function evalExpr(
     return makeInternalError("invalid_unary", { operator: op, rightKind: right.kind });
   }
 
-  const left = evalExpr(
+  const left = evalExpressionValue(
     node.left ?? null,
     rowIdx,
     colIdx,
@@ -252,7 +318,7 @@ export function evalExpr(
     rowIdToIndex,
     colIdToIndex,
   );
-  const right = evalExpr(
+  const right = evalExpressionValue(
     node.right ?? null,
     rowIdx,
     colIdx,
@@ -268,103 +334,134 @@ export function evalExpr(
     rowIdToIndex,
     colIdToIndex,
   );
-  if (isError(left)) return left;
-  if (isError(right)) return right;
+  if (isExpressionError(left)) return left;
+  if (isExpressionError(right)) return right;
 
   const op = node.value as string;
   if (["+", "-", "*", "/"].includes(op)) {
-    return evalArithmetic(op, left, right);
+    return evalArithmeticExpression(op, left, right);
+  }
+  if (op === "**") {
+    return evalArithmeticExpression(op, left, right);
   }
   if (["==", "!="].includes(op)) {
-    return evalEquality(op, left, right);
+    return evalComparison(op, left, right);
   }
   if (["<", "<=", ">", ">="].includes(op)) {
-    return evalOrdering(op, left, right);
+    return evalComparison(op, left, right);
   }
   return makeInternalError("unknown_operator", { operator: String(node.value ?? "") });
 }
 
-// Evaluate arithmetic with RFC-0006 coercion rules.
-function evalArithmetic(op: string, left: RuntimeValue, right: RuntimeValue): RuntimeValue {
-  if (left.kind === "blank" && right.kind === "blank") {
-    if (op === "+" || op === "-" || op === "*") {
-      return { kind: "blank", value: null };
-    }
-    return makeInternalError("invalid_arithmetic", { operator: op, leftKind: left.kind, rightKind: right.kind });
+function expressionValueToScalarResult(value: ExpressionValue, reason: string): RuntimeValue {
+  if (!isRuntimeView(value)) {
+    return value;
   }
-
-  if (left.kind === "string" && right.kind === "string") {
-    if (op === "+") {
-      return { kind: "string", value: String(left.value) + String(right.value) };
-    }
-    return makeInternalError("invalid_arithmetic", { operator: op, leftKind: left.kind, rightKind: right.kind });
+  const scalar = runtimeViewScalarValue(value);
+  if (scalar) {
+    return scalar;
   }
-
-  if (left.kind === "blank" && right.kind === "string") {
-    if (op === "+") {
-      return { kind: "string", value: String(right.value) };
-    }
-    return makeInternalError("invalid_arithmetic", { operator: op, leftKind: left.kind, rightKind: right.kind });
-  }
-
-  if (left.kind === "string" && right.kind === "blank") {
-    if (op === "+") {
-      return { kind: "string", value: String(left.value) };
-    }
-    return makeInternalError("invalid_arithmetic", { operator: op, leftKind: left.kind, rightKind: right.kind });
-  }
-
-  if (left.kind === "blank" && right.kind === "number") {
-    if (op === "/") {
-      return { kind: "number", value: 0 };
-    }
-    if (op === "+" || op === "-" || op === "*") {
-      return evalNumberOp(op, 0, right.value as number);
-    }
-    return makeInternalError("invalid_arithmetic", { operator: op, leftKind: left.kind, rightKind: right.kind });
-  }
-
-  if (left.kind === "number" && right.kind === "blank") {
-    if (op === "/") {
-      return makeInternalError("invalid_arithmetic", { operator: op, leftKind: left.kind, rightKind: right.kind });
-    }
-    if (op === "+" || op === "-" || op === "*") {
-      return evalNumberOp(op, left.value as number, 0);
-    }
-    return makeInternalError("invalid_arithmetic", { operator: op, leftKind: left.kind, rightKind: right.kind });
-  }
-
-  if (left.kind === "boolean" && right.kind === "number") {
-    return evalNumberOp(op, boolToNumber(left), right.value as number);
-  }
-
-  if (left.kind === "number" && right.kind === "boolean") {
-    return evalNumberOp(op, left.value as number, boolToNumber(right));
-  }
-
-  if (left.kind === "boolean" && right.kind === "boolean") {
-    return evalNumberOp(op, boolToNumber(left), boolToNumber(right));
-  }
-
-  if (left.kind === "number" && right.kind === "number") {
-    return evalNumberOp(op, left.value as number, right.value as number);
-  }
-
-  return makeInternalError("invalid_arithmetic", { operator: op, leftKind: left.kind, rightKind: right.kind });
+  return makeInternalError("invalid_view", { reason, ...runtimeViewShapeContext(value) });
 }
 
-// Perform a numeric arithmetic operation.
-function evalNumberOp(op: string, left: number, right: number): RuntimeValue {
-  if (op === "+") return { kind: "number", value: left + right };
-  if (op === "-") return { kind: "number", value: left - right };
-  if (op === "*") return { kind: "number", value: left * right };
-  if (right === 0) return makeInternalError("divide_by_zero");
-  return { kind: "number", value: left / right };
+function isExpressionError(value: ExpressionValue): value is RuntimeValue & { kind: "error" } {
+  return !isRuntimeView(value) && isError(value);
 }
 
-// Convert a boolean value to a number.
-function boolToNumber(value: BooleanRuntimeValue): number {
-  return value.value ? 1 : 0;
+function evalArithmeticExpression(op: string, left: ExpressionValue, right: ExpressionValue): ExpressionValue {
+  const leftIsView = isRuntimeView(left);
+  const rightIsView = isRuntimeView(right);
+
+  if (!leftIsView && !rightIsView) {
+    return evalScalarArithmetic(op, left, right);
+  }
+
+  if (leftIsView && rightIsView) {
+    if (!runtimeViewShapesMatch(left, right)) {
+      return makeInternalError("invalid_view_arithmetic", {
+        operator: op,
+        left: runtimeViewShapeContext(left),
+        right: runtimeViewShapeContext(right),
+      });
+    }
+    return mapArithmeticView(left, right, op);
+  }
+
+  if (leftIsView) {
+    return mapArithmeticView(left, right as RuntimeValue, op);
+  }
+
+  return mapArithmeticView(left as RuntimeValue, right as RuntimeView, op);
+}
+
+function mapArithmeticView(left: RuntimeView | RuntimeValue, right: RuntimeView | RuntimeValue, op: string): ExpressionValue {
+  const view = isRuntimeView(left) ? left : (right as RuntimeView);
+  const values: RuntimeValue[] = [];
+  for (let index = 0; index < view.values.length; index += 1) {
+    const leftValue = isRuntimeView(left) ? left.values[index] : left;
+    const rightValue = isRuntimeView(right) ? right.values[index] : right;
+    if (isError(leftValue)) return leftValue;
+    if (isError(rightValue)) return rightValue;
+    const result = evalScalarArithmetic(op, leftValue, rightValue);
+    if (isError(result)) return result;
+    values.push(result);
+  }
+  return makeRuntimeView(view.dimension, view.rowCount, view.colCount, values);
+}
+
+function evalScalarArithmetic(op: string, left: RuntimeValue, right: RuntimeValue): RuntimeValue {
+  if (op === "**") {
+    return evalPower(left, right);
+  }
+  return evalArithmetic(op, left, right);
+}
+
+function evalComparison(op: string, left: ExpressionValue, right: ExpressionValue): ExpressionValue {
+  const leftIsView = isRuntimeView(left);
+  const rightIsView = isRuntimeView(right);
+
+  if (!leftIsView && !rightIsView) {
+    return evalScalarComparison(op, left, right);
+  }
+
+  if (leftIsView && rightIsView) {
+    if (!runtimeViewShapesMatch(left, right)) {
+      return makeInternalError("invalid_view_comparison", {
+        operator: op,
+        left: runtimeViewShapeContext(left),
+        right: runtimeViewShapeContext(right),
+      });
+    }
+    return mapComparisonView(left, right, op);
+  }
+
+  if (leftIsView) {
+    return mapComparisonView(left, right as RuntimeValue, op);
+  }
+
+  return mapComparisonView(left as RuntimeValue, right as RuntimeView, op);
+}
+
+function mapComparisonView(left: RuntimeView | RuntimeValue, right: RuntimeView | RuntimeValue, op: string): ExpressionValue {
+  const view = isRuntimeView(left) ? left : (right as RuntimeView);
+  const values: RuntimeValue[] = [];
+  for (let index = 0; index < view.values.length; index += 1) {
+    const leftValue = isRuntimeView(left) ? left.values[index] : left;
+    const rightValue = isRuntimeView(right) ? right.values[index] : right;
+    if (isError(leftValue)) return leftValue;
+    if (isError(rightValue)) return rightValue;
+    const compared = evalScalarComparison(op, leftValue, rightValue);
+    if (isError(compared)) return compared;
+    values.push(compared);
+  }
+  return makeRuntimeView(view.dimension, view.rowCount, view.colCount, values);
+}
+
+function evalScalarComparison(op: string, left: RuntimeValue, right: RuntimeValue): RuntimeValue {
+  if (["==", "!="].includes(op)) {
+    return evalEquality(op, left, right);
+  }
+  return evalOrdering(op, left, right);
 }
 
 // Evaluate equality/inequality comparisons.
@@ -708,141 +805,6 @@ export function isSeparatorRow(cells: string[]): boolean {
   return cells.length > 0 && cells.every((cell) => SEPARATOR_CELL_RE.test(cell));
 }
 
-// Evaluate a function call expression.
-function evalFunctionCall(
-  call: FunctionCall,
-  rowIdx: number,
-  colIdx: number,
-  evalCell: (r: number, c: number) => RuntimeValue,
-  rowMap: Map<string, number[]>,
-  colMap: Map<string, number[]>,
-  rowCount: number,
-  colCount: number,
-  bodyStart: number,
-  bodyRowCount: number,
-  dataRowIndices: number[],
-  dataColIndices: number[],
-  rowIdToIndex?: Map<number, number>,
-  colIdToIndex?: Map<number, number>,
-): RuntimeValue {
-  const originalName = call.name;
-  const name = originalName.toLowerCase();
-  const args = call.args;
-
-  if (name === "sum") {
-    if (args.length !== 1) return makeInternalError("invalid_function_call", { function: originalName, expectedArgs: 1, got: args.length });
-    const [argKind, argVal] = evalArgValue(
-      args[0],
-      rowIdx,
-      colIdx,
-      evalCell,
-      rowMap,
-      colMap,
-      rowCount,
-      colCount,
-      bodyStart,
-      bodyRowCount,
-      dataRowIndices,
-      dataColIndices,
-      rowIdToIndex,
-      colIdToIndex,
-    );
-    if (argKind === "error") return argVal as RuntimeValue;
-    if (argKind !== "view") return makeInternalError("invalid_function_call", { function: originalName, argumentKind: argKind });
-    return sumView(argVal as ViewSelection, evalCell);
-  }
-
-  if (name === "abs") {
-    if (args.length !== 1) return makeInternalError("invalid_function_call", { function: originalName, expectedArgs: 1, got: args.length });
-    const value = evalScalarArg(
-      args[0],
-      rowIdx,
-      colIdx,
-      evalCell,
-      rowMap,
-      colMap,
-      rowCount,
-      colCount,
-      bodyStart,
-      bodyRowCount,
-      dataRowIndices,
-      dataColIndices,
-      rowIdToIndex,
-      colIdToIndex,
-    );
-    if (isError(value)) return value;
-    if (value.kind !== "number") return makeInternalError("invalid_function_call", { function: originalName, argumentKind: value.kind });
-    return { kind: "number", value: Math.abs(value.value as number) };
-  }
-
-  if (name === "not") {
-    if (args.length !== 1) return makeInternalError("invalid_function_call", { function: originalName, expectedArgs: 1, got: args.length });
-    const value = evalScalarArg(
-      args[0],
-      rowIdx,
-      colIdx,
-      evalCell,
-      rowMap,
-      colMap,
-      rowCount,
-      colCount,
-      bodyStart,
-      bodyRowCount,
-      dataRowIndices,
-      dataColIndices,
-      rowIdToIndex,
-      colIdToIndex,
-    );
-    if (isError(value)) return value;
-    if (value.kind !== "boolean") return makeInternalError("invalid_function_call", { function: originalName, argumentKind: value.kind });
-    return { kind: "boolean", value: !value.value };
-  }
-
-  if (name === "dotproduct") {
-    if (args.length !== 2) return makeInternalError("invalid_function_call", { function: originalName, expectedArgs: 2, got: args.length });
-    const [leftKind, leftVal] = evalArgValue(
-      args[0],
-      rowIdx,
-      colIdx,
-      evalCell,
-      rowMap,
-      colMap,
-      rowCount,
-      colCount,
-      bodyStart,
-      bodyRowCount,
-      dataRowIndices,
-      dataColIndices,
-      rowIdToIndex,
-      colIdToIndex,
-    );
-    if (leftKind === "error") return leftVal as RuntimeValue;
-    const [rightKind, rightVal] = evalArgValue(
-      args[1],
-      rowIdx,
-      colIdx,
-      evalCell,
-      rowMap,
-      colMap,
-      rowCount,
-      colCount,
-      bodyStart,
-      bodyRowCount,
-      dataRowIndices,
-      dataColIndices,
-      rowIdToIndex,
-      colIdToIndex,
-    );
-    if (rightKind === "error") return rightVal as RuntimeValue;
-    if (leftKind !== "view" || rightKind !== "view") {
-      return makeInternalError("invalid_function_call", { function: originalName, leftKind, rightKind });
-    }
-    return dotProduct(leftVal as ViewSelection, rightVal as ViewSelection, evalCell);
-  }
-
-  return makeInternalError("unknown_function", { function: originalName });
-}
-
 // Evaluate an argument into either scalar or view.
 function evalArgValue(
   node: ExprNode,
@@ -859,7 +821,7 @@ function evalArgValue(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
-): [string, RuntimeValue | ViewSelection] {
+): EvaluatedArgument {
   if (node.kind === "reference") {
     const ref = node.value as ReferenceExpr;
     const view = selectViewDetailed(
@@ -878,9 +840,9 @@ function evalArgValue(
       colIdToIndex,
     );
     if (!view.ok) return ["error", makeInternalError(view.internalKind, view.context)];
-    return ["view", view.view];
+    return ["view", materializeViewSelection(view.view, evalCell)];
   }
-  const value = evalExpr(
+  const value = evalExpressionValue(
     node,
     rowIdx,
     colIdx,
@@ -896,7 +858,8 @@ function evalArgValue(
     rowIdToIndex,
     colIdToIndex,
   );
-  if (isError(value)) return ["error", value];
+  if (isExpressionError(value)) return ["error", value];
+  if (isRuntimeView(value)) return ["view", value];
   return ["scalar", value];
 }
 
@@ -935,68 +898,12 @@ function evalScalarArg(
   );
   if (kind === "error") return value as RuntimeValue;
   if (kind === "scalar") return value as RuntimeValue;
-  const view = value as ViewSelection;
-  if (view.rowIndices.length !== 1 || view.colIndices.length !== 1) {
+  const view = value as RuntimeView;
+  const scalar = runtimeViewScalarValue(view);
+  if (!scalar) {
     return makeInternalError("invalid_function_call", { function: "scalar_coercion", reason: "view_not_scalar" });
   }
-  return evalCell(view.rowIndices[0], view.colIndices[0]);
-}
-
-// Sum a view by flattening in row-major order.
-function sumView(view: ViewSelection, evalCell: (r: number, c: number) => RuntimeValue): RuntimeValue {
-  if (view.rowIndices.length === 0 || view.colIndices.length === 0) {
-    return { kind: "number", value: 0 };
-  }
-  let result: RuntimeValue = { kind: "number", value: 0 };
-  for (const r of view.rowIndices) {
-    for (const c of view.colIndices) {
-      const value = evalCell(r, c);
-      if (isError(value)) return value;
-      result = evalArithmetic("+", result, value);
-      if (isError(result)) return result;
-    }
-  }
-  return result;
-}
-
-// Collect values for a vector view (single row or single column).
-function vectorValues(view: ViewSelection, evalCell: (r: number, c: number) => RuntimeValue): RuntimeValue[] | null {
-  if (view.rowIndices.length === 1) {
-    const row = view.rowIndices[0];
-    return view.colIndices.map((c) => evalCell(row, c));
-  }
-  if (view.colIndices.length === 1) {
-    const col = view.colIndices[0];
-    return view.rowIndices.map((r) => evalCell(r, col));
-  }
-  return null;
-}
-
-// Compute dot product for two vector views.
-function dotProduct(
-  left: ViewSelection,
-  right: ViewSelection,
-  evalCell: (r: number, c: number) => RuntimeValue,
-): RuntimeValue {
-  const leftVals = vectorValues(left, evalCell);
-  const rightVals = vectorValues(right, evalCell);
-  if (!leftVals || !rightVals) return makeInternalError("invalid_function_call", { function: "dotProduct", reason: "non_vector" });
-  if (leftVals.length !== rightVals.length) {
-    return makeInternalError("invalid_function_call", { function: "dotProduct", reason: "length_mismatch" });
-  }
-
-  let total = 0;
-  for (let i = 0; i < leftVals.length; i += 1) {
-    const lVal = leftVals[i];
-    const rVal = rightVals[i];
-    if (isError(lVal)) return lVal;
-    if (isError(rVal)) return rVal;
-    if (lVal.kind !== "number" || rVal.kind !== "number") {
-      return makeInternalError("invalid_function_call", { function: "dotProduct", reason: "non_number_element" });
-    }
-    total += Number(lVal.value) * Number(rVal.value);
-  }
-  return { kind: "number", value: Number.isInteger(total) ? Math.trunc(total) : total };
+  return scalar;
 }
 
 // Parse a section marker like [Section] or [[Section]].
