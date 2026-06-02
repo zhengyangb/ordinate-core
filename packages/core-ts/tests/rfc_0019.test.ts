@@ -91,18 +91,18 @@ describe("RFC-0019 standard function library v1", () => {
     expect(cellValue(doc, "Average", "V")).toEqual({ kind: "number", value: 3 });
     expect(cellValue(doc, "Min", "V")).toEqual({ kind: "number", value: 2 });
     expect(cellValue(doc, "Max", "V")).toEqual({ kind: "number", value: 4 });
-    expect(cellValue(doc, "Count", "V")).toEqual({ kind: "number", value: 2 });
+    expect(cellValue(doc, "Count", "V")).toEqual({ kind: "number", value: 3 });
     expect(cellValue(doc, "CountA", "V")).toEqual({ kind: "number", value: 3 });
     expect(cellValue(doc, "SumSq", "V")).toEqual({ kind: "number", value: 20 });
   });
 
-  it("rejects non-numeric elements for numeric aggregates that define strict numeric input", () => {
+  it("rejects text elements for numeric aggregates", () => {
     const doc = `
 # Sheet
 | Item || V |
 | ---- || --- |
 | A    || 2 |
-| B    || true |
+| B    || text |
 | C    || = average(@[#2:#3,V]) |
 | D    || = min(@[#2:#3,V]) |
 `.trim();

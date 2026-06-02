@@ -26,9 +26,29 @@ import {
   sqrtValue,
   truncValue,
 } from "./numeric";
+import {
+  averageDeviationView,
+  correlView,
+  countBlankView,
+  covarianceView,
+  devsqView,
+  forecastValue,
+  geomeanView,
+  harmeanView,
+  largeSmallView,
+  medianView,
+  modeView,
+  percentileView,
+  quartileView,
+  rankView,
+  slopeInterceptView,
+  standardizeValue,
+  stdevView,
+  varianceView,
+} from "./statistics";
 import { dotProduct } from "./vector";
 
-export type FunctionCategory = "aggregate" | "numeric" | "logical" | "vector" | "view";
+export type FunctionCategory = "aggregate" | "numeric" | "logical" | "vector" | "view" | "statistical";
 
 export interface FunctionParameter {
   name: string;
@@ -85,32 +105,32 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "average",
     category: "aggregate",
-    summary: "Averages numeric values in a view, ignoring blanks and rejecting non-numbers.",
-    signatures: [signature([param("x", "view[d<=2]", "Numeric values to average. Blank cells are ignored.")], "number")],
+    summary: "Averages numeric-compatible values in a view, ignoring blanks.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to average. Blank cells are ignored.")], "number")],
     examples: [example("average(@[Revenue,:])")],
     evaluator: viewEvaluator((view) => averageView(view)),
   },
   {
     name: "min",
     category: "aggregate",
-    summary: "Returns the smallest numeric value in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numeric values to scan for the smallest value.")], "number")],
+    summary: "Returns the smallest numeric-compatible value in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to scan for the smallest value.")], "number")],
     examples: [example("min(@[#2:#10,#2])")],
     evaluator: viewEvaluator((view) => minMaxView(view, "min")),
   },
   {
     name: "max",
     category: "aggregate",
-    summary: "Returns the largest numeric value in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numeric values to scan for the largest value.")], "number")],
+    summary: "Returns the largest numeric-compatible value in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to scan for the largest value.")], "number")],
     examples: [example("max(@[#2:#10,#2])")],
     evaluator: viewEvaluator((view) => minMaxView(view, "max")),
   },
   {
     name: "count",
     category: "aggregate",
-    summary: "Counts numeric values in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Cells to count when their evaluated value is numeric.")], "number")],
+    summary: "Counts numeric-compatible values in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Cells to count when their evaluated value is a number or boolean.")], "number")],
     examples: [example("count(@[:,2025])")],
     evaluator: viewEvaluator((view) => countView(view, false)),
   },
@@ -125,10 +145,291 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "sumsq",
     category: "aggregate",
-    summary: "Adds the squares of numeric values in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numeric values to square and add. Blank cells are ignored.")], "number")],
+    summary: "Adds the squares of numeric-compatible values in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to square and add. Blank cells are ignored.")], "number")],
     examples: [example("sumsq(@[Values,:])")],
     evaluator: viewEvaluator((view) => sumsqView(view)),
+  },
+  {
+    name: "countblank",
+    category: "statistical",
+    summary: "Counts blank values in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Values to scan for blanks.")], "number")],
+    examples: [example("countblank(@[:,Score])")],
+    evaluator: viewEvaluator((view) => countBlankView(view)),
+  },
+  {
+    name: "median",
+    category: "statistical",
+    summary: "Returns the median numeric-compatible value in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("median(@[:,Score])")],
+    evaluator: viewEvaluator((view, _ctx, call) => medianView(view, call.name)),
+  },
+  {
+    name: "percentile",
+    category: "statistical",
+    summary: "Returns the inclusive percentile of numeric-compatible values in a view.",
+    signatures: [signature([
+      param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored."),
+      param("p", "Scalar[number]", "Percentile in the inclusive range [0, 1]."),
+    ], "number")],
+    examples: [example("percentile(@[:,Score], 0.9)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const view = expectViewArg(ctx, call.name, call.args[0]);
+      if (isError(view as RuntimeValue)) return view as RuntimeValue;
+      return percentileView(view as RuntimeView, ctx.evalScalarArg(call.args[1]), call.name);
+    },
+  },
+  {
+    name: "quartile",
+    category: "statistical",
+    summary: "Returns an inclusive quartile of numeric-compatible values in a view.",
+    signatures: [signature([
+      param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored."),
+      param("q", "Scalar[number]", "Quartile index 0, 1, 2, 3, or 4."),
+    ], "number")],
+    examples: [example("quartile(@[:,Score], 3)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const view = expectViewArg(ctx, call.name, call.args[0]);
+      if (isError(view as RuntimeValue)) return view as RuntimeValue;
+      return quartileView(view as RuntimeView, ctx.evalScalarArg(call.args[1]), call.name);
+    },
+  },
+  {
+    name: "variance",
+    aliases: ["var"],
+    category: "statistical",
+    summary: "Returns the sample variance of numeric-compatible values in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("variance(@[:,Score])"), example("var(@[:,Score])")],
+    evaluator: viewEvaluator((view, _ctx, call) => varianceView(view, true, call.name)),
+  },
+  {
+    name: "variancep",
+    aliases: ["varp"],
+    category: "statistical",
+    summary: "Returns the population variance of numeric-compatible values in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("variancep(@[:,Score])"), example("varp(@[:,Score])")],
+    evaluator: viewEvaluator((view, _ctx, call) => varianceView(view, false, call.name)),
+  },
+  {
+    name: "stdev",
+    aliases: ["stddev"],
+    category: "statistical",
+    summary: "Returns the sample standard deviation of numeric-compatible values in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("stdev(@[:,Score])"), example("stddev(@[:,Score])")],
+    evaluator: viewEvaluator((view, _ctx, call) => stdevView(view, true, call.name)),
+  },
+  {
+    name: "stdevp",
+    aliases: ["stddevp"],
+    category: "statistical",
+    summary: "Returns the population standard deviation of numeric-compatible values in a view.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("stdevp(@[:,Score])"), example("stddevp(@[:,Score])")],
+    evaluator: viewEvaluator((view, _ctx, call) => stdevView(view, false, call.name)),
+  },
+  {
+    name: "avedev",
+    category: "statistical",
+    summary: "Returns the average absolute deviation from the mean.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("avedev(@[:,Score])")],
+    evaluator: viewEvaluator((view, _ctx, call) => averageDeviationView(view, call.name)),
+  },
+  {
+    name: "devsq",
+    category: "statistical",
+    summary: "Returns the sum of squared deviations from the mean.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("devsq(@[:,Score])")],
+    evaluator: viewEvaluator((view, _ctx, call) => devsqView(view, call.name)),
+  },
+  {
+    name: "geomean",
+    category: "statistical",
+    summary: "Returns the geometric mean of positive numeric-compatible values.",
+    signatures: [signature([param("x", "view[d<=2]", "Positive numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("geomean(@[:,GrowthFactor])")],
+    evaluator: viewEvaluator((view, _ctx, call) => geomeanView(view, call.name)),
+  },
+  {
+    name: "harmean",
+    category: "statistical",
+    summary: "Returns the harmonic mean of positive numeric-compatible values.",
+    signatures: [signature([param("x", "view[d<=2]", "Positive numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("harmean(@[:,Rate])")],
+    evaluator: viewEvaluator((view, _ctx, call) => harmeanView(view, call.name)),
+  },
+  {
+    name: "large",
+    category: "statistical",
+    summary: "Returns the k-th largest numeric-compatible value in a view.",
+    signatures: [signature([
+      param("x", "view[d<=2]", "Numbers and booleans to order. Blank cells are ignored."),
+      param("k", "Scalar[number]", "One-based rank from largest to smallest."),
+    ], "number")],
+    examples: [example("large(@[:,Score], 3)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const view = expectViewArg(ctx, call.name, call.args[0]);
+      if (isError(view as RuntimeValue)) return view as RuntimeValue;
+      return largeSmallView(view as RuntimeView, ctx.evalScalarArg(call.args[1]), "large", call.name);
+    },
+  },
+  {
+    name: "small",
+    category: "statistical",
+    summary: "Returns the k-th smallest numeric-compatible value in a view.",
+    signatures: [signature([
+      param("x", "view[d<=2]", "Numbers and booleans to order. Blank cells are ignored."),
+      param("k", "Scalar[number]", "One-based rank from smallest to largest."),
+    ], "number")],
+    examples: [example("small(@[:,Score], 3)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const view = expectViewArg(ctx, call.name, call.args[0]);
+      if (isError(view as RuntimeValue)) return view as RuntimeValue;
+      return largeSmallView(view as RuntimeView, ctx.evalScalarArg(call.args[1]), "small", call.name);
+    },
+  },
+  {
+    name: "rank",
+    category: "statistical",
+    summary: "Returns the one-based rank of a value within a view.",
+    signatures: [
+      signature([
+        param("value", "Scalar[number]", "Value to rank."),
+        param("x", "view[d<=2]", "Numbers and booleans to rank against. Blank cells are ignored."),
+      ], "number"),
+      signature([
+        param("value", "Scalar[number]", "Value to rank."),
+        param("x", "view[d<=2]", "Numbers and booleans to rank against. Blank cells are ignored."),
+        param("ascending", "Scalar[number]", "Use descending rank for 0 and ascending rank for non-zero."),
+      ], "number"),
+    ],
+    examples: [example("rank(@[This,Score], @[:,Score])"), example("rank(@[This,Score], @[:,Score], 1)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 2, 3);
+      if (arityError) return arityError;
+      const value = ctx.evalScalarArg(call.args[0]);
+      if (isError(value)) return value;
+      const view = expectViewArg(ctx, call.name, call.args[1]);
+      if (isError(view as RuntimeValue)) return view as RuntimeValue;
+      const ascending = call.args.length === 3 ? ctx.evalScalarArg(call.args[2]) : null;
+      return rankView(value, view as RuntimeView, ascending, call.name);
+    },
+  },
+  {
+    name: "mode",
+    category: "statistical",
+    summary: "Returns the most frequent numeric-compatible value, using the smallest value to break ties.",
+    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    examples: [example("mode(@[:,Score])")],
+    evaluator: viewEvaluator((view, _ctx, call) => modeView(view, call.name)),
+  },
+  {
+    name: "correl",
+    aliases: ["correlation"],
+    category: "statistical",
+    summary: "Returns the Pearson correlation coefficient for two same-shape views.",
+    signatures: [signature([
+      param("x", "view[d<=2]", "First numeric-compatible view."),
+      param("y", "view[d<=2]", "Second numeric-compatible view with the same shape as x."),
+    ], "number")],
+    examples: [example("correl(@[:,Spend], @[:,Revenue])")],
+    evaluator: twoViewEvaluator((left, right, call) => correlView(left, right, call.name)),
+  },
+  {
+    name: "covariance",
+    category: "statistical",
+    summary: "Returns the sample covariance for two same-shape views.",
+    signatures: [signature([
+      param("x", "view[d<=2]", "First numeric-compatible view."),
+      param("y", "view[d<=2]", "Second numeric-compatible view with the same shape as x."),
+    ], "number")],
+    examples: [example("covariance(@[:,Spend], @[:,Revenue])")],
+    evaluator: twoViewEvaluator((left, right, call) => covarianceView(left, right, true, call.name)),
+  },
+  {
+    name: "covariancep",
+    category: "statistical",
+    summary: "Returns the population covariance for two same-shape views.",
+    signatures: [signature([
+      param("x", "view[d<=2]", "First numeric-compatible view."),
+      param("y", "view[d<=2]", "Second numeric-compatible view with the same shape as x."),
+    ], "number")],
+    examples: [example("covariancep(@[:,Spend], @[:,Revenue])")],
+    evaluator: twoViewEvaluator((left, right, call) => covarianceView(left, right, false, call.name)),
+  },
+  {
+    name: "slope",
+    category: "statistical",
+    summary: "Returns the linear-regression slope for known y values over known x values.",
+    signatures: [signature([
+      param("y", "view[d<=2]", "Known y values."),
+      param("x", "view[d<=2]", "Known x values with the same shape as y."),
+    ], "number")],
+    examples: [example("slope(@[:,Revenue], @[:,Spend])")],
+    evaluator: twoViewEvaluator((left, right, call) => slopeInterceptView(left, right, call.name)),
+  },
+  {
+    name: "intercept",
+    category: "statistical",
+    summary: "Returns the linear-regression intercept for known y values over known x values.",
+    signatures: [signature([
+      param("y", "view[d<=2]", "Known y values."),
+      param("x", "view[d<=2]", "Known x values with the same shape as y."),
+    ], "number")],
+    examples: [example("intercept(@[:,Revenue], @[:,Spend])")],
+    evaluator: twoViewEvaluator((left, right, call) => slopeInterceptView(left, right, call.name)),
+  },
+  {
+    name: "forecast",
+    category: "statistical",
+    summary: "Predicts y for x using a linear regression over known y and known x views.",
+    signatures: [signature([
+      param("x", "Scalar[number]", "Input x value to predict for."),
+      param("knownY", "view[d<=2]", "Known y values."),
+      param("knownX", "view[d<=2]", "Known x values with the same shape as knownY."),
+    ], "number")],
+    examples: [example("forecast(100, @[:,Revenue], @[:,Spend])")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 3);
+      if (arityError) return arityError;
+      const x = ctx.evalScalarArg(call.args[0]);
+      if (isError(x)) return x;
+      const knownY = expectViewArg(ctx, call.name, call.args[1]);
+      if (isError(knownY as RuntimeValue)) return knownY as RuntimeValue;
+      const knownX = expectViewArg(ctx, call.name, call.args[2]);
+      if (isError(knownX as RuntimeValue)) return knownX as RuntimeValue;
+      return forecastValue(x, knownY as RuntimeView, knownX as RuntimeView, call.name);
+    },
+  },
+  {
+    name: "standardize",
+    category: "statistical",
+    summary: "Returns the z-score for x given a mean and standard deviation.",
+    signatures: [signature([
+      param("x", "Scalar[number]", "Value to standardize."),
+      param("mean", "Scalar[number]", "Mean of the distribution."),
+      param("stdev", "Scalar[number]", "Positive standard deviation."),
+    ], "number")],
+    examples: [example("standardize(@[This,Score], average(@[:,Score]), stdev(@[:,Score]))")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 3);
+      if (arityError) return arityError;
+      return standardizeValue(ctx.evalScalarArg(call.args[0]), ctx.evalScalarArg(call.args[1]), ctx.evalScalarArg(call.args[2]), call.name);
+    },
   },
   {
     name: "filter",
@@ -434,6 +735,18 @@ function viewEvaluator(evaluate: (view: RuntimeView, ctx: FunctionEvalContext, c
     const view = expectViewArg(ctx, call.name, call.args[0]);
     if (isError(view as RuntimeValue)) return view as RuntimeValue;
     return evaluate(view as RuntimeView, ctx, call);
+  };
+}
+
+function twoViewEvaluator(evaluate: (left: RuntimeView, right: RuntimeView, call: FunctionCall, ctx: FunctionEvalContext) => RuntimeValue): FunctionEvaluator {
+  return (call, ctx) => {
+    const arityError = assertArity(call.name, call.args.length, 2);
+    if (arityError) return arityError;
+    const left = expectViewArg(ctx, call.name, call.args[0]);
+    if (isError(left as RuntimeValue)) return left as RuntimeValue;
+    const right = expectViewArg(ctx, call.name, call.args[1]);
+    if (isError(right as RuntimeValue)) return right as RuntimeValue;
+    return evaluate(left as RuntimeView, right as RuntimeView, call, ctx);
   };
 }
 

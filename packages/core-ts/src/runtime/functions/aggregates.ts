@@ -34,10 +34,11 @@ export function averageView(view: RuntimeView): RuntimeValue {
   for (const value of viewValues(view)) {
     if (isError(value)) return value;
     if (value.kind === "blank") continue;
-    if (value.kind !== "number") {
+    const numberValue = numericCompatibleValue(value);
+    if (numberValue === null) {
       return makeInternalError("invalid_function_call", { function: "average", argumentKind: value.kind });
     }
-    total += value.value as number;
+    total += numberValue;
     count += 1;
   }
   if (count === 0) {
@@ -51,10 +52,10 @@ export function minMaxView(view: RuntimeView, op: "min" | "max"): RuntimeValue {
   for (const value of viewValues(view)) {
     if (isError(value)) return value;
     if (value.kind === "blank") continue;
-    if (value.kind !== "number") {
+    const numberValue = numericCompatibleValue(value);
+    if (numberValue === null) {
       return makeInternalError("invalid_function_call", { function: op, argumentKind: value.kind });
     }
-    const numberValue = value.value as number;
     result = result === null ? numberValue : op === "min" ? Math.min(result, numberValue) : Math.max(result, numberValue);
   }
   if (result === null) {
@@ -69,7 +70,7 @@ export function countView(view: RuntimeView, includeAnyNonBlank: boolean): Runti
     if (isError(value)) return value;
     if (includeAnyNonBlank) {
       if (value.kind !== "blank") count += 1;
-    } else if (value.kind === "number") {
+    } else if (numericCompatibleValue(value) !== null) {
       count += 1;
     }
   }
@@ -100,10 +101,11 @@ export function sumsqView(view: RuntimeView): RuntimeValue {
   for (const value of viewValues(view)) {
     if (isError(value)) return value;
     if (value.kind === "blank") continue;
-    if (value.kind !== "number") {
+    const numberValue = numericCompatibleValue(value);
+    if (numberValue === null) {
       return makeInternalError("invalid_function_call", { function: "sumsq", argumentKind: value.kind });
     }
-    total += (value.value as number) ** 2;
+    total += numberValue ** 2;
   }
   return { kind: "number", value: total };
 }
@@ -114,6 +116,12 @@ export function viewValues(view: RuntimeView): RuntimeValue[] {
 
 function isEmptyView(view: RuntimeView): boolean {
   return view.rowCount === 0 || view.colCount === 0;
+}
+
+function numericCompatibleValue(value: RuntimeValue): number | null {
+  if (value.kind === "number") return value.value as number;
+  if (value.kind === "boolean") return value.value ? 1 : 0;
+  return null;
 }
 
 function gcd2(a: number, b: number): number {
