@@ -5,6 +5,7 @@ export type EvaluatedArgument = ["error" | "scalar" | "view", RuntimeValue | Run
 
 export type FunctionEvalContext = {
   evalArgValue: (node: ExprNode) => EvaluatedArgument;
+  evalRawArgValue: (node: ExprNode) => EvaluatedArgument;
   evalScalarArg: (node: ExprNode) => RuntimeValue;
   evalCell: (rowIndex: number, colIndex: number) => RuntimeValue;
 };

@@ -10,7 +10,7 @@ import {
   sumView,
 } from "./aggregates";
 import { assertArity, assertArityRange, expectBooleanArg, expectNumberArg, expectViewArg, type FunctionEvalContext } from "./args";
-import { booleanAggregateView, notValue } from "./boolean";
+import { booleanAggregateView, notValue, notView } from "./boolean";
 import { filterView } from "./filter";
 import {
   absValue,
@@ -46,9 +46,37 @@ import {
   stdevView,
   varianceView,
 } from "./statistics";
+import {
+  booleanValue,
+  evaluateTypeConversion,
+  evaluateTypePredicate,
+  isBlankValue,
+  isBooleanValue,
+  isErrorValue,
+  isNullValue,
+  isNumberValue,
+  isTextValue,
+  numberValue,
+  textValue,
+} from "./typePredicates";
+import {
+  containsText,
+  endsWithText,
+  evaluateTextBinary,
+  evaluateTextSlice,
+  evaluateTextTernary,
+  evaluateTextUnary,
+  joinTextView,
+  lenText,
+  lowerText,
+  replaceText,
+  startsWithText,
+  trimText,
+  upperText,
+} from "./text";
 import { dotProduct } from "./vector";
 
-export type FunctionCategory = "aggregate" | "numeric" | "logical" | "vector" | "view" | "statistical";
+export type FunctionCategory = "aggregate" | "numeric" | "logical" | "vector" | "view" | "statistical" | "type" | "text";
 
 export interface FunctionParameter {
   name: string;
@@ -105,7 +133,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "average",
     category: "aggregate",
-    summary: "Averages numeric-compatible values in a view, ignoring blanks.",
+    summary: "Averages numeric-compatible values in a view, ignoring blanks. For non-error, non-empty numeric-compatible inputs, this is equivalent to sum(x) / count(x).",
     signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to average. Blank cells are ignored.")], "number")],
     examples: [example("average(@[Revenue,:])")],
     evaluator: viewEvaluator((view) => averageView(view)),
@@ -129,7 +157,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "count",
     category: "aggregate",
-    summary: "Counts numeric-compatible values in a view.",
+    summary: "Counts numeric-compatible values in a view. For non-error inputs, this is equivalent to sum(isNumber(x)) + sum(isBoolean(x)).",
     signatures: [signature([param("x", "view[d<=2]", "Cells to count when their evaluated value is a number or boolean.")], "number")],
     examples: [example("count(@[:,2025])")],
     evaluator: viewEvaluator((view) => countView(view, false)),
@@ -137,7 +165,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "counta",
     category: "aggregate",
-    summary: "Counts non-blank values in a view.",
+    summary: "Counts non-blank values in a view. For non-error inputs, this is equivalent to sum(not(isBlank(x))).",
     signatures: [signature([param("x", "view[d<=2]", "Cells to count when their evaluated value is not blank.")], "number")],
     examples: [example("counta(@[:,2025])")],
     evaluator: viewEvaluator((view) => countView(view, true)),
@@ -153,7 +181,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "countblank",
     category: "statistical",
-    summary: "Counts blank values in a view.",
+    summary: "Counts blank values in a view. For non-error inputs, this is equivalent to sum(isBlank(x)).",
     signatures: [signature([param("x", "view[d<=2]", "Values to scan for blanks.")], "number")],
     examples: [example("countblank(@[:,Score])")],
     evaluator: viewEvaluator((view) => countBlankView(view)),
@@ -452,19 +480,251 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   },
   {
     name: "and",
+    aliases: ["all"],
     category: "logical",
-    summary: "Returns true when every boolean value in a view is true.",
+    summary: "Returns true when every boolean value in a view is true. all(x) is an alias for and(x).",
     signatures: [signature([param("x", "view[d<=2]", "Boolean values that must all evaluate to true.")], "boolean")],
-    examples: [example("and(@[Flags,:])")],
+    examples: [example("and(@[Flags,:])"), example("all(@[Flags,:])")],
     evaluator: viewEvaluator((view) => booleanAggregateView(view, "and")),
   },
   {
     name: "or",
+    aliases: ["any"],
     category: "logical",
-    summary: "Returns true when at least one boolean value in a view is true.",
+    summary: "Returns true when at least one boolean value in a view is true. any(x) is an alias for or(x).",
     signatures: [signature([param("x", "view[d<=2]", "Boolean values where at least one value must evaluate to true.")], "boolean")],
-    examples: [example("or(@[Flags,:])")],
+    examples: [example("or(@[Flags,:])"), example("any(@[Flags,:])")],
     evaluator: viewEvaluator((view) => booleanAggregateView(view, "or")),
+  },
+  {
+    name: "isNumber",
+    category: "type",
+    summary: "Returns true for numbers and false for every other runtime value.",
+    signatures: [
+      signature([param("x", "value", "Value to inspect.")], "boolean"),
+      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("isNumber(@[:,Score])")],
+    evaluator: typePredicateEvaluator(isNumberValue),
+  },
+  {
+    name: "isText",
+    aliases: ["isString"],
+    category: "type",
+    summary: "Returns true for text strings and false for every other runtime value.",
+    signatures: [
+      signature([param("x", "value", "Value to inspect.")], "boolean"),
+      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("isText(@[:,Code])")],
+    evaluator: typePredicateEvaluator(isTextValue),
+  },
+  {
+    name: "isBoolean",
+    category: "type",
+    summary: "Returns true for booleans and false for every other runtime value.",
+    signatures: [
+      signature([param("x", "value", "Value to inspect.")], "boolean"),
+      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("isBoolean(@[:,Flag])")],
+    evaluator: typePredicateEvaluator(isBooleanValue),
+  },
+  {
+    name: "isBlank",
+    category: "type",
+    summary: "Returns true for blank values and false for every other runtime value.",
+    signatures: [
+      signature([param("x", "value", "Value to inspect.")], "boolean"),
+      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("isBlank(@[:,Optional])")],
+    evaluator: typePredicateEvaluator(isBlankValue),
+  },
+  {
+    name: "isNull",
+    category: "type",
+    summary: "Returns true for null values and false for every other runtime value.",
+    signatures: [
+      signature([param("x", "value", "Value to inspect.")], "boolean"),
+      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("isNull(@[:,Value])")],
+    evaluator: typePredicateEvaluator(isNullValue),
+  },
+  {
+    name: "isError",
+    category: "type",
+    summary: "Returns true for error values and false for every other runtime value.",
+    signatures: [
+      signature([param("x", "value", "Value to inspect.")], "boolean"),
+      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("isError(@[:,Value])")],
+    evaluator: typePredicateEvaluator(isErrorValue),
+  },
+  {
+    name: "number",
+    category: "type",
+    summary: "Explicitly converts a value to a number.",
+    signatures: [
+      signature([param("x", "value", "Value to convert.")], "number"),
+      signature([param("x", "view[d<=2]", "Values to convert element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("number(\"12.5\")"), example("average(number(@[:,ImportedAmount]))")],
+    evaluator: typeConversionEvaluator(numberValue),
+  },
+  {
+    name: "text",
+    category: "type",
+    summary: "Explicitly converts a value to text.",
+    signatures: [
+      signature([param("x", "value", "Value to convert.")], "string"),
+      signature([param("x", "view[d<=2]", "Values to convert element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("\"SKU-\" + text(@[:,Code])")],
+    evaluator: typeConversionEvaluator(textValue),
+  },
+  {
+    name: "boolean",
+    category: "type",
+    summary: "Explicitly converts a value to a boolean.",
+    signatures: [
+      signature([param("x", "value", "Value to convert.")], "boolean"),
+      signature([param("x", "view[d<=2]", "Values to convert element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("boolean(\"true\")")],
+    evaluator: typeConversionEvaluator(booleanValue),
+  },
+  {
+    name: "len",
+    category: "text",
+    summary: "Returns the number of characters in text. For views, applies element-wise to text values; it does not return view cardinality.",
+    signatures: [
+      signature([param("x", "Scalar[string]", "Text whose character count should be returned.")], "number"),
+      signature([param("x", "view[d<=2]", "Text values whose character counts should be returned element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("len(\"hello\")", "5"), example("len(@[:,Name])")],
+    evaluator: textUnaryEvaluator(lenText),
+  },
+  {
+    name: "lower",
+    category: "text",
+    summary: "Converts text to lowercase. For views, applies element-wise to text values.",
+    signatures: [
+      signature([param("x", "Scalar[string]", "Text to convert to lowercase.")], "string"),
+      signature([param("x", "view[d<=2]", "Text values to convert element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("lower(\"ABC\")", "\"abc\""), example("lower(@[:,Name])")],
+    evaluator: textUnaryEvaluator(lowerText),
+  },
+  {
+    name: "upper",
+    category: "text",
+    summary: "Converts text to uppercase. For views, applies element-wise to text values.",
+    signatures: [
+      signature([param("x", "Scalar[string]", "Text to convert to uppercase.")], "string"),
+      signature([param("x", "view[d<=2]", "Text values to convert element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("upper(\"abc\")", "\"ABC\""), example("upper(@[:,Code])")],
+    evaluator: textUnaryEvaluator(upperText),
+  },
+  {
+    name: "trim",
+    category: "text",
+    summary: "Removes leading and trailing whitespace from text. For views, applies element-wise to text values.",
+    signatures: [
+      signature([param("x", "Scalar[string]", "Text to trim.")], "string"),
+      signature([param("x", "view[d<=2]", "Text values to trim element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("trim(\"  abc  \")", "\"abc\""), example("trim(@[:,Name])")],
+    evaluator: textUnaryEvaluator(trimText),
+  },
+  {
+    name: "contains",
+    category: "text",
+    summary: "Returns true when text contains the case-sensitive search text. View arguments broadcast scalars and require exact shape matches.",
+    signatures: [signature([
+      param("text", "Scalar[string] | view[d<=2]", "Text to search."),
+      param("search", "Scalar[string] | view[d<=2]", "Case-sensitive search text."),
+    ], "boolean | view[d<=2]")],
+    examples: [example("contains(\"abc\", \"b\")", "true"), example("contains(lower(@[:,Name]), \"smith\")")],
+    evaluator: textBinaryEvaluator(containsText),
+  },
+  {
+    name: "startsWith",
+    category: "text",
+    summary: "Returns true when text starts with the case-sensitive prefix. View arguments broadcast scalars and require exact shape matches.",
+    signatures: [signature([
+      param("text", "Scalar[string] | view[d<=2]", "Text to inspect."),
+      param("prefix", "Scalar[string] | view[d<=2]", "Case-sensitive prefix."),
+    ], "boolean | view[d<=2]")],
+    examples: [example("startsWith(\"A-001\", \"A-\")", "true"), example("startsWith(@[:,Code], \"A-\")")],
+    evaluator: textBinaryEvaluator(startsWithText),
+  },
+  {
+    name: "endsWith",
+    category: "text",
+    summary: "Returns true when text ends with the case-sensitive suffix. View arguments broadcast scalars and require exact shape matches.",
+    signatures: [signature([
+      param("text", "Scalar[string] | view[d<=2]", "Text to inspect."),
+      param("suffix", "Scalar[string] | view[d<=2]", "Case-sensitive suffix."),
+    ], "boolean | view[d<=2]")],
+    examples: [example("endsWith(\"report.csv\", \".csv\")", "true"), example("endsWith(@[:,File], \".csv\")")],
+    evaluator: textBinaryEvaluator(endsWithText),
+  },
+  {
+    name: "replace",
+    category: "text",
+    summary: "Replaces all literal case-sensitive search text with replacement text. View arguments broadcast scalars and require exact shape matches.",
+    signatures: [signature([
+      param("text", "Scalar[string] | view[d<=2]", "Text to edit."),
+      param("search", "Scalar[string] | view[d<=2]", "Non-empty literal text to replace."),
+      param("replacement", "Scalar[string] | view[d<=2]", "Replacement text."),
+    ], "string | view[d<=2]")],
+    examples: [example("replace(\"a-b-c\", \"-\", \":\")", "\"a:b:c\""), example("replace(@[:,Code], \" \", \"-\")")],
+    evaluator: textTernaryEvaluator(replaceText),
+  },
+  {
+    name: "slice",
+    category: "text",
+    summary: "Returns a zero-based, end-exclusive text slice. Negative indexes count from the end. For views, applies element-wise to text values.",
+    signatures: [
+      signature([
+        param("text", "Scalar[string] | view[d<=2]", "Text to slice."),
+        param("start", "Scalar[number]", "Zero-based start index. Negative values count from the end."),
+      ], "string | view[d<=2]"),
+      signature([
+        param("text", "Scalar[string] | view[d<=2]", "Text to slice."),
+        param("start", "Scalar[number]", "Zero-based start index. Negative values count from the end."),
+        param("end", "Scalar[number]", "Exclusive end index. Negative values count from the end."),
+      ], "string | view[d<=2]"),
+    ],
+    examples: [example("slice(\"abcdef\", 1, 4)", "\"bcd\""), example("slice(@[:,Code], 0, 3)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 2, 3);
+      if (arityError) return arityError;
+      return evaluateTextSlice(ctx, call.name, call.args[0], call.args[1], call.args.length === 3 ? call.args[2] : null);
+    },
+  },
+  {
+    name: "join",
+    category: "text",
+    summary: "Flattens a text view in row-major order and joins the values with a text separator.",
+    signatures: [signature([
+      param("separator", "Scalar[string]", "Text inserted between joined values."),
+      param("x", "view[d<=2]", "Text values to join in row-major order."),
+    ], "string")],
+    examples: [example("join(\", \", @[:,Tag])"), example("join(\"-\", text(@[:,Id]))")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const separator = ctx.evalScalarArg(call.args[0]);
+      if (isError(separator)) return separator;
+      const view = expectViewArg(ctx, call.name, call.args[1]);
+      if (isError(view as RuntimeValue)) return view as RuntimeValue;
+      return joinTextView(separator, view as RuntimeView, call.name);
+    },
   },
   {
     name: "abs",
@@ -632,13 +892,19 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "not",
     category: "logical",
-    summary: "Returns the logical negation of a boolean value.",
-    signatures: [signature([param("x", "Scalar[boolean]", "Boolean value to invert.")], "boolean")],
-    examples: [example("not(true)", "false")],
+    summary: "Returns the logical negation of a boolean value or boolean view.",
+    signatures: [
+      signature([param("x", "Scalar[boolean]", "Boolean value to invert.")], "boolean"),
+      signature([param("x", "view[d<=2]", "Boolean values to invert element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("not(true)", "false"), example("not(isNumber(@[:,Score]))")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 1);
       if (arityError) return arityError;
-      return notValue(expectBooleanArg(ctx, call.name, call.args[0]), call.name);
+      const [kind, value] = ctx.evalArgValue(call.args[0]);
+      if (kind === "error") return value as RuntimeValue;
+      if (kind === "view") return notView(value as RuntimeView, call.name);
+      return notValue(value as RuntimeValue, call.name);
     },
   },
   {
@@ -747,6 +1013,46 @@ function twoViewEvaluator(evaluate: (left: RuntimeView, right: RuntimeView, call
     const right = expectViewArg(ctx, call.name, call.args[1]);
     if (isError(right as RuntimeValue)) return right as RuntimeValue;
     return evaluate(left as RuntimeView, right as RuntimeView, call, ctx);
+  };
+}
+
+function typePredicateEvaluator(predicate: (value: RuntimeValue) => boolean): FunctionEvaluator {
+  return (call, ctx) => {
+    const arityError = assertArity(call.name, call.args.length, 1);
+    if (arityError) return arityError;
+    return evaluateTypePredicate(ctx, call.args[0], predicate);
+  };
+}
+
+function typeConversionEvaluator(convert: (value: RuntimeValue, functionName: string) => RuntimeValue): FunctionEvaluator {
+  return (call, ctx) => {
+    const arityError = assertArity(call.name, call.args.length, 1);
+    if (arityError) return arityError;
+    return evaluateTypeConversion(ctx, call.name, call.args[0], convert);
+  };
+}
+
+function textUnaryEvaluator(evaluate: (value: string) => RuntimeValue): FunctionEvaluator {
+  return (call, ctx) => {
+    const arityError = assertArity(call.name, call.args.length, 1);
+    if (arityError) return arityError;
+    return evaluateTextUnary(ctx, call.name, call.args[0], evaluate);
+  };
+}
+
+function textBinaryEvaluator(evaluate: (left: string, right: string) => RuntimeValue): FunctionEvaluator {
+  return (call, ctx) => {
+    const arityError = assertArity(call.name, call.args.length, 2);
+    if (arityError) return arityError;
+    return evaluateTextBinary(ctx, call.name, call.args[0], call.args[1], evaluate);
+  };
+}
+
+function textTernaryEvaluator(evaluate: (text: string, search: string, replacement: string, functionName: string) => RuntimeValue): FunctionEvaluator {
+  return (call, ctx) => {
+    const arityError = assertArity(call.name, call.args.length, 3);
+    if (arityError) return arityError;
+    return evaluateTextTernary(ctx, call.name, call.args[0], call.args[1], call.args[2], evaluate);
   };
 }
 

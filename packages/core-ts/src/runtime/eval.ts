@@ -248,6 +248,23 @@ function evalExpressionValue(
           rowIdToIndex,
           colIdToIndex,
         ),
+      evalRawArgValue: (arg) =>
+        evalRawArgValue(
+          arg,
+          rowIdx,
+          colIdx,
+          evalCell,
+          rowMap,
+          colMap,
+          rowCount,
+          colCount,
+          bodyStart,
+          bodyRowCount,
+          dataRowIndices,
+          dataColIndices,
+          rowIdToIndex,
+          colIdToIndex,
+        ),
       evalScalarArg: (arg) =>
         evalScalarArg(
           arg,
@@ -859,6 +876,61 @@ function evalArgValue(
     colIdToIndex,
   );
   if (isExpressionError(value)) return ["error", value];
+  if (isRuntimeView(value)) return ["view", value];
+  return ["scalar", value];
+}
+
+// Evaluate an argument without treating scalar errors as function-call failures.
+function evalRawArgValue(
+  node: ExprNode,
+  rowIdx: number,
+  colIdx: number,
+  evalCell: (r: number, c: number) => RuntimeValue,
+  rowMap: Map<string, number[]>,
+  colMap: Map<string, number[]>,
+  rowCount: number,
+  colCount: number,
+  bodyStart: number,
+  bodyRowCount: number,
+  dataRowIndices: number[],
+  dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
+): EvaluatedArgument {
+  if (node.kind === "reference") {
+    return evalArgValue(
+      node,
+      rowIdx,
+      colIdx,
+      evalCell,
+      rowMap,
+      colMap,
+      rowCount,
+      colCount,
+      bodyStart,
+      bodyRowCount,
+      dataRowIndices,
+      dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
+    );
+  }
+  const value = evalExpressionValue(
+    node,
+    rowIdx,
+    colIdx,
+    evalCell,
+    rowMap,
+    colMap,
+    rowCount,
+    colCount,
+    bodyStart,
+    bodyRowCount,
+    dataRowIndices,
+    dataColIndices,
+    rowIdToIndex,
+    colIdToIndex,
+  );
   if (isRuntimeView(value)) return ["view", value];
   return ["scalar", value];
 }

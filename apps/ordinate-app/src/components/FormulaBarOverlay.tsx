@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { getStandardFunctionMetadata, listStandardFunctionMetadata, type FunctionMetadata } from "@ordinate/core";
 
 import type { UiLocale } from "../i18n/messages";
+import { getFormulaFunctionCategoryLabel } from "../i18n/formulaAssistant";
 import {
   classifyDisplayMetadataIssue,
   formatDisplayMetadataErrorMessage,
@@ -262,16 +263,9 @@ function iconForFormulaAssistant(category: FunctionMetadata["category"]): string
   return "ƒ";
 }
 
-function categoryLabelForFormulaAssistant(category: FunctionMetadata["category"]): string {
-  if (category === "aggregate") return "Aggregate";
-  if (category === "numeric") return "Math";
-  if (category === "logical") return "Logic";
-  return "Vector";
-}
-
-function summaryLabelForFormulaAssistant(metadata: FunctionMetadata): string {
+function summaryLabelForFormulaAssistant(locale: UiLocale, metadata: FunctionMetadata): string {
   const firstSentence = metadata.summary.split(/[.;]/, 1)[0]?.trim();
-  return firstSentence || categoryLabelForFormulaAssistant(metadata.category);
+  return firstSentence || getFormulaFunctionCategoryLabel(locale, metadata.category);
 }
 
 function buildFunctionSuggestions(functions: readonly FunctionMetadata[], query: string): FormulaFunctionSuggestion[] {
@@ -1994,8 +1988,8 @@ export default function FormulaBarOverlay({
                               </span>
                               <span className="formula-assistant-option-name">{suggestion.displayName}</span>
                             </span>
-                            <span className="formula-assistant-option-summary">{summaryLabelForFormulaAssistant(suggestion.metadata)}</span>
-                            <span className="formula-assistant-option-category">{categoryLabelForFormulaAssistant(suggestion.metadata.category)}</span>
+                            <span className="formula-assistant-option-summary">{summaryLabelForFormulaAssistant(locale, suggestion.metadata)}</span>
+                            <span className="formula-assistant-option-category">{getFormulaFunctionCategoryLabel(locale, suggestion.metadata.category)}</span>
                           </button>
                         ))
                       ) : (

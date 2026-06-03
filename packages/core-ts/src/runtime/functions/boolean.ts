@@ -1,5 +1,6 @@
 import { isError, makeInternalError } from "../errors";
 import type { RuntimeValue, RuntimeView } from "../types";
+import { makeRuntimeView } from "../view";
 import { viewValues } from "./aggregates";
 
 export function notValue(value: RuntimeValue, functionName: string): RuntimeValue {
@@ -24,4 +25,14 @@ export function booleanAggregateView(view: RuntimeView, op: "and" | "or"): Runti
     }
   }
   return { kind: "boolean", value: result };
+}
+
+export function notView(view: RuntimeView, functionName: string): RuntimeValue | RuntimeView {
+  const values: RuntimeValue[] = [];
+  for (const value of viewValues(view)) {
+    const mapped = notValue(value, functionName);
+    if (isError(mapped)) return mapped;
+    values.push(mapped);
+  }
+  return makeRuntimeView(view.dimension, view.rowCount, view.colCount, values);
 }
