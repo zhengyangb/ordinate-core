@@ -7,6 +7,7 @@ export type FunctionEvalContext = {
   evalArgValue: (node: ExprNode) => EvaluatedArgument;
   evalRawArgValue: (node: ExprNode) => EvaluatedArgument;
   evalScalarArg: (node: ExprNode) => RuntimeValue;
+  evalExpressionValue: (node: ExprNode) => RuntimeValue | RuntimeView;
   evalCell: (rowIndex: number, colIndex: number) => RuntimeValue;
 };
 

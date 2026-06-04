@@ -1,5 +1,5 @@
 import { isError, isValidExternalErrorKind } from "./errors";
-import type { ExprNode, ReferenceExpr, RefSelector, RuntimeValue } from "./types";
+import type { ExprNode, IndexAxisExpr, IndexExpr, ReferenceExpr, RefSelector, RuntimeValue } from "./types";
 
 export type FormulaRenderContext = {
   rowLabelPathsByIndex?: string[][];
@@ -42,6 +42,14 @@ export function renderFormulaExpression(
     const args = call.args.map((arg) => renderFormulaExpression(arg, rowIdToIndex, colIdToIndex, context) ?? "error[generic]");
     return `${call.name}(${args.join(", ")})`;
   }
+  if (node.kind === "index") {
+    const index = node.value as IndexExpr;
+    const target =
+      renderFormulaExpression(index.target, rowIdToIndex, colIdToIndex, context, precedence("postfix")) ?? "error[generic]";
+    const axes = index.axes.map((axis) => renderIndexAxis(axis, rowIdToIndex, colIdToIndex, context));
+    const text = `${target}[${axes.join(", ")}]`;
+    return parentPrec > precedence("postfix") ? `(${text})` : text;
+  }
   if (node.kind === "unary") {
     const inner =
       renderFormulaExpression(node.right ?? null, rowIdToIndex, colIdToIndex, context, precedence("unary")) ?? "error[generic]";
@@ -60,12 +68,27 @@ export function renderFormulaExpression(
 }
 
 function precedence(op: string): number {
+  if (op === "postfix") return 5;
   if (op === "unary") return 4;
   if (op === "*" || op === "/") return 3;
   if (op === "+" || op === "-") return 2;
   if (op === "<" || op === "<=" || op === ">" || op === ">=") return 1;
   if (op === "==" || op === "!=") return 0;
   return 0;
+}
+
+function renderIndexAxis(
+  axis: IndexAxisExpr,
+  rowIdToIndex: Map<number, number>,
+  colIdToIndex: Map<number, number>,
+  context: FormulaRenderContext,
+): string {
+  if (axis.kind === "scalar") {
+    return renderFormulaExpression(axis.value, rowIdToIndex, colIdToIndex, context) ?? "error[generic]";
+  }
+  const start = axis.start ? renderFormulaExpression(axis.start, rowIdToIndex, colIdToIndex, context) ?? "error[generic]" : "";
+  const end = axis.end ? renderFormulaExpression(axis.end, rowIdToIndex, colIdToIndex, context) ?? "error[generic]" : "";
+  return `${start}:${end}`;
 }
 
 function renderSelector(selector: RefSelector, idToIndex: Map<number, number>, labelsByIndex?: string[][]): string {

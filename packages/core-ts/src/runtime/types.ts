@@ -110,6 +110,22 @@ export interface FunctionCall {
   args: ExprNode[];
 }
 
+export type IndexAxisExpr =
+  | {
+      kind: "scalar";
+      value: ExprNode;
+    }
+  | {
+      kind: "slice";
+      start: ExprNode | null;
+      end: ExprNode | null;
+    };
+
+export interface IndexExpr {
+  target: ExprNode;
+  axes: IndexAxisExpr[];
+}
+
 export interface ExprNode {
   kind: string;
   value?: unknown;

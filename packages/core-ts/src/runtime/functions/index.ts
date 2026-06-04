@@ -1,4 +1,5 @@
 import { isError, makeInternalError } from "../errors";
+import { viewIndexFunction } from "../indexing";
 import type { FunctionCall, RuntimeValue, RuntimeView } from "../types";
 import {
   averageView,
@@ -479,22 +480,76 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     },
   },
   {
+    name: "index",
+    category: "view",
+    summary: "Returns a scalar value from a view using zero-based indexes. Negative indexes count from the end.",
+    signatures: [
+      signature([
+        param("x", "view[d<=1]", "Scalar-shaped or one-dimensional view to index in row-major order."),
+        param("n", "Scalar[number]", "Zero-based index. Negative values count from the end."),
+      ], "value"),
+      signature([
+        param("x", "view[d<=2]", "View to index by row and column."),
+        param("row", "Scalar[number]", "Zero-based row index. Negative values count from the end."),
+        param("col", "Scalar[number]", "Zero-based column index. Negative values count from the end."),
+      ], "value"),
+    ],
+    examples: [example("index(@[:,Name], 0)"), example("index(@[:,Revenue:Cost], 0, 1)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 2, 3);
+      if (arityError) return arityError;
+      const view = expectViewArg(ctx, call.name, call.args[0]);
+      if (isError(view as RuntimeValue)) return view as RuntimeValue;
+      const indexes = call.args.slice(1).map((arg) => ctx.evalScalarArg(arg));
+      const indexError = indexes.find((value) => isError(value));
+      if (indexError) return indexError;
+      return viewIndexFunction(view as RuntimeView, indexes, call.name);
+    },
+  },
+  {
     name: "and",
     aliases: ["all"],
     category: "logical",
-    summary: "Returns true when every boolean value in a view is true. all(x) is an alias for and(x).",
-    signatures: [signature([param("x", "view[d<=2]", "Boolean values that must all evaluate to true.")], "boolean")],
-    examples: [example("and(@[Flags,:])"), example("all(@[Flags,:])")],
-    evaluator: viewEvaluator((view) => booleanAggregateView(view, "and")),
+    summary: "Returns true when every evaluated boolean operand is true. Scalar operands are evaluated lazily left to right; all(x) is an alias for and(x).",
+    signatures: [
+      signature([param("x", "view[d<=2]", "Boolean values that must all evaluate to true.")], "boolean"),
+      signature([param("a, b, ...", "Scalar[boolean]", "Boolean operands evaluated lazily from left to right.")], "boolean"),
+    ],
+    examples: [example("and(@[Flags,:])"), example("and(isNumber(x), number(x) > 0)"), example("all(@[Flags,:])")],
+    evaluator: lazyLogicalEvaluator("and"),
   },
   {
     name: "or",
     aliases: ["any"],
     category: "logical",
-    summary: "Returns true when at least one boolean value in a view is true. any(x) is an alias for or(x).",
-    signatures: [signature([param("x", "view[d<=2]", "Boolean values where at least one value must evaluate to true.")], "boolean")],
-    examples: [example("or(@[Flags,:])"), example("any(@[Flags,:])")],
-    evaluator: viewEvaluator((view) => booleanAggregateView(view, "or")),
+    summary: "Returns true when at least one evaluated boolean operand is true. Scalar operands are evaluated lazily left to right; any(x) is an alias for or(x).",
+    signatures: [
+      signature([param("x", "view[d<=2]", "Boolean values where at least one value must evaluate to true.")], "boolean"),
+      signature([param("a, b, ...", "Scalar[boolean]", "Boolean operands evaluated lazily from left to right.")], "boolean"),
+    ],
+    examples: [example("or(@[Flags,:])"), example("or(isBlank(x), len(x) == 0)"), example("any(@[Flags,:])")],
+    evaluator: lazyLogicalEvaluator("or"),
+  },
+  {
+    name: "if",
+    category: "logical",
+    summary: "Lazy conditional special form. Evaluates condition first, then evaluates only the selected branch.",
+    signatures: [signature([
+      param("condition", "Scalar[boolean]", "Boolean condition used to choose a branch."),
+      param("thenValue", "expression", "Expression evaluated only when condition is true."),
+      param("elseValue", "expression", "Expression evaluated only when condition is false."),
+    ], "value")],
+    examples: [example("if(isNumber(@[This,Score]), number(@[This,Score]), 0)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 3);
+      if (arityError) return arityError;
+      const condition = ctx.evalScalarArg(call.args[0]);
+      if (isError(condition)) return condition;
+      if (condition.kind !== "boolean") {
+        return makeInternalError("invalid_function_call", { function: call.name, argument: "condition", argumentKind: condition.kind });
+      }
+      return ctx.evalExpressionValue(condition.value ? call.args[1] : call.args[2]);
+    },
   },
   {
     name: "isNumber",
@@ -1030,6 +1085,40 @@ function typeConversionEvaluator(convert: (value: RuntimeValue, functionName: st
     if (arityError) return arityError;
     return evaluateTypeConversion(ctx, call.name, call.args[0], convert);
   };
+}
+
+function lazyLogicalEvaluator(op: "and" | "or"): FunctionEvaluator {
+  return (call, ctx) => {
+    if (call.args.length < 1) {
+      return makeInternalError("invalid_function_call", { function: call.name, minArgs: 1, got: call.args.length });
+    }
+
+    if (call.args.length === 1) {
+      const [kind, value] = ctx.evalArgValue(call.args[0]);
+      if (kind === "error") return value as RuntimeValue;
+      if (kind === "view") return booleanAggregateView(value as RuntimeView, op);
+      return requireBooleanScalar(value as RuntimeValue, call.name);
+    }
+
+    for (const arg of call.args) {
+      const value = ctx.evalScalarArg(arg);
+      if (isError(value)) return value;
+      const booleanValue = requireBooleanScalar(value, call.name);
+      if (isError(booleanValue)) return booleanValue;
+      const rawBoolean = booleanValue.value as boolean;
+      if (op === "and" && !rawBoolean) return { kind: "boolean", value: false };
+      if (op === "or" && rawBoolean) return { kind: "boolean", value: true };
+    }
+
+    return { kind: "boolean", value: op === "and" };
+  };
+}
+
+function requireBooleanScalar(value: RuntimeValue, functionName: string): RuntimeValue {
+  if (value.kind !== "boolean") {
+    return makeInternalError("invalid_function_call", { function: functionName, argumentKind: value.kind });
+  }
+  return value;
 }
 
 function textUnaryEvaluator(evaluate: (value: string) => RuntimeValue): FunctionEvaluator {

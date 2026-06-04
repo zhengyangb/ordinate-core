@@ -3,6 +3,7 @@ import {
   type ExprNode,
   type FormatSpec,
   type FunctionCall,
+  type IndexAxisExpr,
   type ParsedDisplayMetadata,
   type ParsedCell,
   type CellBodyState,
@@ -267,6 +268,7 @@ function parseExpression(text: string): ExprNode {
 function tokenizeExpr(text: string): [string, string][] {
   const out: [string, string][] = [];
   let i = 0;
+  let indexBracketDepth = 0;
   while (i < text.length) {
     const ch = text[i];
     if (/\s/.test(ch)) {
@@ -278,8 +280,20 @@ function tokenizeExpr(text: string): [string, string][] {
       i += 2;
       continue;
     }
-    if ("()+-*/,".includes(ch)) {
+    if ("()+-*/,:".includes(ch)) {
       out.push([ch, ch]);
+      i += 1;
+      continue;
+    }
+    if (ch === "[") {
+      out.push(["[", "["]);
+      indexBracketDepth += 1;
+      i += 1;
+      continue;
+    }
+    if (ch === "]") {
+      out.push(["]", "]"]);
+      indexBracketDepth = Math.max(0, indexBracketDepth - 1);
       i += 1;
       continue;
     }
@@ -355,7 +369,7 @@ function tokenizeExpr(text: string): [string, string][] {
       i = nextIndex;
       continue;
     }
-    const spreadsheetToken = scanSpreadsheetToken(text, i);
+    const spreadsheetToken = indexBracketDepth === 0 ? scanSpreadsheetToken(text, i) : null;
     if (spreadsheetToken) {
       out.push(["SPREF", spreadsheetToken.text]);
       i = spreadsheetToken.next;
@@ -506,11 +520,66 @@ class ExprParser {
   }
 
   private parsePower(): ExprNode {
-    const left = this.parsePrimary();
+    const left = this.parsePostfix();
     if (!this.match("**")) {
       return left;
     }
     return { kind: "binary", value: "**", left, right: this.parseUnary() };
+  }
+
+  private parsePostfix(): ExprNode {
+    let node = this.parsePrimary();
+    while (this.match("[")) {
+      const axes = this.parseIndexAxes();
+      node = { kind: "index", value: { target: node, axes } };
+    }
+    return node;
+  }
+
+  private parseIndexAxes(): IndexAxisExpr[] {
+    if (this.match("]")) {
+      return [
+        {
+          kind: "scalar",
+          value: { kind: "literal", value: makeInternalError("parse_index_empty") },
+        },
+      ];
+    }
+
+    const axes: IndexAxisExpr[] = [this.parseIndexAxis()];
+    while (this.match(",")) {
+      if (this.peek()?.[0] === "]") {
+        axes.push({
+          kind: "scalar",
+          value: { kind: "literal", value: makeInternalError("parse_index_missing_axis") },
+        });
+        break;
+      }
+      axes.push(this.parseIndexAxis());
+    }
+
+    if (!this.match("]")) {
+      axes.push({
+        kind: "scalar",
+        value: { kind: "literal", value: makeInternalError("parse_index_missing_closing_bracket") },
+      });
+    }
+    return axes;
+  }
+
+  private parseIndexAxis(): IndexAxisExpr {
+    if (this.match(":")) {
+      const end = this.peek()?.[0] === "," || this.peek()?.[0] === "]" ? null : this.parseExpression();
+      return { kind: "slice", start: null, end };
+    }
+
+    const startOrScalar = this.parseExpression();
+    if (!this.match(":")) {
+      return { kind: "scalar", value: startOrScalar };
+    }
+
+    const end = this.peek()?.[0] === "," || this.peek()?.[0] === "]" ? null : this.parseExpression();
+    return { kind: "slice", start: startOrScalar, end };
   }
 
   private parsePrimary(): ExprNode {

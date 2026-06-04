@@ -28,7 +28,7 @@ export function materializeViewSelection(view: ViewSelection, evalCell: EvalCell
     }
   }
   return makeRuntimeView(
-    dimensionForSelection(view.rowIndices.length, view.colIndices.length),
+    dimensionForShape(view.rowIndices.length, view.colIndices.length),
     view.rowIndices.length,
     view.colIndices.length,
     values,
@@ -59,7 +59,7 @@ export function runtimeViewShapeContext(view: RuntimeView): Record<string, unkno
   return { dimension: view.dimension, rowCount: view.rowCount, colCount: view.colCount };
 }
 
-function dimensionForSelection(rowCount: number, colCount: number): RuntimeView["dimension"] {
+export function dimensionForShape(rowCount: number, colCount: number): RuntimeView["dimension"] {
   if (rowCount === 1 && colCount === 1) return 0;
   if (rowCount === 1 || colCount === 1) return 1;
   return 2;
@@ -68,5 +68,5 @@ function dimensionForSelection(rowCount: number, colCount: number): RuntimeView[
 function isValidDimension(dimension: RuntimeView["dimension"], rowCount: number, colCount: number): boolean {
   if (dimension === 0) return rowCount === 1 && colCount === 1;
   if (dimension === 1) return rowCount === 1 || colCount === 1;
-  return rowCount > 1 && colCount > 1;
+  return rowCount !== 1 && colCount !== 1;
 }

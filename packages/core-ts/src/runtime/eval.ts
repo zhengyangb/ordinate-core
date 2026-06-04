@@ -4,6 +4,8 @@ import {
   type EvaluationResult,
   type ExprNode,
   type FunctionCall,
+  type IndexAxisExpr,
+  type IndexExpr,
   type ReferenceExpr,
   type RefSelector,
   type RuntimeValue,
@@ -14,6 +16,7 @@ import {
 import { isError, makeInternalError, runtimeErrorFromDiagnostic } from "./errors";
 import { evalArithmetic, evalPower } from "./arithmetic";
 import { evalFunctionCall } from "./functions";
+import { evaluateIndexing, type RuntimeIndexAxis } from "./indexing";
 import type { EvaluatedArgument } from "./functions/args";
 import {
   isRuntimeView,
@@ -282,7 +285,44 @@ function evalExpressionValue(
           rowIdToIndex,
           colIdToIndex,
         ),
+      evalExpressionValue: (arg) =>
+        evalExpressionValue(
+          arg,
+          rowIdx,
+          colIdx,
+          evalCell,
+          rowMap,
+          colMap,
+          rowCount,
+          colCount,
+          bodyStart,
+          bodyRowCount,
+          dataRowIndices,
+          dataColIndices,
+          rowIdToIndex,
+          colIdToIndex,
+        ),
     });
+  }
+
+  if (node.kind === "index") {
+    const index = node.value as IndexExpr;
+    return evalIndexExpression(
+      index,
+      rowIdx,
+      colIdx,
+      evalCell,
+      rowMap,
+      colMap,
+      rowCount,
+      colCount,
+      bodyStart,
+      bodyRowCount,
+      dataRowIndices,
+      dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
+    );
   }
 
   if (node.kind === "unary") {
@@ -383,6 +423,180 @@ function expressionValueToScalarResult(value: ExpressionValue, reason: string): 
 
 function isExpressionError(value: ExpressionValue): value is RuntimeValue & { kind: "error" } {
   return !isRuntimeView(value) && isError(value);
+}
+
+function evalIndexExpression(
+  index: IndexExpr,
+  rowIdx: number,
+  colIdx: number,
+  evalCell: (r: number, c: number) => RuntimeValue,
+  rowMap: Map<string, number[]>,
+  colMap: Map<string, number[]>,
+  rowCount: number,
+  colCount: number,
+  bodyStart: number,
+  bodyRowCount: number,
+  dataRowIndices: number[],
+  dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
+): ExpressionValue {
+  const target = evalExpressionValue(
+    index.target,
+    rowIdx,
+    colIdx,
+    evalCell,
+    rowMap,
+    colMap,
+    rowCount,
+    colCount,
+    bodyStart,
+    bodyRowCount,
+    dataRowIndices,
+    dataColIndices,
+    rowIdToIndex,
+    colIdToIndex,
+  );
+  if (isExpressionError(target)) return target;
+
+  const axes: RuntimeIndexAxis[] = [];
+  for (const axis of index.axes) {
+    const evaluated = evalIndexAxis(
+      axis,
+      rowIdx,
+      colIdx,
+      evalCell,
+      rowMap,
+      colMap,
+      rowCount,
+      colCount,
+      bodyStart,
+      bodyRowCount,
+      dataRowIndices,
+      dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
+    );
+    if (isError(evaluated as RuntimeValue)) return evaluated as RuntimeValue;
+    axes.push(evaluated as RuntimeIndexAxis);
+  }
+
+  return evaluateIndexing(target, axes, "index");
+}
+
+function evalIndexAxis(
+  axis: IndexAxisExpr,
+  rowIdx: number,
+  colIdx: number,
+  evalCell: (r: number, c: number) => RuntimeValue,
+  rowMap: Map<string, number[]>,
+  colMap: Map<string, number[]>,
+  rowCount: number,
+  colCount: number,
+  bodyStart: number,
+  bodyRowCount: number,
+  dataRowIndices: number[],
+  dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
+): RuntimeIndexAxis | RuntimeValue {
+  if (axis.kind === "scalar") {
+    const value = evalIndexAxisScalar(
+      axis.value,
+      rowIdx,
+      colIdx,
+      evalCell,
+      rowMap,
+      colMap,
+      rowCount,
+      colCount,
+      bodyStart,
+      bodyRowCount,
+      dataRowIndices,
+      dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
+    );
+    if (isError(value)) return value;
+    return { kind: "scalar", value };
+  }
+
+  const start = axis.start
+    ? evalIndexAxisScalar(
+        axis.start,
+        rowIdx,
+        colIdx,
+        evalCell,
+        rowMap,
+        colMap,
+        rowCount,
+        colCount,
+        bodyStart,
+        bodyRowCount,
+        dataRowIndices,
+        dataColIndices,
+        rowIdToIndex,
+        colIdToIndex,
+      )
+    : null;
+  if (start && isError(start)) return start;
+
+  const end = axis.end
+    ? evalIndexAxisScalar(
+        axis.end,
+        rowIdx,
+        colIdx,
+        evalCell,
+        rowMap,
+        colMap,
+        rowCount,
+        colCount,
+        bodyStart,
+        bodyRowCount,
+        dataRowIndices,
+        dataColIndices,
+        rowIdToIndex,
+        colIdToIndex,
+      )
+    : null;
+  if (end && isError(end)) return end;
+
+  return { kind: "slice", start, end };
+}
+
+function evalIndexAxisScalar(
+  node: ExprNode,
+  rowIdx: number,
+  colIdx: number,
+  evalCell: (r: number, c: number) => RuntimeValue,
+  rowMap: Map<string, number[]>,
+  colMap: Map<string, number[]>,
+  rowCount: number,
+  colCount: number,
+  bodyStart: number,
+  bodyRowCount: number,
+  dataRowIndices: number[],
+  dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
+): RuntimeValue {
+  const value = evalExpressionValue(
+    node,
+    rowIdx,
+    colIdx,
+    evalCell,
+    rowMap,
+    colMap,
+    rowCount,
+    colCount,
+    bodyStart,
+    bodyRowCount,
+    dataRowIndices,
+    dataColIndices,
+    rowIdToIndex,
+    colIdToIndex,
+  );
+  return expressionValueToScalarResult(value, "index_axis");
 }
 
 function evalArithmeticExpression(op: string, left: ExpressionValue, right: ExpressionValue): ExpressionValue {
