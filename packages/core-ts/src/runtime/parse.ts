@@ -18,16 +18,12 @@ import {
 } from "./types";
 import { validateFormatSpec } from "./displayMetadata";
 import { diagnosticFromError, makeError, makeInternalError } from "./errors";
+import { parseTemporalLiteral, scanTemporalLiteralPrefix } from "./temporal";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
 const UNDERSCORE_OFFSET_RE = /^_([+-]?\d+)$/;
 const NUMBER_RE = /^-?\d+(?:\.\d+)?$/;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_RE = /^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)?$/;
-const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)?$/;
-const DURATION_RE = /^P(?!$)(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$/;
-const OFFSET_SUFFIX_RE = /(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)$/;
 const ABSOLUTE_FIXED_RE = /^#([1-9]\d*)!$/;
 const ABSOLUTE_RE = /^#([1-9]\d*)$/;
 const UNQUOTED_PATH_COMPONENT_RE = /^[A-Za-z0-9_]+$/;
@@ -369,6 +365,12 @@ function tokenizeExpr(text: string): [string, string][] {
       i = nextIndex;
       continue;
     }
+    const temporalToken = scanTemporalLiteralPrefix(text.slice(i));
+    if (temporalToken && isExprTokenBoundary(text, i + temporalToken.length)) {
+      out.push(["TEMPORAL", temporalToken]);
+      i += temporalToken.length;
+      continue;
+    }
     const spreadsheetToken = indexBracketDepth === 0 ? scanSpreadsheetToken(text, i) : null;
     if (spreadsheetToken) {
       out.push(["SPREF", spreadsheetToken.text]);
@@ -606,6 +608,10 @@ class ExprParser {
     const errLit = this.match("ERROR_LITERAL");
     if (errLit) {
       return { kind: "literal", value: makeError(errLit[1], "literal_error_literal", { source: "formula" }) };
+    }
+    const temporal = this.match("TEMPORAL");
+    if (temporal) {
+      return { kind: "literal", value: parseTemporalLiteral(temporal[1]) ?? makeInternalError("parse_temporal_invalid_literal", { literal: temporal[1] }) };
     }
     const spRef = this.match("SPREF");
     if (spRef) {
@@ -1261,10 +1267,8 @@ function parseUserLiteral(text: string): RuntimeValue {
     if (parsedError) return parsedError;
     return makeInternalError("parse_error_literal_invalid_syntax", { literal: t });
   }
-  if (DATE_RE.test(t)) return { kind: "date", value: t, isOffsetQualified: false };
-  if (TIME_RE.test(t)) return { kind: "time", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
-  if (DATETIME_RE.test(t)) return { kind: "datetime", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
-  if (DURATION_RE.test(t)) return { kind: "duration", value: t };
+  const temporal = parseTemporalLiteral(t);
+  if (temporal) return temporal;
   if (t === "null") return { kind: "null", value: null };
   if (t === "true") return { kind: "boolean", value: true };
   if (t === "false") return { kind: "boolean", value: false };
@@ -1285,10 +1289,8 @@ function parseCacheLiteral(text: string): RuntimeValue {
     if (parsedError) return parsedError;
     return makeInternalError("parse_error_literal_invalid_syntax", { literal: t });
   }
-  if (DATE_RE.test(t)) return { kind: "date", value: t, isOffsetQualified: false };
-  if (TIME_RE.test(t)) return { kind: "time", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
-  if (DATETIME_RE.test(t)) return { kind: "datetime", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
-  if (DURATION_RE.test(t)) return { kind: "duration", value: t };
+  const temporal = parseTemporalLiteral(t);
+  if (temporal) return temporal;
   if (t === "null") return { kind: "null", value: null };
   if (t === "true") return { kind: "boolean", value: true };
   if (t === "false") return { kind: "boolean", value: false };

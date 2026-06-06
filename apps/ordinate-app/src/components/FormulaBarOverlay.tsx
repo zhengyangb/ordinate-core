@@ -22,6 +22,27 @@ import {
   type FormulaPointReplacementTarget,
   type FormulaReferenceView,
 } from "../utils/formulaPointMode";
+import {
+  MIN_FUNCTION_AUTOCOMPLETE_QUERY_LENGTH,
+  activeParameterIndexForFormulaAssistant,
+  applyFormulaAssistantTextReplacement,
+  buildFunctionCallInsertion,
+  buildFunctionSuggestions,
+  correctFormulaAssistantInputChange,
+  iconForFormulaAssistant,
+  isEscapeKey,
+  isFormulaAssistantImeEvent,
+  nextFormulaAssistantSelectedIndex,
+  normalizeFunctionSearchText,
+  parameterLabelForFormulaAssistant,
+  resolveActiveFunctionCallContext,
+  resolveFunctionNameContext,
+  returnLabelForFormulaAssistant,
+  signatureForFormulaAssistant,
+  type FormulaAssistantContext,
+  type FormulaFunctionSuggestion,
+  typeLabelForFormulaAssistant,
+} from "../utils/formulaAssistant";
 
 function MenuIcon({ children }: { children: ReactNode }) {
   return (
@@ -83,29 +104,6 @@ function FunctionGlyph() {
   );
 }
 
-type FormulaAssistantNameContext = {
-  kind: "name";
-  query: string;
-  start: number;
-  end: number;
-};
-
-type FormulaAssistantCallContext = {
-  kind: "call";
-  name: string;
-  argumentIndex: number;
-};
-
-type FormulaAssistantContext = FormulaAssistantNameContext | FormulaAssistantCallContext | null;
-type FormulaAssistantParameter = FunctionMetadata["signatures"][number]["parameters"][number];
-type FormulaFunctionSuggestion = {
-  key: string;
-  metadata: FunctionMetadata;
-  displayName: string;
-  insertName: string;
-  isAlias: boolean;
-};
-
 function getEditableSelectionOffsets(editor: HTMLTextAreaElement): { start: number; end: number } {
   return {
     start: editor.selectionStart,
@@ -115,215 +113,16 @@ function getEditableSelectionOffsets(editor: HTMLTextAreaElement): { start: numb
 
 function isImeKeyboardEvent(event: ReactKeyboardEvent<HTMLElement>): boolean {
   const nativeEvent = event.nativeEvent as KeyboardEvent & { keyCode?: number };
-  return nativeEvent.isComposing || nativeEvent.keyCode === 229;
+  return isFormulaAssistantImeEvent(nativeEvent);
 }
 
 function isImeNativeKeyboardEvent(event: KeyboardEvent): boolean {
-  return event.isComposing || event.keyCode === 229;
-}
-
-function isEscapeKey(key: string): boolean {
-  return key === "Escape" || key === "Esc";
-}
-
-function normalizeFunctionSearchText(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-const MIN_FUNCTION_AUTOCOMPLETE_QUERY_LENGTH = 2;
-
-function isFormulaFunctionNameChar(char: string): boolean {
-  return /[A-Za-z0-9_]/.test(char);
-}
-
-function isFormulaFunctionNameStart(char: string): boolean {
-  return /[A-Za-z_]/.test(char);
-}
-
-function isFunctionNameBoundary(char: string | undefined): boolean {
-  if (char == null) return true;
-  return /\s|[=+\-*/^(),<>]/.test(char);
-}
-
-function scanFormulaLexicalState(text: string, end: number): { inString: boolean; referenceDepth: number } {
-  let inString = false;
-  let referenceDepth = 0;
-  const limit = Math.max(0, Math.min(end, text.length));
-  for (let index = 0; index < limit; index += 1) {
-    const char = text[index];
-    const prev = text[index - 1];
-    if (inString) {
-      if (char === "\"" && prev !== "\\") inString = false;
-      continue;
-    }
-    if (char === "\"") {
-      inString = true;
-      continue;
-    }
-    if (char === "@" && text[index + 1] === "[") {
-      referenceDepth += 1;
-      index += 1;
-      continue;
-    }
-    if (char === "]" && referenceDepth > 0) {
-      referenceDepth -= 1;
-    }
-  }
-  return { inString, referenceDepth };
-}
-
-function resolveFunctionNameContext(draft: string, caret: number): FormulaAssistantNameContext | null {
-  const formulaStart = draft.search(/\S/);
-  if (formulaStart < 0 || draft[formulaStart] !== "=") return null;
-  const safeCaret = Math.max(0, Math.min(caret, draft.length));
-  const state = scanFormulaLexicalState(draft, safeCaret);
-  if (state.inString || state.referenceDepth > 0) return null;
-
-  let start = safeCaret;
-  while (start > formulaStart + 1 && isFormulaFunctionNameChar(draft[start - 1])) {
-    start -= 1;
-  }
-  const query = draft.slice(start, safeCaret);
-  if (query.length > 0 && !isFormulaFunctionNameStart(query[0])) return null;
-  if (!isFunctionNameBoundary(draft[start - 1])) return null;
-  const after = draft[safeCaret];
-  if (after && isFormulaFunctionNameChar(after)) return null;
-  return { kind: "name", query, start, end: safeCaret };
-}
-
-function resolveActiveFunctionCallContext(draft: string, caret: number): FormulaAssistantCallContext | null {
-  const formulaStart = draft.search(/\S/);
-  if (formulaStart < 0 || draft[formulaStart] !== "=") return null;
-  const safeCaret = Math.max(0, Math.min(caret, draft.length));
-  const stack: FormulaAssistantCallContext[] = [];
-  let inString = false;
-  let referenceDepth = 0;
-
-  for (let index = formulaStart + 1; index < safeCaret; index += 1) {
-    const char = draft[index];
-    const prev = draft[index - 1];
-    if (inString) {
-      if (char === "\"" && prev !== "\\") inString = false;
-      continue;
-    }
-    if (char === "\"") {
-      inString = true;
-      continue;
-    }
-    if (char === "@" && draft[index + 1] === "[") {
-      referenceDepth += 1;
-      index += 1;
-      continue;
-    }
-    if (referenceDepth > 0) {
-      if (char === "]") referenceDepth -= 1;
-      continue;
-    }
-    if (isFormulaFunctionNameStart(char)) {
-      let end = index + 1;
-      while (end < safeCaret && isFormulaFunctionNameChar(draft[end])) {
-        end += 1;
-      }
-      let next = end;
-      while (next < safeCaret && /\s/.test(draft[next])) next += 1;
-      if (draft[next] === "(" && getStandardFunctionMetadata(draft.slice(index, end))) {
-        stack.push({ kind: "call", name: draft.slice(index, end), argumentIndex: 0 });
-        index = next;
-        continue;
-      }
-      index = end - 1;
-      continue;
-    }
-    if (char === "," && stack.length > 0) {
-      const top = stack[stack.length - 1];
-      stack[stack.length - 1] = { ...top, argumentIndex: top.argumentIndex + 1 };
-      continue;
-    }
-    if (char === ")" && stack.length > 0) {
-      stack.pop();
-    }
-  }
-
-  return stack[stack.length - 1] ?? null;
-}
-
-function typeLabelForFormulaAssistant(type: string): string {
-  if (type.startsWith("view")) return "range";
-  if (type === "Scalar[number]") return "number";
-  if (type === "Scalar[boolean]") return "boolean";
-  return type;
-}
-
-function returnLabelForFormulaAssistant(metadata: FunctionMetadata): string {
-  return typeLabelForFormulaAssistant(metadata.signatures[0]?.returns ?? "value");
-}
-
-function iconForFormulaAssistant(category: FunctionMetadata["category"]): string {
-  void category;
-  return "ƒ";
+  return isFormulaAssistantImeEvent(event);
 }
 
 function summaryLabelForFormulaAssistant(locale: UiLocale, metadata: FunctionMetadata): string {
   const firstSentence = metadata.summary.split(/[.;]/, 1)[0]?.trim();
   return firstSentence || getFormulaFunctionCategoryLabel(locale, metadata.category);
-}
-
-function buildFunctionSuggestions(functions: readonly FunctionMetadata[], query: string): FormulaFunctionSuggestion[] {
-  const normalizedQuery = normalizeFunctionSearchText(query);
-  const suggestions: FormulaFunctionSuggestion[] = [];
-  for (const metadata of functions) {
-    const names = normalizedQuery ? [metadata.name, ...(metadata.aliases ?? [])] : [metadata.name];
-    for (const name of names) {
-      if (normalizedQuery && !name.toLowerCase().startsWith(normalizedQuery)) continue;
-      suggestions.push({
-        key: `${metadata.name}:${name}`,
-        metadata,
-        displayName: name,
-        insertName: name,
-        isAlias: name !== metadata.name,
-      });
-    }
-  }
-  return suggestions;
-}
-
-function signatureForFormulaAssistant(metadata: FunctionMetadata) {
-  return metadata.signatures[0] ?? null;
-}
-
-function activeParameterIndexForFormulaAssistant(metadata: FunctionMetadata, argumentIndex: number): number {
-  const signature = signatureForFormulaAssistant(metadata);
-  if (!signature || signature.parameters.length === 0) return -1;
-  return Math.min(Math.max(argumentIndex, 0), signature.parameters.length - 1);
-}
-
-function parameterLabelForFormulaAssistant(parameter: FormulaAssistantParameter): string {
-  return `${parameter.name} ${typeLabelForFormulaAssistant(parameter.type)}`;
-}
-
-function getSingleTextInsertion(previousText: string, nextText: string): { start: number; text: string } | null {
-  if (nextText.length <= previousText.length) return null;
-  let prefixLength = 0;
-  while (
-    prefixLength < previousText.length &&
-    prefixLength < nextText.length &&
-    previousText[prefixLength] === nextText[prefixLength]
-  ) {
-    prefixLength += 1;
-  }
-  let suffixLength = 0;
-  while (
-    suffixLength < previousText.length - prefixLength &&
-    suffixLength < nextText.length - prefixLength &&
-    previousText[previousText.length - 1 - suffixLength] === nextText[nextText.length - 1 - suffixLength]
-  ) {
-    suffixLength += 1;
-  }
-  if (previousText.length !== prefixLength + suffixLength) return null;
-  return {
-    start: prefixLength,
-    text: nextText.slice(prefixLength, nextText.length - suffixLength),
-  };
 }
 
 function setEditableSelectionOffsets(editor: HTMLTextAreaElement, start: number, end: number) {
@@ -1232,61 +1031,38 @@ export default function FormulaBarOverlay({
     cancelPendingEditorSelectionRestore();
     setFunctionAssistantPinned(false);
     setFunctionSignatureExpanded(false);
-    const safeStart = Math.max(0, Math.min(start, end, draftInput.length));
-    const safeEnd = Math.max(0, Math.min(Math.max(start, end), draftInput.length));
-    const guardedCloseParen = guardedFunctionCloseParenRef.current;
-    const shouldRedirectBeforeGuardedCloseParen =
-      text.length > 0 &&
-      safeStart === safeEnd &&
-      guardedCloseParen !== null &&
-      safeStart === guardedCloseParen + 1 &&
-      draftInput[guardedCloseParen] === ")";
-    const replacementStart = shouldRedirectBeforeGuardedCloseParen ? guardedCloseParen : safeStart;
-    const replacementEnd = shouldRedirectBeforeGuardedCloseParen ? guardedCloseParen : safeEnd;
-    const nextInput = `${draftInput.slice(0, replacementStart)}${text}${draftInput.slice(replacementEnd)}`;
-    const nextCaret = replacementStart + text.length;
-    if (guardedCloseParen !== null) {
-      if (replacementStart <= guardedCloseParen && replacementEnd <= guardedCloseParen) {
-        guardedFunctionCloseParenRef.current = guardedCloseParen + text.length - (replacementEnd - replacementStart);
-      } else if (replacementStart <= guardedCloseParen && replacementEnd > guardedCloseParen) {
-        guardedFunctionCloseParenRef.current = null;
-      }
-    }
+    const edit = applyFormulaAssistantTextReplacement({
+      draft: draftInput,
+      start,
+      end,
+      text,
+      guardedCloseParen: guardedFunctionCloseParenRef.current,
+    });
+    guardedFunctionCloseParenRef.current = edit.nextGuardedCloseParen;
     setDraftError(null);
-    setDraftInput(nextInput);
-    onDraftInputChange(nextInput);
+    setDraftInput(edit.nextInput);
+    onDraftInputChange(edit.nextInput);
     syncedActiveReferenceTokenIdRef.current = null;
     explicitReferenceViewRef.current = null;
     pointGestureReplacementRef.current = null;
     pointTokenReplacementRef.current = null;
     onActiveReferenceTokenChange(null);
-    requestEditorSelectionRestore(nextCaret);
+    requestEditorSelectionRestore(edit.nextCaret);
   };
 
   const insertFunctionCall = (suggestion: FormulaFunctionSuggestion) => {
-    const callText = `${suggestion.insertName}()`;
-    if (!isFormulaDraft) {
-      const nextInput = `= ${callText}`;
-      const caret = nextInput.length - 1;
-      setDraftError(null);
-      setDraftInput(nextInput);
-      onDraftInputChange(nextInput);
-      setFunctionAssistantPinned(false);
-      setFunctionSignatureExpanded(false);
-      guardedFunctionCloseParenRef.current = caret;
-      requestEditorSelectionRestore(caret);
-      return;
-    }
-
     const replacementStart = functionNameContext?.start ?? editorSelection.start;
     const replacementEnd = functionNameContext?.end ?? editorSelection.end;
-    const safeStart = Math.max(0, Math.min(replacementStart, replacementEnd, draftInput.length));
-    const safeEnd = Math.max(0, Math.min(Math.max(replacementStart, replacementEnd), draftInput.length));
-    const nextInput = `${draftInput.slice(0, safeStart)}${callText}${draftInput.slice(safeEnd)}`;
-    const caret = safeStart + callText.length - 1;
+    const edit = buildFunctionCallInsertion({
+      draft: draftInput,
+      isFormulaDraft,
+      suggestion,
+      replacementStart,
+      replacementEnd,
+    });
     setDraftError(null);
-    setDraftInput(nextInput);
-    onDraftInputChange(nextInput);
+    setDraftInput(edit.nextInput);
+    onDraftInputChange(edit.nextInput);
     syncedActiveReferenceTokenIdRef.current = null;
     explicitReferenceViewRef.current = null;
     pointGestureReplacementRef.current = null;
@@ -1294,8 +1070,8 @@ export default function FormulaBarOverlay({
     onActiveReferenceTokenChange(null);
     setFunctionAssistantPinned(false);
     setFunctionSignatureExpanded(false);
-    guardedFunctionCloseParenRef.current = caret;
-    requestEditorSelectionRestore(caret);
+    guardedFunctionCloseParenRef.current = edit.nextGuardedCloseParen;
+    requestEditorSelectionRestore(edit.nextCaret);
   };
 
   const handleEditorBeforeInput = (event: FormEvent<HTMLTextAreaElement>) => {
@@ -1331,98 +1107,27 @@ export default function FormulaBarOverlay({
     const nextInput = editor.value;
     if (nextInput === draftInput) return;
     cancelPendingEditorSelectionRestore();
-    const singleInsertion = getSingleTextInsertion(draftInput, nextInput);
-    if (singleInsertion && isFormulaDraft) {
-      if (draftInput[singleInsertion.start] === ")") {
-        const nextCaret = singleInsertion.start + singleInsertion.text.length;
-        guardedFunctionCloseParenRef.current = nextCaret;
-        setDraftError(null);
-        setDraftInput(nextInput);
-        onDraftInputChange(nextInput);
-        setFunctionAssistantPinned(false);
-        setFunctionSignatureExpanded(false);
-        syncedActiveReferenceTokenIdRef.current = null;
-        explicitReferenceViewRef.current = null;
-        pointGestureReplacementRef.current = null;
-        pointTokenReplacementRef.current = null;
-        onActiveReferenceTokenChange(null);
-        requestEditorSelectionRestore(nextCaret);
-        return;
-      }
-      if (draftInput[singleInsertion.start - 1] === ")" && !/^[+\-*/^&=<>)]/.test(singleInsertion.text)) {
-        const closeParenIndex = singleInsertion.start - 1;
-        const correctedInput = `${draftInput.slice(0, closeParenIndex)}${singleInsertion.text}${draftInput.slice(closeParenIndex)}`;
-        const nextCaret = closeParenIndex + singleInsertion.text.length;
-        guardedFunctionCloseParenRef.current = nextCaret;
-        setDraftError(null);
-        setDraftInput(correctedInput);
-        onDraftInputChange(correctedInput);
-        setFunctionAssistantPinned(false);
-        setFunctionSignatureExpanded(false);
-        syncedActiveReferenceTokenIdRef.current = null;
-        explicitReferenceViewRef.current = null;
-        pointGestureReplacementRef.current = null;
-        pointTokenReplacementRef.current = null;
-        onActiveReferenceTokenChange(null);
-        requestEditorSelectionRestore(nextCaret);
-        return;
-      }
-    }
-    const guardedCloseParen = guardedFunctionCloseParenRef.current;
-    if (guardedCloseParen !== null && draftInput[guardedCloseParen] === ")" && nextInput.length > draftInput.length) {
-      const insertedLength = nextInput.length - draftInput.length;
-      const beforeClose = draftInput.slice(0, guardedCloseParen);
-      const closeAndAfter = draftInput.slice(guardedCloseParen);
-      const throughClose = draftInput.slice(0, guardedCloseParen + 1);
-      const afterClose = draftInput.slice(guardedCloseParen + 1);
-      const beforeCloseInsertion =
-        nextInput.startsWith(beforeClose) &&
-        nextInput.endsWith(closeAndAfter) &&
-        nextInput.length === beforeClose.length + insertedLength + closeAndAfter.length;
-      const afterCloseInsertion =
-        nextInput.startsWith(throughClose) &&
-        nextInput.endsWith(afterClose) &&
-        nextInput.length === throughClose.length + insertedLength + afterClose.length;
-      if (beforeCloseInsertion || afterCloseInsertion) {
-        const insertedText = beforeCloseInsertion
-          ? nextInput.slice(guardedCloseParen, guardedCloseParen + insertedLength)
-          : nextInput.slice(guardedCloseParen + 1, guardedCloseParen + 1 + insertedLength);
-        const correctedInput = `${beforeClose}${insertedText}${closeAndAfter}`;
-        const nextCaret = guardedCloseParen + insertedText.length;
-        guardedFunctionCloseParenRef.current = guardedCloseParen + insertedText.length;
-        setDraftError(null);
-        setDraftInput(correctedInput);
-        onDraftInputChange(correctedInput);
-        setFunctionAssistantPinned(false);
-        setFunctionSignatureExpanded(false);
-        syncedActiveReferenceTokenIdRef.current = null;
-        explicitReferenceViewRef.current = null;
-        pointGestureReplacementRef.current = null;
-        pointTokenReplacementRef.current = null;
-        onActiveReferenceTokenChange(null);
-        requestEditorSelectionRestore(nextCaret);
-        return;
-      }
-    }
-    const explicitReferenceView = explicitReferenceViewRef.current;
-    if (explicitReferenceView && draftInput.length > 0 && nextInput.endsWith(draftInput)) {
-      const insertedPrefix = nextInput.slice(0, nextInput.length - draftInput.length);
-      if (insertedPrefix.length > 0) {
-        const nextCaret = explicitReferenceView.end + insertedPrefix.length;
-        const correctedInput = `${draftInput.slice(0, explicitReferenceView.end)}${insertedPrefix}${draftInput.slice(explicitReferenceView.end)}`;
-        setDraftError(null);
-        setDraftInput(correctedInput);
-        onDraftInputChange(correctedInput);
-        setFunctionAssistantPinned(false);
-        setFunctionSignatureExpanded(false);
-        syncedActiveReferenceTokenIdRef.current = null;
-        explicitReferenceViewRef.current = null;
-        pointGestureReplacementRef.current = null;
-        pointTokenReplacementRef.current = null;
-        onActiveReferenceTokenChange(null);
-        requestEditorSelectionRestore(nextCaret);
-        return;
-      }
+    const correction = correctFormulaAssistantInputChange({
+      draft: draftInput,
+      nextInput,
+      isFormulaDraft,
+      guardedCloseParen: guardedFunctionCloseParenRef.current,
+      explicitReferenceView: explicitReferenceViewRef.current,
+    });
+    if (correction) {
+      guardedFunctionCloseParenRef.current = correction.nextGuardedCloseParen;
+      setDraftError(null);
+      setDraftInput(correction.nextInput);
+      onDraftInputChange(correction.nextInput);
+      setFunctionAssistantPinned(false);
+      setFunctionSignatureExpanded(false);
+      syncedActiveReferenceTokenIdRef.current = null;
+      explicitReferenceViewRef.current = null;
+      pointGestureReplacementRef.current = null;
+      pointTokenReplacementRef.current = null;
+      onActiveReferenceTokenChange(null);
+      requestEditorSelectionRestore(correction.nextCaret);
+      return;
     }
     const selection = getEditableSelectionOffsets(editor);
     setDraftError(null);
@@ -1492,10 +1197,8 @@ export default function FormulaBarOverlay({
     if (shouldShowFunctionList && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === "ArrowDown" || event.key === "ArrowUp") && functionSuggestions.length > 0) {
       event.preventDefault();
       event.stopPropagation();
-      setFunctionAssistantSelectedIndex((index) => {
-        const delta = event.key === "ArrowDown" ? 1 : -1;
-        return Math.max(0, Math.min(functionSuggestions.length - 1, index + delta));
-      });
+      const navigationKey = event.key;
+      setFunctionAssistantSelectedIndex((index) => nextFormulaAssistantSelectedIndex(index, functionSuggestions.length, navigationKey));
       return true;
     }
     if ((functionNameContext || functionAssistantPinned) && selectedSuggestion && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === "Enter" || event.key === "Tab")) {

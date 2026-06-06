@@ -1,6 +1,7 @@
 import { isError, makeInternalError } from "../errors";
 import { viewIndexFunction } from "../indexing";
 import type { FunctionCall, RuntimeValue, RuntimeView } from "../types";
+import { makeRuntimeView } from "../view";
 import {
   averageView,
   countView,
@@ -75,9 +76,19 @@ import {
   trimText,
   upperText,
 } from "./text";
+import { dropValue, lookupView, matchView, takeValue } from "./selection";
+import {
+  dateEvaluator,
+  datetimeEvaluator,
+  datetimeFromUnixMillisEvaluator,
+  durationEvaluator,
+  temporalComponentEvaluator,
+  timeEvaluator,
+  unixMillisEvaluator,
+} from "./temporal";
 import { dotProduct } from "./vector";
 
-export type FunctionCategory = "aggregate" | "numeric" | "logical" | "vector" | "view" | "statistical" | "type" | "text";
+export type FunctionCategory = "aggregate" | "numeric" | "logical" | "vector" | "view" | "statistical" | "type" | "text" | "temporal";
 
 export interface FunctionParameter {
   name: string;
@@ -507,6 +518,131 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     },
   },
   {
+    name: "shape",
+    category: "view",
+    summary: "Returns the two-axis grid shape of a view as [rowCount, columnCount].",
+    signatures: [signature([param("x", "view[d<=2]", "View whose grid shape is returned.")], "view[d=1]")],
+    examples: [example("shape(@[:,Revenue])[0]", "row count"), example("shape(@[:,Revenue])[1]", "column count")],
+    evaluator: viewEvaluator((view) => shapeView(view)),
+  },
+  {
+    name: "size",
+    category: "view",
+    summary: "Returns the total number of positions in a view, equal to rowCount(x) * columnCount(x).",
+    signatures: [signature([param("x", "view[d<=2]", "View whose positions are counted.")], "number")],
+    examples: [example("size(filter(@[:,Name], @[:,Score] > 90))")],
+    evaluator: viewEvaluator((view) => ({ kind: "number", value: view.rowCount * view.colCount })),
+  },
+  {
+    name: "rowCount",
+    aliases: ["rows"],
+    category: "view",
+    summary: "Returns the number of rows in a view. rows(x) is an alias.",
+    signatures: [signature([param("x", "view[d<=2]", "View whose rows are counted.")], "number")],
+    examples: [example("rowCount(@[:,Revenue])"), example("rows(@[:,Revenue])")],
+    evaluator: viewEvaluator((view) => ({ kind: "number", value: view.rowCount })),
+  },
+  {
+    name: "columnCount",
+    aliases: ["columns", "cols"],
+    category: "view",
+    summary: "Returns the number of columns in a view. columns(x) and cols(x) are aliases.",
+    signatures: [signature([param("x", "view[d<=2]", "View whose columns are counted.")], "number")],
+    examples: [example("columnCount(@[:,Revenue])"), example("cols(@[:,Revenue])")],
+    evaluator: viewEvaluator((view) => ({ kind: "number", value: view.colCount })),
+  },
+  {
+    name: "match",
+    category: "view",
+    summary: "Returns the zero-based row-major index of the first exact match in keys.",
+    signatures: [signature([
+      param("value", "value", "Value to find."),
+      param("keys", "view[d<=2]", "Values to search in row-major order."),
+    ], "number")],
+    examples: [example("match(\"Beta\", @[:,Name])", "1")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const value = ctx.evalScalarArg(call.args[0]);
+      if (isError(value)) return value;
+      const keys = expectViewArg(ctx, call.name, call.args[1]);
+      if (isError(keys as RuntimeValue)) return keys as RuntimeValue;
+      return matchView(value, keys as RuntimeView, call.name);
+    },
+  },
+  {
+    name: "lookup",
+    category: "view",
+    summary: "Returns the value at values[match(key, keys)] for one-dimensional lookup tables.",
+    signatures: [signature([
+      param("key", "value", "Key to find."),
+      param("keys", "view[d<=1]", "Lookup keys searched with match(key, keys)."),
+      param("values", "view[d<=1]", "Values indexed by the matched zero-based position."),
+    ], "value")],
+    examples: [example("lookup(\"Beta\", @[:,Name], @[:,Score])"), example("@[:,Score][match(\"Beta\", @[:,Name])]")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 3);
+      if (arityError) return arityError;
+      const key = ctx.evalScalarArg(call.args[0]);
+      if (isError(key)) return key;
+      const keys = expectViewArg(ctx, call.name, call.args[1]);
+      if (isError(keys as RuntimeValue)) return keys as RuntimeValue;
+      const values = expectViewArg(ctx, call.name, call.args[2]);
+      if (isError(values as RuntimeValue)) return values as RuntimeValue;
+      return lookupView(key, keys as RuntimeView, values as RuntimeView, call.name);
+    },
+  },
+  {
+    name: "take",
+    category: "view",
+    summary: "Returns a prefix or suffix selection. For text and one-dimensional views, take(x, n) is x[:n] and take(x, -n) is x[-n:]. For matrices, it takes rows and preserves all columns.",
+    signatures: [
+      signature([
+        param("x", "text", "Text to slice by code-point index."),
+        param("count", "Scalar[number]", "Integer count. Positive takes from the start; negative takes from the end."),
+      ], "text"),
+      signature([
+        param("x", "view[d<=2]", "View to slice."),
+        param("count", "Scalar[number]", "Integer count. Positive takes from the start; negative takes from the end."),
+      ], "view[d<=2]"),
+    ],
+    examples: [example("take(@[:,Name], 3)"), example("take(@[:,Name], -3)"), example("take(\"abcdef\", 3)", "\"abc\"")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const [targetKind, target] = ctx.evalArgValue(call.args[0]);
+      if (targetKind === "error") return target as RuntimeValue;
+      const count = ctx.evalScalarArg(call.args[1]);
+      if (isError(count)) return count;
+      return takeValue(target as RuntimeValue | RuntimeView, count, call.name);
+    },
+  },
+  {
+    name: "drop",
+    category: "view",
+    summary: "Returns a selection with a prefix or suffix removed. For text and one-dimensional views, drop(x, n) is x[n:] and drop(x, -n) is x[:-n]. For matrices, it drops rows and preserves all columns.",
+    signatures: [
+      signature([
+        param("x", "text", "Text to slice by code-point index."),
+        param("count", "Scalar[number]", "Integer count. Positive drops from the start; negative drops from the end."),
+      ], "text"),
+      signature([
+        param("x", "view[d<=2]", "View to slice."),
+        param("count", "Scalar[number]", "Integer count. Positive drops from the start; negative drops from the end."),
+      ], "view[d<=2]"),
+    ],
+    examples: [example("drop(@[:,Name], 1)"), example("drop(@[:,Name], -1)"), example("drop(\"abcdef\", 3)", "\"def\"")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const [targetKind, target] = ctx.evalArgValue(call.args[0]);
+      if (targetKind === "error") return target as RuntimeValue;
+      const count = ctx.evalScalarArg(call.args[1]);
+      if (isError(count)) return count;
+      return dropValue(target as RuntimeValue | RuntimeView, count, call.name);
+    },
+  },
+  {
     name: "and",
     aliases: ["all"],
     category: "logical",
@@ -782,6 +918,136 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     },
   },
   {
+    name: "date",
+    category: "temporal",
+    summary: "Constructs a date from year, month, and day, or extracts the date component from a datetime.",
+    signatures: [
+      signature([
+        param("year", "Scalar[number]", "Four-digit year."),
+        param("month", "Scalar[number]", "Month number from 1 to 12."),
+        param("day", "Scalar[number]", "Day number valid for the month."),
+      ], "date"),
+      signature([param("x", "Scalar[datetime]", "Datetime whose calendar date should be extracted.")], "date"),
+    ],
+    examples: [example("date(2026, 3, 24)", "2026-03-24"), example("date(@[This,Timestamp])")],
+    evaluator: dateEvaluator(),
+  },
+  {
+    name: "time",
+    category: "temporal",
+    summary: "Constructs a millisecond-precision time, or extracts the time component from a datetime.",
+    signatures: [
+      signature([
+        param("hour", "Scalar[number]", "Hour from 0 to 23."),
+        param("minute", "Scalar[number]", "Minute from 0 to 59."),
+      ], "time"),
+      signature([
+        param("hour", "Scalar[number]", "Hour from 0 to 23."),
+        param("minute", "Scalar[number]", "Minute from 0 to 59."),
+        param("second", "Scalar[number]", "Second from 0 to less than 60, with millisecond precision."),
+      ], "time"),
+      signature([param("x", "Scalar[datetime]", "Datetime whose time component should be extracted.")], "time"),
+    ],
+    examples: [example("time(14, 30)", "14:30"), example("time(14, 30, 5.25)", "14:30:05.25")],
+    evaluator: timeEvaluator(),
+  },
+  {
+    name: "datetime",
+    category: "temporal",
+    summary: "Combines a date and a time into a datetime, preserving the time offset if present.",
+    signatures: [signature([
+      param("date", "Scalar[date]", "Calendar date component."),
+      param("time", "Scalar[time]", "Time component. Its fixed offset is preserved when present."),
+    ], "datetime")],
+    examples: [example("datetime(@[This,Date], @[This,Time])")],
+    evaluator: datetimeEvaluator(),
+  },
+  {
+    name: "duration",
+    category: "temporal",
+    summary: "Constructs a fixed duration from optional days, hours, minutes, and seconds components.",
+    signatures: [signature([
+      param("days", "Scalar[number]", "Optional integer day count."),
+      param("hours", "Scalar[number]", "Optional integer hour count."),
+      param("minutes", "Scalar[number]", "Optional integer minute count."),
+      param("seconds", "Scalar[number]", "Optional second count with millisecond precision."),
+    ], "duration")],
+    examples: [example("duration(0, 1, 30)", "PT1H30M"), example("duration(1)", "P1D")],
+    evaluator: durationEvaluator(),
+  },
+  {
+    name: "year",
+    category: "temporal",
+    summary: "Returns the year component from a date or datetime.",
+    signatures: [signature([param("x", "Scalar[date | datetime]", "Temporal value to inspect.")], "number")],
+    examples: [example("year(@[This,Date])")],
+    evaluator: temporalComponentEvaluator("year"),
+  },
+  {
+    name: "month",
+    category: "temporal",
+    summary: "Returns the month component from a date or datetime.",
+    signatures: [signature([param("x", "Scalar[date | datetime]", "Temporal value to inspect.")], "number")],
+    examples: [example("month(@[This,Date])")],
+    evaluator: temporalComponentEvaluator("month"),
+  },
+  {
+    name: "day",
+    category: "temporal",
+    summary: "Returns the day component from a date or datetime.",
+    signatures: [signature([param("x", "Scalar[date | datetime]", "Temporal value to inspect.")], "number")],
+    examples: [example("day(@[This,Date])")],
+    evaluator: temporalComponentEvaluator("day"),
+  },
+  {
+    name: "hour",
+    category: "temporal",
+    summary: "Returns the hour component from a time or datetime.",
+    signatures: [signature([param("x", "Scalar[time | datetime]", "Temporal value to inspect.")], "number")],
+    examples: [example("hour(@[This,Time])")],
+    evaluator: temporalComponentEvaluator("hour"),
+  },
+  {
+    name: "minute",
+    category: "temporal",
+    summary: "Returns the minute component from a time or datetime.",
+    signatures: [signature([param("x", "Scalar[time | datetime]", "Temporal value to inspect.")], "number")],
+    examples: [example("minute(@[This,Time])")],
+    evaluator: temporalComponentEvaluator("minute"),
+  },
+  {
+    name: "second",
+    category: "temporal",
+    summary: "Returns the whole-second component from a time or datetime.",
+    signatures: [signature([param("x", "Scalar[time | datetime]", "Temporal value to inspect.")], "number")],
+    examples: [example("second(@[This,Time])")],
+    evaluator: temporalComponentEvaluator("second"),
+  },
+  {
+    name: "millisecond",
+    category: "temporal",
+    summary: "Returns the millisecond component from a time or datetime.",
+    signatures: [signature([param("x", "Scalar[time | datetime]", "Temporal value to inspect.")], "number")],
+    examples: [example("millisecond(@[This,Time])")],
+    evaluator: temporalComponentEvaluator("millisecond"),
+  },
+  {
+    name: "unixMillis",
+    category: "temporal",
+    summary: "Returns Unix milliseconds for an offset-qualified datetime. Offset-naive datetimes fail.",
+    signatures: [signature([param("x", "Scalar[datetime offset-qualified]", "Datetime with an explicit fixed offset.")], "number")],
+    examples: [example("unixMillis(@[This,Timestamp])")],
+    evaluator: unixMillisEvaluator(),
+  },
+  {
+    name: "datetimeFromUnixMillis",
+    category: "temporal",
+    summary: "Constructs a UTC datetime from integer Unix milliseconds.",
+    signatures: [signature([param("ms", "Scalar[number]", "Unix milliseconds since 1970-01-01T00:00:00Z.")], "datetime")],
+    examples: [example("datetimeFromUnixMillis(0)", "1970-01-01T00:00:00Z")],
+    evaluator: datetimeFromUnixMillisEvaluator(),
+  },
+  {
     name: "abs",
     category: "numeric",
     summary: "Returns the absolute value of a number.",
@@ -1049,7 +1315,7 @@ function example(expression: string, result?: string): FunctionExample {
   return result === undefined ? { expression } : { expression, result };
 }
 
-function viewEvaluator(evaluate: (view: RuntimeView, ctx: FunctionEvalContext, call: FunctionCall) => RuntimeValue): FunctionEvaluator {
+function viewEvaluator(evaluate: (view: RuntimeView, ctx: FunctionEvalContext, call: FunctionCall) => RuntimeValue | RuntimeView): FunctionEvaluator {
   return (call, ctx) => {
     const arityError = assertArity(call.name, call.args.length, 1);
     if (arityError) return arityError;
@@ -1057,6 +1323,13 @@ function viewEvaluator(evaluate: (view: RuntimeView, ctx: FunctionEvalContext, c
     if (isError(view as RuntimeValue)) return view as RuntimeValue;
     return evaluate(view as RuntimeView, ctx, call);
   };
+}
+
+function shapeView(view: RuntimeView): RuntimeView {
+  return makeRuntimeView(1, 1, 2, [
+    { kind: "number", value: view.rowCount },
+    { kind: "number", value: view.colCount },
+  ]);
 }
 
 function twoViewEvaluator(evaluate: (left: RuntimeView, right: RuntimeView, call: FunctionCall, ctx: FunctionEvalContext) => RuntimeValue): FunctionEvaluator {

@@ -9,6 +9,7 @@ export type UiMessageKey =
   | "formula.category.statistical"
   | "formula.category.type"
   | "formula.category.text"
+  | "formula.category.temporal"
   | "error.kind.generic"
   | "error.kind.parse_error"
   | "error.kind.type_error"
@@ -38,6 +39,7 @@ const MESSAGES: Record<UiLocale, Record<UiMessageKey, string>> = {
     "formula.category.statistical": "Statistics",
     "formula.category.type": "Type",
     "formula.category.text": "Text",
+    "formula.category.temporal": "Time",
     "error.kind.generic": "Generic Error",
     "error.kind.parse_error": "Parse Error",
     "error.kind.type_error": "Type Error",
@@ -66,6 +68,7 @@ const MESSAGES: Record<UiLocale, Record<UiMessageKey, string>> = {
     "formula.category.statistical": "统计",
     "formula.category.type": "类型",
     "formula.category.text": "文本",
+    "formula.category.temporal": "时间",
     "error.kind.generic": "通用错误",
     "error.kind.parse_error": "解析错误",
     "error.kind.type_error": "类型错误",

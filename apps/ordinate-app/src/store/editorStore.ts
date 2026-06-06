@@ -138,6 +138,10 @@ const sampleDocument = `# Management Report
 |              | Type Clash   || 4                 | 2                  | 0               | "text operand" | = B11 + E11 |
 |              | Cycle Ref    || 0                 | 0                  | 0               | "self ref" | = @["Cycle Ref",Calc] |
 |              | Parse Crash  || 0                 | 0                  | 0               | "formula parse" | = sum(B2 |
+|              | Text Slice   || 0                 | 0                  | 0               | "text slicing" | = "abcdef"[1:4] |
+|              | Ref Index    || 0                 | 0                  | 0               | "reference postfix index" | = @["Product A",Revenue][0] |
+|              | View Slice   || 0                 | 0                  | 0               | "reference postfix slice" | = sum(@[#2:#3,Revenue][0:2]) |
+|              | Matrix Slice || 0                 | 0                  | 0               | "matrix postfix slice" | = sum(@[#2:#3,Revenue:Cost][:,0]) |
 `;
 
 function toErrorMessage(error: unknown): string {

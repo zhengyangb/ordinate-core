@@ -1,8 +1,12 @@
 import { makeInternalError } from "./errors";
+import { evalTemporalArithmetic } from "./temporal";
 import type { BooleanRuntimeValue, RuntimeValue } from "./types";
 
 // Evaluate arithmetic with RFC-0006 coercion rules.
 export function evalArithmetic(op: string, left: RuntimeValue, right: RuntimeValue): RuntimeValue {
+  const temporal = evalTemporalArithmetic(op, left, right);
+  if (temporal) return temporal;
+
   if (left.kind === "blank" && right.kind === "blank") {
     if (op === "+" || op === "-" || op === "*") {
       return { kind: "blank", value: null };
