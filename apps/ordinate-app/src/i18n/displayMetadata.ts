@@ -36,6 +36,8 @@ export function formatDisplayMetadataErrorMessage(locale: UiLocale, issue: Diagn
   if (issue.code === "empty_format_spec") return "Format spec is empty.";
   if (issue.code === "empty_style_spec") return "Style spec is empty.";
   if (issue.code === "empty_display_metadata") return "Display metadata block is empty.";
+  if (issue.code === "duplicate_format_metadata") return "Format metadata is duplicated.";
+  if (issue.code === "duplicate_style_metadata") return "Style metadata is duplicated.";
   if (issue.code === "duplicate_align_style") return "Align style is duplicated.";
   if (issue.code === "duplicate_weight_style") return "Weight style is duplicated.";
   if (issue.code === "duplicate_color_style") return "Color style is duplicated.";
@@ -49,11 +51,17 @@ export function formatDisplayMetadataErrorMessage(locale: UiLocale, issue: Diagn
 }
 
 export function classifyDisplayMetadataIssue(issue: Diagnostic): DisplayMetadataIssueKind {
-  if (issue.code === "invalid_format_combination" || issue.code.startsWith("format_") || issue.code === "empty_format_spec") {
+  if (
+    issue.code === "invalid_format_combination"
+    || issue.code.startsWith("format_")
+    || issue.code === "empty_format_spec"
+    || issue.code === "duplicate_format_metadata"
+  ) {
     return "format";
   }
   if (
     issue.code.startsWith("unsupported_style_item:")
+    || issue.code === "duplicate_style_metadata"
     || issue.code === "duplicate_align_style"
     || issue.code === "duplicate_weight_style"
     || issue.code === "duplicate_color_style"

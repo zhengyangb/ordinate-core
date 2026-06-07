@@ -56,6 +56,12 @@ export function describeDisplayMetadataDiagnostic(issue: Diagnostic): string {
   if (issue.code === "empty_display_metadata") {
     return "display metadata block is empty";
   }
+  if (issue.code === "duplicate_format_metadata") {
+    return "format metadata is duplicated";
+  }
+  if (issue.code === "duplicate_style_metadata") {
+    return "style metadata is duplicated";
+  }
   if (issue.code === "duplicate_align_style") {
     return "align style is duplicated";
   }

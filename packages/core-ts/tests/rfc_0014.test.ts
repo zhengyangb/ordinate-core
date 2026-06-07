@@ -155,7 +155,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     const quotedDatetime = parseCellInput('"2026-03-24T14:30:00Z"');
     expect(literalOf(quotedDatetime)?.kind).toBe("string");
 
-    const both = parseCellInput("1234.5 {:,.2f:>,red}");
+    const both = parseCellInput("1234.5 {:,.2f} {::>,red}");
     expect(both.localDisplay?.valid).toBe(true);
     if (!both.localDisplay?.valid) throw new Error("expected valid display metadata");
     expect(both.localDisplay.format).toMatchObject({
@@ -171,7 +171,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       color: "red",
     });
 
-    const styleOnly = parseCellInput("42 {: :bold}");
+    const styleOnly = parseCellInput("42 {::bold}");
     expect(styleOnly.localDisplay?.valid).toBe(true);
     if (!styleOnly.localDisplay?.valid) throw new Error("expected valid display metadata");
     expect(styleOnly.localDisplay.format).toBeNull();
@@ -220,7 +220,27 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       reason: "disallowed_for_type",
     });
 
-    const styleConflict = parseCellInput("1 {:,.2f:>,^}");
+    const legacyCombined = parseCellInput("1 {:,.2f:>,red}");
+    expect(legacyCombined.localDisplay?.valid).toBe(false);
+    if (legacyCombined.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(legacyCombined.localDisplay.issue.code).toBe("invalid_format_spec_trailing_chars");
+
+    const legacyStyleOnly = parseCellInput("1 {: :bold}");
+    expect(legacyStyleOnly.localDisplay?.valid).toBe(false);
+    if (legacyStyleOnly.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(legacyStyleOnly.localDisplay.issue.code).toBe("format_spec_contains_whitespace");
+
+    const duplicateFormat = parseCellInput("1 {:,.2f} {:.1%}");
+    expect(duplicateFormat.localDisplay?.valid).toBe(false);
+    if (duplicateFormat.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(duplicateFormat.localDisplay.issue.code).toBe("duplicate_format_metadata");
+
+    const duplicateStyle = parseCellInput("1 {::>} {::blue}");
+    expect(duplicateStyle.localDisplay?.valid).toBe(false);
+    if (duplicateStyle.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(duplicateStyle.localDisplay.issue.code).toBe("duplicate_style_metadata");
+
+    const styleConflict = parseCellInput("1 {::>,^}");
     expect(styleConflict.localDisplay?.valid).toBe(false);
     if (styleConflict.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
     expect(styleConflict.localDisplay.issue.code).toBe("duplicate_align_style");
@@ -235,9 +255,9 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   });
 
   it("splits editable content from trailing display metadata", () => {
-    expect(splitCellDisplayMetadata("= sum(B2:B9) {:,.2f:>,green}")).toEqual({
+    expect(splitCellDisplayMetadata("= sum(B2:B9) {:,.2f} {::>,green}")).toEqual({
       contentText: "= sum(B2:B9)",
-      displayMetaRaw: "{:,.2f:>,green}",
+      displayMetaRaw: "{:,.2f} {::>,green}",
     });
 
     expect(splitCellDisplayMetadata("  42  ")).toEqual({
@@ -249,7 +269,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("resolves effective presentation with cell > column > default precedence", () => {
     const doc = `
 # Sheet
-| @display |      || {:,.1f:>,bold} | {:d:>,bold} | {:,.2f:>,blue,bold} |
+| @display |      || {:,.1f} {::>,bold} | {:d} {::>,bold} | {:,.2f} {::>,blue,bold} |
 |          | Item || Price          | Qty         | Total                |
 | -------- | ---- || ----           | ---         | -----                |
 |          | A    || 1234.5         | 2           | = B2 * C2            |
@@ -320,7 +340,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 12.5 {:bad fmt} | = B2 + 1 {:,.2f:purple} |
+| A    || 12.5 {:bad fmt} | = B2 + 1 {:,.2f} {::purple} |
 `.trim();
 
     const state = DocumentState.fromText(doc);
@@ -378,13 +398,13 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 12.3 | = B2 {:,.2f:>} |
+| A    || 12.3 | = B2 {:,.2f} {::>} |
 `.trim();
 
     const state = DocumentState.fromText(doc);
     state.evaluate();
     const output = serializeDocumentState(state);
-    expect(output).toContain('12.3 = B2 {:,.2f:>}');
+    expect(output).toContain('12.3 = B2 {:,.2f} {::>}');
   });
 
   it("applies column defaults from control frame without header rows", () => {

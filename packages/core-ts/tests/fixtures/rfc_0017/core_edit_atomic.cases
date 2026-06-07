@@ -35,7 +35,7 @@ set_cell_input_and_local_display_success
 # Sheet
 | Item || 2024 | 2025 | Out |
 | ---- || ---- | ---- | --- |
-| A    || 10   | 2    | = B2 + C2 {:,.2f:green} |
+| A    || 10   | 2    | = B2 + C2 {:,.2f} {::green} |
 | B    || 3    | 4    | = B3 + C3 |
 [/expect]
 expect_ok: true
@@ -97,7 +97,7 @@ clear_cell_local_format_success
 # Sheet
 | Item || 2024 | 2025 | Out |
 | ---- || ---- | ---- | --- |
-| A    || 1    | 2    | = B2 + C2 {:,.2f:green} |
+| A    || 1    | 2    | = B2 + C2 {:,.2f} {::green} |
 [/doc]
 [ops]
 [
@@ -121,7 +121,7 @@ clear_cell_local_style_success
 # Sheet
 | Item || 2024 | 2025 | Out |
 | ---- || ---- | ---- | --- |
-| A    || 1    | 2    | = B2 + C2 {:,.2f:green} |
+| A    || 1    | 2    | = B2 + C2 {:,.2f} {::green} |
 [/doc]
 [ops]
 [

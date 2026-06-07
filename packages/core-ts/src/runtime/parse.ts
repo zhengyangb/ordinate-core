@@ -181,9 +181,10 @@ function renderDisplayMetadataBlock(display: ParsedDisplayMetadata | null): stri
   const format = display.format ? serializeFormatSpec(display.format) : "";
   const style = display.style ? serializeStyleSpec(display.style) : "";
   if (format === "" && style === "") return null;
-  if (style === "") return `{:${format}}`;
-  if (format === "") return `{::${style}}`;
-  return `{:${format}:${style}}`;
+  const blocks: string[] = [];
+  if (format !== "") blocks.push(`{:${format}}`);
+  if (style !== "") blocks.push(`{::${style}}`);
+  return blocks.join(" ");
 }
 
 function serializeFormatSpec(spec: FormatSpec): string {
@@ -868,15 +869,33 @@ function extractTrailingDisplayMetadata(text: string): {
   displayRaw: string | null;
 } {
   const rightTrimmed = text.replace(/\s+$/, "");
-  const block = findTopLevelTrailingDisplayBlock(rightTrimmed);
-  if (!block) {
+  const blocks = findTrailingDisplayBlocks(rightTrimmed);
+  if (blocks.length === 0) {
     return { expression: text, display: null, displayRaw: null };
   }
-  const rawBlock = rightTrimmed.slice(block.start, block.end + 1);
-  const content = rightTrimmed.slice(block.start + 2, block.end);
-  const display = parseDisplayMetadata(content, rawBlock);
-  const expression = rightTrimmed.slice(0, block.start);
+  const rawBlock = rightTrimmed.slice(blocks[0].start, blocks[blocks.length - 1].end + 1);
+  const display = parseDisplayMetadataBlocks(
+    blocks.map((block) => ({
+      rawBlock: rightTrimmed.slice(block.start, block.end + 1),
+      content: rightTrimmed.slice(block.start + 2, block.end),
+    })),
+    rawBlock,
+  );
+  const expression = rightTrimmed.slice(0, blocks[0].start);
   return { expression, display, displayRaw: rawBlock };
+}
+
+function findTrailingDisplayBlocks(text: string): Array<{ start: number; end: number }> {
+  const blocks: Array<{ start: number; end: number }> = [];
+  let cursor = text.length;
+  while (cursor > 0) {
+    const candidateText = text.slice(0, cursor).replace(/\s+$/, "");
+    const block = findTopLevelTrailingDisplayBlock(candidateText);
+    if (!block) break;
+    blocks.unshift(block);
+    cursor = block.start;
+  }
+  return blocks;
 }
 
 function findTopLevelTrailingDisplayBlock(text: string): { start: number; end: number } | null {
@@ -946,14 +965,51 @@ function findTopLevelTrailingDisplayBlock(text: string): { start: number; end: n
   return null;
 }
 
-function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMetadata {
+function parseDisplayMetadataBlocks(
+  blocks: Array<{ content: string; rawBlock: string }>,
+  rawSequence: string,
+): ParsedDisplayMetadata {
+  let format: FormatSpec | null = null;
+  let style: StyleSpec | null = null;
+
+  for (const block of blocks) {
+    const parsed = parseDisplayMetadataBlock(block.content, block.rawBlock);
+    if (!parsed.valid) {
+      return {
+        valid: false,
+        rawBlock: rawSequence,
+        issue: parsed.issue,
+      };
+    }
+    if (parsed.format) {
+      if (format !== null) return invalidDisplay(rawSequence, "duplicate_format_metadata");
+      format = parsed.format;
+    }
+    if (parsed.style) {
+      if (style !== null) return invalidDisplay(rawSequence, "duplicate_style_metadata");
+      style = parsed.style;
+    }
+  }
+
+  if (format === null && style === null) {
+    return invalidDisplay(rawSequence, "empty_display_metadata");
+  }
+
+  return {
+    valid: true,
+    format,
+    style,
+  };
+}
+
+function parseDisplayMetadataBlock(inner: string, rawBlock: string): ParsedDisplayMetadata {
   const content = inner.trim();
   if (content === "") {
     return invalidDisplay(rawBlock, "empty_display_metadata");
   }
 
-  if (content.startsWith(":")) {
-    const style = content.slice(1).trim();
+  if (inner.startsWith(":")) {
+    const style = inner.slice(1).trim();
     if (style === "") {
       return invalidDisplay(rawBlock, "empty_style_spec");
     }
@@ -968,69 +1024,19 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
     };
   }
 
-  const split = findTopLevelColon(content);
-  if (split === -1) {
-    const format = content.trim();
-    if (format === "") {
-      return invalidDisplay(rawBlock, "empty_format_spec");
-    }
-    const formatSpec = parseFormatSpec(format);
-    if ("issue" in formatSpec) {
-      return invalidDisplay(rawBlock, formatSpec.issue);
-    }
-    return {
-      valid: true,
-      format: formatSpec.value,
-      style: null,
-    };
+  if (inner !== content) {
+    return invalidDisplay(rawBlock, "format_spec_contains_whitespace");
   }
 
-  const format = content.slice(0, split).trim();
-  const style = content.slice(split + 1).trim();
-  if (format === "") {
-    return invalidDisplay(rawBlock, "empty_format_spec");
-  }
-  if (style === "") {
-    return invalidDisplay(rawBlock, "empty_style_spec");
-  }
-
-  const formatSpec = parseFormatSpec(format);
+  const formatSpec = parseFormatSpec(content);
   if ("issue" in formatSpec) {
     return invalidDisplay(rawBlock, formatSpec.issue);
-  }
-  const styleSpec = parseStyleSpec(style);
-  if ("error" in styleSpec) {
-    return invalidDisplay(rawBlock, styleSpec.error);
   }
   return {
     valid: true,
     format: formatSpec.value,
-    style: styleSpec.value,
+    style: null,
   };
-}
-
-function findTopLevelColon(text: string): number {
-  let inQuote = false;
-  let escaped = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (ch === '"') {
-      inQuote = !inQuote;
-      continue;
-    }
-    if (!inQuote && ch === ":") {
-      return i;
-    }
-  }
-  return -1;
 }
 
 function invalidDisplay(rawBlock: string, issue: string | Diagnostic): ParsedDisplayMetadata {

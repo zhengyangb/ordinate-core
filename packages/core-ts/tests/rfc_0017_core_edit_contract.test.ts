@@ -30,7 +30,7 @@ const FORMAT_GROUPED_2F: FormatSpec = {
 
 const API_DOC = `
 # Sheet
-| @display |      || {:,.1f:>,blue,bold} | {::>,bold} |         |
+| @display |      || {:,.1f} {::>,blue,bold} | {::>,bold} |         |
 |          | Item || Price                | Qty        | Out     |
 | -------- | ---- || -----                | ---        | ---     |
 |          | A    || 12.345 {::green}     | 2          | = B2 * C2 {:,.2f} |
@@ -200,9 +200,9 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
   });
 
   it("keeps display metadata parsing separate from content text", () => {
-    expect(splitCellDisplayMetadata('= B2 * C2 {:,.2f:>,blue}')).toEqual({
+    expect(splitCellDisplayMetadata('= B2 * C2 {:,.2f} {::>,blue}')).toEqual({
       contentText: "= B2 * C2",
-      displayMetaRaw: "{:,.2f:>,blue}",
+      displayMetaRaw: "{:,.2f} {::>,blue}",
     });
     expect(splitCellDisplayMetadata('12.345 {::green}')).toEqual({
       contentText: "12.345",
@@ -211,18 +211,18 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
   });
 
   it("derives read/edit input from cached formula body without exposing cache", () => {
-    expect(resolveCellInputText("6 = B2 + 1 {:,.2f:>,blue}")).toEqual({
-      cellText: "6 = B2 + 1 {:,.2f:>,blue}",
+    expect(resolveCellInputText("6 = B2 + 1 {:,.2f} {::>,blue}")).toEqual({
+      cellText: "6 = B2 + 1 {:,.2f} {::>,blue}",
       bodyText: "6 = B2 + 1",
       inputText: "= B2 + 1",
-      displayMetaRaw: "{:,.2f:>,blue}",
+      displayMetaRaw: "{:,.2f} {::>,blue}",
     });
 
-    expect(resolveCellInputText("= B2 + 1 {:,.2f:>,blue}")).toEqual({
-      cellText: "= B2 + 1 {:,.2f:>,blue}",
+    expect(resolveCellInputText("= B2 + 1 {:,.2f} {::>,blue}")).toEqual({
+      cellText: "= B2 + 1 {:,.2f} {::>,blue}",
       bodyText: "= B2 + 1",
       inputText: "= B2 + 1",
-      displayMetaRaw: "{:,.2f:>,blue}",
+      displayMetaRaw: "{:,.2f} {::>,blue}",
     });
 
     expect(resolveCellInputText('"abc" {::green}')).toEqual({
@@ -691,7 +691,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
 # Sheet
 | Item || Out |
 | ---- || --- |
-| A    || 1 {:,.2f:>,blue} |
+| A    || 1 {:,.2f} {::>,blue} |
 `.trim());
 
     const result = applyBatchAtomic(state, [
@@ -716,7 +716,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(cell.localDisplay.style).toMatchObject({ align: "right", color: "blue" });
 
     const output = serializeDocumentState(result.nextDocument);
-    expect(output).toContain('= 2 + 1 {:,.2f:>,blue}');
+    expect(output).toContain('= 2 + 1 {:,.2f} {::>,blue}');
   });
 
   it("preserves local display metadata when set_cell_input clears body text to empty input", () => {
@@ -724,7 +724,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
 # Sheet
 | Item || Out |
 | ---- || --- |
-| A    || 1 {:,.2f:>,blue} |
+| A    || 1 {:,.2f} {::>,blue} |
 `.trim());
 
     const result = applyBatchAtomic(state, [
@@ -750,7 +750,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(cell.localDisplay.style).toMatchObject({ align: "right", color: "blue" });
 
     const output = serializeDocumentState(result.nextDocument);
-    expect(output).toContain('| A    || {:,.2f:>,blue} |');
+    expect(output).toContain('| A    || {:,.2f} {::>,blue} |');
     const roundTripped = DocumentState.fromText(output);
     const roundTrippedCell = roundTripped.sheets[0].cells[roundTripped.sheets[0].bodyStart][1];
     expect(roundTrippedCell.body.valid).toBe(true);
@@ -803,7 +803,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
 # Sheet
 | Item || Out |
 | ---- || --- |
-| A    || 1 {:,.2f:>,blue} |
+| A    || 1 {:,.2f} {::>,blue} |
 `.trim());
 
     const result = applyBatchAtomic(state, [
@@ -825,7 +825,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(cell.localDisplay).toBeNull();
 
     const output = serializeDocumentState(result.nextDocument);
-    expect(output).not.toContain('{:,.2f:>,blue}');
+    expect(output).not.toContain('{:,.2f} {::>,blue}');
     const roundTripped = DocumentState.fromText(output);
     const roundTrippedCell = roundTripped.sheets[0].cells[roundTripped.sheets[0].bodyStart][1];
     expect(roundTrippedCell.body.valid).toBe(true);

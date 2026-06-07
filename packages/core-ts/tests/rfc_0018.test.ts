@@ -225,7 +225,7 @@ describe("RFC-0018 header surface editing and row area operations", () => {
   it("patches and clears column default style independently from format", () => {
     const state = DocumentState.fromText(`
 # Sheet
-| @display |      || {:,.1f:>,blue,bold} |
+| @display |      || {:,.1f} {::>,blue,bold} |
 |          | Item || Price                |
 | -------- | ---- || -----                |
 |          | A    || 12.34                |

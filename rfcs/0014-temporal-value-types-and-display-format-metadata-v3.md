@@ -107,14 +107,16 @@ Supported forms:
 |---|---|---|
 | `body` | no display metadata | `1234.5` |
 | `body {: format_spec}` | format only | `1234.5 {:,.2f}` |
-| `body {: : style_spec}` | style only | `42 {: :>}` |
-| `body {: format_spec : style_spec}` | format and style | `1234.5 {:,.2f:>,red}` |
+| `body {:: style_spec}` | style only | `42 {::>}` |
+| `body {: format_spec} {:: style_spec}` | format and style | `1234.5 {:,.2f} {::>,red}` |
 
 `body` follows RFC-0016 cell source terminology. It may be a literal body, formula body, or cached-formula body.
 
 Display metadata is a trailing `display` segment and is not part of `input`.
 
 Example: `= sum(A:A) {:,.2f}`
+
+Format and style are separate display metadata blocks. `{: format_spec : style_spec}` and `{: : style_spec}` are invalid and must not be accepted as compatibility forms.
 
 ## Format vs Style
 
@@ -197,14 +199,14 @@ Supported style items:
 
 | Style | Full Form | Shorthand | Example |
 |---|---|---|---|
-| left align | `align=left` | `<` | `42 {: :<}` |
-| right align | `align=right` | `>` | `42 {: :>}` |
-| center align | `align=center` | `^` | `42 {: :^}` |
-| bold weight | `weight=bold` | `bold` | `42 {: :bold}` |
-| normal weight | `weight=normal` | `normal` | `42 {: :normal}` |
-| red text | `color=red` | `red` | `42 {: :red}` |
-| green text | `color=green` | `green` | `42 {: :green}` |
-| blue text | `color=blue` | `blue` | `42 {: :blue}` |
+| left align | `align=left` | `<` | `42 {::<}` |
+| right align | `align=right` | `>` | `42 {::>}` |
+| center align | `align=center` | `^` | `42 {::^}` |
+| bold weight | `weight=bold` | `bold` | `42 {::bold}` |
+| normal weight | `weight=normal` | `normal` | `42 {::normal}` |
+| red text | `color=red` | `red` | `42 {::red}` |
+| green text | `color=green` | `green` | `42 {::green}` |
+| blue text | `color=blue` | `blue` | `42 {::blue}` |
 
 Current direction:
 
@@ -248,7 +250,7 @@ Current working precedence:
 | Priority | Source | Example |
 |---|---|---|
 | 1 | cell inline format/style | `999.9 {:.3f}` |
-| 2 | column display metadata | `Price {:,.1f:>}` |
+| 2 | column display metadata | `Price {:,.1f} {::>}` |
 | 3 | UI / regional default | browser/app default |
 
 For style specifically, precedence is resolved per axis (`align`, `weight`, `color`) rather than as whole-object replacement.
@@ -268,11 +270,11 @@ Future versions may consider optional display-text caching as an implementation 
 ## Full Example
 
 ```text
-| @display |      || {:,.1f:>} | {:(),.2f:red} | {:.1%:^} | {:,.2f:>} |
+| @display |      || {:,.1f} {::>} | {:(),.2f} {::red} | {:.1%} {::^} | {:,.2f} {::>} |
 |          | Item || Rev       | Cost          | Margin   | Total      |
 | -------- | ---- || --------- | ------------- | -------- | ---------- |
-|          | A    || 1234.5    | -456.7        | 0.125    | = sum(@[#1,#1:#2]) {:,.2f:>} |
-|          | B    || 999.9 {:.3f} | -88.1 {: :bold} | 0.314 {:.2%:^,blue} | = sum(@[#2,#1:#2]) |
+|          | A    || 1234.5    | -456.7        | 0.125    | = sum(@[#1,#1:#2]) {:,.2f} {::>} |
+|          | B    || 999.9 {:.3f} | -88.1 {::bold} | 0.314 {:.2%} {::^,blue} | = sum(@[#2,#1:#2]) |
 ```
 
 Interpretation:
@@ -289,14 +291,14 @@ Interpretation:
 Cell-level overrides:
 
 - `999.9 {:.3f}` overrides the `Rev` column format
-- `-88.1 {: :bold}` keeps the column format but adds cell-level style
-- `0.314 {:.2%:^,blue}` overrides both format and style
-- `= sum(@[#1,#1:#2]) {:,.2f:>}` shows that formulas may also carry display metadata
+- `-88.1 {::bold}` keeps the column format but adds cell-level style
+- `0.314 {:.2%} {::^,blue}` overrides both format and style
+- `= sum(@[#1,#1:#2]) {:,.2f} {::>}` shows that formulas may also carry display metadata
 
 Formula-cache note:
 
 - the cached value for `= sum(@[#1,#1:#2])` is the evaluated numeric value
-- the cache does not store the formatted text produced by `{:,.2f:>}`
+- the cache does not store the formatted text produced by `{:,.2f} {::>}`
 
 ## Future Work
 
@@ -323,8 +325,8 @@ Formula-cache note:
 - valid supported unquoted ISO 8601 forms are parsed natively before string fallback
 - quoted equivalents remain strings
 - inline cell format uses `body {: format_spec}`
-- inline cell style uses `body {: : style_spec}`
-- combined display metadata may use `body {: format_spec : style_spec}`
+- inline cell style uses `body {:: style_spec}`
+- combined display metadata uses separate format and style blocks: `body {: format_spec} {:: style_spec}`
 - numeric format specs are inspired by a constrained Python-like mini-language
 - sign policy includes bare default, `+`, and `()`
 - style is separate from format

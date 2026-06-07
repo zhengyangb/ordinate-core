@@ -85,7 +85,7 @@ Formula without cached value:
 ```text
 cell
 +------------------------------+
-| = B2 + 1        {:,.2f:>,blue}|
+| = B2 + 1        {:,.2f} {::>,blue}|
 +------------------------------+
   [  body  ]       [  display  ]
   [  input ]
@@ -98,7 +98,7 @@ Formula with cached value:
 ```text
 cell
 +----------------------------------+
-| 6 = B2 + 1        {:,.2f:>,blue}  |
+| 6 = B2 + 1        {:,.2f} {::>,blue}  |
 +----------------------------------+
   [    body    ]       [  display  ]
   cached value: "6"
@@ -129,9 +129,9 @@ Comparison:
 
 | Concept | Formula, no cache | Formula, with cache | String literal | Number literal |
 |---|---|---|---|---|
-| `cell` | `= B2 + 1 {:,.2f:>,blue}` | `6 = B2 + 1 {:,.2f:>,blue}` | `"abc" {::green}` | `12.3 {::red}` |
+| `cell` | `= B2 + 1 {:,.2f} {::>,blue}` | `6 = B2 + 1 {:,.2f} {::>,blue}` | `"abc" {::green}` | `12.3 {::red}` |
 | `body` | `= B2 + 1` | `6 = B2 + 1` | `"abc"` | `12.3` |
-| `display` | `{:,.2f:>,blue}` | `{:,.2f:>,blue}` | `{::green}` | `{::red}` |
+| `display` | `{:,.2f} {::>,blue}` | `{:,.2f} {::>,blue}` | `{::green}` | `{::red}` |
 | `input` | `= B2 + 1` | `= B2 + 1` | `"abc"` | `12.3` |
 | `literal` | none | none | `"abc"` | `12.3` |
 | `expr` | `B2 + 1` | `B2 + 1` | none | none |

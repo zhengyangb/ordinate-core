@@ -222,13 +222,10 @@ function renderDisplayBlock(display: ParsedDisplayMetadata | null): string {
   if (format === "" && style === "") {
     return "";
   }
-  if (style === "") {
-    return ` {:${format}}`;
-  }
-  if (format === "") {
-    return ` {::${style}}`;
-  }
-  return ` {:${format}:${style}}`;
+  const blocks: string[] = [];
+  if (format !== "") blocks.push(`{:${format}}`);
+  if (style !== "") blocks.push(`{::${style}}`);
+  return ` ${blocks.join(" ")}`;
 }
 
 function renderDisplayControlCell(display: ParsedDisplayMetadata): string {
@@ -238,9 +235,10 @@ function renderDisplayControlCell(display: ParsedDisplayMetadata): string {
   const format = display.format ? serializeFormatSpec(display.format) : "";
   const style = display.style ? serializeStyleSpec(display.style) : "";
   if (format === "" && style === "") return "";
-  if (style === "") return `{:${format}}`;
-  if (format === "") return `{::${style}}`;
-  return `{:${format}:${style}}`;
+  const blocks: string[] = [];
+  if (format !== "") blocks.push(`{:${format}}`);
+  if (style !== "") blocks.push(`{::${style}}`);
+  return blocks.join(" ");
 }
 
 function serializeFormatSpec(spec: FormatSpec): string {
