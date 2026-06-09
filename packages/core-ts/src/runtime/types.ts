@@ -135,17 +135,49 @@ export interface ExprNode {
 
 export type FormatSignPolicy = "default" | "plus" | "parentheses";
 export type NumericFormatType = "f" | "e" | "%" | "d";
+export type TemporalFormatDirective =
+  | "literal_percent"
+  | "year"
+  | "month"
+  | "day"
+  | "hour"
+  | "minute"
+  | "second"
+  | "fraction"
+  | "offset_compact"
+  | "offset_colon"
+  | "date_iso"
+  | "time_iso"
+  | "duration_total_days"
+  | "duration_total_hours"
+  | "duration_total_minutes"
+  | "duration_total_seconds"
+  | "duration_total_milliseconds";
 export type TextAlign = "left" | "right" | "center";
 export type TextColor = "red" | "green" | "blue";
 export type TextWeight = "bold" | "normal";
 
-export interface FormatSpec {
+export interface NumericFormatSpec {
+  kind: "numeric";
   sign: FormatSignPolicy;
   padWidth: number | null;
   grouping: boolean;
   precision: number | null;
   type: NumericFormatType | null;
 }
+
+export interface TemporalFormatToken {
+  directive: TemporalFormatDirective;
+  raw: string;
+}
+
+export interface TemporalFormatSpec {
+  kind: "temporal";
+  pattern: string;
+  tokens: TemporalFormatToken[];
+}
+
+export type FormatSpec = NumericFormatSpec | TemporalFormatSpec;
 
 export interface StyleSpec {
   align: TextAlign | null;

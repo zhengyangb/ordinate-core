@@ -15,6 +15,10 @@ const FORMAT_COMPATIBILITY: Record<FormatCompatibilityType, FormatCompatibilityR
 };
 
 export function validateFormatSpec(spec: FormatSpec): Diagnostic | null {
+  if (spec.kind === "temporal") {
+    return null;
+  }
+
   const type = toCompatibilityType(spec.type);
   const rule = FORMAT_COMPATIBILITY[type];
 
@@ -46,6 +50,25 @@ export function describeDisplayMetadataDiagnostic(issue: Diagnostic): string {
   }
   if (issue.code === "invalid_format_spec_trailing_chars") {
     return "format spec has trailing characters";
+  }
+  if (issue.code === "unsupported_temporal_format_directive") {
+    const directive = typeof issue.context.directive === "string" ? issue.context.directive : "";
+    return directive ? `unsupported temporal format directive '${directive}'` : "unsupported temporal format directive";
+  }
+  if (issue.code === "invalid_temporal_format_trailing_percent") {
+    return "temporal format has trailing percent";
+  }
+  if (issue.code === "format_value_kind_mismatch") {
+    return "format is not compatible with value kind";
+  }
+  if (issue.code === "temporal_format_directive_value_mismatch") {
+    return "temporal format directive is not compatible with value kind";
+  }
+  if (issue.code === "temporal_format_offset_requires_offset_qualified_value") {
+    return "temporal offset format requires an offset-qualified value";
+  }
+  if (issue.code === "duration_format_requires_fixed_duration") {
+    return "duration format requires a fixed duration without year or month components";
   }
   if (issue.code === "empty_format_spec") {
     return "format spec is empty";

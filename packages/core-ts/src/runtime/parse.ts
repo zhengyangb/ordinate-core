@@ -4,6 +4,7 @@ import {
   type FormatSpec,
   type FunctionCall,
   type IndexAxisExpr,
+  type NumericFormatSpec,
   type ParsedDisplayMetadata,
   type ParsedCell,
   type CellBodyState,
@@ -19,6 +20,7 @@ import {
 import { validateFormatSpec } from "./displayMetadata";
 import { diagnosticFromError, makeError, makeInternalError } from "./errors";
 import { parseTemporalLiteral, scanTemporalLiteralPrefix } from "./temporal";
+import { parseTemporalFormatSpec } from "./temporalFormat";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
@@ -188,6 +190,7 @@ function renderDisplayMetadataBlock(display: ParsedDisplayMetadata | null): stri
 }
 
 function serializeFormatSpec(spec: FormatSpec): string {
+  if (spec.kind === "temporal") return spec.pattern;
   let out = "";
   if (spec.sign === "plus") out += "+";
   else if (spec.sign === "parentheses") out += "()";
@@ -1054,10 +1057,14 @@ function diagnostic(code: string, context: Record<string, unknown> = {}): Diagno
 function parseFormatSpec(spec: string): { value: FormatSpec } | { issue: Diagnostic } {
   const text = spec.trim();
   if (text === "") return { issue: diagnostic("empty_format_spec") };
+
+  const temporalSpec = parseTemporalFormatSpec(text);
+  if (temporalSpec) return temporalSpec;
+
   if (/\s/.test(text)) return { issue: diagnostic("format_spec_contains_whitespace") };
 
   let i = 0;
-  let sign: FormatSpec["sign"] = "default";
+  let sign: NumericFormatSpec["sign"] = "default";
   if (text.startsWith("+")) {
     sign = "plus";
     i += 1;
@@ -1094,7 +1101,7 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { issue: Diagnos
     precision = Number(text.slice(pStart, i));
   }
 
-  let type: FormatSpec["type"] = null;
+  let type: NumericFormatSpec["type"] = null;
   if (i < text.length) {
     const ch = text[i];
     if (ch === "f" || ch === "e" || ch === "%" || ch === "d") {
@@ -1110,12 +1117,13 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { issue: Diagnos
   }
 
   const value = {
+    kind: "numeric",
     sign,
     padWidth,
     grouping,
     precision,
     type,
-  } satisfies FormatSpec;
+  } satisfies NumericFormatSpec;
   const compatibilityIssue = validateFormatSpec(value);
   if (compatibilityIssue) {
     return { issue: compatibilityIssue };

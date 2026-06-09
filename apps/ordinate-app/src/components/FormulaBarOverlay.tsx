@@ -9,7 +9,7 @@ import {
   formatDisplayMetadataErrorMessage,
   getDisplayMetadataErrorLabel,
 } from "../i18n/displayMetadata";
-import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
+import { FormatDetailPanel, FormatMenuList, StylePreviewPanel } from "./DisplayMetadataPreview";
 import type { ChromeVisibilityPhase, FormatLocalKey, FormulaBarData, StyleLocalView } from "../types/ui";
 import { selectionDebugLog } from "../utils/selectionDebug";
 import {
@@ -130,6 +130,19 @@ function setEditableSelectionOffsets(editor: HTMLTextAreaElement, start: number,
   const targetStart = Math.max(0, Math.min(start, textLength));
   const targetEnd = Math.max(0, Math.min(end, textLength));
   editor.setSelectionRange(targetStart, targetEnd);
+}
+
+function formatErrorMessageForFormulaBar(locale: UiLocale, issue: Parameters<typeof formatDisplayMetadataErrorMessage>[1], snapshot: FormulaBarData | null): string {
+  if (issue.code !== "format_value_kind_mismatch" || snapshot?.formatLocalKey !== "auto") {
+    return formatDisplayMetadataErrorMessage(locale, issue);
+  }
+  if (snapshot.formatSource === "column") {
+    return "Column format is not compatible with this value.";
+  }
+  if (snapshot.formatSource === "row") {
+    return "Row format is not compatible with this value.";
+  }
+  return formatDisplayMetadataErrorMessage(locale, issue);
 }
 
 function resolveEditorNavigationCaret(
@@ -280,8 +293,14 @@ export default function FormulaBarOverlay({
   const [formatMenuOpen, setFormatMenuOpen] = useState(false);
   const [menuPanelKey, setMenuPanelKey] = useState<FormatLocalKey>("auto");
   const [formatMenuPosition, setFormatMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [formatDetailPosition, setFormatDetailPosition] = useState<{ top: number; left: number; maxHeight: number }>({
+    top: 0,
+    left: 0,
+    maxHeight: 0,
+  });
   const formatButtonRef = useRef<HTMLButtonElement | null>(null);
   const formatMenuRef = useRef<HTMLDivElement | null>(null);
+  const formatDetailRef = useRef<HTMLDivElement | null>(null);
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
   const [styleMenuPosition, setStyleMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const styleButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -498,6 +517,11 @@ export default function FormulaBarOverlay({
 
   const localFormatKey = formulaBarSnapshot?.formatLocalKey ?? "auto";
   const localFormatOptions = formulaBarSnapshot?.formatLocalOptions ?? null;
+  const effectiveFormatKey = formulaBarSnapshot?.formatEffectiveKey ?? "auto";
+  const effectiveFormatOptions = formulaBarSnapshot?.formatEffectiveOptions ?? null;
+  const inheritedFormatKey = formulaBarSnapshot?.formatInheritedKey ?? "auto";
+  const inheritedFormatOptions = formulaBarSnapshot?.formatInheritedOptions ?? null;
+  const formatSource = formulaBarSnapshot?.formatSource ?? "default";
   const chipText = formulaBarSnapshot?.chip ?? "";
   const localStyle: StyleLocalView = formulaBarSnapshot?.styleLocal ?? {
     align: "auto",
@@ -512,6 +536,14 @@ export default function FormulaBarOverlay({
   const styleErrors = displayErrors.filter((issue) => classifyDisplayMetadataIssue(issue) !== "format");
   const hasFormatDisplayError = formatErrors.length > 0;
   const hasStyleDisplayError = styleErrors.length > 0;
+  const primaryFormatErrorMessage = hasFormatDisplayError
+    ? formatErrorMessageForFormulaBar(locale, formatErrors[0], formulaBarSnapshot)
+    : "";
+  const shouldShowFormatDetail = formatMenuOpen && (
+    menuPanelKey !== "auto" ||
+    effectiveFormatKey !== "auto" ||
+    hasFormatDisplayError
+  );
 
   useEffect(() => {
     if (!formulaBarSnapshot) {
@@ -851,6 +883,77 @@ export default function FormulaBarOverlay({
     };
   }, [formatMenuOpen]);
 
+  useLayoutEffect(() => {
+    if (!shouldShowFormatDetail) return;
+    let rafId: number | null = null;
+    const updatePosition = () => {
+      const menu = formatMenuRef.current;
+      const detail = formatDetailRef.current;
+      if (!menu || !detail) return;
+      const menuRect = menu.getBoundingClientRect();
+      const detailRect = detail.getBoundingClientRect();
+      const panel = detail.querySelector<HTMLElement>(".formula-format-menu-panel");
+      if (!panel) return;
+      const error = detail.querySelector<HTMLElement>(".formula-format-error-popover");
+      const margin = 12;
+      const bottomMargin = 34;
+      const gap = 8;
+      const preferredRight = menuRect.right + gap;
+      const preferredLeft = menuRect.left - detailRect.width - gap;
+      const canOpenRight = preferredRight + detailRect.width <= window.innerWidth - margin;
+      const unclampedLeft = canOpenRight ? preferredRight : preferredLeft;
+      const left = Math.max(margin, Math.min(unclampedLeft, window.innerWidth - detailRect.width - margin));
+      const errorHeight = error?.getBoundingClientRect().height ?? 0;
+      const minTop = margin + (errorHeight > 0 ? errorHeight + gap : 0);
+      const panelHeight = Math.max(panel.scrollHeight, Math.ceil(panel.getBoundingClientRect().height)) + 3;
+      const maxTopForFullPanel = window.innerHeight - bottomMargin - panelHeight;
+      const canShowFullPanel = maxTopForFullPanel >= minTop;
+      const top = canShowFullPanel
+        ? Math.max(minTop, Math.min(menuRect.top, maxTopForFullPanel))
+        : minTop;
+      const maxHeight = canShowFullPanel ? panelHeight : Math.max(160, window.innerHeight - top - bottomMargin);
+      setFormatDetailPosition((current) => {
+        if (
+          Math.abs(current.top - top) < 0.5 &&
+          Math.abs(current.left - left) < 0.5 &&
+          Math.abs(current.maxHeight - maxHeight) < 0.5
+        ) {
+          return current;
+        }
+        return { top, left, maxHeight };
+      });
+    };
+    const schedule = () => {
+      if (rafId != null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        updatePosition();
+      });
+    };
+    schedule();
+    const resizeObserver = new ResizeObserver(schedule);
+    if (formatMenuRef.current) resizeObserver.observe(formatMenuRef.current);
+    if (formatDetailRef.current) {
+      resizeObserver.observe(formatDetailRef.current);
+      const panel = formatDetailRef.current.querySelector<HTMLElement>(".formula-format-menu-panel");
+      const error = formatDetailRef.current.querySelector<HTMLElement>(".formula-format-error-popover");
+      if (panel) resizeObserver.observe(panel);
+      if (error) resizeObserver.observe(error);
+    }
+    window.addEventListener("resize", schedule);
+    window.addEventListener("scroll", schedule, true);
+    return () => {
+      if (rafId != null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
+    };
+  }, [shouldShowFormatDetail, menuPanelKey, hasFormatDisplayError, effectiveFormatKey, inheritedFormatKey, formatSource, primaryFormatErrorMessage]);
+
   useEffect(() => {
     if (!styleMenuOpen) return;
     let rafId: number | null = null;
@@ -902,6 +1005,7 @@ export default function FormulaBarOverlay({
       if (
         target?.closest(".formula-format-control") ||
         target?.closest(".formula-format-menu") ||
+        target?.closest(".formula-format-detail-flyout") ||
         target?.closest(".formula-style-control") ||
         target?.closest(".formula-style-menu")
       ) {
@@ -1293,11 +1397,11 @@ export default function FormulaBarOverlay({
                     aria-expanded={formatMenuOpen}
                     disabled={!areDisplayControlsEditable}
                     onMouseEnter={(event) => {
-                      if (areDisplayControlsEditable && !formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? getDisplayMetadataErrorLabel(locale, formatErrors[0]) : "Format options", event.currentTarget);
+                      if (areDisplayControlsEditable && !formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? primaryFormatErrorMessage : "Format options", event.currentTarget);
                     }}
                     onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
                     onFocus={(event) => {
-                      if (areDisplayControlsEditable && !formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? getDisplayMetadataErrorLabel(locale, formatErrors[0]) : "Format options", event.currentTarget);
+                      if (areDisplayControlsEditable && !formatMenuOpen) onTooltipEnter(hasFormatDisplayError ? primaryFormatErrorMessage : "Format options", event.currentTarget);
                     }}
                     onBlur={(event) => onTooltipRelease(event.currentTarget)}
                     onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
@@ -1856,7 +1960,6 @@ export default function FormulaBarOverlay({
           className={[
             "formula-format-menu",
             formatMenuOpen ? "open" : "",
-            localFormatKey !== "auto" ? "has-detail-panel" : "list-only",
           ].join(" ").trim()}
           role="menu"
           aria-hidden={!formatMenuOpen}
@@ -1865,24 +1968,56 @@ export default function FormulaBarOverlay({
             left: `${formatMenuPosition.left}px`,
           }}
         >
-          {hasFormatDisplayError ? (
-            <div className="formula-menu-error-banner formula-menu-error-banner--full" role="status" aria-live="polite">
-                <span className="formula-menu-error-icon"><BannerWarningGlyph /></span>
-                <span className="formula-menu-error-copy">
-                <span className="formula-menu-error-title">{getDisplayMetadataErrorLabel(locale, formatErrors[0])}</span>
-                <span className="formula-menu-error-detail">{formatDisplayMetadataErrorMessage(locale, formatErrors[0])}</span>
-                {formatErrors.length > 1 ? (
-                  <span className="formula-menu-error-more">{`+${formatErrors.length - 1} more`}</span>
-                ) : null}
-              </span>
-            </div>
-          ) : null}
-          <FormatPreviewPanel
+          <FormatMenuList
             localFormatKey={localFormatKey}
             localFormatOptions={localFormatOptions}
             inspectedKey={menuPanelKey}
             onInspectKey={setMenuPanelKey}
             onChange={areDisplayControlsEditable ? (key, options) => onSetLocalFormat(key, options) : undefined}
+          />
+        </div>,
+        document.body,
+      )}
+      {createPortal(
+        <div
+          ref={formatDetailRef}
+          className={[
+            "formula-format-detail-flyout",
+            shouldShowFormatDetail ? "open" : "",
+          ].join(" ").trim()}
+          aria-hidden={!shouldShowFormatDetail}
+          onMouseDown={(event) => event.stopPropagation()}
+          style={{
+            top: `${formatDetailPosition.top}px`,
+            left: `${formatDetailPosition.left}px`,
+            "--formula-format-detail-panel-max-height": `${formatDetailPosition.maxHeight}px`,
+          } as CSSProperties}
+        >
+          {hasFormatDisplayError ? (
+            <div className="formula-format-error-popover" role="status" aria-live="polite">
+              <span className="formula-menu-error-icon"><BannerWarningGlyph /></span>
+              <span className="formula-format-error-message">
+                {primaryFormatErrorMessage}
+                {formatErrors.length > 1 ? ` +${formatErrors.length - 1} more` : ""}
+              </span>
+            </div>
+          ) : null}
+          <FormatDetailPanel
+            localFormatKey={localFormatKey}
+            localFormatOptions={localFormatOptions}
+            effectiveFormatKey={effectiveFormatKey}
+            effectiveFormatOptions={effectiveFormatOptions}
+            inheritedFormatKey={inheritedFormatKey}
+            inheritedFormatOptions={inheritedFormatOptions}
+            formatSource={formatSource}
+            inspectedKey={menuPanelKey}
+            previewContext={formulaBarSnapshot?.formatPreviewContext ?? null}
+            onInspectKey={setMenuPanelKey}
+            onChange={areDisplayControlsEditable ? (key, options) => onSetLocalFormat(key, options) : undefined}
+            onRequestClose={() => {
+              setFormatMenuOpen(false);
+              setStyleMenuOpen(false);
+            }}
           />
         </div>,
         document.body,

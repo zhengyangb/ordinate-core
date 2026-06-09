@@ -49,6 +49,10 @@ interface EditorState {
   clearColumnDefaultFormat: (sheet: string, colId: number) => void;
   setColumnDefaultStyle: (sheet: string, colId: number, style: StylePatch) => void;
   clearColumnDefaultStyle: (sheet: string, colId: number) => void;
+  setRowDefaultFormat: (sheet: string, rowId: number, format: FormatSpec | null) => void;
+  clearRowDefaultFormat: (sheet: string, rowId: number) => void;
+  setRowDefaultStyle: (sheet: string, rowId: number, style: StylePatch) => void;
+  clearRowDefaultStyle: (sheet: string, rowId: number) => void;
   setRegion: (target: CoreRegionTarget, values: string[][]) => void;
   clearRegion: (target: CoreRegionTarget) => void;
   convertRowsToHeader: (sheet: string, rowIds: number[]) => void;
@@ -298,6 +302,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   clearColumnDefaultStyle: (sheet, colId) => {
     get().applyCoreEdits([{ op: "clear_column_default_style", sheet, colId }]);
+  },
+  setRowDefaultFormat: (sheet, rowId, format) => {
+    get().applyCoreEdits([{ op: "set_row_default_format", sheet, rowId, format }]);
+  },
+  clearRowDefaultFormat: (sheet, rowId) => {
+    get().applyCoreEdits([{ op: "clear_row_default_format", sheet, rowId }]);
+  },
+  setRowDefaultStyle: (sheet, rowId, style) => {
+    get().applyCoreEdits([{ op: "set_row_default_style", sheet, rowId, style }]);
+  },
+  clearRowDefaultStyle: (sheet, rowId) => {
+    get().applyCoreEdits([{ op: "clear_row_default_style", sheet, rowId }]);
   },
   setRegion: (target, values) => {
     get().applyCoreEdits([{ op: "set_region", target, values }]);

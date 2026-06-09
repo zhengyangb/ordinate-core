@@ -119,6 +119,8 @@ type RailMenuProps = {
   onConvertRowsToBody: (rowId: number) => void;
   onSetColumnDefaultFormat: (colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
   onSetColumnDefaultStyle: <Axis extends keyof StyleLocalView>(colId: number, axis: Axis, value: StyleLocalView[Axis]) => void;
+  onSetRowDefaultFormat: (rowId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
+  onSetRowDefaultStyle: <Axis extends keyof StyleLocalView>(rowId: number, axis: Axis, value: StyleLocalView[Axis]) => void;
 };
 
 export default function RailMenu({
@@ -136,19 +138,24 @@ export default function RailMenu({
   onConvertRowsToBody,
   onSetColumnDefaultFormat,
   onSetColumnDefaultStyle,
+  onSetRowDefaultFormat,
+  onSetRowDefaultStyle,
 }: RailMenuProps) {
   const [panel, setPanel] = useState<"format" | "style" | null>(null);
-  const [columnFormatInspectKey, setColumnFormatInspectKey] = useState<"auto" | "integer" | "decimal" | "scientific" | "percent">("auto");
+  const [formatInspectKey, setFormatInspectKey] = useState<FormatLocalKey>("auto");
   const formatTriggerRef = useRef<HTMLButtonElement>(null);
   const styleTriggerRef = useRef<HTMLButtonElement>(null);
+  const railMenuTargetKey = railMenu
+    ? railMenu.kind === "column"
+      ? `column:${railMenu.colIndex}`
+      : `row:${railMenu.area}:${railMenu.rowNumber}`
+    : "none";
 
   useEffect(() => {
     if (!open || !railMenu) return;
     setPanel(null);
-    if (railMenu.kind === "column") {
-      setColumnFormatInspectKey(railMenu.formatLocalKey);
-    }
-  }, [open, railMenu]);
+    setFormatInspectKey(railMenu.formatLocalKey);
+  }, [open, railMenuTargetKey]);
 
   const detailAnchorRef = panel === "format" ? formatTriggerRef : styleTriggerRef;
 
@@ -185,7 +192,7 @@ export default function RailMenu({
                         const nextOpen = panel !== "format";
                         setPanel(nextOpen ? "format" : null);
                         if (nextOpen) {
-                          setColumnFormatInspectKey(railMenu.formatLocalKey);
+                          setFormatInspectKey(railMenu.formatLocalKey);
                         }
                       }}
                     >
@@ -222,30 +229,69 @@ export default function RailMenu({
               </div>
             ) : (
               <div className="column-rail-menu-body">
-                <RowStructurePanel
-                  railMenu={railMenu}
-                  onInsertAbove={onInsertRowAbove}
-                  onInsertBelow={onInsertRowBelow}
-                  onDelete={onDeleteRow}
-                  onConvertRowsToHeader={onConvertRowsToHeader}
-                  onConvertRowsToBody={onConvertRowsToBody}
-                />
+                <div className="column-rail-menu-nav" aria-label="Row tools">
+                  {railMenu.canDisplayEdit ? (
+                    <>
+                      <MenuGroup className="column-rail-menu-nav-group" role="group" ariaLabel="Row metadata tools">
+                        <MenuOption
+                          buttonRef={formatTriggerRef}
+                          active={panel === "format"}
+                          className="column-rail-menu-nav-item"
+                          icon={<FormatOptionGlyph option="decimal" />}
+                          trailing={railMenu.formatLocalKey !== "auto" ? <span className="column-rail-menu-nav-mark" aria-hidden="true" /> : null}
+                          onClick={() => {
+                            const nextOpen = panel !== "format";
+                            setPanel(nextOpen ? "format" : null);
+                            if (nextOpen) {
+                              setFormatInspectKey(railMenu.formatLocalKey);
+                            }
+                          }}
+                        >
+                          Format
+                        </MenuOption>
+                        <MenuOption
+                          buttonRef={styleTriggerRef}
+                          active={panel === "style"}
+                          className="column-rail-menu-nav-item"
+                          icon={<StyleRowGlyph />}
+                          trailing={railMenu.styleLocal.align !== "auto" || railMenu.styleLocal.weight !== "auto" || railMenu.styleLocal.color !== "auto" ? (
+                            <span className="column-rail-menu-nav-mark" aria-hidden="true" />
+                          ) : null}
+                          onClick={() => setPanel((current) => (current === "style" ? null : "style"))}
+                        >
+                          Style
+                        </MenuOption>
+                      </MenuGroup>
+                      <MenuDivider className="column-rail-menu-nav-divider" />
+                    </>
+                  ) : null}
+                  <RowStructurePanel
+                    railMenu={railMenu}
+                    onInsertAbove={onInsertRowAbove}
+                    onInsertBelow={onInsertRowBelow}
+                    onDelete={onDeleteRow}
+                    onConvertRowsToHeader={onConvertRowsToHeader}
+                    onConvertRowsToBody={onConvertRowsToBody}
+                  />
+                </div>
               </div>
             )}
           </>
         ) : null}
       </MenuSurface>
-      {railMenu?.kind === "column" ? (
+      {railMenu && (railMenu.kind === "column" || railMenu.canDisplayEdit) ? (
         <RailMenuDetailPanel
           open={open && panel !== null}
           panel={panel}
           railMenu={railMenu}
           anchorRef={detailAnchorRef}
           containerRef={railMenuRef}
-          inspectedKey={columnFormatInspectKey}
-          onInspectKey={setColumnFormatInspectKey}
+          inspectedKey={formatInspectKey}
+          onInspectKey={setFormatInspectKey}
           onSetColumnDefaultFormat={onSetColumnDefaultFormat}
           onSetColumnDefaultStyle={onSetColumnDefaultStyle}
+          onSetRowDefaultFormat={onSetRowDefaultFormat}
+          onSetRowDefaultStyle={onSetRowDefaultStyle}
         />
       ) : null}
     </>

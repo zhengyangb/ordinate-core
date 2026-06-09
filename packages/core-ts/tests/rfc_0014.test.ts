@@ -369,7 +369,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: -1234.5 },
         formatLayer: {
-          effective: { sign: "parentheses", padWidth: null, grouping: true, precision: 2, type: "f" },
+          effective: { kind: "numeric", sign: "parentheses", padWidth: null, grouping: true, precision: 2, type: "f" },
         },
       }),
     ).toBe("(1,234.50)");
@@ -378,7 +378,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: 0.125 },
         formatLayer: {
-          effective: { sign: "plus", padWidth: null, grouping: false, precision: 1, type: "%" },
+          effective: { kind: "numeric", sign: "plus", padWidth: null, grouping: false, precision: 1, type: "%" },
         },
       }),
     ).toBe("+12.5%");
@@ -387,7 +387,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: 42 },
         formatLayer: {
-          effective: { sign: "default", padWidth: 6, grouping: false, precision: null, type: "d" },
+          effective: { kind: "numeric", sign: "default", padWidth: 6, grouping: false, precision: null, type: "d" },
         },
       }),
     ).toBe("000042");

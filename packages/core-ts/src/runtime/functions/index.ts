@@ -15,6 +15,29 @@ import { assertArity, assertArityRange, expectBooleanArg, expectNumberArg, expec
 import { booleanAggregateView, notValue, notView } from "./boolean";
 import { filterView } from "./filter";
 import {
+  cumipmtValue,
+  cumprincValue,
+  dbValue,
+  ddbValue,
+  effectValue,
+  fvValue,
+  ipmtValue,
+  irrView,
+  ispmtValue,
+  mirrView,
+  nominalValue,
+  nperValue,
+  npvView,
+  pmtValue,
+  ppmtValue,
+  pvValue,
+  rateValue,
+  slnValue,
+  sydValue,
+  xirrView,
+  xnpvView,
+} from "./financial";
+import {
   absValue,
   ceilValue,
   floorValue,
@@ -88,7 +111,7 @@ import {
 } from "./temporal";
 import { dotProduct } from "./vector";
 
-export type FunctionCategory = "aggregate" | "numeric" | "logical" | "vector" | "view" | "statistical" | "type" | "text" | "temporal";
+export type FunctionCategory = "aggregate" | "numeric" | "logical" | "vector" | "view" | "statistical" | "type" | "text" | "temporal" | "financial";
 
 export interface FunctionParameter {
   name: string;
@@ -1046,6 +1069,416 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     signatures: [signature([param("ms", "Scalar[number]", "Unix milliseconds since 1970-01-01T00:00:00Z.")], "datetime")],
     examples: [example("datetimeFromUnixMillis(0)", "1970-01-01T00:00:00Z")],
     evaluator: datetimeFromUnixMillisEvaluator(),
+  },
+  {
+    name: "fv",
+    category: "financial",
+    summary: "Returns the future value of an investment or loan using a fixed per-period rate.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period interest rate."),
+      param("nper", "Scalar[number]", "Number of periods."),
+      param("pmt", "Scalar[number]", "Payment made each period."),
+      param("pv", "Scalar[number]", "Present value. Defaults to 0."),
+      param("type", "Scalar[number]", "0 for end-of-period payments, 1 for beginning-of-period payments. Defaults to 0."),
+    ], "number")],
+    examples: [example("fv(0.05, 10, -100, -1000)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 3, 5);
+      if (arityError) return arityError;
+      return fvValue(
+        expectNumberArg(ctx, call.name, call.args[0]),
+        expectNumberArg(ctx, call.name, call.args[1]),
+        expectNumberArg(ctx, call.name, call.args[2]),
+        call.args.length >= 4 ? expectNumberArg(ctx, call.name, call.args[3]) : null,
+        call.args.length >= 5 ? expectNumberArg(ctx, call.name, call.args[4]) : null,
+        call.name,
+      );
+    },
+  },
+  {
+    name: "pv",
+    category: "financial",
+    summary: "Returns the present value of future payments and an optional future value.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period interest rate."),
+      param("nper", "Scalar[number]", "Number of periods."),
+      param("pmt", "Scalar[number]", "Payment made each period."),
+      param("fv", "Scalar[number]", "Future value. Defaults to 0."),
+      param("type", "Scalar[number]", "0 for end-of-period payments, 1 for beginning-of-period payments. Defaults to 0."),
+    ], "number")],
+    examples: [example("pv(0.05, 10, -100)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 3, 5);
+      if (arityError) return arityError;
+      return pvValue(
+        expectNumberArg(ctx, call.name, call.args[0]),
+        expectNumberArg(ctx, call.name, call.args[1]),
+        expectNumberArg(ctx, call.name, call.args[2]),
+        call.args.length >= 4 ? expectNumberArg(ctx, call.name, call.args[3]) : null,
+        call.args.length >= 5 ? expectNumberArg(ctx, call.name, call.args[4]) : null,
+        call.name,
+      );
+    },
+  },
+  {
+    name: "pmt",
+    category: "financial",
+    summary: "Returns the fixed periodic payment for an annuity.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period interest rate."),
+      param("nper", "Scalar[number]", "Number of periods."),
+      param("pv", "Scalar[number]", "Present value."),
+      param("fv", "Scalar[number]", "Future value. Defaults to 0."),
+      param("type", "Scalar[number]", "0 for end-of-period payments, 1 for beginning-of-period payments. Defaults to 0."),
+    ], "number")],
+    examples: [example("pmt(0.05 / 12, 60, 10000)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 3, 5);
+      if (arityError) return arityError;
+      return pmtValue(
+        expectNumberArg(ctx, call.name, call.args[0]),
+        expectNumberArg(ctx, call.name, call.args[1]),
+        expectNumberArg(ctx, call.name, call.args[2]),
+        call.args.length >= 4 ? expectNumberArg(ctx, call.name, call.args[3]) : null,
+        call.args.length >= 5 ? expectNumberArg(ctx, call.name, call.args[4]) : null,
+        call.name,
+      );
+    },
+  },
+  {
+    name: "nper",
+    category: "financial",
+    summary: "Returns the number of periods required for an annuity.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period interest rate."),
+      param("pmt", "Scalar[number]", "Payment made each period."),
+      param("pv", "Scalar[number]", "Present value."),
+      param("fv", "Scalar[number]", "Future value. Defaults to 0."),
+      param("type", "Scalar[number]", "0 for end-of-period payments, 1 for beginning-of-period payments. Defaults to 0."),
+    ], "number")],
+    examples: [example("nper(0.05 / 12, -200, 10000)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 3, 5);
+      if (arityError) return arityError;
+      return nperValue(
+        expectNumberArg(ctx, call.name, call.args[0]),
+        expectNumberArg(ctx, call.name, call.args[1]),
+        expectNumberArg(ctx, call.name, call.args[2]),
+        call.args.length >= 4 ? expectNumberArg(ctx, call.name, call.args[3]) : null,
+        call.args.length >= 5 ? expectNumberArg(ctx, call.name, call.args[4]) : null,
+        call.name,
+      );
+    },
+  },
+  {
+    name: "rate",
+    category: "financial",
+    summary: "Solves the per-period interest rate for an annuity using the deterministic RFC-0031 root solver.",
+    signatures: [signature([
+      param("nper", "Scalar[number]", "Number of periods."),
+      param("pmt", "Scalar[number]", "Payment made each period."),
+      param("pv", "Scalar[number]", "Present value."),
+      param("fv", "Scalar[number]", "Future value. Defaults to 0."),
+      param("type", "Scalar[number]", "0 for end-of-period payments, 1 for beginning-of-period payments. Defaults to 0."),
+    ], "number")],
+    examples: [example("rate(60, -188.71, 10000)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 3, 5);
+      if (arityError) return arityError;
+      return rateValue(
+        expectNumberArg(ctx, call.name, call.args[0]),
+        expectNumberArg(ctx, call.name, call.args[1]),
+        expectNumberArg(ctx, call.name, call.args[2]),
+        call.args.length >= 4 ? expectNumberArg(ctx, call.name, call.args[3]) : null,
+        call.args.length >= 5 ? expectNumberArg(ctx, call.name, call.args[4]) : null,
+        call.name,
+      );
+    },
+  },
+  {
+    name: "ipmt",
+    category: "financial",
+    summary: "Returns the interest portion of a fixed periodic payment.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period interest rate."),
+      param("per", "Scalar[number]", "One-based period to inspect."),
+      param("nper", "Scalar[number]", "Number of periods."),
+      param("pv", "Scalar[number]", "Present value."),
+      param("fv", "Scalar[number]", "Future value. Defaults to 0."),
+      param("type", "Scalar[number]", "0 for end-of-period payments, 1 for beginning-of-period payments. Defaults to 0."),
+    ], "number")],
+    examples: [example("ipmt(0.05 / 12, 1, 60, 10000)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 4, 6);
+      if (arityError) return arityError;
+      return ipmtValue(
+        expectNumberArg(ctx, call.name, call.args[0]),
+        expectNumberArg(ctx, call.name, call.args[1]),
+        expectNumberArg(ctx, call.name, call.args[2]),
+        expectNumberArg(ctx, call.name, call.args[3]),
+        call.args.length >= 5 ? expectNumberArg(ctx, call.name, call.args[4]) : null,
+        call.args.length >= 6 ? expectNumberArg(ctx, call.name, call.args[5]) : null,
+        call.name,
+      );
+    },
+  },
+  {
+    name: "ppmt",
+    category: "financial",
+    summary: "Returns the principal portion of a fixed periodic payment.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period interest rate."),
+      param("per", "Scalar[number]", "One-based period to inspect."),
+      param("nper", "Scalar[number]", "Number of periods."),
+      param("pv", "Scalar[number]", "Present value."),
+      param("fv", "Scalar[number]", "Future value. Defaults to 0."),
+      param("type", "Scalar[number]", "0 for end-of-period payments, 1 for beginning-of-period payments. Defaults to 0."),
+    ], "number")],
+    examples: [example("ppmt(0.05 / 12, 1, 60, 10000)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 4, 6);
+      if (arityError) return arityError;
+      return ppmtValue(
+        expectNumberArg(ctx, call.name, call.args[0]),
+        expectNumberArg(ctx, call.name, call.args[1]),
+        expectNumberArg(ctx, call.name, call.args[2]),
+        expectNumberArg(ctx, call.name, call.args[3]),
+        call.args.length >= 5 ? expectNumberArg(ctx, call.name, call.args[4]) : null,
+        call.args.length >= 6 ? expectNumberArg(ctx, call.name, call.args[5]) : null,
+        call.name,
+      );
+    },
+  },
+  {
+    name: "cumipmt",
+    category: "financial",
+    summary: "Returns the cumulative interest paid over an inclusive period range.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period interest rate."),
+      param("nper", "Scalar[number]", "Number of periods."),
+      param("pv", "Scalar[number]", "Present value."),
+      param("startPeriod", "Scalar[number]", "One-based first period."),
+      param("endPeriod", "Scalar[number]", "One-based final period."),
+      param("type", "Scalar[number]", "0 for end-of-period payments, 1 for beginning-of-period payments. Defaults to 0."),
+    ], "number")],
+    examples: [example("cumipmt(0.05 / 12, 60, 10000, 1, 12)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 5, 6);
+      if (arityError) return arityError;
+      return cumipmtValue(
+        expectNumberArg(ctx, call.name, call.args[0]),
+        expectNumberArg(ctx, call.name, call.args[1]),
+        expectNumberArg(ctx, call.name, call.args[2]),
+        expectNumberArg(ctx, call.name, call.args[3]),
+        expectNumberArg(ctx, call.name, call.args[4]),
+        call.args.length === 6 ? expectNumberArg(ctx, call.name, call.args[5]) : null,
+        call.name,
+      );
+    },
+  },
+  {
+    name: "cumprinc",
+    category: "financial",
+    summary: "Returns the cumulative principal paid over an inclusive period range.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period interest rate."),
+      param("nper", "Scalar[number]", "Number of periods."),
+      param("pv", "Scalar[number]", "Present value."),
+      param("startPeriod", "Scalar[number]", "One-based first period."),
+      param("endPeriod", "Scalar[number]", "One-based final period."),
+      param("type", "Scalar[number]", "0 for end-of-period payments, 1 for beginning-of-period payments. Defaults to 0."),
+    ], "number")],
+    examples: [example("cumprinc(0.05 / 12, 60, 10000, 1, 12)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 5, 6);
+      if (arityError) return arityError;
+      return cumprincValue(
+        expectNumberArg(ctx, call.name, call.args[0]),
+        expectNumberArg(ctx, call.name, call.args[1]),
+        expectNumberArg(ctx, call.name, call.args[2]),
+        expectNumberArg(ctx, call.name, call.args[3]),
+        expectNumberArg(ctx, call.name, call.args[4]),
+        call.args.length === 6 ? expectNumberArg(ctx, call.name, call.args[5]) : null,
+        call.name,
+      );
+    },
+  },
+  {
+    name: "ispmt",
+    category: "financial",
+    summary: "Returns simple interest paid for a period of an investment.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period interest rate."),
+      param("per", "Scalar[number]", "One-based period to inspect."),
+      param("nper", "Scalar[number]", "Number of periods."),
+      param("pv", "Scalar[number]", "Present value."),
+    ], "number")],
+    examples: [example("ispmt(0.1, 1, 4, 1000)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 4);
+      if (arityError) return arityError;
+      return ispmtValue(expectNumberArg(ctx, call.name, call.args[0]), expectNumberArg(ctx, call.name, call.args[1]), expectNumberArg(ctx, call.name, call.args[2]), expectNumberArg(ctx, call.name, call.args[3]), call.name);
+    },
+  },
+  {
+    name: "npv",
+    category: "financial",
+    summary: "Discounts a one-dimensional view of future cash flows by a per-period rate.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Per-period discount rate."),
+      param("values", "view[d=1]", "Future cash flows. The first value is discounted by one period."),
+    ], "number")],
+    examples: [example("npv(0.1, @[:,Cashflow])")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const values = expectViewArg(ctx, call.name, call.args[1]);
+      if (values.kind !== "view") return values;
+      return npvView(expectNumberArg(ctx, call.name, call.args[0]), values, call.name);
+    },
+  },
+  {
+    name: "irr",
+    category: "financial",
+    summary: "Solves the internal rate of return for a one-dimensional view of periodic cash flows.",
+    signatures: [signature([param("values", "view[d=1]", "Periodic cash flows whose first value is at period 0.")], "number")],
+    examples: [example("irr(@[:,Cashflow])")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 1);
+      if (arityError) return arityError;
+      const values = expectViewArg(ctx, call.name, call.args[0]);
+      if (values.kind !== "view") return values;
+      return irrView(values, call.name);
+    },
+  },
+  {
+    name: "mirr",
+    category: "financial",
+    summary: "Returns the modified internal rate of return using separate finance and reinvestment rates.",
+    signatures: [signature([
+      param("values", "view[d=1]", "Periodic cash flows whose first value is at period 0."),
+      param("financeRate", "Scalar[number]", "Rate paid on negative cash flows."),
+      param("reinvestRate", "Scalar[number]", "Rate earned by reinvested positive cash flows."),
+    ], "number")],
+    examples: [example("mirr(@[:,Cashflow], 0.08, 0.12)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 3);
+      if (arityError) return arityError;
+      const values = expectViewArg(ctx, call.name, call.args[0]);
+      if (values.kind !== "view") return values;
+      return mirrView(values, expectNumberArg(ctx, call.name, call.args[1]), expectNumberArg(ctx, call.name, call.args[2]), call.name);
+    },
+  },
+  {
+    name: "xnpv",
+    category: "financial",
+    summary: "Discounts cash flows using actual day offsets from the first supplied date and a 365-day year.",
+    signatures: [signature([
+      param("rate", "Scalar[number]", "Annual discount rate."),
+      param("values", "view[d=1]", "Cash flows."),
+      param("dates", "view[d=1]", "Date values matching the cash-flow shape."),
+    ], "number")],
+    examples: [example("xnpv(0.1, @[:,Cashflow], @[:,Date])")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 3);
+      if (arityError) return arityError;
+      const values = expectViewArg(ctx, call.name, call.args[1]);
+      if (values.kind !== "view") return values;
+      const dates = expectViewArg(ctx, call.name, call.args[2]);
+      if (dates.kind !== "view") return dates;
+      return xnpvView(expectNumberArg(ctx, call.name, call.args[0]), values, dates, call.name);
+    },
+  },
+  {
+    name: "xirr",
+    category: "financial",
+    summary: "Solves the annual internal rate of return for dated cash flows using the deterministic RFC-0031 root solver.",
+    signatures: [signature([
+      param("values", "view[d=1]", "Cash flows."),
+      param("dates", "view[d=1]", "Date values matching the cash-flow shape."),
+    ], "number")],
+    examples: [example("xirr(@[:,Cashflow], @[:,Date])")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      const values = expectViewArg(ctx, call.name, call.args[0]);
+      if (values.kind !== "view") return values;
+      const dates = expectViewArg(ctx, call.name, call.args[1]);
+      if (dates.kind !== "view") return dates;
+      return xirrView(values, dates, call.name);
+    },
+  },
+  {
+    name: "effect",
+    category: "financial",
+    summary: "Returns the effective annual interest rate from a nominal annual rate and compounding period count.",
+    signatures: [signature([param("nominalRate", "Scalar[number]", "Nominal annual interest rate."), param("npery", "Scalar[number]", "Compounding periods per year.")], "number")],
+    examples: [example("effect(0.12, 12)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      return effectValue(expectNumberArg(ctx, call.name, call.args[0]), expectNumberArg(ctx, call.name, call.args[1]), call.name);
+    },
+  },
+  {
+    name: "nominal",
+    category: "financial",
+    summary: "Returns the nominal annual interest rate from an effective annual rate and compounding period count.",
+    signatures: [signature([param("effectRate", "Scalar[number]", "Effective annual interest rate."), param("npery", "Scalar[number]", "Compounding periods per year.")], "number")],
+    examples: [example("nominal(0.126825, 12)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 2);
+      if (arityError) return arityError;
+      return nominalValue(expectNumberArg(ctx, call.name, call.args[0]), expectNumberArg(ctx, call.name, call.args[1]), call.name);
+    },
+  },
+  {
+    name: "sln",
+    category: "financial",
+    summary: "Returns straight-line depreciation for one period.",
+    signatures: [signature([param("cost", "Scalar[number]", "Initial asset cost."), param("salvage", "Scalar[number]", "Value at the end of depreciation."), param("life", "Scalar[number]", "Useful life in periods.")], "number")],
+    examples: [example("sln(10000, 1000, 5)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 3);
+      if (arityError) return arityError;
+      return slnValue(expectNumberArg(ctx, call.name, call.args[0]), expectNumberArg(ctx, call.name, call.args[1]), expectNumberArg(ctx, call.name, call.args[2]), call.name);
+    },
+  },
+  {
+    name: "syd",
+    category: "financial",
+    summary: "Returns sum-of-years-digits depreciation for one period.",
+    signatures: [signature([param("cost", "Scalar[number]", "Initial asset cost."), param("salvage", "Scalar[number]", "Value at the end of depreciation."), param("life", "Scalar[number]", "Useful life in periods."), param("period", "Scalar[number]", "One-based period.")], "number")],
+    examples: [example("syd(10000, 1000, 5, 1)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArity(call.name, call.args.length, 4);
+      if (arityError) return arityError;
+      return sydValue(expectNumberArg(ctx, call.name, call.args[0]), expectNumberArg(ctx, call.name, call.args[1]), expectNumberArg(ctx, call.name, call.args[2]), expectNumberArg(ctx, call.name, call.args[3]), call.name);
+    },
+  },
+  {
+    name: "db",
+    category: "financial",
+    summary: "Returns fixed-declining-balance depreciation for one period using the Excel-compatible rounded rate convention.",
+    signatures: [signature([param("cost", "Scalar[number]", "Initial asset cost."), param("salvage", "Scalar[number]", "Value at the end of depreciation."), param("life", "Scalar[number]", "Useful life in periods."), param("period", "Scalar[number]", "One-based period."), param("month", "Scalar[number]", "Months in the first year. Defaults to 12.")], "number")],
+    examples: [example("db(1000000, 100000, 6, 1, 7)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 4, 5);
+      if (arityError) return arityError;
+      return dbValue(expectNumberArg(ctx, call.name, call.args[0]), expectNumberArg(ctx, call.name, call.args[1]), expectNumberArg(ctx, call.name, call.args[2]), expectNumberArg(ctx, call.name, call.args[3]), call.args.length === 5 ? expectNumberArg(ctx, call.name, call.args[4]) : null, call.name);
+    },
+  },
+  {
+    name: "ddb",
+    category: "financial",
+    summary: "Returns declining-balance depreciation for one period.",
+    signatures: [signature([param("cost", "Scalar[number]", "Initial asset cost."), param("salvage", "Scalar[number]", "Value at the end of depreciation."), param("life", "Scalar[number]", "Useful life in periods."), param("period", "Scalar[number]", "One-based period."), param("factor", "Scalar[number]", "Declining balance factor. Defaults to 2.")], "number")],
+    examples: [example("ddb(10000, 1000, 5, 1)")],
+    evaluator: (call, ctx) => {
+      const arityError = assertArityRange(call.name, call.args.length, 4, 5);
+      if (arityError) return arityError;
+      return ddbValue(expectNumberArg(ctx, call.name, call.args[0]), expectNumberArg(ctx, call.name, call.args[1]), expectNumberArg(ctx, call.name, call.args[2]), expectNumberArg(ctx, call.name, call.args[3]), call.args.length === 5 ? expectNumberArg(ctx, call.name, call.args[4]) : null, call.name);
+    },
   },
   {
     name: "abs",

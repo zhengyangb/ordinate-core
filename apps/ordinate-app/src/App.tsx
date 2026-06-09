@@ -13,7 +13,6 @@ import {
 import {
   getCellTextView,
   resolveSheetRowStructure,
-  type FormatSpec,
   type RuntimeValue,
   type StylePatch,
 } from "@ordinate/core";
@@ -58,6 +57,7 @@ import {
   runtimeValueToText,
   splitPath,
 } from "./utils/sheetView";
+import { formatSpecFromLocalSelection } from "./utils/formatDisplay";
 import { resolvePostRowStructureColumnIndex, resolveRowInsert } from "./utils/rowStructureEdits";
 import {
   BLANK_RUNTIME_VALUE,
@@ -146,23 +146,6 @@ type FormulaReferenceOverlay = {
 const SELECTION_DRAG_SCROLL_EDGE_PX = 48;
 const SELECTION_DRAG_SCROLL_MAX_PX = 24;
 
-function formatSpecFromLocalKey(key: FormatLocalKey, options: FormatLocalOptions | null): FormatSpec | null {
-  if (key === "auto") return null;
-  const typeByKey: Record<Exclude<FormatLocalKey, "auto">, NonNullable<FormatSpec["type"]>> = {
-    integer: "d",
-    decimal: "f",
-    scientific: "e",
-    percent: "%",
-  };
-  return {
-    sign: options?.sign ?? "default",
-    padWidth: options?.padWidth ?? null,
-    grouping: options?.grouping ?? false,
-    precision: key === "integer" ? null : options?.precision ?? null,
-    type: typeByKey[key],
-  };
-}
-
 export default function App() {
   const uiLocale = useMemo(() => resolveUiLocale(window.navigator.language), []);
   const {
@@ -184,6 +167,9 @@ export default function App() {
     setColumnDefaultFormat,
     setColumnDefaultStyle,
     clearColumnDefaultFormat,
+    setRowDefaultFormat,
+    setRowDefaultStyle,
+    clearRowDefaultFormat,
     setRegion,
     clearRegion,
     previewDeleteRow,
@@ -398,11 +384,12 @@ export default function App() {
       openRailMenuTarget,
       sheetColCount,
       headerColCount,
+      currentSheet,
       currentSheetState,
       currentSheetPresentation,
       columnHasLocalConfig,
     );
-  }, [openRailMenuTarget, sheetColCount, headerColCount, currentSheetState, currentSheetPresentation, columnHasLocalConfig]);
+  }, [openRailMenuTarget, sheetColCount, headerColCount, currentSheet, currentSheetState, currentSheetPresentation, columnHasLocalConfig]);
 
   useEffect(() => {
     if (selection?.kind !== "column") return;
@@ -862,7 +849,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (
         target?.closest(
-          "input, textarea, [contenteditable='true'], .formula-format-menu, .formula-style-menu, .rail-menu, .theme-menu, .tool-menu, .sheet-setup-menu, .selection-menu",
+          "input, textarea, [contenteditable='true'], .formula-format-menu, .formula-format-detail-flyout, .formula-style-menu, .rail-menu, .theme-menu, .tool-menu, .sheet-setup-menu, .selection-menu",
         )
       ) {
         return;
@@ -887,7 +874,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (!selection) return;
       const interactiveRoot = target?.closest(
-        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-setup-button, .sheet-setup-menu, .selection-menu, .sheet-tab, .column-index-cell, .column-index-main, .row-index-cell, .row-index-main, .rail-menu, textarea",
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-format-detail-flyout, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-setup-button, .sheet-setup-menu, .selection-menu, .sheet-tab, .column-index-cell, .column-index-main, .row-index-cell, .row-index-main, .rail-menu, textarea",
       );
       if (interactiveRoot) return;
       clearActiveSelection();
@@ -2954,7 +2941,7 @@ export default function App() {
         rowIndex: selectedCell.logical.rAbs - 1,
         colIndex: selectedCell.logical.cAbs,
       },
-      formatSpecFromLocalKey(key, options ?? null),
+      formatSpecFromLocalSelection(key, options ?? null),
     );
     setFormulaInputMode("read");
     window.requestAnimationFrame(() => {
@@ -2997,7 +2984,7 @@ export default function App() {
     if (key === "auto") {
       clearColumnDefaultFormat(activeSheet, colId);
     } else {
-      setColumnDefaultFormat(activeSheet, colId, formatSpecFromLocalKey(key, options));
+      setColumnDefaultFormat(activeSheet, colId, formatSpecFromLocalSelection(key, options));
     }
     setFormulaInputMode("read");
     window.requestAnimationFrame(() => {
@@ -3022,6 +3009,39 @@ export default function App() {
       scheduleSelectionRingSync();
     });
   }, [activeSheet, setColumnDefaultStyle, scheduleSelectionRingSync]);
+
+  const handleSetRowDefaultFormat = useCallback((rowId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => {
+    if (!activeSheet) {
+      throw new Error("row format edit requires an active sheet");
+    }
+    if (key === "auto") {
+      clearRowDefaultFormat(activeSheet, rowId);
+    } else {
+      setRowDefaultFormat(activeSheet, rowId, formatSpecFromLocalSelection(key, options));
+    }
+    setFormulaInputMode("read");
+    window.requestAnimationFrame(() => {
+      scheduleSelectionRingSync();
+    });
+  }, [activeSheet, clearRowDefaultFormat, setRowDefaultFormat, scheduleSelectionRingSync]);
+
+  const handleSetRowDefaultStyle = useCallback(<Axis extends "align" | "weight" | "color">(
+    rowId: number,
+    axis: Axis,
+    value: NonNullable<FormulaBarData["styleLocal"]>[Axis],
+  ) => {
+    if (!activeSheet) {
+      throw new Error("row style edit requires an active sheet");
+    }
+    const patch: StylePatch = {
+      [axis]: value === "auto" ? null : value,
+    };
+    setRowDefaultStyle(activeSheet, rowId, patch);
+    setFormulaInputMode("read");
+    window.requestAnimationFrame(() => {
+      scheduleSelectionRingSync();
+    });
+  }, [activeSheet, setRowDefaultStyle, scheduleSelectionRingSync]);
 
   const handleInsertRow = useCallback((rowNumber: number, side: "above" | "below", area: "header" | "body") => {
     if (!activeSheet) {
@@ -3504,6 +3524,8 @@ export default function App() {
         onConvertRowsToBody={handleConvertRowsToBody}
         onSetColumnDefaultFormat={handleSetColumnDefaultFormat}
         onSetColumnDefaultStyle={handleSetColumnDefaultStyle}
+        onSetRowDefaultFormat={handleSetRowDefaultFormat}
+        onSetRowDefaultStyle={handleSetRowDefaultStyle}
         tooltip={tooltip}
       />
     </div>

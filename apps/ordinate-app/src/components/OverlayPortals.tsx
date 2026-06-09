@@ -55,6 +55,8 @@ type OverlayPortalsProps = {
   onConvertRowsToBody: (rowId: number) => void;
   onSetColumnDefaultFormat: (colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
   onSetColumnDefaultStyle: <Axis extends keyof StyleLocalView>(colId: number, axis: Axis, value: StyleLocalView[Axis]) => void;
+  onSetRowDefaultFormat: (rowId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
+  onSetRowDefaultStyle: <Axis extends keyof StyleLocalView>(rowId: number, axis: Axis, value: StyleLocalView[Axis]) => void;
   tooltip: FloatingTooltip | null;
 };
 
@@ -95,6 +97,8 @@ export default function OverlayPortals({
   onConvertRowsToBody,
   onSetColumnDefaultFormat,
   onSetColumnDefaultStyle,
+  onSetRowDefaultFormat,
+  onSetRowDefaultStyle,
   tooltip,
 }: OverlayPortalsProps) {
   return (
@@ -165,6 +169,8 @@ export default function OverlayPortals({
           onConvertRowsToBody={onConvertRowsToBody}
           onSetColumnDefaultFormat={onSetColumnDefaultFormat}
           onSetColumnDefaultStyle={onSetColumnDefaultStyle}
+          onSetRowDefaultFormat={onSetRowDefaultFormat}
+          onSetRowDefaultStyle={onSetRowDefaultStyle}
         />,
         document.body,
       )}

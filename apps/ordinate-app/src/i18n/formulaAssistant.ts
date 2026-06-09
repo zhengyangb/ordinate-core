@@ -12,6 +12,7 @@ const FUNCTION_CATEGORY_MESSAGE_KEYS = {
   type: "formula.category.type",
   text: "formula.category.text",
   temporal: "formula.category.temporal",
+  financial: "formula.category.financial",
 } satisfies Record<FunctionCategory, UiMessageKey>;
 
 export function getFormulaFunctionCategoryLabel(locale: UiLocale, category: FunctionCategory): string {

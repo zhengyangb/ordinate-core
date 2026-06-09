@@ -6,10 +6,12 @@ import type {
   FloatingMenuPosition,
   HeaderOverlayCell,
   RailMenuView,
+  RowRailMenuView,
   SheetHealth,
   SheetIssueViewModel,
   ThemeMode,
 } from "../types/ui";
+import { firstColumnFormatPreviewValue, formatLocalViewFromSpec } from "./formatDisplay";
 import { runtimeValueToText } from "./sheetView";
 
 export const LABEL_COLUMN_WIDTH = 280;
@@ -49,6 +51,7 @@ type ValidationIssue = {
 
 type RuntimeSheet = {
   colLabels: string[];
+  rowPaths?: string[];
   values: RuntimeValue[][];
 };
 
@@ -67,11 +70,21 @@ type StateSheet = {
 type PresentationColumnDefault = {
   formatLayer: { local: PresentedCell["formatLayer"]["local"] | null | undefined };
   styleLayer: { local: PresentedCell["styleLayer"]["local"] | null | undefined };
+  valid?: boolean;
+  errors?: PresentedCell["errors"];
+};
+
+type PresentationRowDefault = {
+  formatLayer: { local: PresentedCell["formatLayer"]["local"] | null | undefined };
+  styleLayer: { local: PresentedCell["styleLayer"]["local"] | null | undefined };
+  valid?: boolean;
+  errors?: PresentedCell["errors"];
 };
 
 type PresentationSheet = {
   headerDisplayRows?: string[][];
   columnDefaults: Array<PresentationColumnDefault | undefined>;
+  rowDefaults?: Array<PresentationRowDefault | undefined>;
 };
 
 const BLOCKING_SHEET_MESSAGE_FRAGMENTS = [
@@ -226,22 +239,8 @@ export function styleLocalView(style: PresentedCell["styleLayer"]["local"] | nul
   } as const;
 }
 
-export function formatLocalView(format: PresentedCell["formatLayer"]["local"] | null | undefined) {
-  if (!format) {
-    return {
-      formatLocalKey: "auto" as const,
-      formatLocalOptions: null,
-    };
-  }
-  return {
-    formatLocalKey: formatMenuKeyFromType(format.type),
-    formatLocalOptions: {
-      sign: format.sign,
-      padWidth: format.padWidth,
-      grouping: format.grouping,
-      precision: format.precision,
-    },
-  };
+export function formatLocalView(format: PresentedCell["formatLayer"]["local"] | null | undefined, previewValue?: RuntimeValue | null) {
+  return formatLocalViewFromSpec(format, previewValue);
 }
 
 export function trimSheetColCount(currentSheetState: StateSheet | null, currentSheet: RuntimeSheet | null): number {
@@ -331,6 +330,7 @@ export function buildColumnRailMenu(
   openColumnMenuColIndex: number | null,
   sheetColCount: number,
   headerColCount: number,
+  currentSheet: RuntimeSheet | null,
   currentSheetState: StateSheet | null,
   currentSheetPresentation: PresentationSheet | null,
   columnHasLocalConfig: boolean[],
@@ -345,6 +345,7 @@ export function buildColumnRailMenu(
   }
   const localStyle = columnDefault?.styleLayer.local;
   const styleLocal = styleLocalView(localStyle);
+  const previewValue = firstColumnFormatPreviewValue(currentSheet?.values, openColumnMenuColIndex);
   return {
     kind: "column",
     colIndex: openColumnMenuColIndex,
@@ -352,15 +353,34 @@ export function buildColumnRailMenu(
     colLabel: toColumnLetters(openColumnMenuColIndex + 1),
     hasLocalConfig: columnHasLocalConfig[openColumnMenuColIndex] === true,
     canStructureEdit: openColumnMenuColIndex >= headerColCount,
-    ...formatLocalView(columnDefault?.formatLayer.local),
+    ...formatLocalView(columnDefault?.formatLayer.local, previewValue),
+    formatPreviewContext: {
+      value: previewValue,
+      scope: previewValue ? "column" : "sample",
+    },
     styleLocal,
   };
+}
+
+function firstRowFormatPreviewValue(values: RuntimeValue[][] | null | undefined, rowRel: number, headerColCount: number): RuntimeValue | null {
+  if (!values || rowRel < 0 || rowRel >= values.length) return null;
+  const row = values[rowRel];
+  if (!row) return null;
+  for (let colIndex = Math.max(0, headerColCount); colIndex < row.length; colIndex += 1) {
+    const value = row[colIndex];
+    if (!value || value.kind === "blank" || value.kind === "null" || value.kind === "error") continue;
+    return value;
+  }
+  return null;
 }
 
 export function buildRowRailMenu(
   target: { rowNumber: number; area: "header" | "body"; hasChildren: boolean } | null,
   currentSheetState: StateSheet | null,
-): RailMenuView | null {
+  currentSheet: RuntimeSheet | null,
+  currentSheetPresentation: PresentationSheet | null,
+  headerColCount: number,
+): RowRailMenuView | null {
   if (target == null) {
     return null;
   }
@@ -371,13 +391,34 @@ export function buildRowRailMenu(
   }
   const headerRowCount = currentSheetState?.headerRowCount ?? 0;
   const bodyStart = currentSheetState?.bodyStart ?? headerRowCount;
+  const canDisplayEdit = target.area === "body" && rowIndex >= bodyStart && headerColCount > 0;
+  const rowDefault = canDisplayEdit ? currentSheetPresentation?.rowDefaults?.[rowIndex] : null;
+  const localStyle = rowDefault?.styleLayer.local;
+  const rowRel = rowIndex - bodyStart;
+  const previewValue = canDisplayEdit ? firstRowFormatPreviewValue(currentSheet?.values, rowRel, headerColCount) : null;
+  const styleLocal = styleLocalView(localStyle);
+  const rowHasLocalConfig = Boolean(
+    rowDefault?.formatLayer.local ||
+      localStyle?.align ||
+      localStyle?.weight ||
+      localStyle?.color ||
+      rowDefault?.valid === false,
+  );
   return {
     kind: "row",
     area: target.area,
     rowNumber: target.rowNumber,
     rowId,
-    rowPath: null,
+    rowPath: canDisplayEdit ? currentSheet?.rowPaths?.[rowRel] ?? null : null,
     hasChildren: target.hasChildren,
+    canDisplayEdit,
+    hasLocalConfig: rowHasLocalConfig,
+    ...formatLocalView(rowDefault?.formatLayer.local, previewValue),
+    formatPreviewContext: {
+      value: previewValue,
+      scope: previewValue ? "row" : "sample",
+    },
+    styleLocal,
     canConvertToHeader: target.area === "body" && rowIndex === bodyStart,
     canConvertToBody: target.area === "header" && headerRowCount > 0 && rowIndex === headerRowCount - 1,
   };
@@ -390,15 +431,22 @@ export function buildRailMenu(
     | null,
   sheetColCount: number,
   headerColCount: number,
+  currentSheet: RuntimeSheet | null,
   currentSheetState: StateSheet | null,
   currentSheetPresentation: PresentationSheet | null,
   columnHasLocalConfig: boolean[],
 ): RailMenuView | null {
   if (!target) return null;
   if (target.kind === "column") {
-    return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheetState, currentSheetPresentation, columnHasLocalConfig);
+    return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheet, currentSheetState, currentSheetPresentation, columnHasLocalConfig);
   }
-  return buildRowRailMenu({ rowNumber: target.rowNumber, area: target.area, hasChildren: target.hasChildren }, currentSheetState);
+  return buildRowRailMenu(
+    { rowNumber: target.rowNumber, area: target.area, hasChildren: target.hasChildren },
+    currentSheetState,
+    currentSheet,
+    currentSheetPresentation,
+    headerColCount,
+  );
 }
 
 export function resolveRailMenuWidthPx(kind: RailMenuView["kind"]): number {

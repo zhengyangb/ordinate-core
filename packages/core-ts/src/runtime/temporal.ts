@@ -21,13 +21,13 @@ const MS_PER_MINUTE = 60 * MS_PER_SECOND;
 const MS_PER_HOUR = 60 * MS_PER_MINUTE;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
 
-type DateParts = {
+export type TemporalDateParts = {
   year: number;
   month: number;
   day: number;
 };
 
-type TimeParts = {
+export type TemporalTimeParts = {
   hour: number;
   minute: number;
   second: number;
@@ -36,9 +36,7 @@ type TimeParts = {
   offsetMinutes: number | null;
 };
 
-type DatetimeParts = DateParts & TimeParts;
-
-type DurationParts = {
+export type TemporalDurationParts = {
   sign: 1 | -1;
   years: number;
   months: number;
@@ -48,6 +46,30 @@ type DurationParts = {
   seconds: number;
   milliseconds: number;
 };
+
+export type FixedDurationParts = {
+  sign: 1 | -1;
+  totalDays: number;
+  totalHours: number;
+  totalMinutes: number;
+  totalSeconds: number;
+  totalMilliseconds: number;
+  hour: number;
+  minute: number;
+  second: number;
+  millisecond: number;
+};
+
+type DateParts = TemporalDateParts;
+type TimeParts = TemporalTimeParts;
+type DatetimeParts = DateParts & TimeParts;
+
+export type TemporalValueParts = {
+  date: TemporalDateParts | null;
+  time: TemporalTimeParts | null;
+};
+
+type DurationParts = TemporalDurationParts;
 
 export function parseTemporalLiteral(text: string): RuntimeValue | null {
   if (DATE_WITH_OFFSET_RE.test(text)) {
@@ -104,6 +126,76 @@ export function scanTemporalLiteralPrefix(text: string): string | null {
     ?? TIME_SCAN_RE.exec(text)
     ?? (/^P(?:\d|T)/.test(text) ? DURATION_SCAN_RE.exec(text) : null);
   return match?.[0] ?? null;
+}
+
+export function decomposeTemporalValue(value: RuntimeValue): TemporalValueParts | null {
+  if (value.kind === "date") {
+    const parts = parseDateParts(value.value);
+    if (!parts || isError(parts as RuntimeValue)) return null;
+    return { date: parts as DateParts, time: null };
+  }
+  if (value.kind === "time") {
+    const parts = parseTimeParts(value.value);
+    if (!parts || isError(parts as RuntimeValue)) return null;
+    return { date: null, time: parts as TimeParts };
+  }
+  if (value.kind === "datetime") {
+    const parts = parseDatetimeParts(value.value);
+    if (!parts || isError(parts as RuntimeValue)) return null;
+    const datetime = parts as DatetimeParts;
+    return {
+      date: { year: datetime.year, month: datetime.month, day: datetime.day },
+      time: {
+        hour: datetime.hour,
+        minute: datetime.minute,
+        second: datetime.second,
+        millisecond: datetime.millisecond,
+        offsetText: datetime.offsetText,
+        offsetMinutes: datetime.offsetMinutes,
+      },
+    };
+  }
+  return null;
+}
+
+export function decomposeDurationValue(value: RuntimeValue): TemporalDurationParts | null {
+  if (value.kind !== "duration") return null;
+  const parts = parseDurationParts(value.value);
+  if (!parts || isError(parts as RuntimeValue)) return null;
+  return parts as DurationParts;
+}
+
+export function fixedDurationParts(parts: TemporalDurationParts): FixedDurationParts | null {
+  if (parts.years !== 0 || parts.months !== 0) return null;
+  const totalMilliseconds = (
+    parts.days * MS_PER_DAY
+    + parts.hours * MS_PER_HOUR
+    + parts.minutes * MS_PER_MINUTE
+    + parts.seconds * MS_PER_SECOND
+    + parts.milliseconds
+  );
+  if (!Number.isSafeInteger(totalMilliseconds)) return null;
+
+  const totalDays = Math.floor(totalMilliseconds / MS_PER_DAY);
+  const afterDays = totalMilliseconds % MS_PER_DAY;
+  const hour = Math.floor(afterDays / MS_PER_HOUR);
+  const afterHours = afterDays % MS_PER_HOUR;
+  const minute = Math.floor(afterHours / MS_PER_MINUTE);
+  const afterMinutes = afterHours % MS_PER_MINUTE;
+  const second = Math.floor(afterMinutes / MS_PER_SECOND);
+
+  return {
+    sign: parts.sign,
+    totalDays,
+    totalHours: Math.floor(totalMilliseconds / MS_PER_HOUR),
+    totalMinutes: Math.floor(totalMilliseconds / MS_PER_MINUTE),
+    totalSeconds: Math.floor(totalMilliseconds / MS_PER_SECOND),
+    totalMilliseconds,
+    hour,
+    minute,
+    second,
+    millisecond: afterMinutes % MS_PER_SECOND,
+  };
 }
 
 export function makeDateValue(year: RuntimeValue, month: RuntimeValue, day: RuntimeValue, functionName: string): RuntimeValue {

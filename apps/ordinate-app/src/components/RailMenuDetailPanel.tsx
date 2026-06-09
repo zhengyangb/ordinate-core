@@ -3,18 +3,22 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
 import { MenuSurface } from "./MenuSurface";
 import { POSITION_EPSILON, resolveFlyoutMenuPosition } from "../utils/appHelpers";
-import type { ColumnRailMenuView, FloatingMenuPosition, FormatLocalKey, FormatLocalOptions, StyleLocalView } from "../types/ui";
+import type { ColumnRailMenuView, FloatingMenuPosition, FormatLocalKey, FormatLocalOptions, RowRailMenuView, StyleLocalView } from "../types/ui";
+
+type DisplayEditableRailMenuView = ColumnRailMenuView | RowRailMenuView;
 
 type RailMenuDetailPanelProps = {
   open: boolean;
   panel: "format" | "style" | null;
-  railMenu: ColumnRailMenuView;
+  railMenu: DisplayEditableRailMenuView;
   anchorRef: RefObject<HTMLElement>;
   containerRef: RefObject<HTMLElement>;
   inspectedKey: FormatLocalKey;
   onInspectKey: (key: FormatLocalKey) => void;
   onSetColumnDefaultFormat: (colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
   onSetColumnDefaultStyle: <Axis extends keyof StyleLocalView>(colId: number, axis: Axis, value: StyleLocalView[Axis]) => void;
+  onSetRowDefaultFormat: (rowId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
+  onSetRowDefaultStyle: <Axis extends keyof StyleLocalView>(rowId: number, axis: Axis, value: StyleLocalView[Axis]) => void;
 };
 
 export default function RailMenuDetailPanel({
@@ -27,6 +31,8 @@ export default function RailMenuDetailPanel({
   onInspectKey,
   onSetColumnDefaultFormat,
   onSetColumnDefaultStyle,
+  onSetRowDefaultFormat,
+  onSetRowDefaultStyle,
 }: RailMenuDetailPanelProps) {
   const detailRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
@@ -97,13 +103,26 @@ export default function RailMenuDetailPanel({
             localFormatKey={railMenu.formatLocalKey}
             localFormatOptions={railMenu.formatLocalOptions}
             inspectedKey={inspectedKey}
+            previewContext={railMenu.formatPreviewContext}
             onInspectKey={onInspectKey}
-            onChange={(key, options) => onSetColumnDefaultFormat(railMenu.colId, key, options)}
+            onChange={(key, options) => {
+              if (railMenu.kind === "column") {
+                onSetColumnDefaultFormat(railMenu.colId, key, options);
+              } else {
+                onSetRowDefaultFormat(railMenu.rowId, key, options);
+              }
+            }}
           />
         ) : (
           <StylePreviewPanel
             styleLocal={railMenu.styleLocal}
-            onChange={(axis, value) => onSetColumnDefaultStyle(railMenu.colId, axis, value)}
+            onChange={(axis, value) => {
+              if (railMenu.kind === "column") {
+                onSetColumnDefaultStyle(railMenu.colId, axis, value);
+              } else {
+                onSetRowDefaultStyle(railMenu.rowId, axis, value);
+              }
+            }}
           />
         )}
       </div>

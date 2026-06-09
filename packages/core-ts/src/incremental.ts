@@ -1,6 +1,7 @@
 import { parseDocument, parseHierarchyLabel, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
 import { getCellTextView, parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
 import { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
+import { parseTemporalFormatSpec } from "./runtime/temporalFormat";
 import { renderFormulaExpression } from "./runtime/renderFormula";
 import {
   buildBodyRows,
@@ -73,6 +74,7 @@ export class SheetState {
   dataColIndices: number[];
   logicalRows: ParsedRow[];
   cells: CellState[][];
+  rowDisplayMetadata: Array<ParsedDisplayMetadata | null>;
   columnDisplayMetadata: Array<ParsedDisplayMetadata | null>;
   viewDependencies: Map<number, ViewSelection>;
   viewFormulas: Map<number, [number, number]>;
@@ -101,6 +103,7 @@ export class SheetState {
     dataColIndices: number[],
     logicalRows: ParsedRow[],
     cells: CellState[][],
+    rowDisplayMetadata: Array<ParsedDisplayMetadata | null>,
     columnDisplayMetadata: Array<ParsedDisplayMetadata | null>,
     sourceBlocks: PreservedSheetBlock[],
     primaryTableBlockIndex: number | null,
@@ -126,6 +129,7 @@ export class SheetState {
     this.dataColIndices = dataColIndices;
     this.logicalRows = logicalRows;
     this.cells = cells;
+    this.rowDisplayMetadata = rowDisplayMetadata;
     this.columnDisplayMetadata = columnDisplayMetadata;
     this.viewDependencies = new Map();
     this.viewFormulas = new Map();
@@ -178,6 +182,7 @@ export class SheetState {
         [],
         [],
         [],
+        [],
         normalizedBlocks,
         primaryIndex,
       );
@@ -188,6 +193,7 @@ export class SheetState {
     const headerColCount = headerColCountFrom(logicalRows);
     const bodyStart = headerRowCount > 0 ? headerRowCount : 0;
     const columnDisplayMetadata = extractColumnDisplayMetadataFromControlRow(controlFrame.controlRow, colCount);
+    const rowDisplayMetadata = extractRowDisplayMetadataFromLabelColumn(logicalRows, bodyStart, headerColCount);
 
     const colLabelPaths = buildColumnLabelPaths(logicalRows, headerRowCount, colCount);
     const colLabels = buildColumnLabels(colLabelPaths);
@@ -252,6 +258,7 @@ export class SheetState {
       dataColIndices,
       logicalRows,
       cells,
+      rowDisplayMetadata,
       columnDisplayMetadata,
       normalizedBlocks,
       primaryIndex,
@@ -414,6 +421,50 @@ export class SheetState {
     const existing = this.columnDisplayMetadata[c];
     const format = existing && existing.valid ? existing.format : null;
     this.columnDisplayMetadata[c] = createDisplayFromSpecs(format, null);
+  }
+
+  setRowDefaultFormatByIndex(rAbs: number, format: FormatSpec | null) {
+    if (rAbs < 0 || rAbs >= this.rowCount) {
+      throw new Error("row index out of range");
+    }
+    if (rAbs < this.bodyStart || this.headerColCount <= 0) {
+      throw new Error("row default format requires a body row with a header label column");
+    }
+    assertFormatSpecOrNull(format);
+    const existing = this.rowDisplayMetadata[rAbs];
+    const style = existing && existing.valid ? existing.style : null;
+    this.rowDisplayMetadata[rAbs] = createDisplayFromSpecs(format, style);
+  }
+
+  clearRowDefaultFormatByIndex(rAbs: number) {
+    this.setRowDefaultFormatByIndex(rAbs, null);
+  }
+
+  setRowDefaultStyleByIndex(rAbs: number, stylePatch: StylePatch) {
+    if (rAbs < 0 || rAbs >= this.rowCount) {
+      throw new Error("row index out of range");
+    }
+    if (rAbs < this.bodyStart || this.headerColCount <= 0) {
+      throw new Error("row default style requires a body row with a header label column");
+    }
+    assertStylePatch(stylePatch);
+    const existing = this.rowDisplayMetadata[rAbs];
+    const format = existing && existing.valid ? existing.format : null;
+    const currentStyle = existing && existing.valid ? existing.style : null;
+    const style = applyStylePatch(currentStyle, stylePatch);
+    this.rowDisplayMetadata[rAbs] = createDisplayFromSpecs(format, style);
+  }
+
+  clearRowDefaultStyleByIndex(rAbs: number) {
+    if (rAbs < 0 || rAbs >= this.rowCount) {
+      throw new Error("row index out of range");
+    }
+    if (rAbs < this.bodyStart || this.headerColCount <= 0) {
+      throw new Error("row default style requires a body row with a header label column");
+    }
+    const existing = this.rowDisplayMetadata[rAbs];
+    const format = existing && existing.valid ? existing.format : null;
+    this.rowDisplayMetadata[rAbs] = createDisplayFromSpecs(format, null);
   }
 
   // Update local display metadata without mutating formula/value dependency state.
@@ -959,6 +1010,7 @@ export class SheetState {
       };
     });
     this.cells.splice(rowIndex, 0, newCellStates);
+    this.rowDisplayMetadata.splice(rowIndex, 0, null);
     this.rowIds.splice(rowIndex, 0, this.nextRowId);
     this.nextRowId += 1;
   }
@@ -966,6 +1018,7 @@ export class SheetState {
   private deleteRowRangeAt(rowIndex: number, count: number) {
     this.logicalRows.splice(rowIndex, count);
     this.cells.splice(rowIndex, count);
+    this.rowDisplayMetadata.splice(rowIndex, count);
     this.rowIds.splice(rowIndex, count);
   }
 
@@ -1128,6 +1181,23 @@ function extractColumnDisplayMetadataFromControlRow(
   return output;
 }
 
+function extractRowDisplayMetadataFromLabelColumn(
+  logicalRows: ParsedRow[],
+  bodyStart: number,
+  headerColCount: number,
+): Array<ParsedDisplayMetadata | null> {
+  const output: Array<ParsedDisplayMetadata | null> = Array.from({ length: logicalRows.length }, () => null);
+  if (headerColCount <= 0) {
+    return output;
+  }
+  for (let rAbs = bodyStart; rAbs < logicalRows.length; rAbs += 1) {
+    const raw = logicalRows[rAbs]?.rawCells[0] ?? "";
+    if (raw.trim() === "") continue;
+    output[rAbs] = parseCellInput(raw).localDisplay;
+  }
+  return output;
+}
+
 function resizeColumnDisplayMetadata(
   metadata: Array<ParsedDisplayMetadata | null>,
   colCount: number,
@@ -1174,7 +1244,59 @@ function assertFormatSpecOrNull(format: FormatSpec | null): void {
   if (typeof format !== "object") {
     throw new Error("format spec must be an object or null");
   }
-  assertKnownKeys(format, ["sign", "padWidth", "grouping", "precision", "type"], "format");
+  if (format.kind === "temporal") {
+    assertKnownKeys(format, ["kind", "pattern", "tokens"], "format");
+    if (typeof format.pattern !== "string" || format.pattern.length === 0) {
+      throw new Error("format.pattern must be a non-empty string");
+    }
+    const parsedTemporal = parseTemporalFormatSpec(format.pattern);
+    if (!parsedTemporal || "issue" in parsedTemporal) {
+      throw new Error(parsedTemporal && "issue" in parsedTemporal ? describeDisplayMetadataDiagnostic(parsedTemporal.issue) : "format.pattern must contain a supported temporal directive");
+    }
+    if (!Array.isArray(format.tokens)) {
+      throw new Error("format.tokens must be an array");
+    }
+    for (const token of format.tokens) {
+      if (!token || typeof token !== "object") {
+        throw new Error("format.tokens entries must be objects");
+      }
+      assertKnownKeys(token, ["directive", "raw"], "format token");
+      if (
+        ![
+          "literal_percent",
+          "year",
+          "month",
+          "day",
+          "hour",
+          "minute",
+          "second",
+          "fraction",
+          "offset_compact",
+          "offset_colon",
+          "date_iso",
+          "time_iso",
+          "duration_total_days",
+          "duration_total_hours",
+          "duration_total_minutes",
+          "duration_total_seconds",
+          "duration_total_milliseconds",
+        ].includes(token.directive)
+      ) {
+        throw new Error("format token directive is invalid");
+      }
+      if (typeof token.raw !== "string" || token.raw.length === 0) {
+        throw new Error("format token raw must be a non-empty string");
+      }
+    }
+    if (JSON.stringify(format.tokens) !== JSON.stringify(parsedTemporal.value.tokens)) {
+      throw new Error("format.tokens must match format.pattern");
+    }
+    return;
+  }
+  if (format.kind !== "numeric") {
+    throw new Error("format.kind must be numeric or temporal");
+  }
+  assertKnownKeys(format, ["kind", "sign", "padWidth", "grouping", "precision", "type"], "format");
   if (!["default", "plus", "parentheses"].includes(format.sign)) {
     throw new Error("format.sign must be default, plus, or parentheses");
   }

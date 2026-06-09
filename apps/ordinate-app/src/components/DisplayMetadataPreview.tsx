@@ -1,6 +1,27 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import type { FormatLocalKey, FormatLocalOptions, StyleLocalView } from "../types/ui";
+import type {
+  FormatLocalKey,
+  FormatLocalOptions,
+  FormatPreviewContext,
+  NumericFormatLocalKey,
+  NumericFormatLocalOptions,
+  StyleLocalView,
+  TemporalFormatLocalKey,
+  TemporalFormatLocalOptions,
+} from "../types/ui";
+import {
+  defaultNumericFormatOptions,
+  defaultTemporalFormatOptions,
+  formatFamilyForKey,
+  isNumericFormatKey,
+  isTemporalFormatKey,
+  resolveFormatPreview,
+  TEMPORAL_FORMAT_PRESETS,
+  temporalFormatErrorMessage,
+  validateTemporalFormatPattern,
+  type TemporalFormatPreset,
+} from "../utils/formatDisplay";
 
 function MenuIcon({ children }: { children: ReactNode }) {
   return (
@@ -46,6 +67,14 @@ export function FormatOptionGlyph({ option }: { option: FormatLocalKey }) {
       </MenuIcon>
     );
   }
+  if (option === "temporal") {
+    return (
+      <MenuIcon>
+        <path d="M5.2 6.4h9.6M6.5 4.2v3.1M13.5 4.2v3.1M5.4 6.2v9.2h9.2V6.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.35" />
+        <path d="M7.5 10h2.4M7.5 12.7h4.9" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.25" opacity="0.9" />
+      </MenuIcon>
+    );
+  }
   return (
     <MenuIcon>
       <path d="M5.4 14.6 14.6 5.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
@@ -83,34 +112,73 @@ export const FORMAT_LOCAL_OPTIONS: Array<{ key: FormatLocalKey; label: string }>
   { key: "decimal", label: "Decimal" },
   { key: "scientific", label: "Scientific" },
   { key: "percent", label: "Percent" },
+  { key: "temporal", label: "Date & Time" },
+];
+
+type FormatMenuEntry =
+  | { kind: "section"; label: string }
+  | { kind: "option"; key: FormatLocalKey; label: string };
+
+const FORMAT_MENU_ENTRIES: FormatMenuEntry[] = [
+  { kind: "option", key: "auto", label: "Auto" },
+  { kind: "section", label: "Number" },
+  { kind: "option", key: "integer", label: "Integer" },
+  { kind: "option", key: "decimal", label: "Decimal" },
+  { kind: "option", key: "scientific", label: "Scientific" },
+  { kind: "option", key: "percent", label: "Percent" },
+  { kind: "section", label: "Time" },
+  { kind: "option", key: "temporal", label: "Date & Time" },
 ];
 
 type FormatPreviewPanelProps = {
   localFormatKey: FormatLocalKey;
   localFormatOptions: FormatLocalOptions | null;
+  effectiveFormatKey?: FormatLocalKey;
+  effectiveFormatOptions?: FormatLocalOptions | null;
+  inheritedFormatKey?: FormatLocalKey;
+  inheritedFormatOptions?: FormatLocalOptions | null;
+  formatSource?: "cell" | "row" | "column" | "default";
   inspectedKey: FormatLocalKey;
+  previewContext?: FormatPreviewContext | null;
   onInspectKey?: (key: FormatLocalKey) => void;
   onChange?: (key: FormatLocalKey, options: FormatLocalOptions | null) => void;
+  onRequestClose?: () => void;
 };
+
+type FormatMenuListProps = Pick<
+  FormatPreviewPanelProps,
+  "localFormatKey" | "localFormatOptions" | "inspectedKey" | "onInspectKey" | "onChange"
+>;
+
+type FormatDetailPanelProps = Pick<
+  FormatPreviewPanelProps,
+  | "localFormatKey"
+  | "localFormatOptions"
+  | "effectiveFormatKey"
+  | "effectiveFormatOptions"
+  | "inheritedFormatKey"
+  | "inheritedFormatOptions"
+  | "formatSource"
+  | "inspectedKey"
+  | "previewContext"
+  | "onInspectKey"
+  | "onChange"
+  | "onRequestClose"
+>;
 
 const DEFAULT_PRECISION = 2;
 const DEFAULT_WIDTH = 1;
 
-function defaultOptionsForFormatKey(key: Exclude<FormatLocalKey, "auto">): FormatLocalOptions {
-  return {
-    sign: "default",
-    padWidth: null,
-    grouping: false,
-    precision: null,
-  };
-}
-
 function effectiveOptionsForFormatKey(key: FormatLocalKey, options: FormatLocalOptions | null): FormatLocalOptions | null {
   if (key === "auto") return null;
+  if (isTemporalFormatKey(key)) {
+    if (options?.kind === "temporal") return options;
+    return defaultTemporalFormatOptions(key);
+  }
   return {
-    ...(defaultOptionsForFormatKey(key)),
-    ...(options ?? {}),
-    precision: key === "integer" ? null : options?.precision ?? defaultOptionsForFormatKey(key).precision,
+    ...defaultNumericFormatOptions(key),
+    ...(options?.kind === "numeric" ? options : {}),
+    precision: key === "integer" ? null : options?.kind === "numeric" ? options.precision : defaultNumericFormatOptions(key).precision,
   };
 }
 
@@ -127,8 +195,12 @@ function switchFormatOptions(
   currentKey: FormatLocalKey,
   currentOptions: FormatLocalOptions | null,
 ): FormatLocalOptions {
-  const next = defaultOptionsForFormatKey(nextKey);
-  if (!currentOptions || currentKey === "auto") {
+  if (isTemporalFormatKey(nextKey)) {
+    if (currentKey === nextKey && currentOptions?.kind === "temporal") return currentOptions;
+    return defaultTemporalFormatOptions(nextKey);
+  }
+  const next = defaultNumericFormatOptions(nextKey);
+  if (!currentOptions || currentOptions.kind !== "numeric" || currentKey === "auto") {
     return next;
   }
   next.sign = currentOptions.sign;
@@ -146,14 +218,63 @@ function clampNumber(value: number, min: number): number {
   return Math.max(min, value);
 }
 
-export function FormatPreviewPanel({
+export function FormatMenuList({
   localFormatKey,
   localFormatOptions,
   inspectedKey,
   onInspectKey,
   onChange,
-}: FormatPreviewPanelProps) {
-  const hasOverride = localFormatKey !== "auto";
+}: FormatMenuListProps) {
+  return (
+    <div className="formula-format-menu-list">
+      {FORMAT_MENU_ENTRIES.map((entry) => {
+        if (entry.kind === "section") {
+          return <div key={entry.label} className="formula-format-section-label">{entry.label}</div>;
+        }
+        return (
+          <button
+            key={entry.key}
+            className={[
+              "formula-format-option",
+              localFormatKey === entry.key ? "is-selected" : "",
+              inspectedKey === entry.key ? "is-inspecting" : "",
+            ].join(" ").trim()}
+            type="button"
+            role="menuitemradio"
+            aria-checked={localFormatKey === entry.key}
+            onClick={() => {
+              onInspectKey?.(entry.key);
+              if (!onChange) return;
+              if (entry.key === "auto") {
+                onChange("auto", null);
+                return;
+              }
+              onChange(entry.key, switchFormatOptions(entry.key, localFormatKey, localFormatOptions));
+            }}
+          >
+            <span className="formula-format-option-icon"><FormatOptionGlyph option={entry.key} /></span>
+            <span>{entry.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function FormatDetailPanel({
+  localFormatKey,
+  localFormatOptions,
+  effectiveFormatKey = "auto",
+  effectiveFormatOptions = null,
+  inheritedFormatKey = "auto",
+  inheritedFormatOptions = null,
+  formatSource = "default",
+  inspectedKey,
+  previewContext,
+  onInspectKey,
+  onChange,
+  onRequestClose,
+}: FormatDetailPanelProps) {
   const activeKey = inspectedKey;
   const previewOptions =
     activeKey === "auto"
@@ -162,22 +283,36 @@ export function FormatPreviewPanel({
         ? localFormatOptions
         : switchFormatOptions(activeKey, localFormatKey, localFormatOptions);
   const panelOptions = effectiveOptionsForFormatKey(activeKey, previewOptions);
+  const panelFamily = formatFamilyForKey(activeKey);
+  const hasInheritedAutoDetail = activeKey === "auto" && effectiveFormatKey !== "auto" && Boolean(effectiveFormatOptions);
+  const hasOptionDetail = (activeKey !== "auto" && Boolean(panelOptions)) || hasInheritedAutoDetail;
   const isEditable = Boolean(onChange);
+  const temporalOptions = panelOptions?.kind === "temporal" ? panelOptions : null;
+  const [customPatternDraft, setCustomPatternDraft] = useState(temporalOptions?.pattern ?? "");
+
+  useEffect(() => {
+    if (temporalOptions) {
+      setCustomPatternDraft(temporalOptions.pattern);
+    }
+  }, [activeKey, temporalOptions?.pattern]);
 
   const commitFormatChange = (nextKey: FormatLocalKey, nextOptions: FormatLocalOptions | null) => {
     onInspectKey?.(nextKey);
     onChange?.(nextKey, nextOptions);
   };
 
-  const updateOptions = (patch: Partial<FormatLocalOptions>) => {
+  const updateNumericOptions = (patch: Partial<NumericFormatLocalOptions>) => {
     if (activeKey === "auto") {
       throw new Error("format field edit requires a concrete format key");
     }
-    const base = effectiveOptionsForFormatKey(activeKey, panelOptions);
-    if (!base) {
-      throw new Error("expected concrete format options");
+    if (!isNumericFormatKey(activeKey)) {
+      throw new Error("numeric format field edit requires a numeric format key");
     }
-    const next: FormatLocalOptions = {
+    const base = effectiveOptionsForFormatKey(activeKey, panelOptions);
+    if (!base || base.kind !== "numeric") {
+      throw new Error("expected numeric format options");
+    }
+    const next: NumericFormatLocalOptions = {
       ...base,
       ...patch,
     };
@@ -187,43 +322,148 @@ export function FormatPreviewPanel({
     commitFormatChange(activeKey, next);
   };
 
+  if (!hasOptionDetail) {
+    return null;
+  }
+
   return (
-    <div
-      className={[
-        "formula-format-layout",
-        hasOverride && activeKey !== "auto" && panelOptions ? "has-detail-panel" : "list-only",
-      ].join(" ")}
-    >
-      <div className="formula-format-menu-list">
-        {FORMAT_LOCAL_OPTIONS.map((option) => (
-          <button
-            key={option.key}
-            className={[
-              "formula-format-option",
-              localFormatKey === option.key ? "is-selected" : "",
-              inspectedKey === option.key ? "is-inspecting" : "",
-            ].join(" ").trim()}
-            type="button"
-            role="menuitemradio"
-            aria-checked={localFormatKey === option.key}
-            onClick={() => {
-              onInspectKey?.(option.key);
-              if (!onChange) return;
-              if (option.key === "auto") {
-                onChange("auto", null);
-                return;
-              }
-              onChange(option.key, switchFormatOptions(option.key, localFormatKey, localFormatOptions));
-            }}
-          >
-            <span className="formula-format-option-icon"><FormatOptionGlyph option={option.key} /></span>
-            <span>{option.label}</span>
-          </button>
-        ))}
+    <div className="formula-format-menu-panel">
+      {activeKey === "auto" && effectiveFormatKey !== "auto" && effectiveFormatOptions ? (
+        <AutoFormatPanel
+          effectiveKey={effectiveFormatKey}
+          effectiveOptions={effectiveFormatOptions}
+          inheritedKey={inheritedFormatKey}
+          inheritedOptions={inheritedFormatOptions}
+          formatSource={formatSource}
+          previewContext={previewContext}
+        />
+      ) : null}
+      {panelFamily === "number" && isNumericFormatKey(activeKey) && panelOptions?.kind === "numeric" ? (
+        <NumberFormatPanel
+          activeKey={activeKey}
+          options={panelOptions}
+          preview={resolveFormatPreview(activeKey, panelOptions, previewContext)}
+          isEditable={isEditable}
+          updateOptions={updateNumericOptions}
+        />
+      ) : null}
+      {panelFamily === "temporal" && activeKey === "temporal" && temporalOptions ? (
+        <TemporalFormatPanel
+          activeKey={activeKey}
+          options={temporalOptions}
+          presets={TEMPORAL_FORMAT_PRESETS}
+          customPatternDraft={customPatternDraft}
+          setCustomPatternDraft={setCustomPatternDraft}
+          previewContext={previewContext}
+          isEditable={isEditable}
+          onCommit={commitFormatChange}
+          onRequestClose={onRequestClose}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+export function FormatPreviewPanel(props: FormatPreviewPanelProps) {
+  const hasDetailPanel = props.inspectedKey !== "auto";
+  return (
+    <div className={[
+      "formula-format-layout",
+      hasDetailPanel ? "has-detail-panel" : "list-only",
+    ].join(" ")}>
+      <FormatMenuList
+        localFormatKey={props.localFormatKey}
+        localFormatOptions={props.localFormatOptions}
+        inspectedKey={props.inspectedKey}
+        onInspectKey={props.onInspectKey}
+        onChange={props.onChange}
+      />
+      <FormatDetailPanel {...props} />
+    </div>
+  );
+}
+
+function AutoFormatPanel({
+  effectiveKey,
+  effectiveOptions,
+  inheritedKey,
+  inheritedOptions,
+  formatSource,
+  previewContext,
+}: {
+  effectiveKey: Exclude<FormatLocalKey, "auto">;
+  effectiveOptions: FormatLocalOptions;
+  inheritedKey: FormatLocalKey;
+  inheritedOptions: FormatLocalOptions | null;
+  formatSource: "cell" | "row" | "column" | "default";
+  previewContext: FormatPreviewContext | null | undefined;
+}) {
+  const inheritedConcreteKey = inheritedKey === "auto" ? null : inheritedKey;
+  const inheritedFormatName = inheritedConcreteKey ? formatLabelForKey(inheritedConcreteKey) : null;
+  const effectiveName = formatLabelForKey(effectiveKey);
+  const preview = resolveFormatPreview(effectiveKey, effectiveOptions, previewContext);
+  const sourceLabel = formatSourceLabel(formatSource);
+  const valueKind = formatPreviewValueKind(previewContext);
+  return (
+    <>
+      <div className="formula-format-panel-head">
+        <span className="formula-format-panel-title">Auto</span>
+        <span className="formula-format-current">{preview.sourceLabel}: <strong>{preview.text}</strong></span>
       </div>
-      {hasOverride ? (
-        <div className="formula-format-menu-panel">
-          {activeKey !== "auto" && panelOptions ? (
+      <div className="formula-format-auto-panel">
+        <div className="formula-format-auto-row">
+          <span className="formula-format-auto-label">Source</span>
+          <span className="formula-format-auto-value">{sourceLabel}</span>
+        </div>
+        <div className="formula-format-auto-row">
+          <span className="formula-format-auto-label">Format</span>
+          <span className="formula-format-auto-value">{effectiveName}</span>
+        </div>
+        {effectiveOptions.kind === "temporal" ? (
+          <div className="formula-format-auto-row">
+            <span className="formula-format-auto-label">Pattern</span>
+            <span className="formula-format-auto-value is-mono">{effectiveOptions.pattern}</span>
+          </div>
+        ) : null}
+        {effectiveOptions.kind === "numeric" ? (
+          <div className="formula-format-auto-row">
+            <span className="formula-format-auto-label">Options</span>
+            <span className="formula-format-auto-value">{numericFormatSummary(effectiveOptions)}</span>
+          </div>
+        ) : null}
+        <div className="formula-format-auto-row">
+          <span className="formula-format-auto-label">Value</span>
+          <span className="formula-format-auto-value">{valueKind}</span>
+        </div>
+        {inheritedFormatName && inheritedOptions ? (
+          <div className="formula-format-auto-note">
+            This cell has no local format override. Auto is using the inherited {inheritedFormatName} format.
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+function NumberFormatPanel({
+  activeKey,
+  options,
+  preview,
+  isEditable,
+  updateOptions,
+}: {
+  activeKey: NumericFormatLocalKey;
+  options: NumericFormatLocalOptions;
+  preview: ReturnType<typeof resolveFormatPreview>;
+  isEditable: boolean;
+  updateOptions: (patch: Partial<NumericFormatLocalOptions>) => void;
+}) {
+  return (
+    <>
+      <div className="formula-format-panel-head">
+        <span className="formula-format-panel-title">{formatLabelForKey(activeKey)}</span>
+        <span className="formula-format-current">{preview.sourceLabel}: <strong>{preview.text}</strong></span>
+      </div>
             <div className="formula-format-field-list">
               {formatSupportsPrecision(activeKey) ? (
                 <div className="formula-style-row">
@@ -231,8 +471,8 @@ export function FormatPreviewPanel({
                   <div className="formula-format-stepper">
                     <button
                       type="button"
-                      className={panelOptions.precision == null ? "formula-style-segment is-selected" : "formula-style-segment"}
-                      aria-pressed={panelOptions.precision == null}
+                      className={options.precision == null ? "formula-style-segment is-selected" : "formula-style-segment"}
+                      aria-pressed={options.precision == null}
                       disabled={!isEditable}
                       onClick={() => updateOptions({ precision: null })}
                     >
@@ -241,19 +481,19 @@ export function FormatPreviewPanel({
                     <button
                       type="button"
                       className="formula-format-stepper-button"
-                      disabled={!isEditable || panelOptions.precision == null}
-                      onClick={() => updateOptions({ precision: clampNumber((panelOptions.precision ?? DEFAULT_PRECISION) - 1, 0) })}
+                      disabled={!isEditable || options.precision == null}
+                      onClick={() => updateOptions({ precision: clampNumber((options.precision ?? DEFAULT_PRECISION) - 1, 0) })}
                     >
                       −
                     </button>
-                    <span className={panelOptions.precision == null ? "formula-format-stepper-value is-default" : "formula-format-stepper-value"}>
-                      {panelOptions.precision == null ? "Auto" : panelOptions.precision}
+                    <span className={options.precision == null ? "formula-format-stepper-value is-default" : "formula-format-stepper-value"}>
+                      {options.precision == null ? "Auto" : options.precision}
                     </span>
                     <button
                       type="button"
                       className="formula-format-stepper-button"
                       disabled={!isEditable}
-                      onClick={() => updateOptions({ precision: panelOptions.precision == null ? DEFAULT_PRECISION : panelOptions.precision + 1 })}
+                      onClick={() => updateOptions({ precision: options.precision == null ? DEFAULT_PRECISION : options.precision + 1 })}
                     >
                       +
                     </button>
@@ -268,7 +508,7 @@ export function FormatPreviewPanel({
                       { key: "auto", label: "Auto" },
                       { key: "on", label: "On" },
                     ].map((option) => {
-                      const selected = option.key === "auto" ? !panelOptions.grouping : panelOptions.grouping;
+                      const selected = option.key === "auto" ? !options.grouping : options.grouping;
                       return (
                         <button
                           key={option.key}
@@ -296,10 +536,10 @@ export function FormatPreviewPanel({
                     <button
                       key={option.key}
                       type="button"
-                      className={panelOptions.sign === option.key ? "formula-style-segment is-selected" : "formula-style-segment"}
-                      aria-pressed={panelOptions.sign === option.key}
+                      className={options.sign === option.key ? "formula-style-segment is-selected" : "formula-style-segment"}
+                      aria-pressed={options.sign === option.key}
                       disabled={!isEditable}
-                      onClick={() => updateOptions({ sign: option.key as FormatLocalOptions["sign"] })}
+                      onClick={() => updateOptions({ sign: option.key as NumericFormatLocalOptions["sign"] })}
                     >
                       {option.label}
                     </button>
@@ -311,8 +551,8 @@ export function FormatPreviewPanel({
                 <div className="formula-format-stepper">
                   <button
                     type="button"
-                    className={panelOptions.padWidth == null ? "formula-style-segment is-selected" : "formula-style-segment"}
-                    aria-pressed={panelOptions.padWidth == null}
+                    className={options.padWidth == null ? "formula-style-segment is-selected" : "formula-style-segment"}
+                    aria-pressed={options.padWidth == null}
                     disabled={!isEditable}
                     onClick={() => updateOptions({ padWidth: null })}
                   >
@@ -321,30 +561,181 @@ export function FormatPreviewPanel({
                   <button
                     type="button"
                     className="formula-format-stepper-button"
-                    disabled={!isEditable || panelOptions.padWidth == null || panelOptions.padWidth <= 0}
-                    onClick={() => updateOptions({ padWidth: clampNumber((panelOptions.padWidth ?? DEFAULT_WIDTH) - 1, 0) })}
+                    disabled={!isEditable || options.padWidth == null || options.padWidth <= 0}
+                    onClick={() => updateOptions({ padWidth: clampNumber((options.padWidth ?? DEFAULT_WIDTH) - 1, 0) })}
                   >
                     −
                   </button>
-                  <span className={panelOptions.padWidth == null ? "formula-format-stepper-value is-default" : "formula-format-stepper-value"}>
-                    {panelOptions.padWidth == null ? "Auto" : panelOptions.padWidth}
+                  <span className={options.padWidth == null ? "formula-format-stepper-value is-default" : "formula-format-stepper-value"}>
+                    {options.padWidth == null ? "Auto" : options.padWidth}
                   </span>
                   <button
                     type="button"
                     className="formula-format-stepper-button"
                     disabled={!isEditable}
-                    onClick={() => updateOptions({ padWidth: panelOptions.padWidth == null ? DEFAULT_WIDTH : panelOptions.padWidth + 1 })}
+                    onClick={() => updateOptions({ padWidth: options.padWidth == null ? DEFAULT_WIDTH : options.padWidth + 1 })}
                   >
                     +
                   </button>
                 </div>
               </div>
             </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+    </>
   );
+}
+
+function TemporalFormatPanel({
+  activeKey,
+  options,
+  presets,
+  customPatternDraft,
+  setCustomPatternDraft,
+  previewContext,
+  isEditable,
+  onCommit,
+  onRequestClose,
+}: {
+  activeKey: TemporalFormatLocalKey;
+  options: TemporalFormatLocalOptions;
+  presets: TemporalFormatPreset[];
+  customPatternDraft: string;
+  setCustomPatternDraft: (value: string) => void;
+  previewContext: FormatPreviewContext | null | undefined;
+  isEditable: boolean;
+  onCommit: (key: FormatLocalKey, options: FormatLocalOptions | null) => void;
+  onRequestClose?: () => void;
+}) {
+  const headerPreview = resolveFormatPreview(activeKey, options, previewContext);
+  const validation = customPatternDraft.trim().length > 0
+    ? validateTemporalFormatPattern(customPatternDraft.trim())
+    : { issue: { code: "empty_format_spec", context: {} } };
+  const customIssue = "issue" in validation ? validation.issue : null;
+  const customPreview = customIssue
+    ? null
+    : resolveFormatPreview(activeKey, { kind: "temporal", pattern: customPatternDraft.trim(), preset: null }, previewContext);
+
+  const commitCustomPattern = (value: string): boolean => {
+    const nextPattern = value.trim();
+    if (!isEditable || nextPattern.length === 0) return false;
+    const parsed = validateTemporalFormatPattern(nextPattern);
+    if ("issue" in parsed) return false;
+    const preset = TEMPORAL_FORMAT_PRESETS.find((candidate) => candidate.pattern === nextPattern);
+    onCommit(activeKey, { kind: "temporal", pattern: nextPattern, preset: preset?.id ?? null });
+    return true;
+  };
+
+  const updateCustomPattern = (value: string) => {
+    setCustomPatternDraft(value);
+    commitCustomPattern(value);
+  };
+
+  return (
+    <>
+      <div className="formula-format-panel-head">
+        <span className="formula-format-panel-title">{formatLabelForKey(activeKey)}</span>
+        <span className="formula-format-current">{headerPreview.sourceLabel}: <strong>{headerPreview.text}</strong></span>
+      </div>
+      <div className="formula-format-preset-grid" role="group" aria-label={`${formatLabelForKey(activeKey)} presets`}>
+        {(["dateTime", "duration"] as const).map((group) => {
+          const groupPresets = presets.filter((preset) => preset.group === group);
+          if (groupPresets.length === 0) return null;
+          return (
+            <div key={group} className="formula-format-preset-section">
+              <div className="formula-format-preset-section-label">{group === "dateTime" ? "Date and time" : "Duration"}</div>
+              <div className="formula-format-preset-section-grid">
+                {groupPresets.map((preset) => {
+                  const presetOptions: TemporalFormatLocalOptions = { kind: "temporal", pattern: preset.pattern, preset: preset.id };
+                  const preview = resolveFormatPreview(activeKey, presetOptions, previewContext);
+                  const selected = options.pattern === preset.pattern;
+                  const isWide = preset.id === "date-time" || preset.id === "date-time-seconds";
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={[
+                        "formula-format-preset",
+                        selected ? "is-selected" : "",
+                        isWide ? "is-wide" : "",
+                      ].join(" ").trim()}
+                      aria-pressed={selected}
+                      disabled={!isEditable}
+                      onClick={() => {
+                        setCustomPatternDraft(preset.pattern);
+                        onCommit(activeKey, presetOptions);
+                      }}
+                    >
+                      <span className="formula-format-preset-preview">{preview.text}</span>
+                      <span className="formula-format-preset-pattern">{preset.pattern}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="formula-format-custom">
+        <label className="formula-format-custom-label" htmlFor={`format-custom-${activeKey}`}>
+          Custom format
+        </label>
+        <input
+          id={`format-custom-${activeKey}`}
+          className={customIssue ? "formula-format-custom-input has-error" : "formula-format-custom-input"}
+          value={customPatternDraft}
+          disabled={!isEditable}
+          spellCheck={false}
+          onChange={(event) => updateCustomPattern(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (commitCustomPattern(customPatternDraft)) {
+              onRequestClose?.();
+            }
+          }}
+        />
+        <div className={customIssue ? "formula-format-custom-preview has-error" : "formula-format-custom-preview"}>
+          {customIssue ? temporalFormatErrorMessage(customIssue) : `Preview: ${customPreview?.text ?? ""}`}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function formatLabelForKey(key: Exclude<FormatLocalKey, "auto">): string {
+  if (key === "temporal") return "Date & Time";
+  return FORMAT_LOCAL_OPTIONS.find((option) => option.key === key)?.label ?? key;
+}
+
+function formatSourceLabel(source: "cell" | "row" | "column" | "default"): string {
+  if (source === "column") return "Column format";
+  if (source === "row") return "Row format";
+  if (source === "cell") return "Cell format";
+  return "Default format";
+}
+
+function formatPreviewValueKind(context: FormatPreviewContext | null | undefined): string {
+  const kind = context?.value?.kind;
+  if (!kind) return "Sample";
+  if (kind === "datetime") return "Datetime";
+  if (kind === "duration") return "Duration";
+  if (kind === "date") return "Date";
+  if (kind === "time") return "Time";
+  if (kind === "number") return "Number";
+  if (kind === "boolean") return "Boolean";
+  if (kind === "blank" || kind === "null") return "Blank";
+  if (kind === "string") return "Text";
+  return kind;
+}
+
+function numericFormatSummary(options: NumericFormatLocalOptions): string {
+  const parts = [
+    options.grouping ? "grouped" : "ungrouped",
+    options.precision == null ? "auto precision" : `${options.precision} decimals`,
+    options.sign === "default" ? "default sign" : options.sign === "plus" ? "plus sign" : "parentheses",
+  ];
+  if (options.padWidth != null) parts.push(`width ${options.padWidth}`);
+  return parts.join(" · ");
 }
 
 type StylePreviewPanelProps = {

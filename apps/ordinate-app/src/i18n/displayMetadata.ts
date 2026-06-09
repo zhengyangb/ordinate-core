@@ -33,6 +33,19 @@ export function formatDisplayMetadataErrorMessage(locale: UiLocale, issue: Diagn
   }
   if (issue.code === "format_spec_contains_whitespace") return "Format spec contains whitespace.";
   if (issue.code === "invalid_format_spec_trailing_chars") return "Format spec has trailing characters.";
+  if (issue.code === "unsupported_temporal_format_directive") {
+    const directive = typeof issue.context.directive === "string" ? issue.context.directive : "";
+    return directive ? `Unsupported temporal format directive '${directive}'.` : "Unsupported temporal format directive.";
+  }
+  if (issue.code === "invalid_temporal_format_trailing_percent") return "Temporal format has trailing percent.";
+  if (issue.code === "format_value_kind_mismatch") return "Format is not compatible with this value.";
+  if (issue.code === "temporal_format_directive_value_mismatch") return "Temporal format directive is not compatible with this value.";
+  if (issue.code === "temporal_format_offset_requires_offset_qualified_value") {
+    return "Temporal offset format requires an offset-qualified value.";
+  }
+  if (issue.code === "duration_format_requires_fixed_duration") {
+    return "Duration format requires a fixed duration without year or month components.";
+  }
   if (issue.code === "empty_format_spec") return "Format spec is empty.";
   if (issue.code === "empty_style_spec") return "Style spec is empty.";
   if (issue.code === "empty_display_metadata") return "Display metadata block is empty.";
@@ -54,8 +67,14 @@ export function classifyDisplayMetadataIssue(issue: Diagnostic): DisplayMetadata
   if (
     issue.code === "invalid_format_combination"
     || issue.code.startsWith("format_")
+    || issue.code === "format_value_kind_mismatch"
     || issue.code === "empty_format_spec"
     || issue.code === "duplicate_format_metadata"
+    || issue.code === "unsupported_temporal_format_directive"
+    || issue.code === "invalid_temporal_format_trailing_percent"
+    || issue.code === "temporal_format_directive_value_mismatch"
+    || issue.code === "temporal_format_offset_requires_offset_qualified_value"
+    || issue.code === "duration_format_requires_fixed_duration"
   ) {
     return "format";
   }

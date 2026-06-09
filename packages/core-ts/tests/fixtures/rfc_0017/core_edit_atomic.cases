@@ -17,6 +17,7 @@ set_cell_input_and_local_display_success
     "op": "set_cell_local_format",
     "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Out" },
     "format": {
+      "kind": "numeric",
       "sign": "default",
       "padWidth": null,
       "grouping": true,

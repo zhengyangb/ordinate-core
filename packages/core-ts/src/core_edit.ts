@@ -54,6 +54,10 @@ export type CoreEdit =
   | { op: "clear_column_default_format"; sheet: string; colId: number }
   | { op: "set_column_default_style"; sheet: string; colId: number; style: StylePatch }
   | { op: "clear_column_default_style"; sheet: string; colId: number }
+  | { op: "set_row_default_format"; sheet: string; rowId: number; format: FormatSpec | null }
+  | { op: "clear_row_default_format"; sheet: string; rowId: number }
+  | { op: "set_row_default_style"; sheet: string; rowId: number; style: StylePatch }
+  | { op: "clear_row_default_style"; sheet: string; rowId: number }
   | { op: "set_region"; target: CoreRegionTarget; values: string[][] }
   | { op: "clear_region"; target: CoreRegionTarget }
   | { op: "convert_rows_to_header"; sheet: string; rowIds: number[] }
@@ -273,6 +277,30 @@ function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
     return;
   }
 
+  if (edit.op === "set_row_default_format") {
+    const { sheet, rowIndex } = resolveRowIdTarget(document, edit.sheet, edit.rowId);
+    sheet.setRowDefaultFormatByIndex(rowIndex, edit.format);
+    return;
+  }
+
+  if (edit.op === "clear_row_default_format") {
+    const { sheet, rowIndex } = resolveRowIdTarget(document, edit.sheet, edit.rowId);
+    sheet.clearRowDefaultFormatByIndex(rowIndex);
+    return;
+  }
+
+  if (edit.op === "set_row_default_style") {
+    const { sheet, rowIndex } = resolveRowIdTarget(document, edit.sheet, edit.rowId);
+    sheet.setRowDefaultStyleByIndex(rowIndex, edit.style);
+    return;
+  }
+
+  if (edit.op === "clear_row_default_style") {
+    const { sheet, rowIndex } = resolveRowIdTarget(document, edit.sheet, edit.rowId);
+    sheet.clearRowDefaultStyleByIndex(rowIndex);
+    return;
+  }
+
   if (edit.op === "set_region") {
     const region = resolveRegionTarget(document, edit.target);
     applySetRegion(region, edit.values);
@@ -475,6 +503,16 @@ function resolveColumnIdTarget(
     throw new CoreEditFailure("invalid_target", `unknown colId ${colId} in sheet '${sheetName}'`);
   }
   return { sheet, colIndex };
+}
+
+function resolveRowIdTarget(
+  document: DocumentState,
+  sheetName: string,
+  rowId: number,
+): { sheet: SheetState; rowIndex: number } {
+  const sheet = resolveSheet(document, sheetName);
+  const rowIndex = resolveRowId(sheet, rowId, sheetName);
+  return { sheet, rowIndex };
 }
 
 type ResolvedRegionTarget = {

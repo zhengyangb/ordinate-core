@@ -26,6 +26,7 @@ export type {
 export { getCellTextView, parseCellInput, parseCellText, resolveCellInputText, splitCellDisplayMetadata, stripCellDisplayMetadata } from "./runtime/parse";
 export type { CellInputTextView, CellTextViewSource } from "./runtime/parse";
 export { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
+export { formatTemporalValue, parseTemporalFormatSpec } from "./runtime/temporalFormat";
 export { evaluateDocument } from "./runtime/eval";
 export { getStandardFunctionMetadata, listStandardFunctionMetadata } from "./runtime/functions";
 export type {

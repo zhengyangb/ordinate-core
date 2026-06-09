@@ -1,6 +1,7 @@
 import { formatDocument } from "./formatter";
 import { type DocumentState, type SheetState } from "./incremental";
 import { escapeCellText } from "./parser";
+import { stripCellDisplayMetadata } from "./runtime/parse";
 import { type ExprNode, type FormatSpec, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue, type StyleSpec } from "./runtime/types";
 import { isError, isValidExternalErrorKind } from "./runtime/errors";
 import { renderFormulaExpression } from "./runtime/renderFormula";
@@ -93,7 +94,10 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
     for (let c = 0; c < sheet.colCount; c += 1) {
       const cellState = sheet.cells[rAbs][c];
       if (rAbs < sheet.headerRowCount || c < sheet.headerColCount) {
-        cells.push(encodeTableCellText(c < row.rawCells.length ? row.rawCells[c] : ""));
+        const rawHeaderCell = c < row.rawCells.length ? row.rawCells[c] : "";
+        const rowDefaultDisplay = rAbs >= sheet.bodyStart && c === 0 ? sheet.rowDisplayMetadata[rAbs] ?? null : null;
+        const headerCellText = rowDefaultDisplay ? `${stripCellDisplayMetadata(rawHeaderCell)}${renderDisplayBlock(rowDefaultDisplay)}` : rawHeaderCell;
+        cells.push(encodeTableCellText(headerCellText));
       } else {
         cells.push(encodeTableCellText(serializeCellState(cellState, rowIdToIndex, colIdToIndex, rowLabelPathsByIndex, sheet.colLabels)));
       }
@@ -242,6 +246,7 @@ function renderDisplayControlCell(display: ParsedDisplayMetadata): string {
 }
 
 function serializeFormatSpec(spec: FormatSpec): string {
+  if (spec.kind === "temporal") return spec.pattern;
   let out = "";
   if (spec.sign === "plus") out += "+";
   else if (spec.sign === "parentheses") out += "()";

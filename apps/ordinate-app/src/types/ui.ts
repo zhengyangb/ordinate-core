@@ -1,4 +1,4 @@
-import type { Diagnostic } from "@ordinate/core";
+import type { Diagnostic, RuntimeValue } from "@ordinate/core";
 import type { ReactNode } from "react";
 
 export type GridRow = {
@@ -69,14 +69,20 @@ export type FormulaBarData = {
   inputText: string;
   formatLocalKey?: FormatLocalKey;
   formatLocalOptions?: FormatLocalOptions | null;
+  formatEffectiveKey?: FormatLocalKey;
+  formatEffectiveOptions?: FormatLocalOptions | null;
+  formatInheritedKey?: FormatLocalKey;
+  formatInheritedOptions?: FormatLocalOptions | null;
+  formatPreviewContext?: FormatPreviewContext;
   styleLocal?: StyleLocalView | null;
-  displaySource?: "cell" | "column" | "default";
+  displaySource?: "cell" | "row" | "column" | "default";
+  formatSource?: "cell" | "row" | "column" | "default";
   displayErrors?: Diagnostic[];
 };
 
 export type DisplayCellView = {
   displayText: string;
-  source: "cell" | "column" | "default";
+  source: "cell" | "row" | "column" | "default";
   formatRaw: string | null;
   styleRaw: string | null;
   errors: Diagnostic[];
@@ -127,13 +133,29 @@ export type FloatingMenuPosition = {
   left: number;
 };
 
-export type FormatLocalKey = "auto" | "integer" | "decimal" | "scientific" | "percent";
+export type NumericFormatLocalKey = "integer" | "decimal" | "scientific" | "percent";
+export type TemporalFormatLocalKey = "temporal";
+export type FormatLocalKey = "auto" | NumericFormatLocalKey | TemporalFormatLocalKey;
 
-export type FormatLocalOptions = {
+export type NumericFormatLocalOptions = {
+  kind: "numeric";
   sign: "default" | "plus" | "parentheses";
   padWidth: number | null;
   grouping: boolean;
   precision: number | null;
+};
+
+export type TemporalFormatLocalOptions = {
+  kind: "temporal";
+  pattern: string;
+  preset: string | null;
+};
+
+export type FormatLocalOptions = NumericFormatLocalOptions | TemporalFormatLocalOptions;
+
+export type FormatPreviewContext = {
+  value: RuntimeValue | null;
+  scope: "cell" | "row" | "column" | "sample";
 };
 
 export type StyleLocalView = {
@@ -151,6 +173,7 @@ export type ColumnRailMenuView = {
   canStructureEdit: boolean;
   formatLocalKey: FormatLocalKey;
   formatLocalOptions: FormatLocalOptions | null;
+  formatPreviewContext: FormatPreviewContext;
   styleLocal: StyleLocalView;
 };
 
@@ -161,6 +184,12 @@ export type RowRailMenuView = {
   rowId: number;
   rowPath: string | null;
   hasChildren: boolean;
+  canDisplayEdit: boolean;
+  hasLocalConfig: boolean;
+  formatLocalKey: FormatLocalKey;
+  formatLocalOptions: FormatLocalOptions | null;
+  formatPreviewContext: FormatPreviewContext;
+  styleLocal: StyleLocalView;
   canConvertToHeader: boolean;
   canConvertToBody: boolean;
 };

@@ -11,6 +11,7 @@ import {
 } from "../src";
 
 const GROUPED_1F: FormatSpec = {
+  kind: "numeric",
   sign: "default",
   padWidth: null,
   grouping: true,
@@ -299,6 +300,126 @@ describe("RFC-0018 header surface editing and row area operations", () => {
     expect(invalidPayload.ok).toBe(false);
     if (invalidPayload.ok) throw new Error("expected failure");
     expect(invalidPayload.error.category).toBe("invalid_operation");
+  });
+
+  it("sets and serializes row display defaults by rowId", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Price | Qty |
+| ---- || ----- | --- |
+| A    || 12.34 | 2   |
+| B    || 56.78 | 3   |
+`.trim());
+    const rowId = state.sheets[0].rowIds[1];
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_row_default_format",
+        sheet: "Sheet",
+        rowId,
+        format: GROUPED_1F,
+      },
+      {
+        op: "set_row_default_style",
+        sheet: "Sheet",
+        rowId,
+        style: { align: "right", color: "blue" },
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const presentation = resolveDocumentPresentation(result.nextDocument);
+    const rowDefault = presentation.sheets[0].rowDefaults[1];
+    expect(rowDefault.formatLayer.effective).toMatchObject({ grouping: true, precision: 1, type: "f" });
+    expect(rowDefault.styleLayer.effective).toMatchObject({ align: "right", color: "blue" });
+    expect(presentation.sheets[0].cells[0][1].displayText).toBe("12.3");
+    expect(presentation.sheets[0].cells[0][1].source).toBe("row");
+    expect(presentation.sheets[0].cells[0][0].formatLayer.effective).toBeNull();
+    expect(presentation.sheets[0].cells[0][0].errors).toEqual([]);
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).toContain("A {:,.1f} {::>,blue}");
+    const roundTripped = DocumentState.fromText(output);
+    const roundTrippedRowDefault = roundTripped.sheets[0].rowDisplayMetadata[1];
+    expect(roundTrippedRowDefault?.valid).toBe(true);
+    if (!roundTrippedRowDefault?.valid) throw new Error("expected valid row metadata");
+    expect(roundTrippedRowDefault.format).toMatchObject({ grouping: true, precision: 1, type: "f" });
+    expect(roundTrippedRowDefault.style).toMatchObject({ align: "right", color: "blue" });
+  });
+
+  it("cascades display metadata as cell local over row default over column default", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| @display |      || {:,.0f} | {:,.0f} |
+|          | Item || Price   | Qty     |
+| -------- | ---- || -----   | ---     |
+|          | A    || 12.34 {:.2f} | 2.34 |
+|          | B    || 56.78        | 3.45 |
+`.trim());
+    const rowIndex = state.sheets[0].rowMap.get(JSON.stringify(["A"]))?.[0];
+    if (rowIndex == null) throw new Error("expected A row");
+    const rowId = state.sheets[0].rowIds[rowIndex];
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_row_default_format",
+        sheet: "Sheet",
+        rowId,
+        format: GROUPED_1F,
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const presentation = resolveDocumentPresentation(result.nextDocument);
+    expect(presentation.sheets[0].cells[0][1].displayText).toBe("12.34");
+    expect(presentation.sheets[0].cells[0][1].source).toBe("cell");
+    expect(presentation.sheets[0].cells[0][2].displayText).toBe("2.3");
+    expect(presentation.sheets[0].cells[0][2].source).toBe("row");
+    expect(presentation.sheets[0].cells[1][1].displayText).toBe("57");
+    expect(presentation.sheets[0].cells[1][1].source).toBe("column");
+  });
+
+  it("rejects row display defaults outside body rows with a label column", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Price |
+| ---- || ----- |
+| A    || 12.34 |
+`.trim());
+
+    const headerRow = applyBatchAtomic(state, [
+      {
+        op: "set_row_default_format",
+        sheet: "Sheet",
+        rowId: state.sheets[0].rowIds[0],
+        format: GROUPED_1F,
+      },
+    ]);
+    expect(headerRow.ok).toBe(false);
+    if (headerRow.ok) throw new Error("expected failure");
+    expect(headerRow.error.category).toBe("invalid_operation");
+
+    const noLabelColumn = DocumentState.fromText(`
+# Sheet
+| Price |
+| ----- |
+| 12.34 |
+`.trim());
+    const noLabelResult = applyBatchAtomic(noLabelColumn, [
+      {
+        op: "set_row_default_format",
+        sheet: "Sheet",
+        rowId: noLabelColumn.sheets[0].rowIds[1],
+        format: GROUPED_1F,
+      },
+    ]);
+    expect(noLabelResult.ok).toBe(false);
+    if (noLabelResult.ok) throw new Error("expected failure");
+    expect(noLabelResult.error.category).toBe("invalid_operation");
   });
 
   it("sets a rectangular region by rowId and colId", () => {
