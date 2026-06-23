@@ -536,6 +536,24 @@ export class SheetState {
         call.args.forEach((arg) => walk(arg));
         return;
       }
+      if (node.kind === "array") {
+        const array = node.value as { rows: ExprNode[][] };
+        array.rows.forEach((row) => row.forEach((element) => walk(element)));
+        return;
+      }
+      if (node.kind === "index") {
+        const index = node.value as { target: ExprNode; axes: Array<{ kind: string; value?: ExprNode; start?: ExprNode | null; end?: ExprNode | null }> };
+        walk(index.target);
+        index.axes.forEach((axis) => {
+          if (axis.kind === "scalar") {
+            walk(axis.value ?? null);
+          } else {
+            walk(axis.start ?? null);
+            walk(axis.end ?? null);
+          }
+        });
+        return;
+      }
       if (node.kind === "unary") {
         walk(node.right ?? null);
         return;
@@ -937,6 +955,27 @@ export class SheetState {
       if (node.kind === "call") {
         for (const arg of (node.value as { args: ExprNode[] }).args) {
           walk(arg);
+        }
+        return;
+      }
+      if (node.kind === "array") {
+        for (const row of (node.value as { rows: ExprNode[][] }).rows) {
+          for (const element of row) {
+            walk(element);
+          }
+        }
+        return;
+      }
+      if (node.kind === "index") {
+        const index = node.value as { target: ExprNode; axes: Array<{ kind: string; value?: ExprNode; start?: ExprNode | null; end?: ExprNode | null }> };
+        walk(index.target);
+        for (const axis of index.axes) {
+          if (axis.kind === "scalar") {
+            walk(axis.value ?? null);
+          } else {
+            walk(axis.start ?? null);
+            walk(axis.end ?? null);
+          }
         }
         return;
       }

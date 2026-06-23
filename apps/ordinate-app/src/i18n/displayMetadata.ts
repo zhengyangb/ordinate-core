@@ -39,7 +39,7 @@ export function formatDisplayMetadataErrorMessage(locale: UiLocale, issue: Diagn
   }
   if (issue.code === "invalid_temporal_format_trailing_percent") return "Temporal format has trailing percent.";
   if (issue.code === "format_value_kind_mismatch") return "Format is not compatible with this value.";
-  if (issue.code === "temporal_format_directive_value_mismatch") return "Temporal format directive is not compatible with this value.";
+  if (issue.code === "temporal_format_directive_value_mismatch") return "This date/time format does not work with this value.";
   if (issue.code === "temporal_format_offset_requires_offset_qualified_value") {
     return "Temporal offset format requires an offset-qualified value.";
   }

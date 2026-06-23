@@ -1,5 +1,5 @@
 import { isError, isValidExternalErrorKind } from "./errors";
-import type { ExprNode, IndexAxisExpr, IndexExpr, ReferenceExpr, RefSelector, RuntimeValue } from "./types";
+import type { ArrayExpr, ExprNode, IndexAxisExpr, IndexExpr, ReferenceExpr, RefSelector, RuntimeValue } from "./types";
 
 export type FormulaRenderContext = {
   rowLabelPathsByIndex?: string[][];
@@ -42,6 +42,15 @@ export function renderFormulaExpression(
     const args = call.args.map((arg) => renderFormulaExpression(arg, rowIdToIndex, colIdToIndex, context) ?? "error[generic]");
     return `${call.name}(${args.join(", ")})`;
   }
+  if (node.kind === "array") {
+    const array = node.value as ArrayExpr;
+    const rows = array.rows.map((row) =>
+      row.map((element) => renderFormulaExpression(element, rowIdToIndex, colIdToIndex, context) ?? "error[generic]"));
+    const text = array.depth === 2
+      ? `[${rows.map((row) => `[${row.join(", ")}]`).join(", ")}]`
+      : `[${(rows[0] ?? []).join(", ")}]`;
+    return parentPrec > precedence("primary") ? `(${text})` : text;
+  }
   if (node.kind === "index") {
     const index = node.value as IndexExpr;
     const target =
@@ -68,6 +77,7 @@ export function renderFormulaExpression(
 }
 
 function precedence(op: string): number {
+  if (op === "primary") return 6;
   if (op === "postfix") return 5;
   if (op === "unary") return 4;
   if (op === "*" || op === "/") return 3;
