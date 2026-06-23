@@ -143,6 +143,15 @@ type FormulaReferenceOverlay = {
   active: boolean;
 };
 
+function isNativeTextEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(
+    target.closest(
+      "input, textarea, [contenteditable='true'], .formula-source-editor, .formula-source-textarea, .sheet-tab-rename-input",
+    ),
+  );
+}
+
 const SELECTION_DRAG_SCROLL_EDGE_PX = 48;
 const SELECTION_DRAG_SCROLL_MAX_PX = 24;
 
@@ -180,6 +189,12 @@ export default function App() {
     deleteRow,
     insertColumn,
     deleteColumn,
+    canUndo,
+    canRedo,
+    undoLabel,
+    redoLabel,
+    undo,
+    redo,
     enterSourceMode,
     exitSourceMode,
   } = useEditorStore();
@@ -836,6 +851,32 @@ export default function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mode, isActiveSheetBlocked, selection, clearActiveSelection, themeMenuOpen, toolMenuOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
+
+  useEffect(() => {
+    const handleHistoryKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (mode === "source") return;
+      if (isNativeTextEditingTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      const hasCommandModifier = event.metaKey || event.ctrlKey;
+      const wantsUndo = hasCommandModifier && key === "z" && !event.shiftKey && !event.altKey;
+      const wantsRedo =
+        (hasCommandModifier && key === "z" && event.shiftKey && !event.altKey) ||
+        (event.ctrlKey && !event.metaKey && key === "y" && !event.shiftKey && !event.altKey);
+      if (wantsUndo && canUndo) {
+        event.preventDefault();
+        undo();
+        return;
+      }
+      if (wantsRedo && canRedo) {
+        event.preventDefault();
+        redo();
+      }
+    };
+
+    window.addEventListener("keydown", handleHistoryKeyDown);
+    return () => window.removeEventListener("keydown", handleHistoryKeyDown);
+  }, [mode, canUndo, canRedo, undo, redo]);
 
   useEffect(() => {
     const handleEnterToEdit = (event: KeyboardEvent) => {
@@ -3368,6 +3409,12 @@ export default function App() {
             setToolMenuOpen(false);
             setThemeMenuOpen(false);
           }}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          undoLabel={undoLabel}
+          redoLabel={redoLabel}
+          onUndo={undo}
+          onRedo={redo}
           onEnterSourceMode={enterSourceMode}
           onExitSourceMode={exitSourceMode}
           onTooltipEnter={showTooltip}

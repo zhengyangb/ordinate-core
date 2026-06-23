@@ -127,6 +127,36 @@ export function MoreIcon() {
   );
 }
 
+export function UndoIcon() {
+  return (
+    <ToolbarIcon>
+      <path
+        d="M8 5.2 4.2 9 8 12.8M4.7 9h7.2a4 4 0 0 1 0 8H10"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+    </ToolbarIcon>
+  );
+}
+
+export function RedoIcon() {
+  return (
+    <ToolbarIcon>
+      <path
+        d="M12 5.2 15.8 9 12 12.8M15.3 9H8.1a4 4 0 0 0 0 8H10"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+    </ToolbarIcon>
+  );
+}
+
 export function CodeIcon() {
   return (
     <ToolbarIcon>
