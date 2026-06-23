@@ -97,9 +97,33 @@ export interface ViewSelection {
   colIndices: number[];
 }
 
+export interface RuntimeView {
+  kind: "view";
+  dimension: 0 | 1 | 2;
+  rowCount: number;
+  colCount: number;
+  values: RuntimeValue[];
+}
+
 export interface FunctionCall {
   name: string;
   args: ExprNode[];
+}
+
+export type IndexAxisExpr =
+  | {
+      kind: "scalar";
+      value: ExprNode;
+    }
+  | {
+      kind: "slice";
+      start: ExprNode | null;
+      end: ExprNode | null;
+    };
+
+export interface IndexExpr {
+  target: ExprNode;
+  axes: IndexAxisExpr[];
 }
 
 export interface ExprNode {
@@ -111,18 +135,49 @@ export interface ExprNode {
 
 export type FormatSignPolicy = "default" | "plus" | "parentheses";
 export type NumericFormatType = "f" | "e" | "%" | "d";
+export type TemporalFormatDirective =
+  | "literal_percent"
+  | "year"
+  | "month"
+  | "day"
+  | "hour"
+  | "minute"
+  | "second"
+  | "fraction"
+  | "offset_compact"
+  | "offset_colon"
+  | "date_iso"
+  | "time_iso"
+  | "duration_total_days"
+  | "duration_total_hours"
+  | "duration_total_minutes"
+  | "duration_total_seconds"
+  | "duration_total_milliseconds";
 export type TextAlign = "left" | "right" | "center";
 export type TextColor = "red" | "green" | "blue";
 export type TextWeight = "bold" | "normal";
 
-export interface FormatSpec {
+export interface NumericFormatSpec {
+  kind: "numeric";
   sign: FormatSignPolicy;
-  zeroPad: boolean;
-  width: number | null;
+  padWidth: number | null;
   grouping: boolean;
   precision: number | null;
   type: NumericFormatType | null;
 }
+
+export interface TemporalFormatToken {
+  directive: TemporalFormatDirective;
+  raw: string;
+}
+
+export interface TemporalFormatSpec {
+  kind: "temporal";
+  pattern: string;
+  tokens: TemporalFormatToken[];
+}
+
+export type FormatSpec = NumericFormatSpec | TemporalFormatSpec;
 
 export interface StyleSpec {
   align: TextAlign | null;

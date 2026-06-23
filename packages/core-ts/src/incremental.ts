@@ -1,7 +1,13 @@
-import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
-import { parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
+import { parseDocument, parseHierarchyLabel, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
+import { getCellTextView, parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
+import { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
+import { parseTemporalFormatSpec } from "./runtime/temporalFormat";
+import { renderFormulaExpression } from "./runtime/renderFormula";
 import {
   buildBodyRows,
+  buildColumnLabelMap,
+  buildColumnLabelPaths,
+  buildColumnLabels,
   buildRowKeys,
   computeDataRowIndices,
   evalExpr,
@@ -68,6 +74,7 @@ export class SheetState {
   dataColIndices: number[];
   logicalRows: ParsedRow[];
   cells: CellState[][];
+  rowDisplayMetadata: Array<ParsedDisplayMetadata | null>;
   columnDisplayMetadata: Array<ParsedDisplayMetadata | null>;
   viewDependencies: Map<number, ViewSelection>;
   viewFormulas: Map<number, [number, number]>;
@@ -96,6 +103,7 @@ export class SheetState {
     dataColIndices: number[],
     logicalRows: ParsedRow[],
     cells: CellState[][],
+    rowDisplayMetadata: Array<ParsedDisplayMetadata | null>,
     columnDisplayMetadata: Array<ParsedDisplayMetadata | null>,
     sourceBlocks: PreservedSheetBlock[],
     primaryTableBlockIndex: number | null,
@@ -121,6 +129,7 @@ export class SheetState {
     this.dataColIndices = dataColIndices;
     this.logicalRows = logicalRows;
     this.cells = cells;
+    this.rowDisplayMetadata = rowDisplayMetadata;
     this.columnDisplayMetadata = columnDisplayMetadata;
     this.viewDependencies = new Map();
     this.viewFormulas = new Map();
@@ -173,6 +182,7 @@ export class SheetState {
         [],
         [],
         [],
+        [],
         normalizedBlocks,
         primaryIndex,
       );
@@ -183,22 +193,10 @@ export class SheetState {
     const headerColCount = headerColCountFrom(logicalRows);
     const bodyStart = headerRowCount > 0 ? headerRowCount : 0;
     const columnDisplayMetadata = extractColumnDisplayMetadataFromControlRow(controlFrame.controlRow, colCount);
+    const rowDisplayMetadata = extractRowDisplayMetadataFromLabelColumn(logicalRows, bodyStart, headerColCount);
 
-    const colLabels: string[] = [];
-    for (let c = 0; c < colCount; c += 1) {
-      if (headerRowCount > 0) {
-        const headerRow = logicalRows[headerRowCount - 1];
-        const rawHeader = c < headerRow.rawCells.length ? headerRow.rawCells[c] : "";
-        const label = stripCellDisplayMetadata(rawHeader).trim();
-        if (label !== "") {
-          colLabels.push(label);
-          continue;
-        }
-      }
-      {
-        colLabels.push(`C${c + 1}`);
-      }
-    }
+    const colLabelPaths = buildColumnLabelPaths(logicalRows, headerRowCount, colCount);
+    const colLabels = buildColumnLabels(colLabelPaths);
 
     const { rowPaths } = buildBodyRows(logicalRows, bodyStart);
     const rowKeys = buildRowKeys(logicalRows, bodyStart);
@@ -211,12 +209,7 @@ export class SheetState {
       rowMap.set(k, list);
     });
 
-    const colMap = new Map<string, number[]>();
-    colLabels.forEach((label, idx) => {
-      const list = colMap.get(label) ?? [];
-      list.push(idx);
-      colMap.set(label, list);
-    });
+    const colMap = buildColumnLabelMap(colLabelPaths, colLabels);
 
     const bodyRowCount = logicalRows.length - bodyStart;
     const dataRowIndices = computeDataRowIndices(logicalRows, bodyStart);
@@ -265,6 +258,7 @@ export class SheetState {
       dataColIndices,
       logicalRows,
       cells,
+      rowDisplayMetadata,
       columnDisplayMetadata,
       normalizedBlocks,
       primaryIndex,
@@ -319,20 +313,28 @@ export class SheetState {
     const normalizedText = normalizeCellTextForParsing(text, rAbs, c, this.headerRowCount, this.headerColCount);
     const parsed = this.bindParsedCell(parseCellInput(normalizedText));
     cell.body = parsed.body;
-    if (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) {
+    if (kind === ChangeKind.CLEAR) {
       cell.localDisplay = parsed.localDisplay;
     }
     cell.dirty = true;
     cell.cachedValue = null;
 
-    this.updateRowText(rAbs, c, text);
+    const nextRawText = kind === ChangeKind.VALUE ? buildCellRawText(cell.body, cell.localDisplay) : text;
+    this.updateRowText(rAbs, c, nextRawText);
 
-    if (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) {
+    const affectsStructure = kind === ChangeKind.LABEL
+      || kind === ChangeKind.STRUCTURAL
+      || kind === ChangeKind.SHEET
+      || rAbs < this.bodyStart
+      || c < this.headerColCount;
+
+    if (affectsStructure) {
+      this.rebuildMetadata();
+      this.refreshFormulaSourceTexts();
+      this.markAllDirty();
+    } else if (kind === ChangeKind.VALUE || kind === ChangeKind.CLEAR) {
       this.updateDependenciesForCell(rAbs, c);
       this.markDirtyFrom([rAbs, c]);
-    } else if (kind === ChangeKind.LABEL || kind === ChangeKind.STRUCTURAL || kind === ChangeKind.SHEET) {
-      this.rebuildMetadata();
-      this.markAllDirty();
     } else {
       this.markAllDirty();
     }
@@ -386,6 +388,85 @@ export class SheetState {
     this.setCellLocalDisplayByIndex(rAbs, c, format, null);
   }
 
+  setColumnDefaultFormatByIndex(c: number, format: FormatSpec | null) {
+    if (c < 0 || c >= this.colCount) {
+      throw new Error("column index out of range");
+    }
+    assertFormatSpecOrNull(format);
+    const existing = this.columnDisplayMetadata[c];
+    const style = existing && existing.valid ? existing.style : null;
+    this.columnDisplayMetadata[c] = createDisplayFromSpecs(format, style);
+  }
+
+  clearColumnDefaultFormatByIndex(c: number) {
+    this.setColumnDefaultFormatByIndex(c, null);
+  }
+
+  setColumnDefaultStyleByIndex(c: number, stylePatch: StylePatch) {
+    if (c < 0 || c >= this.colCount) {
+      throw new Error("column index out of range");
+    }
+    assertStylePatch(stylePatch);
+    const existing = this.columnDisplayMetadata[c];
+    const format = existing && existing.valid ? existing.format : null;
+    const currentStyle = existing && existing.valid ? existing.style : null;
+    const style = applyStylePatch(currentStyle, stylePatch);
+    this.columnDisplayMetadata[c] = createDisplayFromSpecs(format, style);
+  }
+
+  clearColumnDefaultStyleByIndex(c: number) {
+    if (c < 0 || c >= this.colCount) {
+      throw new Error("column index out of range");
+    }
+    const existing = this.columnDisplayMetadata[c];
+    const format = existing && existing.valid ? existing.format : null;
+    this.columnDisplayMetadata[c] = createDisplayFromSpecs(format, null);
+  }
+
+  setRowDefaultFormatByIndex(rAbs: number, format: FormatSpec | null) {
+    if (rAbs < 0 || rAbs >= this.rowCount) {
+      throw new Error("row index out of range");
+    }
+    if (rAbs < this.bodyStart || this.headerColCount <= 0) {
+      throw new Error("row default format requires a body row with a header label column");
+    }
+    assertFormatSpecOrNull(format);
+    const existing = this.rowDisplayMetadata[rAbs];
+    const style = existing && existing.valid ? existing.style : null;
+    this.rowDisplayMetadata[rAbs] = createDisplayFromSpecs(format, style);
+  }
+
+  clearRowDefaultFormatByIndex(rAbs: number) {
+    this.setRowDefaultFormatByIndex(rAbs, null);
+  }
+
+  setRowDefaultStyleByIndex(rAbs: number, stylePatch: StylePatch) {
+    if (rAbs < 0 || rAbs >= this.rowCount) {
+      throw new Error("row index out of range");
+    }
+    if (rAbs < this.bodyStart || this.headerColCount <= 0) {
+      throw new Error("row default style requires a body row with a header label column");
+    }
+    assertStylePatch(stylePatch);
+    const existing = this.rowDisplayMetadata[rAbs];
+    const format = existing && existing.valid ? existing.format : null;
+    const currentStyle = existing && existing.valid ? existing.style : null;
+    const style = applyStylePatch(currentStyle, stylePatch);
+    this.rowDisplayMetadata[rAbs] = createDisplayFromSpecs(format, style);
+  }
+
+  clearRowDefaultStyleByIndex(rAbs: number) {
+    if (rAbs < 0 || rAbs >= this.rowCount) {
+      throw new Error("row index out of range");
+    }
+    if (rAbs < this.bodyStart || this.headerColCount <= 0) {
+      throw new Error("row default style requires a body row with a header label column");
+    }
+    const existing = this.rowDisplayMetadata[rAbs];
+    const format = existing && existing.valid ? existing.format : null;
+    this.rowDisplayMetadata[rAbs] = createDisplayFromSpecs(format, null);
+  }
+
   // Update local display metadata without mutating formula/value dependency state.
   private setCellLocalDisplayByIndex(
     rAbs: number,
@@ -423,6 +504,18 @@ export class SheetState {
           return { kind: "invalid" };
         }
         return { kind: "absolute_id", value: ids[index] };
+      }
+      if (selector.kind === "label") {
+        const key = axis === "row"
+          ? JSON.stringify(selector.value as string[])
+          : (selector.value as string[]).join(".");
+        const matches = axis === "row" ? this.rowMap.get(key) ?? [] : this.colMap.get(key) ?? [];
+        if (matches.length !== 1) {
+          return selector;
+        }
+        const ids = axis === "row" ? this.rowIds : this.colIds;
+        const id = ids[matches[0]];
+        return id == null ? selector : { kind: "label_id", value: id };
       }
       if (selector.kind === "absolute_fixed") {
         return selector;
@@ -473,56 +566,89 @@ export class SheetState {
   }
 
   // Insert a blank row at a logical row index (tentative RFC-0012 behavior).
-  insertRow(rowIndex: number, eager = true) {
+  insertRow(rowIndex: number, eager = true, labelRaw = "") {
     if (rowIndex < this.bodyStart) {
       throw new Error("header row insertion is not supported (tentative)");
     }
     if (rowIndex < 0 || rowIndex > this.rowCount) {
       throw new Error("row index out of range");
     }
+    this.insertBlankRowAt(rowIndex, labelRaw);
+    this.finalizeStructuralRowEdit(eager);
+  }
 
-    const boundary = this.logicalRows.length > 0 ? this.logicalRows[0].boundary : null;
-    const rawCells = Array.from({ length: this.colCount }, () => "");
-    const cells = Array.from({ length: this.colCount }, () => "");
-    const newRow: ParsedRow = { rawCells, cells, boundary, errors: [] };
-    this.logicalRows.splice(rowIndex, 0, newRow);
-
-    const newCellStates: CellState[] = rawCells.map((cellText) => {
-      const parsed = this.bindParsedCell(parseCellInput(cellText));
-      return {
-        body: parsed.body,
-        localDisplay: parsed.localDisplay,
-        cachedValue: null,
-        dirty: true,
-      };
-    });
-    this.cells.splice(rowIndex, 0, newCellStates);
-    this.rowIds.splice(rowIndex, 0, this.nextRowId);
-    this.nextRowId += 1;
-
-    this.rebuildMetadata();
-    this.markAllDirty();
-    if (eager) {
-      this.recalculate();
+  insertHeaderRow(rowIndex: number, eager = true, labelRaw = "") {
+    if (rowIndex < 0 || rowIndex > this.headerRowCount) {
+      throw new Error("header row index out of range");
     }
+    this.insertBlankRowAt(rowIndex, labelRaw);
+    this.headerRowCount += 1;
+    this.bodyStart = this.headerRowCount;
+    this.finalizeStructuralRowEdit(eager);
   }
 
   // Delete a row at a logical row index (tentative RFC-0012 behavior).
   deleteRow(rowIndex: number, eager = true) {
+    this.deleteRows(rowIndex, 1, eager);
+  }
+
+  deleteRows(rowIndex: number, count: number, eager = true) {
     if (rowIndex < this.bodyStart) {
       throw new Error("header row deletion is not supported (tentative)");
     }
     if (rowIndex < 0 || rowIndex >= this.rowCount) {
       throw new Error("row index out of range");
     }
-    this.logicalRows.splice(rowIndex, 1);
-    this.cells.splice(rowIndex, 1);
-    this.rowIds.splice(rowIndex, 1);
-    this.rebuildMetadata();
-    this.markAllDirty();
-    if (eager) {
-      this.recalculate();
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("row delete count must be a positive integer");
     }
+    if (rowIndex + count > this.rowCount) {
+      throw new Error("row delete range out of range");
+    }
+    this.deleteRowRangeAt(rowIndex, count);
+    this.finalizeStructuralRowEdit(eager);
+  }
+
+  deleteHeaderRow(rowIndex: number, eager = true) {
+    if (rowIndex < 0 || rowIndex >= this.headerRowCount) {
+      throw new Error("header row index out of range");
+    }
+    this.deleteRowRangeAt(rowIndex, 1);
+    this.headerRowCount -= 1;
+    this.bodyStart = this.headerRowCount > 0 ? this.headerRowCount : 0;
+    this.finalizeStructuralRowEdit(eager);
+  }
+
+  convertBodyPrefixToHeader(count: number, eager = true) {
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("row conversion count must be a positive integer");
+    }
+    if (this.bodyStart + count > this.rowCount) {
+      throw new Error("row conversion range out of range");
+    }
+    this.headerRowCount += count;
+    this.bodyStart = this.headerRowCount;
+    this.finalizeStructuralRowEdit(eager);
+  }
+
+  convertHeaderSuffixToBody(count: number, depth: number, eager = true) {
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("row conversion count must be a positive integer");
+    }
+    if (count > this.headerRowCount) {
+      throw new Error("row conversion range out of range");
+    }
+    if (!Number.isInteger(depth) || depth < 0) {
+      throw new Error("depth must be non-negative");
+    }
+    this.headerRowCount -= count;
+    this.bodyStart = this.headerRowCount > 0 ? this.headerRowCount : 0;
+    for (let offset = 0; offset < count; offset += 1) {
+      const rowIndex = this.bodyStart + offset;
+      const label = this.logicalRows[rowIndex].rawCells[0] ?? "";
+      this.updateRowText(rowIndex, 0, applyHierarchyDepthToLabel(label, depth));
+    }
+    this.finalizeStructuralRowEdit(eager);
   }
 
   // Insert a blank column at a logical column index (tentative RFC-0012 behavior).
@@ -552,6 +678,7 @@ export class SheetState {
     this.nextColId += 1;
 
     this.rebuildMetadata();
+    this.refreshFormulaSourceTexts();
     this.markAllDirty();
     if (eager) {
       this.recalculate();
@@ -577,6 +704,7 @@ export class SheetState {
     this.columnDisplayMetadata.splice(colIndex, 1);
 
     this.rebuildMetadata();
+    this.refreshFormulaSourceTexts();
     this.markAllDirty();
     if (eager) {
       this.recalculate();
@@ -613,6 +741,7 @@ export class SheetState {
 
     const newPath = [...parentParts, newLabel].join(".");
     this.applyRowAlias(rowPath, newPath);
+    this.refreshFormulaSourceTexts();
 
     if (eager) {
       this.recalculate();
@@ -646,6 +775,7 @@ export class SheetState {
     this.rebuildMetadata();
     this.markAllDirty();
     this.applyColAlias(oldLabel, newLabel);
+    this.refreshFormulaSourceTexts();
 
     if (eager) {
       this.recalculate();
@@ -828,21 +958,8 @@ export class SheetState {
   private rebuildMetadata() {
     const colCount = this.logicalRows.reduce((m, r) => Math.max(m, r.cells.length), 0);
     this.colCount = colCount;
-    const colLabels: string[] = [];
-    for (let c = 0; c < colCount; c += 1) {
-      if (this.headerRowCount > 0) {
-        const headerRow = this.logicalRows[this.headerRowCount - 1];
-        const rawHeader = c < headerRow.rawCells.length ? headerRow.rawCells[c] : "";
-        const label = stripCellDisplayMetadata(rawHeader).trim();
-        if (label !== "") {
-          colLabels.push(label);
-          continue;
-        }
-      }
-      {
-        colLabels.push(`C${c + 1}`);
-      }
-    }
+    const colLabelPaths = buildColumnLabelPaths(this.logicalRows, this.headerRowCount, colCount);
+    const colLabels = buildColumnLabels(colLabelPaths);
     this.colLabels = colLabels;
 
     const { rowPaths } = buildBodyRows(this.logicalRows, this.bodyStart);
@@ -859,13 +976,7 @@ export class SheetState {
     });
     this.rowMap = rowMap;
 
-    const colMap = new Map<string, number[]>();
-    colLabels.forEach((label, idx) => {
-      const list = colMap.get(label) ?? [];
-      list.push(idx);
-      colMap.set(label, list);
-    });
-    this.colMap = colMap;
+    this.colMap = buildColumnLabelMap(colLabelPaths, colLabels);
 
     this.dataRowIndices = computeDataRowIndices(this.logicalRows, this.bodyStart);
     this.dataColIndices = Array.from({ length: colCount - this.headerColCount }, (_, i) => i + this.headerColCount);
@@ -876,6 +987,48 @@ export class SheetState {
     this.columnDisplayMetadata = resizeColumnDisplayMetadata(this.columnDisplayMetadata, this.colCount);
 
     this.rebuildDependencies();
+  }
+
+  private insertBlankRowAt(rowIndex: number, labelRaw: string) {
+    const boundary = this.logicalRows.length > 0 ? this.logicalRows[0].boundary : null;
+    const rawCells = Array.from({ length: this.colCount }, () => "");
+    const cells = Array.from({ length: this.colCount }, () => "");
+    if (rawCells.length > 0) {
+      rawCells[0] = labelRaw;
+      cells[0] = labelRaw.trim();
+    }
+    const newRow: ParsedRow = { rawCells, cells, boundary, errors: [] };
+    this.logicalRows.splice(rowIndex, 0, newRow);
+
+    const newCellStates: CellState[] = rawCells.map((cellText) => {
+      const parsed = this.bindParsedCell(parseCellInput(cellText));
+      return {
+        body: parsed.body,
+        localDisplay: parsed.localDisplay,
+        cachedValue: null,
+        dirty: true,
+      };
+    });
+    this.cells.splice(rowIndex, 0, newCellStates);
+    this.rowDisplayMetadata.splice(rowIndex, 0, null);
+    this.rowIds.splice(rowIndex, 0, this.nextRowId);
+    this.nextRowId += 1;
+  }
+
+  private deleteRowRangeAt(rowIndex: number, count: number) {
+    this.logicalRows.splice(rowIndex, count);
+    this.cells.splice(rowIndex, count);
+    this.rowDisplayMetadata.splice(rowIndex, count);
+    this.rowIds.splice(rowIndex, count);
+  }
+
+  private finalizeStructuralRowEdit(eager: boolean) {
+    this.rebuildMetadata();
+    this.refreshFormulaSourceTexts();
+    this.markAllDirty();
+    if (eager) {
+      this.recalculate();
+    }
   }
 
   // Add an alias for an old row path if the new label is unique (tentative RFC-0012 behavior).
@@ -907,6 +1060,30 @@ export class SheetState {
     for (let rAbs = 0; rAbs < this.rowCount; rAbs += 1) {
       for (let c = 0; c < this.colCount; c += 1) {
         this.updateDependenciesForCell(rAbs, c);
+      }
+    }
+  }
+
+  // After structural edits, formula ASTs may be rebased to new row/column positions.
+  // Keep the source-facing formula text in sync with the rebased AST so UI/editor
+  // surfaces do not show stale references until a serialize/parse round-trip.
+  private refreshFormulaSourceTexts() {
+    for (let rAbs = 0; rAbs < this.rowCount; rAbs += 1) {
+      for (let c = 0; c < this.colCount; c += 1) {
+        const cell = this.cells[rAbs][c];
+        if (!cell.body.valid || cell.body.kind !== "formula") {
+          continue;
+        }
+        const exprText =
+          renderFormulaExpression(cell.body.expression, this.rowIdToIndex, this.colIdToIndex, {
+            rowLabelPathsByIndex: Array.from({ length: this.rowCount }, (_, rowIndex) =>
+              rowIndex >= this.bodyStart ? (this.rowPaths[rowIndex - this.bodyStart] ?? "").split(".") : [],
+            ),
+            colLabelsByIndex: this.colLabels,
+          }) ?? cell.body.expressionText;
+        cell.body.expressionText = exprText;
+        cell.body.inputText = exprText.length > 0 ? `= ${exprText}` : "=";
+        this.updateRowText(rAbs, c, buildCellRawText(cell.body, cell.localDisplay));
       }
     }
   }
@@ -1004,6 +1181,23 @@ function extractColumnDisplayMetadataFromControlRow(
   return output;
 }
 
+function extractRowDisplayMetadataFromLabelColumn(
+  logicalRows: ParsedRow[],
+  bodyStart: number,
+  headerColCount: number,
+): Array<ParsedDisplayMetadata | null> {
+  const output: Array<ParsedDisplayMetadata | null> = Array.from({ length: logicalRows.length }, () => null);
+  if (headerColCount <= 0) {
+    return output;
+  }
+  for (let rAbs = bodyStart; rAbs < logicalRows.length; rAbs += 1) {
+    const raw = logicalRows[rAbs]?.rawCells[0] ?? "";
+    if (raw.trim() === "") continue;
+    output[rAbs] = parseCellInput(raw).localDisplay;
+  }
+  return output;
+}
+
 function resizeColumnDisplayMetadata(
   metadata: Array<ParsedDisplayMetadata | null>,
   colCount: number,
@@ -1025,6 +1219,16 @@ function createDisplayFromSpecs(format: FormatSpec | null, style: StyleSpec | nu
   };
 }
 
+function applyHierarchyDepthToLabel(labelRaw: string, depth: number): string {
+  const parsed = parseHierarchyLabel(labelRaw);
+  const prefix = depth === 0 ? "" : `${"*".repeat(depth)} `;
+  return `${prefix}${parsed.content}`;
+}
+
+function buildCellRawText(body: CellBodyState, localDisplay: ParsedDisplayMetadata | null): string {
+  return getCellTextView({ body, localDisplay }).cellText;
+}
+
 function applyStylePatch(current: StyleSpec | null, patch: StylePatch): StyleSpec | null {
   const align = Object.hasOwn(patch, "align") ? patch.align ?? null : current?.align ?? null;
   const weight = Object.hasOwn(patch, "weight") ? patch.weight ?? null : current?.weight ?? null;
@@ -1040,15 +1244,64 @@ function assertFormatSpecOrNull(format: FormatSpec | null): void {
   if (typeof format !== "object") {
     throw new Error("format spec must be an object or null");
   }
-  assertKnownKeys(format, ["sign", "zeroPad", "width", "grouping", "precision", "type"], "format");
+  if (format.kind === "temporal") {
+    assertKnownKeys(format, ["kind", "pattern", "tokens"], "format");
+    if (typeof format.pattern !== "string" || format.pattern.length === 0) {
+      throw new Error("format.pattern must be a non-empty string");
+    }
+    const parsedTemporal = parseTemporalFormatSpec(format.pattern);
+    if (!parsedTemporal || "issue" in parsedTemporal) {
+      throw new Error(parsedTemporal && "issue" in parsedTemporal ? describeDisplayMetadataDiagnostic(parsedTemporal.issue) : "format.pattern must contain a supported temporal directive");
+    }
+    if (!Array.isArray(format.tokens)) {
+      throw new Error("format.tokens must be an array");
+    }
+    for (const token of format.tokens) {
+      if (!token || typeof token !== "object") {
+        throw new Error("format.tokens entries must be objects");
+      }
+      assertKnownKeys(token, ["directive", "raw"], "format token");
+      if (
+        ![
+          "literal_percent",
+          "year",
+          "month",
+          "day",
+          "hour",
+          "minute",
+          "second",
+          "fraction",
+          "offset_compact",
+          "offset_colon",
+          "date_iso",
+          "time_iso",
+          "duration_total_days",
+          "duration_total_hours",
+          "duration_total_minutes",
+          "duration_total_seconds",
+          "duration_total_milliseconds",
+        ].includes(token.directive)
+      ) {
+        throw new Error("format token directive is invalid");
+      }
+      if (typeof token.raw !== "string" || token.raw.length === 0) {
+        throw new Error("format token raw must be a non-empty string");
+      }
+    }
+    if (JSON.stringify(format.tokens) !== JSON.stringify(parsedTemporal.value.tokens)) {
+      throw new Error("format.tokens must match format.pattern");
+    }
+    return;
+  }
+  if (format.kind !== "numeric") {
+    throw new Error("format.kind must be numeric or temporal");
+  }
+  assertKnownKeys(format, ["kind", "sign", "padWidth", "grouping", "precision", "type"], "format");
   if (!["default", "plus", "parentheses"].includes(format.sign)) {
     throw new Error("format.sign must be default, plus, or parentheses");
   }
-  if (typeof format.zeroPad !== "boolean") {
-    throw new Error("format.zeroPad must be boolean");
-  }
-  if (format.width !== null && (!Number.isInteger(format.width) || format.width < 0)) {
-    throw new Error("format.width must be a non-negative integer or null");
+  if (format.padWidth !== null && (!Number.isInteger(format.padWidth) || format.padWidth < 0)) {
+    throw new Error("format.padWidth must be a non-negative integer or null");
   }
   if (typeof format.grouping !== "boolean") {
     throw new Error("format.grouping must be boolean");
@@ -1059,8 +1312,9 @@ function assertFormatSpecOrNull(format: FormatSpec | null): void {
   if (format.type !== null && !["f", "e", "%", "d"].includes(format.type)) {
     throw new Error("format.type must be f, e, %, d, or null");
   }
-  if (format.type === "d" && format.precision !== null) {
-    throw new Error("integer format disallows precision");
+  const issue = validateFormatSpec(format);
+  if (issue) {
+    throw new Error(describeDisplayMetadataDiagnostic(issue));
   }
 }
 
@@ -1175,15 +1429,30 @@ export class DocumentState {
   }
 
   // Insert a blank row into a sheet (tentative RFC-0012 behavior).
-  insertRow(sheetName: string, rowIndex: number, eager = true) {
+  insertRow(sheetName: string, rowIndex: number, eager = true, labelRaw = "") {
     const sheet = this.findSheet(sheetName);
-    sheet.insertRow(rowIndex, eager);
+    sheet.insertRow(rowIndex, eager, labelRaw);
+  }
+
+  insertHeaderRow(sheetName: string, rowIndex: number, eager = true, labelRaw = "") {
+    const sheet = this.findSheet(sheetName);
+    sheet.insertHeaderRow(rowIndex, eager, labelRaw);
   }
 
   // Delete a row from a sheet (tentative RFC-0012 behavior).
   deleteRow(sheetName: string, rowIndex: number, eager = true) {
     const sheet = this.findSheet(sheetName);
     sheet.deleteRow(rowIndex, eager);
+  }
+
+  deleteHeaderRow(sheetName: string, rowIndex: number, eager = true) {
+    const sheet = this.findSheet(sheetName);
+    sheet.deleteHeaderRow(rowIndex, eager);
+  }
+
+  deleteRows(sheetName: string, rowIndex: number, count: number, eager = true) {
+    const sheet = this.findSheet(sheetName);
+    sheet.deleteRows(rowIndex, count, eager);
   }
 
   // Insert a blank column into a sheet (tentative RFC-0012 behavior).

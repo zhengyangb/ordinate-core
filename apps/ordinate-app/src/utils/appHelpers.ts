@@ -5,10 +5,13 @@ import type {
   ColumnRailMenuView,
   FloatingMenuPosition,
   HeaderOverlayCell,
+  RailMenuView,
+  RowRailMenuView,
   SheetHealth,
   SheetIssueViewModel,
   ThemeMode,
 } from "../types/ui";
+import { firstColumnFormatPreviewValue, formatLocalViewFromSpec } from "./formatDisplay";
 import { runtimeValueToText } from "./sheetView";
 
 export const LABEL_COLUMN_WIDTH = 280;
@@ -27,7 +30,7 @@ export const TOOLTIP_GAP = 8;
 export const TOOLTIP_VIEWPORT_MARGIN = 10;
 export const TOOLTIP_ESTIMATED_HEIGHT = 34;
 export const TOOLTIP_ESTIMATED_WIDTH = 240;
-export const FLOATING_MENU_VIEWPORT_MARGIN = 12;
+export const FLOATING_MENU_VIEWPORT_MARGIN = 24;
 export const FLOATING_MENU_GAP = 8;
 export const COLUMN_RAIL_MENU_MAX_WIDTH_REM = 27;
 export const THEME_STORAGE_KEY = "ordinate-theme-mode";
@@ -48,6 +51,7 @@ type ValidationIssue = {
 
 type RuntimeSheet = {
   colLabels: string[];
+  rowPaths?: string[];
   values: RuntimeValue[][];
 };
 
@@ -55,18 +59,32 @@ type StateCell = CellTextViewSource;
 
 type StateSheet = {
   colCount: number;
+  rowIds?: number[];
+  colIds?: number[];
   colLabels: string[];
+  headerRowCount?: number;
+  bodyStart?: number;
   cells: StateCell[][];
 };
 
 type PresentationColumnDefault = {
   formatLayer: { local: PresentedCell["formatLayer"]["local"] | null | undefined };
   styleLayer: { local: PresentedCell["styleLayer"]["local"] | null | undefined };
+  valid?: boolean;
+  errors?: PresentedCell["errors"];
+};
+
+type PresentationRowDefault = {
+  formatLayer: { local: PresentedCell["formatLayer"]["local"] | null | undefined };
+  styleLayer: { local: PresentedCell["styleLayer"]["local"] | null | undefined };
+  valid?: boolean;
+  errors?: PresentedCell["errors"];
 };
 
 type PresentationSheet = {
   headerDisplayRows?: string[][];
   columnDefaults: Array<PresentationColumnDefault | undefined>;
+  rowDefaults?: Array<PresentationRowDefault | undefined>;
 };
 
 const BLOCKING_SHEET_MESSAGE_FRAGMENTS = [
@@ -194,6 +212,13 @@ export function queryGridBodyViewport(root: HTMLElement): HTMLElement | null {
   );
 }
 
+export function queryGridHorizontalViewport(root: HTMLElement): HTMLElement | null {
+  return (
+    root.querySelector<HTMLElement>(".ag-body-horizontal-scroll-viewport") ??
+    root.querySelector<HTMLElement>(".ag-center-cols-viewport")
+  );
+}
+
 export function easeOutQuint(progress: number): number {
   return 1 - (1 - progress) ** 5;
 }
@@ -214,23 +239,8 @@ export function styleLocalView(style: PresentedCell["styleLayer"]["local"] | nul
   } as const;
 }
 
-export function formatLocalView(format: PresentedCell["formatLayer"]["local"] | null | undefined) {
-  if (!format) {
-    return {
-      formatLocalKey: "auto" as const,
-      formatLocalOptions: null,
-    };
-  }
-  return {
-    formatLocalKey: formatMenuKeyFromType(format.type),
-    formatLocalOptions: {
-      sign: format.sign,
-      zeroPad: format.zeroPad,
-      width: format.width,
-      grouping: format.grouping,
-      precision: format.precision,
-    },
-  };
+export function formatLocalView(format: PresentedCell["formatLayer"]["local"] | null | undefined, previewValue?: RuntimeValue | null) {
+  return formatLocalViewFromSpec(format, previewValue);
 }
 
 export function trimSheetColCount(currentSheetState: StateSheet | null, currentSheet: RuntimeSheet | null): number {
@@ -294,9 +304,6 @@ export function buildHeaderMatrix(
   const matrixDepth = headerRowCount;
   return Array.from({ length: matrixDepth }, (_, rowIndex) =>
     Array.from({ length: sheetColCount }, (_, colIndex) => {
-      if (rowIndex === matrixDepth - 1) {
-        return currentSheetState.colLabels[colIndex] ?? currentSheet?.colLabels[colIndex] ?? `C${colIndex + 1}`;
-      }
       return "";
     }),
   );
@@ -322,6 +329,9 @@ export function buildColumnHasLocalConfig(
 export function buildColumnRailMenu(
   openColumnMenuColIndex: number | null,
   sheetColCount: number,
+  headerColCount: number,
+  currentSheet: RuntimeSheet | null,
+  currentSheetState: StateSheet | null,
   currentSheetPresentation: PresentationSheet | null,
   columnHasLocalConfig: boolean[],
 ): ColumnRailMenuView | null {
@@ -329,32 +339,202 @@ export function buildColumnRailMenu(
     return null;
   }
   const columnDefault = currentSheetPresentation?.columnDefaults[openColumnMenuColIndex];
+  const colId = currentSheetState?.colIds?.[openColumnMenuColIndex];
+  if (colId == null) {
+    return null;
+  }
   const localStyle = columnDefault?.styleLayer.local;
   const styleLocal = styleLocalView(localStyle);
+  const previewValue = firstColumnFormatPreviewValue(currentSheet?.values, openColumnMenuColIndex);
   return {
+    kind: "column",
     colIndex: openColumnMenuColIndex,
+    colId,
     colLabel: toColumnLetters(openColumnMenuColIndex + 1),
     hasLocalConfig: columnHasLocalConfig[openColumnMenuColIndex] === true,
-    ...formatLocalView(columnDefault?.formatLayer.local),
+    canStructureEdit: openColumnMenuColIndex >= headerColCount,
+    ...formatLocalView(columnDefault?.formatLayer.local, previewValue),
+    formatPreviewContext: {
+      value: previewValue,
+      scope: previewValue ? "column" : "sample",
+    },
     styleLocal,
   };
 }
 
-export function resolveColumnRailMenuWidthPx(): number {
+function firstRowFormatPreviewValue(values: RuntimeValue[][] | null | undefined, rowRel: number, headerColCount: number): RuntimeValue | null {
+  if (!values || rowRel < 0 || rowRel >= values.length) return null;
+  const row = values[rowRel];
+  if (!row) return null;
+  for (let colIndex = Math.max(0, headerColCount); colIndex < row.length; colIndex += 1) {
+    const value = row[colIndex];
+    if (!value || value.kind === "blank" || value.kind === "null" || value.kind === "error") continue;
+    return value;
+  }
+  return null;
+}
+
+export function buildRowRailMenu(
+  target: { rowNumber: number; area: "header" | "body"; hasChildren: boolean } | null,
+  currentSheetState: StateSheet | null,
+  currentSheet: RuntimeSheet | null,
+  currentSheetPresentation: PresentationSheet | null,
+  headerColCount: number,
+): RowRailMenuView | null {
+  if (target == null) {
+    return null;
+  }
+  const rowIndex = target.rowNumber - 1;
+  const rowId = currentSheetState?.rowIds?.[rowIndex];
+  if (rowId == null) {
+    return null;
+  }
+  const headerRowCount = currentSheetState?.headerRowCount ?? 0;
+  const bodyStart = currentSheetState?.bodyStart ?? headerRowCount;
+  const canDisplayEdit = target.area === "body" && rowIndex >= bodyStart && headerColCount > 0;
+  const rowDefault = canDisplayEdit ? currentSheetPresentation?.rowDefaults?.[rowIndex] : null;
+  const localStyle = rowDefault?.styleLayer.local;
+  const rowRel = rowIndex - bodyStart;
+  const previewValue = canDisplayEdit ? firstRowFormatPreviewValue(currentSheet?.values, rowRel, headerColCount) : null;
+  const styleLocal = styleLocalView(localStyle);
+  const rowHasLocalConfig = Boolean(
+    rowDefault?.formatLayer.local ||
+      localStyle?.align ||
+      localStyle?.weight ||
+      localStyle?.color ||
+      rowDefault?.valid === false,
+  );
+  return {
+    kind: "row",
+    area: target.area,
+    rowNumber: target.rowNumber,
+    rowId,
+    rowPath: canDisplayEdit ? currentSheet?.rowPaths?.[rowRel] ?? null : null,
+    hasChildren: target.hasChildren,
+    canDisplayEdit,
+    hasLocalConfig: rowHasLocalConfig,
+    ...formatLocalView(rowDefault?.formatLayer.local, previewValue),
+    formatPreviewContext: {
+      value: previewValue,
+      scope: previewValue ? "row" : "sample",
+    },
+    styleLocal,
+    canConvertToHeader: target.area === "body" && rowIndex === bodyStart,
+    canConvertToBody: target.area === "header" && headerRowCount > 0 && rowIndex === headerRowCount - 1,
+  };
+}
+
+export function buildRailMenu(
+  target:
+    | { kind: "column"; colIndex: number }
+    | { kind: "row"; rowNumber: number; area: "header" | "body"; hasChildren: boolean }
+    | null,
+  sheetColCount: number,
+  headerColCount: number,
+  currentSheet: RuntimeSheet | null,
+  currentSheetState: StateSheet | null,
+  currentSheetPresentation: PresentationSheet | null,
+  columnHasLocalConfig: boolean[],
+): RailMenuView | null {
+  if (!target) return null;
+  if (target.kind === "column") {
+    return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheet, currentSheetState, currentSheetPresentation, columnHasLocalConfig);
+  }
+  return buildRowRailMenu(
+    { rowNumber: target.rowNumber, area: target.area, hasChildren: target.hasChildren },
+    currentSheetState,
+    currentSheet,
+    currentSheetPresentation,
+    headerColCount,
+  );
+}
+
+export function resolveRailMenuWidthPx(kind: RailMenuView["kind"]): number {
   if (typeof window === "undefined") {
-    return COLUMN_RAIL_MENU_MAX_WIDTH_REM * 16;
+    return kind === "row" ? 208 : COLUMN_RAIL_MENU_MAX_WIDTH_REM * 16;
+  }
+  if (kind === "row") {
+    return Math.min(208, window.innerWidth - FLOATING_MENU_VIEWPORT_MARGIN * 2);
   }
   const rootFontPx = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
   const maxWidthPx = COLUMN_RAIL_MENU_MAX_WIDTH_REM * rootFontPx;
   return Math.min(maxWidthPx, window.innerWidth - FLOATING_MENU_VIEWPORT_MARGIN * 2);
 }
 
-export function resolveColumnRailMenuPosition(anchorRect: DOMRect): FloatingMenuPosition {
-  const menuWidth = resolveColumnRailMenuWidthPx();
-  const top = anchorRect.bottom + FLOATING_MENU_GAP;
+export function resolveAnchoredMenuPosition(
+  anchorRect: DOMRect,
+  menuRect: Pick<DOMRect, "width" | "height">,
+  {
+    preferredY = "below",
+    align = "end",
+  }: {
+    preferredY?: "below" | "above";
+    align?: "start" | "end";
+  } = {},
+): FloatingMenuPosition {
+  const menuWidth = menuRect.width;
+  const menuHeight = menuRect.height;
+  const belowTop = anchorRect.bottom + FLOATING_MENU_GAP;
+  const aboveTop = anchorRect.top - menuHeight - FLOATING_MENU_GAP;
+  const canPlaceBelow = belowTop + menuHeight <= window.innerHeight - FLOATING_MENU_VIEWPORT_MARGIN;
+  const canPlaceAbove = aboveTop >= FLOATING_MENU_VIEWPORT_MARGIN;
+  const unclampedTop =
+    preferredY === "below"
+      ? canPlaceBelow || !canPlaceAbove
+        ? belowTop
+        : aboveTop
+      : canPlaceAbove || !canPlaceBelow
+        ? aboveTop
+        : belowTop;
+  const top = Math.max(
+    FLOATING_MENU_VIEWPORT_MARGIN,
+    Math.min(unclampedTop, window.innerHeight - menuHeight - FLOATING_MENU_VIEWPORT_MARGIN),
+  );
+  const preferredLeft = align === "start" ? anchorRect.left : anchorRect.right - menuWidth;
   const left = Math.max(
     FLOATING_MENU_VIEWPORT_MARGIN,
-    Math.min(anchorRect.right - menuWidth, window.innerWidth - menuWidth - FLOATING_MENU_VIEWPORT_MARGIN),
+    Math.min(preferredLeft, window.innerWidth - menuWidth - FLOATING_MENU_VIEWPORT_MARGIN),
+  );
+  return { top, left };
+}
+
+export function resolveRailMenuPosition(
+  anchorRect: DOMRect,
+  menuRect: Pick<DOMRect, "width" | "height">,
+): FloatingMenuPosition {
+  return resolveAnchoredMenuPosition(anchorRect, menuRect, {
+    preferredY: "below",
+    align: "start",
+  });
+}
+
+export function resolveFlyoutMenuPosition(
+  triggerRect: DOMRect,
+  containerRect: DOMRect,
+  menuRect: Pick<DOMRect, "width" | "height">,
+  { preferredSide = "right" }: { preferredSide?: "right" | "left" } = {},
+): FloatingMenuPosition {
+  const menuWidth = menuRect.width;
+  const menuHeight = menuRect.height;
+  const rightLeft = containerRect.right + FLOATING_MENU_GAP;
+  const leftLeft = containerRect.left - menuWidth - FLOATING_MENU_GAP;
+  const canPlaceRight = rightLeft + menuWidth <= window.innerWidth - FLOATING_MENU_VIEWPORT_MARGIN;
+  const canPlaceLeft = leftLeft >= FLOATING_MENU_VIEWPORT_MARGIN;
+  const unclampedLeft =
+    preferredSide === "right"
+      ? canPlaceRight || !canPlaceLeft
+        ? rightLeft
+        : leftLeft
+      : canPlaceLeft || !canPlaceRight
+        ? leftLeft
+        : rightLeft;
+  const left = Math.max(
+    FLOATING_MENU_VIEWPORT_MARGIN,
+    Math.min(unclampedLeft, window.innerWidth - menuWidth - FLOATING_MENU_VIEWPORT_MARGIN),
+  );
+  const top = Math.max(
+    FLOATING_MENU_VIEWPORT_MARGIN,
+    Math.min(triggerRect.top, window.innerHeight - menuHeight - FLOATING_MENU_VIEWPORT_MARGIN),
   );
   return { top, left };
 }

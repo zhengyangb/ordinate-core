@@ -1,16 +1,24 @@
-import type { CSSProperties, MutableRefObject } from "react";
+import { useRef, type CSSProperties, type MutableRefObject, type PointerEvent as ReactPointerEvent } from "react";
 
 import { AgGridReact } from "ag-grid-react";
 import {
   type ColDef,
   type ColGroupDef,
+  type CellMouseDownEvent,
   type FirstDataRenderedEvent,
   type GridReadyEvent,
   type ModelUpdatedEvent,
   themeQuartz,
 } from "ag-grid-community";
 
+import { shouldAnimateTableStructure } from "../config/motion";
 import type { ChromeVisibilityPhase, ColumnMetric, GridRow, HeaderIndexMetric, HeaderOverlayCell, RowIndexMetric, SelectedCell } from "../types/ui";
+
+type FormulaReferenceOverlay = {
+  tokenId: string;
+  colorIndex: number;
+  active: boolean;
+};
 
 type TableStageProps = {
   tableStageClassName: string;
@@ -25,8 +33,10 @@ type TableStageProps = {
   pinnedHeaderWidth: number;
   rowIndexTrackHeight: number;
   indexRailsPhase: ChromeVisibilityPhase;
+  handleIndexRailsHoverChange: (hovering: boolean) => void;
   rowIndexMetrics: RowIndexMetric[];
   columnTrackRef: MutableRefObject<HTMLDivElement | null>;
+  headerCenterTrackRef: MutableRefObject<HTMLDivElement | null>;
   rowTrackRef: MutableRefObject<HTMLDivElement | null>;
   gridWrapRef: MutableRefObject<HTMLDivElement | null>;
   rowData: GridRow[];
@@ -36,17 +46,25 @@ type TableStageProps = {
   columnHasLocalConfig: boolean[];
   showSelectionRing: boolean;
   selectionRingRef: MutableRefObject<HTMLDivElement | null>;
+  selectionRangeRef: MutableRefObject<HTMLDivElement | null>;
+  formulaReferenceOverlayLayerRef: MutableRefObject<HTMLDivElement | null>;
+  formulaReferenceOverlays: FormulaReferenceOverlay[];
+  onFormulaReferenceOverlaySelect: (tokenId: string) => void;
+  isSelectionRingTransitioning: boolean;
   suppressAgHeaderFocus: boolean;
   overlayOwnsGridHeader: boolean;
-  handleHeaderOverlaySelect: (rowNumber: number, colIndex: number) => void;
+  handleHeaderOverlaySelect: (rowNumber: number, colIndex: number, event?: ReactPointerEvent<HTMLElement>) => void;
+  handleHeaderOverlayDoubleClick: (rowNumber: number, colIndex: number) => void;
   handleHeaderOverlayKeyDown: (event: KeyboardEvent, rowNumber: number, colIndex: number) => void;
   handleColumnRailSelect: (colIndex: number) => void;
   handleColumnRailMenuOpen: (colIndex: number, anchorEl: HTMLElement) => void;
-  handleRowRailSelect: (rowNumber: number, rowPath: string | null) => void;
+  handleRowRailSelect: (rowNumber: number, area: "header" | "body") => void;
+  handleRowRailMenuOpen: (rowNumber: number, area: "header" | "body", anchorEl: HTMLElement) => void;
   handleGridReady: (event: GridReadyEvent<GridRow>) => void;
   handleFirstDataRendered: (event: FirstDataRenderedEvent<GridRow>) => void;
   handleModelUpdated: (event: ModelUpdatedEvent<GridRow>) => void;
   handleCellFocused: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
+  handleCellMouseDown: (event: CellMouseDownEvent<GridRow>) => void;
   handleCellDoubleClicked: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
   handleCellKeyDown: (event: {
     rowIndex: number | null;
@@ -90,8 +108,10 @@ export default function TableStage({
   pinnedHeaderWidth,
   rowIndexTrackHeight,
   indexRailsPhase,
+  handleIndexRailsHoverChange,
   rowIndexMetrics,
   columnTrackRef,
+  headerCenterTrackRef,
   rowTrackRef,
   gridWrapRef,
   rowData,
@@ -101,22 +121,32 @@ export default function TableStage({
   columnHasLocalConfig,
   showSelectionRing,
   selectionRingRef,
+  selectionRangeRef,
+  formulaReferenceOverlayLayerRef,
+  formulaReferenceOverlays,
+  onFormulaReferenceOverlaySelect,
+  isSelectionRingTransitioning,
   suppressAgHeaderFocus,
   overlayOwnsGridHeader,
   handleHeaderOverlaySelect,
+  handleHeaderOverlayDoubleClick,
   handleHeaderOverlayKeyDown,
   handleColumnRailSelect,
   handleColumnRailMenuOpen,
   handleRowRailSelect,
+  handleRowRailMenuOpen,
   handleGridReady,
   handleFirstDataRendered,
   handleModelUpdated,
   handleCellFocused,
+  handleCellMouseDown,
   handleCellDoubleClicked,
   handleCellKeyDown,
 }: TableStageProps) {
+  const animateTableStructure = shouldAnimateTableStructure();
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
   const selectedRowNumber = selectedCell?.logical.rAbs ?? null;
+  const activeColumnIndex = selectedColumnIndex ?? selectedCell?.logical.cAbs ?? null;
   const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < headerColCount);
   const centerOverlayCells = headerOverlayCells.filter((cell) => cell.startCol >= headerColCount);
   const columnTrackWidth = columnMetrics.length === 0 ? 0 : Math.max(...columnMetrics.map((metric) => metric.left + metric.width));
@@ -126,7 +156,7 @@ export default function TableStage({
 
   const renderColumnRailCell = (metric: ColumnMetric, left: number, pinned: boolean) => {
     const colNumber = metric.colIndex + 1;
-    const isActive = selectedColumnIndex === metric.colIndex;
+    const isActive = activeColumnIndex === metric.colIndex;
     const letters = toColumnLetters(colNumber);
     const hasLocalConfig = columnHasLocalConfig[metric.colIndex] === true;
     return (
@@ -137,8 +167,12 @@ export default function TableStage({
           left: `${left}px`,
           width: `${metric.width}px`,
         }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleColumnRailMenuOpen(metric.colIndex, event.currentTarget);
+        }}
       >
-        <span className="column-index-left-pad" aria-hidden="true" />
         <button
           className="column-index-main"
           type="button"
@@ -157,24 +191,11 @@ export default function TableStage({
             </span>
           ) : null}
         </button>
-        <button
-          className="column-index-menu-trigger"
-          type="button"
-          aria-label={`Open column ${letters} menu`}
-          onClick={(event) => {
-            event.stopPropagation();
-            handleColumnRailMenuOpen(metric.colIndex, event.currentTarget);
-          }}
-        >
-          <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-            <path d="M3.2 4.6 6 7.4l2.8-2.8" />
-          </svg>
-        </button>
       </div>
     );
   };
 
-  const renderOverlayCell = (cell: HeaderOverlayCell) => {
+  const renderOverlayCell = (cell: HeaderOverlayCell, leftOffset = 0) => {
     const span = Math.max(1, cell.endCol - cell.startCol + 1);
     const selectedSlot =
       selectedCell?.area === "header" &&
@@ -187,7 +208,7 @@ export default function TableStage({
       "--overlay-slot-count"?: string;
       "--overlay-slot-index"?: string;
     } = {
-      left: `${cell.left}px`,
+      left: `${cell.left - leftOffset}px`,
       top: `${cell.top}px`,
       width: `${cell.width}px`,
       height: `${cell.height}px`,
@@ -206,7 +227,7 @@ export default function TableStage({
         data-end-col={cell.endCol}
         type="button"
         style={style}
-        onMouseDown={(event) => {
+        onPointerDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
           const target = event.currentTarget;
@@ -215,8 +236,18 @@ export default function TableStage({
           const ratio = rect.width > 0 ? localX / rect.width : 0;
           const slot = Math.min(span - 1, Math.floor(ratio * span));
           const colIndex = cell.startCol + slot;
-          handleHeaderOverlaySelect(cell.rowNumber, colIndex);
+          handleHeaderOverlaySelect(cell.rowNumber, colIndex, event);
           requestAnimationFrame(() => target.focus());
+        }}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const target = event.currentTarget;
+          const rect = target.getBoundingClientRect();
+          const localX = Math.min(Math.max(0, event.clientX - rect.left), Math.max(0, rect.width - 1));
+          const ratio = rect.width > 0 ? localX / rect.width : 0;
+          const slot = Math.min(span - 1, Math.floor(ratio * span));
+          handleHeaderOverlayDoubleClick(cell.rowNumber, cell.startCol + slot);
         }}
         onKeyDown={(event) => {
           const spanSize = Math.max(1, cell.endCol - cell.startCol + 1);
@@ -231,13 +262,17 @@ export default function TableStage({
 
   return (
     <div className={tableStageClassName} style={tableStageStyle}>
-      <div className={`table-corner ${railsPhaseClass}`}>
-        <button className="corner-button" type="button" tabIndex={-1} aria-label="Corner placeholder">
-          <span className="corner-dot" />
-        </button>
-      </div>
+      <div
+        className={`table-corner ${railsPhaseClass}`}
+        onMouseEnter={() => handleIndexRailsHoverChange(true)}
+        onMouseLeave={() => handleIndexRailsHoverChange(false)}
+      />
 
-      <div className={`column-index-strip ${railsPhaseClass}`}>
+      <div
+        className={`column-index-strip ${railsPhaseClass}`}
+        onMouseEnter={() => handleIndexRailsHoverChange(true)}
+        onMouseLeave={() => handleIndexRailsHoverChange(false)}
+      >
         <div
           className="column-index-track"
           style={columnTrackWidth > 0 ? { width: `${columnTrackWidth}px` } : undefined}
@@ -258,26 +293,35 @@ export default function TableStage({
         </div>
       </div>
 
-      <div className={`row-index-strip ${railsPhaseClass}`} aria-hidden="true">
+      <div
+        className={`row-index-strip ${railsPhaseClass}`}
+        onMouseEnter={() => handleIndexRailsHoverChange(true)}
+        onMouseLeave={() => handleIndexRailsHoverChange(false)}
+      >
         <div className="row-index-shell">
           <div
             className={headerIndexMetrics.length > 0 ? "row-index-header-track" : "row-index-header-track is-empty"}
             style={headerIndexTrackHeight > 0 ? { height: `${headerIndexTrackHeight}px` } : undefined}
           >
-            {headerIndexMetrics.map((row) => (
-              <button
-                key={`row-index-header-${row.number}`}
+              {headerIndexMetrics.map((row) => (
+                <button
+                  key={`row-index-header-${row.number}`}
                 className={selectedRowNumber === row.number ? "row-index-cell is-header is-active" : "row-index-cell is-header"}
                 style={{
                   top: `${row.top}px`,
                   height: `${row.height}px`,
                 }}
                 type="button"
-                onClick={() => handleRowRailSelect(row.number, null)}
-              >
-                {row.number}
-              </button>
-            ))}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleRowRailMenuOpen(row.number, "header", event.currentTarget);
+                }}
+                onClick={() => handleRowRailSelect(row.number, "header")}
+                >
+                  {row.number}
+                </button>
+              ))}
           </div>
           <div className="row-index-viewport">
             <div
@@ -286,18 +330,27 @@ export default function TableStage({
               style={rowIndexTrackHeight > 0 ? { height: `${rowIndexTrackHeight}px` } : undefined}
             >
               {rowIndexMetrics.map((row) => (
-                <button
-                  key={`row-index-${row.rowPath}`}
-                  className={selectedRowNumber === row.number ? "row-index-cell is-active" : "row-index-cell"}
+                <div
+                  key={`row-index-${row.rowKey}`}
+                  className={
+                    selectedRowNumber === row.number
+                      ? "row-index-cell is-active"
+                      : "row-index-cell"
+                  }
                   style={{
                     top: `${row.top}px`,
                     height: `${row.height}px`,
                   }}
-                  type="button"
-                  onClick={() => handleRowRailSelect(row.number, row.rowPath)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleRowRailMenuOpen(row.number, "body", event.currentTarget);
+                  }}
                 >
-                  {row.number}
-                </button>
+                  <button type="button" className="row-index-main" onClick={() => handleRowRailSelect(row.number, "body")}>
+                    {row.number}
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -306,12 +359,40 @@ export default function TableStage({
 
       <div className="grid-shell">
         {showSelectionRing ? (
-          <div ref={selectionRingRef} className="persistent-selection-ring is-hidden" aria-hidden="true" />
+          <>
+            <div ref={selectionRangeRef} className="persistent-range-selection is-hidden" aria-hidden="true" />
+            <div ref={formulaReferenceOverlayLayerRef} className="formula-reference-overlay-layer">
+              {formulaReferenceOverlays.map((overlay) => (
+                <button
+                  key={overlay.tokenId}
+                  className={overlay.active ? "formula-reference-range is-hidden is-active" : "formula-reference-range is-hidden"}
+                  data-token-id={overlay.tokenId}
+                  data-color-index={overlay.colorIndex}
+                  type="button"
+                  aria-label="Select formula reference"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onFormulaReferenceOverlaySelect(overlay.tokenId);
+                  }}
+                />
+              ))}
+            </div>
+            <div
+              ref={selectionRingRef}
+              className={
+                isSelectionRingTransitioning && animateTableStructure
+                  ? "persistent-selection-ring is-hidden is-structural-transition"
+                  : "persistent-selection-ring is-hidden"
+              }
+              aria-hidden="true"
+            />
+          </>
         ) : null}
         {headerOverlayHeight > 0 ? (
           <>
             <div
-              className="header-matrix-overlay header-matrix-overlay--center"
+              className="header-matrix-base header-matrix-base--center"
               style={
                 {
                   height: `${headerOverlayHeight}px`,
@@ -319,15 +400,41 @@ export default function TableStage({
                 } as CSSProperties
               }
               aria-hidden="true"
+            />
+            <div
+              className="header-matrix-base header-matrix-base--pinned"
+              style={{
+                height: `${headerOverlayHeight}px`,
+                width: `${Math.max(0, pinnedHeaderWidth)}px`,
+              }}
+              aria-hidden="true"
+            />
+            <div
+              className="header-matrix-overlay header-matrix-overlay--center"
+              style={
+                {
+                  height: `${headerOverlayHeight}px`,
+                  left: `${Math.max(0, pinnedHeaderWidth)}px`,
+                  width: `${centerTrackWidth}px`,
+                  "--header-overlay-pinned-width": `${Math.max(0, pinnedHeaderWidth)}px`,
+                } as CSSProperties
+              }
+              aria-hidden="true"
             >
-              {centerOverlayCells.map(renderOverlayCell)}
+              <div
+                ref={headerCenterTrackRef}
+                className="header-matrix-center-scroll-layer"
+                style={centerTrackWidth > 0 ? { width: `${centerTrackWidth}px` } : undefined}
+              >
+                {centerOverlayCells.map((cell) => renderOverlayCell(cell, pinnedHeaderWidth))}
+              </div>
             </div>
             <div
               className="header-matrix-overlay header-matrix-overlay--pinned"
               style={{ height: `${headerOverlayHeight}px` }}
               aria-hidden="true"
             >
-              {pinnedOverlayCells.map(renderOverlayCell)}
+              {pinnedOverlayCells.map((cell) => renderOverlayCell(cell))}
             </div>
           </>
         ) : null}
@@ -346,7 +453,7 @@ export default function TableStage({
           <AgGridReact<GridRow>
             rowData={rowData}
             columnDefs={columnDefs}
-            animateRows
+            animateRows={animateTableStructure}
             // Header layout contract:
             // - the visible spreadsheet header is fully owned by our overlay
             // - `.grid-wrap` reserves that vertical space with padding-top
@@ -361,7 +468,7 @@ export default function TableStage({
               resizable: false,
               suppressMovable: true,
             }}
-            getRowId={(params) => params.data.__rowPath}
+            getRowId={(params) => params.data.__rowKey}
             suppressMovableColumns
             suppressDragLeaveHidesColumns
             suppressColumnVirtualisation
@@ -371,10 +478,11 @@ export default function TableStage({
             onFirstDataRendered={handleFirstDataRendered}
             onModelUpdated={handleModelUpdated}
             onCellFocused={handleCellFocused}
+            onCellMouseDown={handleCellMouseDown}
             onCellDoubleClicked={handleCellDoubleClicked}
             onCellKeyDown={handleCellKeyDown}
             rowClassRules={{
-              "section-row": (params) => Boolean(params.data?.__isSection),
+              "group-row": (params) => Boolean(params.data?.__hasChildren),
             }}
           />
         </div>

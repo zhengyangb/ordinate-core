@@ -1,6 +1,16 @@
 export type UiLocale = "en-US" | "zh-CN";
 
 export type UiMessageKey =
+  | "formula.category.aggregate"
+  | "formula.category.numeric"
+  | "formula.category.logical"
+  | "formula.category.vector"
+  | "formula.category.view"
+  | "formula.category.statistical"
+  | "formula.category.type"
+  | "formula.category.text"
+  | "formula.category.temporal"
+  | "formula.category.financial"
   | "error.kind.generic"
   | "error.kind.parse_error"
   | "error.kind.type_error"
@@ -22,6 +32,16 @@ export type UiMessageKey =
 
 const MESSAGES: Record<UiLocale, Record<UiMessageKey, string>> = {
   "en-US": {
+    "formula.category.aggregate": "Aggregate",
+    "formula.category.numeric": "Math",
+    "formula.category.logical": "Logic",
+    "formula.category.vector": "Vector",
+    "formula.category.view": "View",
+    "formula.category.statistical": "Statistics",
+    "formula.category.type": "Type",
+    "formula.category.text": "Text",
+    "formula.category.temporal": "Time",
+    "formula.category.financial": "Financial",
     "error.kind.generic": "Generic Error",
     "error.kind.parse_error": "Parse Error",
     "error.kind.type_error": "Type Error",
@@ -42,6 +62,16 @@ const MESSAGES: Record<UiLocale, Record<UiMessageKey, string>> = {
     "error.message.generic": "This cell contains an error.",
   },
   "zh-CN": {
+    "formula.category.aggregate": "聚合",
+    "formula.category.numeric": "数学",
+    "formula.category.logical": "逻辑",
+    "formula.category.vector": "向量",
+    "formula.category.view": "视图",
+    "formula.category.statistical": "统计",
+    "formula.category.type": "类型",
+    "formula.category.text": "文本",
+    "formula.category.temporal": "时间",
+    "formula.category.financial": "金融",
     "error.kind.generic": "通用错误",
     "error.kind.parse_error": "解析错误",
     "error.kind.type_error": "类型错误",

@@ -17,9 +17,9 @@ set_cell_input_and_local_display_success
     "op": "set_cell_local_format",
     "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Out" },
     "format": {
+      "kind": "numeric",
       "sign": "default",
-      "zeroPad": false,
-      "width": null,
+      "padWidth": null,
       "grouping": true,
       "precision": 2,
       "type": "f"
@@ -36,7 +36,7 @@ set_cell_input_and_local_display_success
 # Sheet
 | Item || 2024 | 2025 | Out |
 | ---- || ---- | ---- | --- |
-| A    || 10   | 2    | = B2 + C2 {:,.2f:green} |
+| A    || 10   | 2    | = B2 + C2 {:,.2f} {::green} |
 | B    || 3    | 4    | = B3 + C3 |
 [/expect]
 expect_ok: true
@@ -98,7 +98,7 @@ clear_cell_local_format_success
 # Sheet
 | Item || 2024 | 2025 | Out |
 | ---- || ---- | ---- | --- |
-| A    || 1    | 2    | = B2 + C2 {:,.2f:green} |
+| A    || 1    | 2    | = B2 + C2 {:,.2f} {::green} |
 [/doc]
 [ops]
 [
@@ -122,7 +122,7 @@ clear_cell_local_style_success
 # Sheet
 | Item || 2024 | 2025 | Out |
 | ---- || ---- | ---- | --- |
-| A    || 1    | 2    | = B2 + C2 {:,.2f:green} |
+| A    || 1    | 2    | = B2 + C2 {:,.2f} {::green} |
 [/doc]
 [ops]
 [
@@ -179,7 +179,9 @@ insert_row_success
   {
     "op": "insert_row",
     "sheet": "Sheet",
-    "rowIndex": 3
+    "area": "body",
+    "rowGapIndex": 3,
+    "depth": 0
   }
 ]
 [/ops]
@@ -207,7 +209,7 @@ delete_row_success
   {
     "op": "delete_row",
     "sheet": "Sheet",
-    "rowIndex": 2
+    "rowId": 3
   }
 ]
 [/ops]
@@ -348,7 +350,9 @@ invalid_structural_scope_insert_header_row
   {
     "op": "insert_row",
     "sheet": "Sheet",
-    "rowIndex": 0
+    "area": "body",
+    "rowGapIndex": 0,
+    "depth": 0
   }
 ]
 [/ops]

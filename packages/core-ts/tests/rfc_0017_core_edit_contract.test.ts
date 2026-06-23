@@ -15,14 +15,15 @@ import {
   resolveDocumentPresentation,
   resolvePresentationFromText,
   resolveCellInputText,
+  resolveSheetRowStructure,
   serializeDocumentState,
   splitCellDisplayMetadata,
 } from "../src";
 
 const FORMAT_GROUPED_2F: FormatSpec = {
+  kind: "numeric",
   sign: "default",
-  zeroPad: false,
-  width: null,
+  padWidth: null,
   grouping: true,
   precision: 2,
   type: "f",
@@ -30,7 +31,7 @@ const FORMAT_GROUPED_2F: FormatSpec = {
 
 const API_DOC = `
 # Sheet
-| @display |      || {:,.1f:>,blue,bold} | {::>,bold} |         |
+| @display |      || {:,.1f} {::>,blue,bold} | {::>,bold} |         |
 |          | Item || Price                | Qty        | Out     |
 | -------- | ---- || -----                | ---        | ---     |
 |          | A    || 12.345 {::green}     | 2          | = B2 * C2 {:,.2f} |
@@ -200,9 +201,9 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
   });
 
   it("keeps display metadata parsing separate from content text", () => {
-    expect(splitCellDisplayMetadata('= B2 * C2 {:,.2f:>,blue}')).toEqual({
+    expect(splitCellDisplayMetadata('= B2 * C2 {:,.2f} {::>,blue}')).toEqual({
       contentText: "= B2 * C2",
-      displayMetaRaw: "{:,.2f:>,blue}",
+      displayMetaRaw: "{:,.2f} {::>,blue}",
     });
     expect(splitCellDisplayMetadata('12.345 {::green}')).toEqual({
       contentText: "12.345",
@@ -211,18 +212,18 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
   });
 
   it("derives read/edit input from cached formula body without exposing cache", () => {
-    expect(resolveCellInputText("6 = B2 + 1 {:,.2f:>,blue}")).toEqual({
-      cellText: "6 = B2 + 1 {:,.2f:>,blue}",
+    expect(resolveCellInputText("6 = B2 + 1 {:,.2f} {::>,blue}")).toEqual({
+      cellText: "6 = B2 + 1 {:,.2f} {::>,blue}",
       bodyText: "6 = B2 + 1",
       inputText: "= B2 + 1",
-      displayMetaRaw: "{:,.2f:>,blue}",
+      displayMetaRaw: "{:,.2f} {::>,blue}",
     });
 
-    expect(resolveCellInputText("= B2 + 1 {:,.2f:>,blue}")).toEqual({
-      cellText: "= B2 + 1 {:,.2f:>,blue}",
+    expect(resolveCellInputText("= B2 + 1 {:,.2f} {::>,blue}")).toEqual({
+      cellText: "= B2 + 1 {:,.2f} {::>,blue}",
       bodyText: "= B2 + 1",
       inputText: "= B2 + 1",
-      displayMetaRaw: "{:,.2f:>,blue}",
+      displayMetaRaw: "{:,.2f} {::>,blue}",
     });
 
     expect(resolveCellInputText('"abc" {::green}')).toEqual({
@@ -420,6 +421,54 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     if (!cleared.ok) throw new Error("expected success");
     const aOutCleared = resolveDocumentPresentation(cleared.nextDocument).sheets[0].cells[0][3];
     expect(aOutCleared.styleLayer.local).toBeNull();
+  });
+
+  it("rejects invalid local format combinations through structured edit", () => {
+    const state = DocumentState.fromText(EDIT_DOC);
+    const updated = applyBatchAtomic(state, [
+      {
+        op: "set_cell_local_format",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        format: {
+          kind: "numeric",
+          sign: "default",
+          padWidth: null,
+          grouping: false,
+          precision: 2,
+          type: "d",
+        },
+      },
+    ]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) throw new Error("expected failure");
+    expect(updated.error.category).toBe("invalid_operation");
+    expect(updated.error.op).toBe("set_cell_local_format");
+    expect(updated.error.message).toContain("precision is not allowed for integer format");
+  });
+
+  it("rejects scientific grouping through structured edit", () => {
+    const state = DocumentState.fromText(EDIT_DOC);
+    const updated = applyBatchAtomic(state, [
+      {
+        op: "set_cell_local_format",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        format: {
+          kind: "numeric",
+          sign: "default",
+          padWidth: null,
+          grouping: true,
+          precision: 2,
+          type: "e",
+        },
+      },
+    ]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) throw new Error("expected failure");
+    expect(updated.error.category).toBe("invalid_operation");
+    expect(updated.error.op).toBe("set_cell_local_format");
+    expect(updated.error.message).toContain("grouping is not allowed for scientific format");
   });
 
   it("replaces invalid display metadata when setting structured local metadata", () => {
@@ -640,6 +689,155 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(serializeDocumentState(result.nextDocument)).toContain("= sum(B2");
   });
 
+  it("preserves local display metadata when set_cell_input updates only the body text", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2f} {::>,blue} |
+`.trim());
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_cell_input",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        input: "= 2 + 1",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const nextSheet = result.nextDocument.sheets[0];
+    const cell = nextSheet.cells[nextSheet.bodyStart][1];
+    expect(cell.body.valid).toBe(true);
+    if (!cell.body.valid) throw new Error("expected valid body");
+    expect(cell.body.kind).toBe("formula");
+    expect(cell.localDisplay?.valid).toBe(true);
+    if (!cell.localDisplay?.valid) throw new Error("expected valid display metadata");
+    expect(cell.localDisplay.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
+    expect(cell.localDisplay.style).toMatchObject({ align: "right", color: "blue" });
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).toContain('= 2 + 1 {:,.2f} {::>,blue}');
+  });
+
+  it("preserves local display metadata when set_cell_input clears body text to empty input", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2f} {::>,blue} |
+`.trim());
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_cell_input",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        input: "",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const nextSheet = result.nextDocument.sheets[0];
+    const cell = nextSheet.cells[nextSheet.bodyStart][1];
+    expect(cell.body.valid).toBe(true);
+    if (!cell.body.valid) throw new Error("expected valid body");
+    expect(cell.body.kind).toBe("literal");
+    expect(cell.body.literal.kind).toBe("blank");
+    expect(cell.localDisplay?.valid).toBe(true);
+    if (!cell.localDisplay?.valid) throw new Error("expected valid display metadata");
+    expect(cell.localDisplay.format).toMatchObject({ grouping: true, precision: 2, type: "f" });
+    expect(cell.localDisplay.style).toMatchObject({ align: "right", color: "blue" });
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).toContain('| A    || {:,.2f} {::>,blue} |');
+    const roundTripped = DocumentState.fromText(output);
+    const roundTrippedCell = roundTripped.sheets[0].cells[roundTripped.sheets[0].bodyStart][1];
+    expect(roundTrippedCell.body.valid).toBe(true);
+    if (!roundTrippedCell.body.valid) throw new Error("expected valid body");
+    expect(roundTrippedCell.body.kind).toBe("literal");
+    expect(roundTrippedCell.body.literal.kind).toBe("blank");
+    expect(roundTrippedCell.localDisplay?.valid).toBe(true);
+  });
+
+  it("preserves invalid local display metadata when set_cell_input updates the body text", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2fd} |
+`.trim());
+
+    const beforeCell = state.sheets[0].cells[state.sheets[0].bodyStart][1];
+    expect(beforeCell.localDisplay?.valid).toBe(false);
+    if (beforeCell.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(beforeCell.localDisplay.rawBlock).toBe("{:,.2fd}");
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "set_cell_input",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+        input: "= 2 + 1",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const nextSheet = result.nextDocument.sheets[0];
+    const cell = nextSheet.cells[nextSheet.bodyStart][1];
+    expect(cell.body.valid).toBe(true);
+    if (!cell.body.valid) throw new Error("expected valid body");
+    expect(cell.body.kind).toBe("formula");
+    expect(cell.localDisplay?.valid).toBe(false);
+    if (cell.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(cell.localDisplay.rawBlock).toBe("{:,.2fd}");
+    expect(cell.localDisplay.issue.code).toBe("invalid_format_spec_trailing_chars");
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).toContain('= 2 + 1 {:,.2fd}');
+  });
+
+  it("clear_cell removes both body and local display metadata", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2f} {::>,blue} |
+`.trim());
+
+    const result = applyBatchAtomic(state, [
+      {
+        op: "clear_cell",
+        target: { kind: "label", sheet: "Sheet", rowPath: ["A"], colLabel: "Out" },
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+
+    const nextSheet = result.nextDocument.sheets[0];
+    const cell = nextSheet.cells[nextSheet.bodyStart][1];
+    expect(cell.body.valid).toBe(true);
+    if (!cell.body.valid) throw new Error("expected valid body");
+    expect(cell.body.kind).toBe("literal");
+    expect(cell.body.literal.kind).toBe("blank");
+    expect(cell.localDisplay).toBeNull();
+
+    const output = serializeDocumentState(result.nextDocument);
+    expect(output).not.toContain('{:,.2f} {::>,blue}');
+    const roundTripped = DocumentState.fromText(output);
+    const roundTrippedCell = roundTripped.sheets[0].cells[roundTripped.sheets[0].bodyStart][1];
+    expect(roundTrippedCell.body.valid).toBe(true);
+    if (!roundTrippedCell.body.valid) throw new Error("expected valid body");
+    expect(roundTrippedCell.body.kind).toBe("literal");
+    expect(roundTrippedCell.body.literal.kind).toBe("blank");
+    expect(roundTrippedCell.localDisplay).toBeNull();
+  });
+
   it("returns deterministic target errors for ambiguous labels and invalid structural scope", () => {
     const ambiguous = applyBatchAtomic(DocumentState.fromText(AMBIGUOUS_DOC), [
       {
@@ -653,11 +851,137 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     expect(ambiguous.error.category).toBe("ambiguous_target");
 
     const invalidScope = applyBatchAtomic(DocumentState.fromText(EDIT_DOC), [
-      { op: "insert_row", sheet: "Sheet", rowIndex: 0 },
+      { op: "insert_row", sheet: "Sheet", area: "body", rowGapIndex: 0, depth: 0 },
     ]);
     expect(invalidScope.ok).toBe(false);
     if (invalidScope.ok) throw new Error("expected failure");
     expect(invalidScope.error.category).toBe("invalid_operation");
+  });
+
+  it("exposes minimal row structure read surface from core", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Revenue |
+| * Product A |
+| ** SKU 1 |
+| * Product B |
+`.trim());
+
+    const rows = resolveSheetRowStructure(state.sheets[0]);
+    expect(rows.map((row) => ({
+      rowId: row.rowId,
+      depth: row.depth,
+      hasChildren: row.hasChildren,
+      subtreeRowCount: row.subtreeRowCount,
+      rowPath: row.rowPath,
+    }))).toEqual([
+      {
+        rowId: state.sheets[0].rowIds[state.sheets[0].bodyStart],
+        depth: 0,
+        hasChildren: true,
+        subtreeRowCount: 4,
+        rowPath: "Revenue",
+      },
+      {
+        rowId: state.sheets[0].rowIds[state.sheets[0].bodyStart + 1],
+        depth: 1,
+        hasChildren: true,
+        subtreeRowCount: 2,
+        rowPath: "Revenue.Product A",
+      },
+      {
+        rowId: state.sheets[0].rowIds[state.sheets[0].bodyStart + 2],
+        depth: 2,
+        hasChildren: false,
+        subtreeRowCount: 1,
+        rowPath: "Revenue.Product A.SKU 1",
+      },
+      {
+        rowId: state.sheets[0].rowIds[state.sheets[0].bodyStart + 3],
+        depth: 1,
+        hasChildren: false,
+        subtreeRowCount: 1,
+        rowPath: "Revenue.Product B",
+      },
+    ]);
+  });
+
+  it("uses rowGapIndex + depth for body-row insertion and rejects implicit reparenting", () => {
+    const base = DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Root |
+| * Child A |
+| * Child B |
+`.trim());
+
+    const inserted = applyBatchAtomic(base, [
+      { op: "insert_row", sheet: "Sheet", area: "body", rowGapIndex: 3, depth: 1 },
+    ]);
+    expect(inserted.ok).toBe(true);
+    if (!inserted.ok) throw new Error("expected success");
+    expect(inserted.nextDocument.sheets[0].logicalRows[3]?.rawCells[0]).toBe("*");
+
+    const invalid = applyBatchAtomic(DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Root |
+| * Child A |
+| * Child B |
+`.trim()), [
+      { op: "insert_row", sheet: "Sheet", area: "body", rowGapIndex: 3, depth: 0 },
+    ]);
+    expect(invalid.ok).toBe(false);
+    if (invalid.ok) throw new Error("expected failure");
+    expect(invalid.error.category).toBe("invalid_operation");
+    expect(invalid.error.message).toContain("implicitly adopt following rows");
+  });
+
+  it("deletes leaf rows by rowId and requires subtree mode for non-leaf rows", () => {
+    const state = DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Root |
+| * Child A |
+| * Child B |
+`.trim());
+    const sheet = state.sheets[0];
+    const rootRowId = sheet.rowIds[sheet.bodyStart];
+    const childBRowId = sheet.rowIds[sheet.bodyStart + 2];
+
+    const invalid = applyBatchAtomic(state, [
+      { op: "delete_row", sheet: "Sheet", rowId: rootRowId },
+    ]);
+    expect(invalid.ok).toBe(false);
+    if (invalid.ok) throw new Error("expected failure");
+    expect(invalid.error.category).toBe("invalid_operation");
+
+    const leafDeleted = applyBatchAtomic(state, [
+      { op: "delete_row", sheet: "Sheet", rowId: childBRowId },
+    ]);
+    expect(leafDeleted.ok).toBe(true);
+    if (!leafDeleted.ok) throw new Error("expected success");
+    const output = serializeDocumentState(leafDeleted.nextDocument);
+    expect(output).not.toContain("Child B");
+
+    const subtreeDeleted = applyBatchAtomic(DocumentState.fromText(`
+# Sheet
+| Item |
+| ---- |
+| Root |
+| * Child A |
+| * Child B |
+`.trim()), [
+      { op: "delete_row", sheet: "Sheet", rowId: rootRowId, mode: "subtree" },
+    ]);
+    expect(subtreeDeleted.ok).toBe(true);
+    if (!subtreeDeleted.ok) throw new Error("expected success");
+    expect(serializeDocumentState(subtreeDeleted.nextDocument)).not.toContain("Root");
   });
 
   it("supports fixture-driven .cases for doc + ops + expected doc", () => {

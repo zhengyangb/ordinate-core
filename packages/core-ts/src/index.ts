@@ -15,19 +15,25 @@ export {
   type SheetIR,
   type TableIR,
   type RowIR,
-  type SectionIR,
 } from "./ir";
+export { parseHierarchyLabel } from "./parser";
 
 export {
   evaluateDocument,
   getCellTextView,
+  getStandardFunctionMetadata,
   isError,
+  listStandardFunctionMetadata,
   diagnosticFromError,
+  describeDisplayMetadataDiagnostic,
   makeError,
   makeInternalError,
   parseCellText,
+  parseTemporalFormatSpec,
   projectExternalKind,
   resolveCellInputText,
+  validateFormatSpec,
+  formatTemporalValue,
   runtimeErrorFromDiagnostic,
   splitCellDisplayMetadata,
   stripCellDisplayMetadata,
@@ -35,6 +41,11 @@ export {
   type ErrorRuntimeValue,
   type EvaluationResult,
   type ExternalErrorKind,
+  type FunctionCategory,
+  type FunctionExample,
+  type FunctionMetadata,
+  type FunctionParameter,
+  type FunctionSignature,
   type CellBodyState,
   type CellDisplayState,
   type FormatSpec,
@@ -47,14 +58,31 @@ export {
 export { ChangeKind, DocumentState, SheetState } from "./incremental";
 export { serializeDocumentState } from "./serializer";
 export {
+  resolveSheetRowStructure,
+  type SheetBodyRowStructure,
+} from "./row_structure";
+export {
   applyBatchAtomic,
+  previewDeleteColumn,
+  previewDeleteRow,
   type ApplyBatchAtomicOptions,
   type ApplyBatchAtomicResult,
+  type CoreAffectedFormulaCell,
   type CoreCellTarget,
+  type CoreCellHandle,
+  type CoreDeleteColumnPreview,
+  type CoreDeleteRowPreview,
   type CoreEdit,
   type CoreEditError,
   type CoreEditErrorCategory,
+  type CoreRegionTarget,
 } from "./core_edit";
+export type {
+  CoreDeleteRowEdit,
+  CoreInsertRowEdit,
+  CoreRowDeleteMode,
+  CoreRowInsertArea,
+} from "./core_edit_rows";
 export type { CellInputTextView, CellTextViewSource } from "./runtime";
 export {
   formatPresentedCell,

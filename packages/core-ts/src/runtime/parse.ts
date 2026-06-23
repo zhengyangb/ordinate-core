@@ -3,6 +3,8 @@ import {
   type ExprNode,
   type FormatSpec,
   type FunctionCall,
+  type IndexAxisExpr,
+  type NumericFormatSpec,
   type ParsedDisplayMetadata,
   type ParsedCell,
   type CellBodyState,
@@ -15,17 +17,15 @@ import {
   type TextColor,
   type TextWeight,
 } from "./types";
+import { validateFormatSpec } from "./displayMetadata";
 import { diagnosticFromError, makeError, makeInternalError } from "./errors";
+import { parseTemporalLiteral, scanTemporalLiteralPrefix } from "./temporal";
+import { parseTemporalFormatSpec } from "./temporalFormat";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
 const UNDERSCORE_OFFSET_RE = /^_([+-]?\d+)$/;
 const NUMBER_RE = /^-?\d+(?:\.\d+)?$/;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_RE = /^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)?$/;
-const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)?$/;
-const DURATION_RE = /^P(?!$)(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$/;
-const OFFSET_SUFFIX_RE = /(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)$/;
 const ABSOLUTE_FIXED_RE = /^#([1-9]\d*)!$/;
 const ABSOLUTE_RE = /^#([1-9]\d*)$/;
 const UNQUOTED_PATH_COMPONENT_RE = /^[A-Za-z0-9_]+$/;
@@ -183,17 +183,18 @@ function renderDisplayMetadataBlock(display: ParsedDisplayMetadata | null): stri
   const format = display.format ? serializeFormatSpec(display.format) : "";
   const style = display.style ? serializeStyleSpec(display.style) : "";
   if (format === "" && style === "") return null;
-  if (style === "") return `{:${format}}`;
-  if (format === "") return `{::${style}}`;
-  return `{:${format}:${style}}`;
+  const blocks: string[] = [];
+  if (format !== "") blocks.push(`{:${format}}`);
+  if (style !== "") blocks.push(`{::${style}}`);
+  return blocks.join(" ");
 }
 
 function serializeFormatSpec(spec: FormatSpec): string {
+  if (spec.kind === "temporal") return spec.pattern;
   let out = "";
   if (spec.sign === "plus") out += "+";
   else if (spec.sign === "parentheses") out += "()";
-  if (spec.zeroPad) out += "0";
-  if (spec.width !== null) out += `${spec.width}`;
+  if (spec.padWidth !== null) out += `${spec.padWidth}`;
   if (spec.grouping) out += ",";
   if (spec.precision !== null) out += `.${spec.precision}`;
   if (spec.type !== null) out += spec.type;
@@ -267,14 +268,32 @@ function parseExpression(text: string): ExprNode {
 function tokenizeExpr(text: string): [string, string][] {
   const out: [string, string][] = [];
   let i = 0;
+  let indexBracketDepth = 0;
   while (i < text.length) {
     const ch = text[i];
     if (/\s/.test(ch)) {
       i += 1;
       continue;
     }
-    if ("()+-*/,".includes(ch)) {
+    if (ch === "*" && i + 1 < text.length && text[i + 1] === "*") {
+      out.push(["**", "**"]);
+      i += 2;
+      continue;
+    }
+    if ("()+-*/,:".includes(ch)) {
       out.push([ch, ch]);
+      i += 1;
+      continue;
+    }
+    if (ch === "[") {
+      out.push(["[", "["]);
+      indexBracketDepth += 1;
+      i += 1;
+      continue;
+    }
+    if (ch === "]") {
+      out.push(["]", "]"]);
+      indexBracketDepth = Math.max(0, indexBracketDepth - 1);
       i += 1;
       continue;
     }
@@ -350,13 +369,19 @@ function tokenizeExpr(text: string): [string, string][] {
       i = nextIndex;
       continue;
     }
-    const spreadsheetToken = scanSpreadsheetToken(text, i);
+    const temporalToken = scanTemporalLiteralPrefix(text.slice(i));
+    if (temporalToken && isExprTokenBoundary(text, i + temporalToken.length)) {
+      out.push(["TEMPORAL", temporalToken]);
+      i += temporalToken.length;
+      continue;
+    }
+    const spreadsheetToken = indexBracketDepth === 0 ? scanSpreadsheetToken(text, i) : null;
     if (spreadsheetToken) {
       out.push(["SPREF", spreadsheetToken.text]);
       i = spreadsheetToken.next;
       continue;
     }
-    if (/\d/.test(ch) || (ch === "-" && i + 1 < text.length && /\d/.test(text[i + 1]))) {
+    if (/\d/.test(ch)) {
       let j = i + 1;
       while (j < text.length && /[\d.]/.test(text[j])) j += 1;
       out.push(["NUMBER", text.slice(i, j)]);
@@ -497,7 +522,70 @@ class ExprParser {
     if (this.match("-")) {
       return { kind: "unary", value: "-", right: this.parseUnary() };
     }
-    return this.parsePrimary();
+    return this.parsePower();
+  }
+
+  private parsePower(): ExprNode {
+    const left = this.parsePostfix();
+    if (!this.match("**")) {
+      return left;
+    }
+    return { kind: "binary", value: "**", left, right: this.parseUnary() };
+  }
+
+  private parsePostfix(): ExprNode {
+    let node = this.parsePrimary();
+    while (this.match("[")) {
+      const axes = this.parseIndexAxes();
+      node = { kind: "index", value: { target: node, axes } };
+    }
+    return node;
+  }
+
+  private parseIndexAxes(): IndexAxisExpr[] {
+    if (this.match("]")) {
+      return [
+        {
+          kind: "scalar",
+          value: { kind: "literal", value: makeInternalError("parse_index_empty") },
+        },
+      ];
+    }
+
+    const axes: IndexAxisExpr[] = [this.parseIndexAxis()];
+    while (this.match(",")) {
+      if (this.peek()?.[0] === "]") {
+        axes.push({
+          kind: "scalar",
+          value: { kind: "literal", value: makeInternalError("parse_index_missing_axis") },
+        });
+        break;
+      }
+      axes.push(this.parseIndexAxis());
+    }
+
+    if (!this.match("]")) {
+      axes.push({
+        kind: "scalar",
+        value: { kind: "literal", value: makeInternalError("parse_index_missing_closing_bracket") },
+      });
+    }
+    return axes;
+  }
+
+  private parseIndexAxis(): IndexAxisExpr {
+    if (this.match(":")) {
+      const end = this.peek()?.[0] === "," || this.peek()?.[0] === "]" ? null : this.parseExpression();
+      return { kind: "slice", start: null, end };
+    }
+
+    const startOrScalar = this.parseExpression();
+    if (!this.match(":")) {
+      return { kind: "scalar", value: startOrScalar };
+    }
+
+    const end = this.peek()?.[0] === "," || this.peek()?.[0] === "]" ? null : this.parseExpression();
+    return { kind: "slice", start: startOrScalar, end };
   }
 
   private parsePrimary(): ExprNode {
@@ -524,6 +612,10 @@ class ExprParser {
     const errLit = this.match("ERROR_LITERAL");
     if (errLit) {
       return { kind: "literal", value: makeError(errLit[1], "literal_error_literal", { source: "formula" }) };
+    }
+    const temporal = this.match("TEMPORAL");
+    if (temporal) {
+      return { kind: "literal", value: parseTemporalLiteral(temporal[1]) ?? makeInternalError("parse_temporal_invalid_literal", { literal: temporal[1] }) };
     }
     const spRef = this.match("SPREF");
     if (spRef) {
@@ -552,10 +644,11 @@ class ExprParser {
     if (!this.match("(")) {
       return { kind: "literal", value: makeInternalError("parse_function_call_missing_open_paren", { name }) };
     }
+    const args: ExprNode[] = [];
     if (this.match(")")) {
-      return { kind: "literal", value: makeInternalError("parse_function_call_empty_args", { name }) };
+      return { kind: "call", value: { name, args } as FunctionCall };
     }
-    const args: ExprNode[] = [this.parseExpression()];
+    args.push(this.parseExpression());
     while (this.match(",")) {
       args.push(this.parseExpression());
     }
@@ -779,15 +872,33 @@ function extractTrailingDisplayMetadata(text: string): {
   displayRaw: string | null;
 } {
   const rightTrimmed = text.replace(/\s+$/, "");
-  const block = findTopLevelTrailingDisplayBlock(rightTrimmed);
-  if (!block) {
+  const blocks = findTrailingDisplayBlocks(rightTrimmed);
+  if (blocks.length === 0) {
     return { expression: text, display: null, displayRaw: null };
   }
-  const rawBlock = rightTrimmed.slice(block.start, block.end + 1);
-  const content = rightTrimmed.slice(block.start + 2, block.end);
-  const display = parseDisplayMetadata(content, rawBlock);
-  const expression = rightTrimmed.slice(0, block.start);
+  const rawBlock = rightTrimmed.slice(blocks[0].start, blocks[blocks.length - 1].end + 1);
+  const display = parseDisplayMetadataBlocks(
+    blocks.map((block) => ({
+      rawBlock: rightTrimmed.slice(block.start, block.end + 1),
+      content: rightTrimmed.slice(block.start + 2, block.end),
+    })),
+    rawBlock,
+  );
+  const expression = rightTrimmed.slice(0, blocks[0].start);
   return { expression, display, displayRaw: rawBlock };
+}
+
+function findTrailingDisplayBlocks(text: string): Array<{ start: number; end: number }> {
+  const blocks: Array<{ start: number; end: number }> = [];
+  let cursor = text.length;
+  while (cursor > 0) {
+    const candidateText = text.slice(0, cursor).replace(/\s+$/, "");
+    const block = findTopLevelTrailingDisplayBlock(candidateText);
+    if (!block) break;
+    blocks.unshift(block);
+    cursor = block.start;
+  }
+  return blocks;
 }
 
 function findTopLevelTrailingDisplayBlock(text: string): { start: number; end: number } | null {
@@ -857,14 +968,51 @@ function findTopLevelTrailingDisplayBlock(text: string): { start: number; end: n
   return null;
 }
 
-function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMetadata {
+function parseDisplayMetadataBlocks(
+  blocks: Array<{ content: string; rawBlock: string }>,
+  rawSequence: string,
+): ParsedDisplayMetadata {
+  let format: FormatSpec | null = null;
+  let style: StyleSpec | null = null;
+
+  for (const block of blocks) {
+    const parsed = parseDisplayMetadataBlock(block.content, block.rawBlock);
+    if (!parsed.valid) {
+      return {
+        valid: false,
+        rawBlock: rawSequence,
+        issue: parsed.issue,
+      };
+    }
+    if (parsed.format) {
+      if (format !== null) return invalidDisplay(rawSequence, "duplicate_format_metadata");
+      format = parsed.format;
+    }
+    if (parsed.style) {
+      if (style !== null) return invalidDisplay(rawSequence, "duplicate_style_metadata");
+      style = parsed.style;
+    }
+  }
+
+  if (format === null && style === null) {
+    return invalidDisplay(rawSequence, "empty_display_metadata");
+  }
+
+  return {
+    valid: true,
+    format,
+    style,
+  };
+}
+
+function parseDisplayMetadataBlock(inner: string, rawBlock: string): ParsedDisplayMetadata {
   const content = inner.trim();
   if (content === "") {
     return invalidDisplay(rawBlock, "empty_display_metadata");
   }
 
-  if (content.startsWith(":")) {
-    const style = content.slice(1).trim();
+  if (inner.startsWith(":")) {
+    const style = inner.slice(1).trim();
     if (style === "") {
       return invalidDisplay(rawBlock, "empty_style_spec");
     }
@@ -879,76 +1027,26 @@ function parseDisplayMetadata(inner: string, rawBlock: string): ParsedDisplayMet
     };
   }
 
-  const split = findTopLevelColon(content);
-  if (split === -1) {
-    const format = content.trim();
-    if (format === "") {
-      return invalidDisplay(rawBlock, "empty_format_spec");
-    }
-    const formatSpec = parseFormatSpec(format);
-    if ("error" in formatSpec) {
-      return invalidDisplay(rawBlock, formatSpec.error);
-    }
-    return {
-      valid: true,
-      format: formatSpec.value,
-      style: null,
-    };
+  if (inner !== content) {
+    return invalidDisplay(rawBlock, "format_spec_contains_whitespace");
   }
 
-  const format = content.slice(0, split).trim();
-  const style = content.slice(split + 1).trim();
-  if (format === "") {
-    return invalidDisplay(rawBlock, "empty_format_spec");
-  }
-  if (style === "") {
-    return invalidDisplay(rawBlock, "empty_style_spec");
-  }
-
-  const formatSpec = parseFormatSpec(format);
-  if ("error" in formatSpec) {
-    return invalidDisplay(rawBlock, formatSpec.error);
-  }
-  const styleSpec = parseStyleSpec(style);
-  if ("error" in styleSpec) {
-    return invalidDisplay(rawBlock, styleSpec.error);
+  const formatSpec = parseFormatSpec(content);
+  if ("issue" in formatSpec) {
+    return invalidDisplay(rawBlock, formatSpec.issue);
   }
   return {
     valid: true,
     format: formatSpec.value,
-    style: styleSpec.value,
+    style: null,
   };
 }
 
-function findTopLevelColon(text: string): number {
-  let inQuote = false;
-  let escaped = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (ch === '"') {
-      inQuote = !inQuote;
-      continue;
-    }
-    if (!inQuote && ch === ":") {
-      return i;
-    }
-  }
-  return -1;
-}
-
-function invalidDisplay(rawBlock: string, error: string): ParsedDisplayMetadata {
+function invalidDisplay(rawBlock: string, issue: string | Diagnostic): ParsedDisplayMetadata {
   return {
     valid: false,
     rawBlock,
-    issue: diagnostic(error),
+    issue: typeof issue === "string" ? diagnostic(issue) : issue,
   };
 }
 
@@ -956,13 +1054,17 @@ function diagnostic(code: string, context: Record<string, unknown> = {}): Diagno
   return { code, context };
 }
 
-function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string } {
+function parseFormatSpec(spec: string): { value: FormatSpec } | { issue: Diagnostic } {
   const text = spec.trim();
-  if (text === "") return { error: "empty_format_spec" };
-  if (/\s/.test(text)) return { error: "format_spec_contains_whitespace" };
+  if (text === "") return { issue: diagnostic("empty_format_spec") };
+
+  const temporalSpec = parseTemporalFormatSpec(text);
+  if (temporalSpec) return temporalSpec;
+
+  if (/\s/.test(text)) return { issue: diagnostic("format_spec_contains_whitespace") };
 
   let i = 0;
-  let sign: FormatSpec["sign"] = "default";
+  let sign: NumericFormatSpec["sign"] = "default";
   if (text.startsWith("+")) {
     sign = "plus";
     i += 1;
@@ -971,23 +1073,13 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string 
     i += 2;
   }
 
-  let zeroPad = false;
-  if (i < text.length && text[i] === "0") {
-    zeroPad = true;
-    i += 1;
-  }
-
-  let width: number | null = null;
-  const widthStart = i;
+  let padWidth: number | null = null;
+  const padWidthStart = i;
   while (i < text.length && /[0-9]/.test(text[i])) {
     i += 1;
   }
-  if (i > widthStart) {
-    width = Number(text.slice(widthStart, i));
-  }
-
-  if (zeroPad && width === null) {
-    return { error: "zero_padding_requires_width" };
+  if (i > padWidthStart) {
+    padWidth = Number(text.slice(padWidthStart, i));
   }
 
   let grouping = false;
@@ -1004,38 +1096,41 @@ function parseFormatSpec(spec: string): { value: FormatSpec } | { error: string 
       i += 1;
     }
     if (i === pStart) {
-      return { error: "precision_requires_digits" };
+      return { issue: diagnostic("precision_requires_digits") };
     }
     precision = Number(text.slice(pStart, i));
   }
 
-  let type: FormatSpec["type"] = null;
+  let type: NumericFormatSpec["type"] = null;
   if (i < text.length) {
     const ch = text[i];
     if (ch === "f" || ch === "e" || ch === "%" || ch === "d") {
       type = ch;
       i += 1;
     } else {
-      return { error: `unsupported_format_type:${ch}` };
+      return { issue: diagnostic(`unsupported_format_type:${ch}`) };
     }
   }
 
   if (i !== text.length) {
-    return { error: "invalid_format_spec_trailing_chars" };
+    return { issue: diagnostic("invalid_format_spec_trailing_chars") };
   }
-  if (type === "d" && precision !== null) {
-    return { error: "integer_format_disallows_precision" };
+
+  const value = {
+    kind: "numeric",
+    sign,
+    padWidth,
+    grouping,
+    precision,
+    type,
+  } satisfies NumericFormatSpec;
+  const compatibilityIssue = validateFormatSpec(value);
+  if (compatibilityIssue) {
+    return { issue: compatibilityIssue };
   }
 
   return {
-    value: {
-      sign,
-      zeroPad,
-      width,
-      grouping,
-      precision,
-      type,
-    },
+    value,
   };
 }
 
@@ -1186,10 +1281,8 @@ function parseUserLiteral(text: string): RuntimeValue {
     if (parsedError) return parsedError;
     return makeInternalError("parse_error_literal_invalid_syntax", { literal: t });
   }
-  if (DATE_RE.test(t)) return { kind: "date", value: t, isOffsetQualified: false };
-  if (TIME_RE.test(t)) return { kind: "time", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
-  if (DATETIME_RE.test(t)) return { kind: "datetime", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
-  if (DURATION_RE.test(t)) return { kind: "duration", value: t };
+  const temporal = parseTemporalLiteral(t);
+  if (temporal) return temporal;
   if (t === "null") return { kind: "null", value: null };
   if (t === "true") return { kind: "boolean", value: true };
   if (t === "false") return { kind: "boolean", value: false };
@@ -1210,10 +1303,8 @@ function parseCacheLiteral(text: string): RuntimeValue {
     if (parsedError) return parsedError;
     return makeInternalError("parse_error_literal_invalid_syntax", { literal: t });
   }
-  if (DATE_RE.test(t)) return { kind: "date", value: t, isOffsetQualified: false };
-  if (TIME_RE.test(t)) return { kind: "time", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
-  if (DATETIME_RE.test(t)) return { kind: "datetime", value: t, isOffsetQualified: OFFSET_SUFFIX_RE.test(t) };
-  if (DURATION_RE.test(t)) return { kind: "duration", value: t };
+  const temporal = parseTemporalLiteral(t);
+  if (temporal) return temporal;
   if (t === "null") return { kind: "null", value: null };
   if (t === "true") return { kind: "boolean", value: true };
   if (t === "false") return { kind: "boolean", value: false };

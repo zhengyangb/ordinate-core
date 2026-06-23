@@ -20,7 +20,7 @@
     --grid-row-height: 38px;
     --selection-ring-color: var(--accent-strong);
     --selection-ring-width: 2px;
-    --selection-ring-radius: 0.62rem;
+    --selection-ring-radius: 0.24rem;
     --selection-ring-inset-header: -2px;
     --selection-ring-inset-cell: -3px;
 
@@ -78,6 +78,23 @@
         var(--toolbar-pill)
     );
     --menu-active-ink: oklch(28% 0.018 155);
+    --menu-active-hover-bg: var(--menu-active-bg);
+    --menu-active-hover-ink: var(--menu-active-ink);
+    --menu-danger-ink: color-mix(
+        in oklab,
+        var(--danger-ink) 94%,
+        var(--chrome-ink)
+    );
+    --menu-danger-hover-bg: color-mix(
+        in oklab,
+        var(--danger-border) 34%,
+        var(--danger-bg)
+    );
+    --menu-danger-hover-ink: color-mix(
+        in oklab,
+        var(--danger-ink) 96%,
+        oklch(18% 0.01 25)
+    );
     --menu-surface-padding: 0.26rem;
     --menu-surface-radius: 0.78rem;
     --menu-surface-border: 1px solid
@@ -92,6 +109,10 @@
     --menu-item-radius: 0.62rem;
     --menu-item-padding-y: 0.28rem;
     --menu-item-padding-x: 0.48rem;
+    --menu-item-font-size: 0.81rem;
+    --menu-item-font-weight: 500;
+    --menu-item-min-height: 1.8rem;
+    --menu-icon-size: 0.9rem;
     --formula-meta-ink-primary: oklch(43% 0.01 245);
     --formula-meta-ink-secondary: oklch(51% 0.008 242);
     --formula-tool-ink: oklch(46% 0.008 242);
@@ -139,6 +160,25 @@
     );
     --formula-glass-gloss-top: oklch(100% 0 0 / 0.2);
     --formula-glass-gloss-spot: oklch(100% 0 0 / 0.12);
+    --display-meta-menu-nav-width: 9.4rem;
+    --display-meta-menu-detail-width: 24rem;
+    --display-meta-menu-detail-height: min(29.5rem, calc(100vh - 9rem));
+    --display-meta-menu-panel-height: 9.6rem;
+    --display-style-menu-width: 14.2rem;
+    --formula-style-menu-width: 14rem;
+    --structure-flash-row-bg:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, oklch(100% 0 0) 16%, transparent),
+            color-mix(in oklab, var(--accent-soft) 36%, transparent) 32%,
+            color-mix(in oklab, var(--sheet-surface) 54%, transparent)
+        );
+    --structure-flash-column-bg:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, oklch(100% 0 0) 44%, transparent),
+            color-mix(in oklab, oklch(100% 0 0) 18%, transparent)
+        );
 }
 
 :root[data-theme="light"] {
@@ -193,6 +233,19 @@
         var(--toolbar-pill)
     );
     --menu-active-ink: oklch(92% 0.03 145);
+    --menu-active-hover-bg: var(--menu-active-bg);
+    --menu-active-hover-ink: var(--menu-active-ink);
+    --menu-danger-ink: color-mix(
+        in oklab,
+        var(--danger-border) 58%,
+        var(--danger-ink)
+    );
+    --menu-danger-hover-bg: color-mix(
+        in oklab,
+        var(--danger-border) 34%,
+        var(--toolbar-pill)
+    );
+    --menu-danger-hover-ink: oklch(97% 0.002 25);
     --formula-meta-ink-primary: oklch(94% 0.008 104);
     --formula-meta-ink-secondary: oklch(89% 0.007 104);
     --formula-tool-ink: oklch(88% 0.007 104);
@@ -241,6 +294,19 @@
     );
     --formula-glass-gloss-top: oklch(100% 0 0 / 0.1);
     --formula-glass-gloss-spot: oklch(100% 0 0 / 0.06);
+    --structure-flash-row-bg:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, oklch(100% 0 0) 12%, transparent),
+            color-mix(in oklab, var(--accent-soft) 40%, transparent) 32%,
+            color-mix(in oklab, var(--toolbar-pill) 52%, transparent)
+        );
+    --structure-flash-column-bg:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, oklch(100% 0 0) 32%, transparent),
+            color-mix(in oklab, oklch(100% 0 0) 12%, transparent)
+        );
 }
 
 @media (prefers-color-scheme: dark) {
@@ -286,6 +352,19 @@
             var(--toolbar-pill)
         );
         --menu-active-ink: oklch(92% 0.03 145);
+        --menu-active-hover-bg: var(--menu-active-bg);
+        --menu-active-hover-ink: var(--menu-active-ink);
+        --menu-danger-ink: color-mix(
+            in oklab,
+            var(--danger-border) 58%,
+            var(--danger-ink)
+        );
+        --menu-danger-hover-bg: color-mix(
+            in oklab,
+            var(--danger-border) 34%,
+            var(--toolbar-pill)
+        );
+        --menu-danger-hover-ink: oklch(97% 0.002 25);
         --formula-meta-ink-primary: oklch(94% 0.008 104);
         --formula-meta-ink-secondary: oklch(89% 0.007 104);
         --formula-tool-ink: oklch(88% 0.007 104);
@@ -576,7 +655,8 @@ textarea {
     flex: 0 0 auto;
 }
 
-.theme-button.active {
+.theme-button.active,
+.sheet-setup-button.active {
     background: color-mix(
         in oklab,
         var(--toolbar-pill) 74%,
@@ -602,11 +682,10 @@ textarea {
     );
 }
 
-.theme-menu {
+.menu-surface {
     position: fixed;
     display: grid;
     gap: 0.18rem;
-    width: 9.25rem;
     padding: var(--menu-surface-padding);
     border: var(--menu-surface-border);
     border-radius: var(--menu-surface-radius);
@@ -620,67 +699,165 @@ textarea {
     transition:
         opacity 160ms var(--ease-out-quart),
         transform 160ms var(--ease-out-quart);
+}
+
+.theme-menu,
+.tool-menu,
+.sheet-setup-menu,
+.selection-menu,
+.rail-menu {
+    width: auto;
+}
+
+.theme-menu {
+    min-width: 12.4rem;
 }
 
 .tool-menu {
-    position: fixed;
-    display: grid;
-    gap: 0.18rem;
-    width: 10.25rem;
-    padding: var(--menu-surface-padding);
-    border: var(--menu-surface-border);
-    border-radius: var(--menu-surface-radius);
-    background: var(--menu-surface-bg);
-    box-shadow: var(--menu-surface-shadow);
-    backdrop-filter: var(--menu-surface-backdrop);
-    opacity: 0;
-    transform: translateY(-6px) scale(0.98);
-    pointer-events: none;
-    z-index: 120;
-    transition:
-        opacity 160ms var(--ease-out-quart),
-        transform 160ms var(--ease-out-quart);
-}
-
-.column-rail-menu {
-    --column-menu-item-font-size: 0.75rem;
-    --column-menu-item-height: 1.68rem;
-    --column-menu-label-size: 0.66rem;
-    position: fixed;
-    display: grid;
-    gap: 0.16rem;
-    width: min(27rem, calc(100vw - 1.5rem));
-    padding: var(--menu-surface-padding);
-    border: var(--menu-surface-border);
-    border-radius: var(--menu-surface-radius);
-    background: color-mix(in oklab, var(--menu-surface-bg) 90%, transparent);
-    box-shadow: var(--menu-surface-shadow);
-    backdrop-filter: var(--menu-surface-backdrop);
-    opacity: 0;
-    transform: translateY(-6px) scale(0.98);
-    pointer-events: none;
+    min-width: 12.4rem;
     z-index: 122;
-    transition:
-        opacity 160ms var(--ease-out-quart),
-        transform 160ms var(--ease-out-quart);
 }
 
-.theme-menu.open {
+.sheet-setup-menu {
+    min-width: min(18.4rem, calc(100vw - 3rem));
+    padding: 0.48rem;
+    z-index: 122;
+}
+
+.selection-menu {
+    min-width: min(12rem, calc(100vw - 3rem));
+    z-index: 124;
+}
+
+.menu-surface.open {
     opacity: 1;
     transform: translateY(0) scale(1);
     pointer-events: auto;
 }
 
-.tool-menu.open {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    pointer-events: auto;
+.menu-surface-option:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
-.column-rail-menu.open {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    pointer-events: auto;
+.rail-menu--column {
+    width: auto;
+    min-width: min(15.5rem, calc(100vw - 3rem));
+    max-width: calc(100vw - 3rem);
+}
+
+.rail-menu--row {
+    width: auto;
+    min-width: min(15.5rem, calc(100vw - 3rem));
+    max-width: calc(100vw - 3rem);
+}
+
+.rail-menu-detail {
+    width: auto;
+    max-width: calc(100vw - 3rem);
+}
+
+.rail-menu-detail--format-list {
+    min-width: min(10.6rem, calc(100vw - 3rem));
+}
+
+.rail-menu-detail--format-detail {
+    min-width: min(34.4rem, calc(100vw - 3rem));
+}
+
+.rail-menu-detail--style {
+    min-width: min(16.2rem, calc(100vw - 3rem));
+}
+
+.menu-surface-head.sheet-setup-head {
+    padding: 0.14rem 0.32rem 0.42rem;
+}
+
+.menu-surface-group.sheet-setup-body {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.46rem;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 58%, transparent);
+    border-radius: calc(var(--menu-surface-radius) - 0.18rem);
+    background: color-mix(in oklab, var(--toolbar-pill) 38%, transparent);
+}
+
+.sheet-setup-row {
+    display: grid;
+    grid-template-columns: minmax(7.4rem, 1fr) 7rem;
+    align-items: center;
+    gap: 0.8rem;
+    min-height: 1.95rem;
+}
+
+.sheet-setup-label {
+    min-width: 0;
+    color: var(--chrome-ink);
+    font-size: 0.78rem;
+    font-weight: 620;
+}
+
+.sheet-setup-stepper {
+    display: grid;
+    grid-template-columns: 1.92rem 3.16rem 1.92rem;
+    align-items: center;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 82%, transparent);
+    border-radius: 0.58rem;
+    background: color-mix(in oklab, var(--toolbar-pill) 68%, transparent);
+}
+
+.sheet-setup-stepper-button,
+.sheet-setup-number {
+    height: 1.86rem;
+    border: 0;
+    background: transparent;
+    color: var(--chrome-ink);
+    font: inherit;
+}
+
+.sheet-setup-stepper-button {
+    display: inline-grid;
+    place-items: center;
+    font-size: 1rem;
+    cursor: default;
+}
+
+.sheet-setup-stepper-button:hover:not(:disabled) {
+    background: var(--menu-hover-bg);
+    color: var(--menu-hover-ink);
+}
+
+.sheet-setup-stepper-button:disabled {
+    color: var(--chrome-faint);
+}
+
+.sheet-setup-number {
+    width: 3.16rem;
+    border-inline: 1px solid color-mix(in oklab, var(--chrome-border) 62%, transparent);
+    text-align: center;
+    font-size: 0.78rem;
+    outline: none;
+    appearance: textfield;
+}
+
+.sheet-setup-number::-webkit-inner-spin-button,
+.sheet-setup-number::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+}
+
+.sheet-setup-number:focus {
+    background: color-mix(in oklab, var(--sheet-surface) 78%, transparent);
+}
+
+.sheet-setup-number--readonly {
+    width: 7rem;
+    height: 1.86rem;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 72%, transparent);
+    border-radius: 0.58rem;
+    background: color-mix(in oklab, var(--toolbar-pill) 50%, transparent);
+    color: var(--chrome-soft);
 }
 
 .floating-tooltip {
@@ -757,73 +934,121 @@ textarea {
     transform: translate(-100%, -100%) scale(1);
 }
 
-.theme-option {
+.menu-surface-option {
+    --_menu-option-bg: transparent;
+    --_menu-option-ink: var(--chrome-ink);
+    --_menu-option-hover-bg: var(--menu-hover-bg);
+    --_menu-option-hover-ink: var(--menu-hover-ink);
     display: flex;
     align-items: center;
     gap: 0.5rem;
     width: 100%;
-    min-height: 1.8rem;
+    min-height: var(--menu-item-min-height);
     padding: var(--menu-item-padding-y) var(--menu-item-padding-x);
     border: 0;
     border-radius: var(--menu-item-radius);
-    background: transparent;
-    color: var(--chrome-ink);
-    font-size: 0.81rem;
+    background: var(--_menu-option-bg);
+    color: var(--_menu-option-ink);
+    font-size: var(--menu-item-font-size);
+    font-weight: var(--menu-item-font-weight);
     text-align: left;
     cursor: pointer;
+    transition:
+        background-color 140ms var(--ease-out-quart),
+        color 140ms var(--ease-out-quart);
 }
 
-.tool-menu-option {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+.menu-surface-option:hover:not(:disabled) {
+    background: var(--_menu-option-hover-bg);
+    color: var(--_menu-option-hover-ink);
+}
+
+.menu-surface-option.tone-danger {
+    --_menu-option-ink: var(--menu-danger-ink);
+    --_menu-option-hover-bg: var(--menu-danger-hover-bg);
+    --_menu-option-hover-ink: var(--menu-danger-hover-ink);
+}
+
+.menu-surface-option.is-active {
+    --_menu-option-bg: var(--menu-active-bg);
+    --_menu-option-ink: var(--menu-active-ink);
+    --_menu-option-hover-bg: var(--menu-active-hover-bg);
+    --_menu-option-hover-ink: var(--menu-active-hover-ink);
+}
+
+.menu-surface-option-icon {
+    display: inline-grid;
+    place-items: center;
+    width: var(--menu-icon-size);
+    height: var(--menu-icon-size);
+    color: currentColor;
+    opacity: 0.92;
+    flex: 0 0 auto;
+}
+
+.menu-surface-option-icon svg {
     width: 100%;
-    min-height: 1.8rem;
-    padding: var(--menu-item-padding-y) var(--menu-item-padding-x);
-    border: 0;
-    border-radius: var(--menu-item-radius);
-    background: transparent;
-    color: var(--chrome-ink);
-    font-size: 0.81rem;
-    text-align: left;
-    cursor: pointer;
+    height: 100%;
+    overflow: visible;
 }
 
-.column-rail-menu-head {
+.menu-surface-divider {
+    height: 1px;
+    margin: 0.16rem 0.18rem 0.08rem;
+    background: color-mix(in oklab, var(--chrome-border) 82%, transparent);
+}
+
+.menu-surface-option-label {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.menu-surface-option-trailing {
+    margin-inline-start: auto;
+    flex: 0 0 auto;
+}
+
+.menu-surface-group {
+    display: grid;
+    gap: 0.18rem;
+    align-content: start;
+}
+
+.menu-surface-head {
     display: grid;
     gap: 0;
-    padding: calc(var(--menu-item-padding-y) + 0.04rem)
-        var(--menu-item-padding-x) 0.2rem;
-    border-bottom: 1px solid
-        color-mix(in oklab, var(--chrome-border) 84%, transparent);
+    padding: calc(var(--menu-item-padding-y) + 0.2rem)
+        calc(var(--menu-item-padding-x) + 0.12rem) 0.44rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--chrome-border) 84%, transparent);
 }
 
-.column-rail-menu-title {
+.menu-surface-title {
     display: inline-flex;
     align-items: baseline;
     gap: 0.14rem;
-    font-size: 0.75rem;
-    font-weight: 560;
+    font-size: 0.81rem;
+    font-weight: 540;
     color: var(--chrome-ink);
 }
 
-.column-rail-menu-title-index {
+.menu-surface-title-index {
     font-size: 0.62rem;
     font-weight: 560;
     color: color-mix(in oklab, var(--accent-strong) 58%, var(--chrome-soft));
     line-height: 1;
 }
 
-.column-rail-menu-body {
-    display: grid;
-    gap: 0.08rem;
-    padding: 0.16rem;
+.column-rail-menu-head {
+    padding-bottom: 0.44rem;
 }
 
-.column-rail-menu-body.column-rail-menu-body--two-pane {
-    grid-template-columns: 8.1rem minmax(0, 1fr);
-    gap: 0.24rem;
-    align-items: start;
+.column-rail-menu-title {
+    letter-spacing: 0.002em;
+}
+
+.column-rail-menu-body {
+    display: block;
+    padding: 0.16rem;
 }
 
 .column-rail-menu-row {
@@ -860,40 +1085,27 @@ textarea {
 
 .column-rail-menu-nav {
     display: grid;
+    gap: 0.16rem;
+    padding: 0.02rem;
+    align-content: start;
+}
+
+.column-rail-menu-nav-group,
+.column-rail-menu-action-group {
     gap: 0.14rem;
-    padding: 0.1rem;
 }
 
-.column-rail-menu-nav-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.38rem;
-    min-height: var(--column-menu-item-height);
-    width: 100%;
-    padding: var(--menu-item-padding-y) var(--menu-item-padding-x);
-    border: 0;
-    border-radius: var(--menu-item-radius);
-    background: transparent;
-    color: var(--chrome-ink);
-    font-size: var(--column-menu-item-font-size);
-    font-weight: 560;
-    letter-spacing: 0.004em;
-    text-align: left;
-    cursor: pointer;
+.column-rail-menu-nav-item,
+.column-rail-menu-action {
+    min-height: var(--menu-item-min-height);
+    border-radius: calc(var(--menu-item-radius) + 0.04rem);
 }
 
-.column-rail-menu-nav-item:hover {
-    background: var(--menu-hover-bg);
-    color: var(--menu-hover-ink);
-}
-
-.column-rail-menu-nav-item.is-active {
-    background: var(--menu-active-bg);
-    color: var(--menu-active-ink);
+.column-rail-menu-nav-divider {
+    margin: 0.18rem 0.02rem 0.12rem;
 }
 
 .column-rail-menu-nav-mark {
-    margin-inline-start: auto;
     width: 0.28rem;
     height: 0.28rem;
     border-radius: 999px;
@@ -904,17 +1116,11 @@ textarea {
     );
 }
 
+
+
 .column-rail-menu-row-icon {
-    display: inline-grid;
-    place-items: center;
     width: 0.8rem;
     height: 0.8rem;
-    color: color-mix(in oklab, var(--chrome-ink) 92%, var(--chrome-soft));
-}
-
-.column-rail-menu-row-icon svg {
-    width: 100%;
-    height: 100%;
 }
 
 .column-rail-menu-nav-item.is-active .column-rail-menu-row-icon {
@@ -925,114 +1131,107 @@ textarea {
     color: var(--chrome-soft);
 }
 
-.column-rail-menu-panel {
+.rail-menu-detail-body {
     display: grid;
-    grid-template-columns: minmax(8.3rem, 8.9rem) minmax(0, 1fr);
-    align-items: start;
-    gap: 0.24rem;
+    align-content: start;
+}
+
+.rail-menu-detail-body--format {
+    width: calc(
+        var(--display-meta-menu-nav-width) + var(--display-meta-menu-detail-width) + 0.34rem
+    );
     min-width: 0;
 }
 
-.column-rail-menu-panel .formula-style-menu-panel {
-    grid-column: 1 / -1;
-    padding: 0.34rem;
-    border: 0;
-    border-radius: 0.62rem;
-    background: color-mix(in oklab, var(--toolbar-pill) 70%, transparent);
-    box-shadow: none;
-    backdrop-filter: none;
+.rail-menu-detail-body--format .formula-format-menu-list {
+    gap: 0.12rem;
+    padding: 0.04rem;
+    border-radius: calc(var(--menu-item-radius) + 0.06rem);
+    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
+    align-content: start;
+}
+
+.rail-menu-detail-body--format .formula-format-layout {
+    gap: 0.34rem;
+    grid-template-columns: var(--display-meta-menu-nav-width) var(--display-meta-menu-detail-width);
+    width: 100%;
+    height: var(--display-meta-menu-detail-height);
+}
+
+.rail-menu-detail-body--format .formula-format-menu-panel {
+    border-radius: calc(var(--menu-surface-radius) - 0.16rem);
+    width: min(var(--display-meta-menu-detail-width), 100%);
+    height: 100%;
     min-width: 0;
-    gap: 0.42rem;
+    padding: 0.62rem 0.66rem;
+    gap: 0.52rem;
+    overflow: auto;
+    align-content: start;
 }
 
-.column-rail-menu-panel .formula-format-menu-list {
-    grid-column: 1;
-    gap: 0.14rem;
-    border-radius: 0.62rem;
-    background: color-mix(in oklab, var(--toolbar-pill) 70%, transparent);
-}
-
-.column-rail-menu-panel .formula-format-menu-panel {
-    grid-column: 2;
-    border-radius: 0.62rem;
-    min-width: 8.75rem;
-    padding: 0.24rem 0.3rem;
-    gap: 0.32rem;
-}
-
-.column-rail-menu-panel .formula-format-menu-list:only-child {
-    grid-column: 1 / -1;
-}
-
-.column-rail-menu-panel .formula-format-option {
-    min-height: var(--column-menu-item-height);
-    font-size: var(--column-menu-item-font-size);
+.rail-menu-detail-body--format .formula-format-option {
+    min-height: var(--menu-item-min-height);
     gap: 0.36rem;
 }
 
-.column-rail-menu-panel .formula-format-option.is-selected {
-    background: var(--menu-active-bg);
-    color: var(--menu-active-ink);
-}
-
-.column-rail-menu-panel .formula-format-option-icon {
+.rail-menu-detail-body--format .formula-format-option-icon {
     width: 0.8rem;
     height: 0.8rem;
 }
 
-.column-rail-menu-panel .formula-format-panel-title {
-    font-size: 0.72rem;
-}
-
-.column-rail-menu-panel .formula-format-field {
-    min-height: 1.38rem;
-    padding: 0.18rem 0.3rem;
-}
-
-.column-rail-menu-panel .formula-format-field-label,
-.column-rail-menu-panel .formula-format-field-value,
-.column-rail-menu-panel .formula-format-panel-footnote {
-    font-size: var(--column-menu-label-size);
-}
-
-.column-rail-menu-panel .formula-style-row {
+.rail-menu-detail-body--format .formula-style-row {
     grid-template-columns: 2.8rem minmax(0, 1fr);
-    gap: 0.56rem;
+    gap: 0.32rem;
 }
 
-.column-rail-menu-panel .formula-style-row-label {
-    font-size: var(--column-menu-label-size);
+.rail-menu-detail-body--format .formula-style-segment {
+    min-height: 1.62rem;
+    padding: 0.24rem 0.4rem;
 }
 
-.column-rail-menu-panel .formula-style-segment {
-    min-height: 1.66rem;
-    font-size: 0.66rem;
-    padding: var(--menu-item-padding-y) var(--menu-item-padding-x);
+.rail-menu-detail-body--style {
+    width: min(var(--display-style-menu-width), calc(100vw - 3rem));
 }
 
-.tool-menu-option:hover {
-    background: var(--menu-hover-bg);
-    color: var(--menu-hover-ink);
+.rail-menu-detail-body--style .formula-style-menu-panel {
+    width: 100%;
+    padding: 0.22rem 0.24rem;
+    border: 0;
+    border-radius: calc(var(--menu-item-radius) + 0.06rem);
+    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
+    box-shadow: none;
+    backdrop-filter: none;
+    min-width: 0;
+    gap: 0.28rem;
+    align-content: start;
 }
 
-.theme-option:hover {
-    background: var(--menu-hover-bg);
-    color: var(--menu-hover-ink);
+.rail-menu-detail-body--style .formula-style-row {
+    grid-template-columns: 2.8rem minmax(0, 1fr);
+    gap: 0.32rem;
 }
 
-.theme-option.active {
-    background: var(--menu-active-bg);
-    color: var(--menu-active-ink);
+.rail-menu-detail-body--style .formula-style-segment {
+    min-height: 1.62rem;
+    padding: 0.24rem 0.4rem;
 }
 
-.theme-option .tool-icon {
+.rail-structure-panel {
+    display: grid;
+    gap: 0.18rem;
+    align-content: start;
+    padding: 0.02rem 0.04rem 0.08rem;
+}
+
+.rail-structure-action {
+    min-height: var(--menu-item-min-height);
+}
+
+.theme-menu .tool-icon,
+.tool-menu .tool-icon {
     width: 0.95rem;
     height: 0.95rem;
     flex: 0 0 auto;
-}
-
-.theme-option span:last-child {
-    flex: 1 1 auto;
 }
 
 .sheetbar-shell {
@@ -1296,6 +1495,27 @@ textarea {
     padding: 0;
 }
 
+.workspace-shell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 20;
+}
+
+.workspace-shell.is-structure-transition::after {
+    animation: workspace-structure-flash 220ms var(--ease-out-expo);
+}
+
+.workspace-shell.is-row-transition::after {
+    background: var(--structure-flash-row-bg);
+}
+
+.workspace-shell.is-column-transition::after {
+    background: var(--structure-flash-column-bg);
+}
+
 .source-shell {
     display: block;
     padding: 0;
@@ -1351,6 +1571,7 @@ textarea {
     border: 0;
     border-radius: 0;
     background: var(--sheet-surface);
+    position: relative;
 }
 
 .table-stage.has-scroll-y {
@@ -1367,7 +1588,7 @@ textarea {
     opacity: 0;
     transform: translateY(2px);
     filter: saturate(0.94);
-    pointer-events: none;
+    pointer-events: auto;
     transition:
         opacity 220ms var(--ease-out-quint),
         transform 260ms var(--ease-out-quint),
@@ -1381,9 +1602,12 @@ textarea {
     pointer-events: auto;
 }
 
+.index-rail:not(.index-rail--visible) .column-index-track,
+.index-rail:not(.index-rail--visible) .row-index-shell {
+    pointer-events: none;
+}
+
 .table-corner {
-    display: inline-grid;
-    place-items: center;
     justify-self: start;
     align-self: start;
     width: calc(var(--index-rail-width-active) + var(--index-rail-gap));
@@ -1391,26 +1615,6 @@ textarea {
     padding-inline-end: var(--index-rail-gap);
     padding-bottom: var(--index-rail-gap);
     transform: translate(-4px, -4px);
-}
-
-.corner-button {
-    display: inline-grid;
-    place-items: center;
-    width: min(2rem, calc(var(--index-rail-height-active) - 2px));
-    height: min(2rem, calc(var(--index-rail-height-active) - 2px));
-    border: 1px solid var(--index-rail-border);
-    border-radius: 999px;
-    background: var(--index-rail-surface);
-    box-shadow:
-        inset 0 1px 0 var(--index-rail-highlight),
-        0 6px 14px color-mix(in oklab, var(--sheet-ink) 10%, transparent);
-}
-
-.corner-dot {
-    width: 0.75rem;
-    height: 0.75rem;
-    border-radius: 999px;
-    border: 2px solid var(--accent);
 }
 
 .column-index-strip {
@@ -1454,10 +1658,9 @@ textarea {
     top: 0;
     height: 100%;
     display: grid;
-    grid-template-columns: 1.02rem minmax(0, 1fr) 1.02rem;
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
-    gap: 0.08rem;
-    padding-inline: 0.12rem;
+    padding-inline: 0.18rem;
     min-width: 0;
     border-inline-end: 1px solid
         color-mix(in oklab, var(--index-rail-border) 78%, transparent);
@@ -1482,12 +1685,6 @@ textarea {
 
 .column-index-cell.is-active {
     background: color-mix(in oklab, var(--accent-soft) 28%, transparent);
-}
-
-.column-index-left-pad {
-    width: 1.02rem;
-    height: 1px;
-    pointer-events: none;
 }
 
 .column-index-main {
@@ -1561,60 +1758,6 @@ textarea {
 
 .column-index-config-badge circle {
     fill: color-mix(in oklab, currentColor 78%, transparent);
-}
-
-.column-index-menu-trigger {
-    display: inline-grid;
-    place-items: center;
-    flex: 0 0 auto;
-    width: 1.02rem;
-    height: 1.02rem;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: color-mix(in oklab, var(--sheet-soft) 90%, var(--chrome-soft));
-    cursor: pointer;
-    opacity: 0;
-    transform: translateX(2px);
-    transition:
-        opacity 140ms var(--ease-out-quart),
-        transform 140ms var(--ease-out-quart),
-        background-color 160ms var(--ease-out-quart),
-        color 160ms var(--ease-out-quart);
-}
-
-.column-index-menu-trigger:hover {
-    background: color-mix(in oklab, var(--menu-hover-bg) 78%, transparent);
-    color: var(--sheet-ink);
-}
-
-.column-index-menu-trigger:focus-visible {
-    outline: none;
-    background: color-mix(in oklab, var(--menu-hover-bg) 86%, transparent);
-    box-shadow: inset 0 0 0 1px
-        color-mix(in oklab, var(--chrome-border) 78%, transparent);
-}
-
-.column-index-menu-trigger svg {
-    width: 0.58rem;
-    height: 0.58rem;
-}
-
-.column-index-menu-trigger path {
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.4;
-}
-
-.column-index-cell:hover .column-index-menu-trigger,
-.column-index-cell:focus-within .column-index-menu-trigger,
-.column-index-cell.is-active .column-index-menu-trigger {
-    opacity: 1;
-    transform: translateX(0);
 }
 
 .column-index-cell.is-active .column-index-primary {
@@ -1695,8 +1838,7 @@ textarea {
 .row-index-cell {
     position: absolute;
     inset-inline: 0;
-    display: grid;
-    place-items: center;
+    display: block;
     margin: 0;
     padding: 0;
     border-inline: 0;
@@ -1716,6 +1858,24 @@ textarea {
         top 180ms var(--ease-out-quart),
         height 180ms var(--ease-out-quart),
         opacity 120ms linear;
+}
+
+.row-index-main {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.row-index-main:focus-visible {
+    outline: none;
 }
 
 .row-index-cell.is-header {
@@ -1756,11 +1916,19 @@ textarea {
     border: var(--selection-ring-width) solid var(--selection-ring-color);
     border-radius: var(--selection-ring-radius);
     box-shadow:
-        0 0 0 1px color-mix(in oklab, var(--sheet-canvas) 68%, transparent),
-        0 0 0 0.5px color-mix(in oklab, var(--accent-strong) 38%, transparent);
+        0 0 0 1px color-mix(in oklab, var(--workspace-frame) 54%, transparent),
+        0 0 0 0.5px color-mix(in oklab, var(--accent-strong) 28%, transparent);
     pointer-events: none;
-    z-index: 6;
+    z-index: 11;
     opacity: 1;
+}
+
+.persistent-selection-ring.is-structural-transition {
+    transition:
+        transform 220ms var(--ease-out-quint),
+        width 220ms var(--ease-out-quint),
+        height 220ms var(--ease-out-quint),
+        opacity 140ms linear;
 }
 
 .persistent-selection-ring.is-hidden {
@@ -1770,6 +1938,85 @@ textarea {
     opacity: 0;
 }
 
+.persistent-range-selection {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    transform: translate3d(-9999px, -9999px, 0);
+    will-change: transform, width, height;
+    border: 1.5px solid color-mix(in oklab, var(--accent-strong) 78%, transparent);
+    border-radius: var(--selection-ring-radius);
+    background: color-mix(in oklab, var(--accent) 14%, transparent);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 26%, transparent),
+        0 0 0 1px color-mix(in oklab, var(--workspace-frame) 58%, transparent);
+    pointer-events: none;
+    z-index: 10;
+    opacity: 1;
+}
+
+.formula-reference-overlay-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 12;
+}
+
+.formula-reference-range {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    transform: translate3d(-9999px, -9999px, 0);
+    will-change: transform, width, height;
+    margin: 0;
+    padding: 0;
+    border: 2px solid var(--reference-color, var(--accent-strong));
+    border-radius: 6px;
+    background: color-mix(in oklab, var(--reference-color, var(--accent-strong)) 16%, transparent);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--reference-color, var(--accent-strong)) 20%, transparent),
+        0 0 0 1px color-mix(in oklab, var(--sheet-surface) 64%, transparent);
+    pointer-events: auto;
+    opacity: 1;
+    cursor: pointer;
+}
+
+.persistent-range-selection.is-hidden {
+    transform: translate3d(-9999px, -9999px, 0) !important;
+    width: 0 !important;
+    height: 0 !important;
+    opacity: 0;
+}
+
+.formula-reference-range.is-active {
+    border-width: 2.5px;
+    background: color-mix(in oklab, var(--reference-color, var(--accent-strong)) 24%, transparent);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--reference-color, var(--accent-strong)) 36%, transparent),
+        0 0 0 2px color-mix(in oklab, var(--sheet-surface) 72%, transparent);
+}
+
+.formula-reference-range.is-hidden {
+    transform: translate3d(-9999px, -9999px, 0) !important;
+    width: 0 !important;
+    height: 0 !important;
+    opacity: 0;
+    pointer-events: none;
+}
+
+[data-color-index="0"] { --reference-color: oklch(61% 0.18 32); }
+[data-color-index="1"] { --reference-color: oklch(58% 0.16 246); }
+[data-color-index="2"] { --reference-color: oklch(58% 0.15 145); }
+[data-color-index="3"] { --reference-color: oklch(62% 0.16 78); }
+[data-color-index="4"] { --reference-color: oklch(61% 0.18 315); }
+[data-color-index="5"] { --reference-color: oklch(56% 0.14 205); }
+[data-color-index="6"] { --reference-color: oklch(58% 0.17 20); }
+[data-color-index="7"] { --reference-color: oklch(55% 0.15 285); }
+
 .header-matrix-overlay {
     position: absolute;
     inset-inline: 0;
@@ -1778,9 +2025,39 @@ textarea {
     pointer-events: none;
 }
 
-.header-matrix-overlay--center {
-    z-index: 8;
+.header-matrix-base {
+    position: absolute;
+    top: 0;
+    pointer-events: none;
+}
+
+.header-matrix-base--center {
+    inset-inline: 0;
+    z-index: 6;
     clip-path: inset(0 0 0 var(--header-overlay-pinned-width, 0px));
+    background: var(--sheet-header-row);
+    box-shadow: inset 0 -1px 0 var(--sheet-grid);
+}
+
+.header-matrix-base--pinned {
+    left: 0;
+    z-index: 7;
+    background: var(--sheet-header-col);
+    box-shadow:
+        inset -1px 0 0 var(--sheet-grid),
+        inset 0 -1px 0 var(--sheet-grid);
+}
+
+.header-matrix-overlay--center {
+    right: auto;
+    z-index: 8;
+    overflow: hidden;
+}
+
+.header-matrix-center-scroll-layer {
+    position: relative;
+    height: 100%;
+    will-change: transform;
 }
 
 .header-matrix-overlay--pinned {
@@ -1836,6 +2113,7 @@ textarea {
 
 .header-matrix-cell.has-slot-selection {
     z-index: 2;
+    overflow: visible;
 }
 
 .header-matrix-cell.has-slot-selection::after {
@@ -1953,6 +2231,10 @@ textarea {
     padding-block: 0.18rem;
 }
 
+.ag-theme-quartz .ag-cell {
+    overflow: hidden !important;
+}
+
 .line-item-header {
     background: var(--sheet-header-col) !important;
 }
@@ -1987,12 +2269,12 @@ textarea {
     height: 100%;
 }
 
-.ag-theme-quartz .ag-row.section-row .ag-cell {
+.ag-theme-quartz .ag-row.group-row .ag-cell {
     background: var(--section-bg);
     font-weight: 600;
 }
 
-.ag-theme-quartz .ag-row.section-row .line-item-cell {
+.ag-theme-quartz .ag-row.group-row .line-item-cell {
     background: color-mix(in oklab, var(--section-bg) 90%, var(--line-item-bg));
 }
 
@@ -2000,6 +2282,18 @@ textarea {
     transition:
         background-color 160ms var(--ease-out-quart),
         color 160ms var(--ease-out-quart);
+}
+
+@keyframes workspace-structure-flash {
+    0% {
+        opacity: 0;
+    }
+    30% {
+        opacity: 0.96;
+    }
+    100% {
+        opacity: 0;
+    }
 }
 
 .data-cell,
@@ -2195,7 +2489,7 @@ textarea {
     border-color: transparent !important;
     border-style: solid !important;
     box-shadow: none !important;
-    overflow: visible !important;
+    overflow: hidden !important;
     position: relative;
     z-index: 4;
 }
@@ -2275,6 +2569,12 @@ textarea {
     content: none !important;
 }
 
+.grid-wrap.suppress-cell-focus-ring
+    .ag-ltr
+    .ag-cell-focus:not(.ag-cell-range-selected):focus-within,
+.grid-wrap.suppress-cell-focus-ring
+    .ag-rtl
+    .ag-cell-focus:not(.ag-cell-range-selected):focus-within,
 .grid-wrap.suppress-cell-focus-ring .ag-cell:focus,
 .grid-wrap.suppress-cell-focus-ring .ag-cell:focus-visible,
 .grid-wrap.suppress-cell-focus-ring .ag-cell-focus,
@@ -2284,7 +2584,8 @@ textarea {
     .ag-cell-range-single-cell.ag-cell-range-handle {
     outline: none !important;
     box-shadow: none !important;
-    border-color: transparent !important;
+    border-color: var(--sheet-grid) !important;
+    overflow: hidden !important;
 }
 
 .ag-theme-quartz .ag-cell-focus .tree-cell,
@@ -2388,7 +2689,7 @@ textarea {
     width: min(52rem, calc(100% - 2rem));
     border: 1px solid var(--formula-shell-border);
     border-radius: 999px;
-    overflow: hidden;
+    overflow: visible;
     background: var(--formula-shell-bg);
     box-shadow:
         var(--glass-shadow),
@@ -2436,11 +2737,13 @@ textarea {
 
 .formula-bar {
     --formula-control-height: 2.18rem;
+    --formula-track-inset-y: 0.42rem;
+    --formula-track-inset-x: 0.78rem;
     display: grid;
     grid-template-columns: minmax(9.4rem, 24%) minmax(0, 1fr);
     align-items: center;
     gap: 0.4rem;
-    padding: 0.34rem 0.42rem 0.34rem 1.28rem;
+    padding: var(--formula-track-inset-y) var(--formula-track-inset-x) var(--formula-track-inset-y) 1.28rem;
     position: relative;
     border: 0;
     border-radius: inherit;
@@ -2616,6 +2919,829 @@ textarea {
     color: inherit;
 }
 
+.formula-editor-wrap {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.formula-source-editor {
+    --formula-editor-line-height: 1.28rem;
+    position: relative;
+    width: 100%;
+    outline: none;
+    caret-color: var(--formula-input-caret);
+    cursor: text;
+    white-space: pre;
+    padding: 0;
+}
+
+.formula-source-editor.has-error {
+    border-color: color-mix(in oklab, var(--danger-border) 72%, var(--formula-input-border-focus));
+    box-shadow:
+        inset 0 1px 0 var(--formula-input-inset-top),
+        inset 0 2px 6px var(--formula-input-inset-depth),
+        inset 0 -1px 0 var(--formula-input-inset-bottom),
+        0 0 0 1px color-mix(in oklab, var(--danger-border) 72%, transparent);
+}
+
+.formula-reference-token {
+    display: inline;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: color-mix(in oklab, var(--reference-color) 14%, transparent);
+    color: color-mix(in oklab, var(--reference-color) 72%, var(--formula-input-ink-focus));
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--reference-color) 46%, transparent);
+    line-height: inherit;
+    cursor: pointer;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+}
+
+.formula-reference-token.is-active {
+    background: color-mix(in oklab, var(--reference-color) 22%, transparent);
+    box-shadow: 0 0 0 1px var(--reference-color);
+}
+
+.formula-token-backdrop,
+.formula-source-textarea {
+    min-width: 0;
+    width: 100%;
+    min-height: var(--formula-control-height);
+    padding: calc((var(--formula-control-height) - var(--formula-editor-line-height)) / 2) 0.9rem;
+    font: inherit;
+    line-height: var(--formula-editor-line-height);
+    white-space: pre;
+    letter-spacing: 0;
+    tab-size: 4;
+    font-variant-ligatures: none;
+}
+
+.formula-token-backdrop {
+    overflow: hidden;
+    color: var(--formula-input-ink-focus);
+    pointer-events: none;
+    scrollbar-width: none;
+}
+
+.formula-token-backdrop::-webkit-scrollbar {
+    display: none;
+}
+
+.formula-source-textarea {
+    position: absolute;
+    inset: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    resize: none;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--formula-input-caret);
+    appearance: none;
+    scrollbar-width: none;
+}
+
+.formula-source-textarea::-webkit-scrollbar {
+    display: none;
+}
+
+.formula-source-textarea::selection {
+    background: oklch(69% 0.12 245 / 0.3);
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+}
+
+.formula-draft-error {
+    position: absolute;
+    left: 0.72rem;
+    right: 0.72rem;
+    bottom: calc(100% + 0.38rem);
+    padding: 0.42rem 0.56rem;
+    border: 1px solid color-mix(in oklab, var(--danger-border) 58%, transparent);
+    border-radius: 0.5rem;
+    background: color-mix(in oklab, var(--danger-bg) 92%, var(--sheet-surface));
+    color: var(--danger-ink);
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    font-weight: 600;
+    box-shadow: var(--glass-shadow);
+    z-index: 3;
+}
+
+.formula-assistant-popover {
+    --formula-assistant-bg: color-mix(in oklab, var(--formula-shell-bg) 74%, var(--formula-input-bg-read));
+    --formula-assistant-border: color-mix(
+        in oklab,
+        var(--formula-input-border-read) 44%,
+        var(--formula-shell-border)
+    );
+    --formula-assistant-ink: var(--formula-meta-ink-primary);
+    --formula-assistant-muted: var(--formula-meta-ink-secondary);
+    --formula-assistant-dim: color-mix(in oklab, var(--formula-meta-ink-secondary) 72%, transparent);
+    --formula-assistant-row: color-mix(in oklab, var(--formula-input-bg-read) 38%, transparent);
+    --formula-assistant-row-hover: color-mix(in oklab, var(--formula-input-bg-read) 54%, transparent);
+    --formula-assistant-active-bg: color-mix(in oklab, var(--accent-soft) 46%, var(--formula-input-bg-read));
+    --formula-assistant-active-border: color-mix(in oklab, var(--accent) 34%, var(--formula-shell-border));
+    position: absolute;
+    left: 0.56rem;
+    bottom: calc(100% + 0.9rem);
+    display: block;
+    width: min(34rem, calc(100vw - 2rem));
+    max-height: min(17rem, calc(100vh - 9rem));
+    overflow: visible;
+    border: 0;
+    border-radius: 0.72rem;
+    background: var(--formula-assistant-bg);
+    color: var(--formula-assistant-ink);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--formula-assistant-border) 78%, transparent),
+        inset 0 1px 0 var(--formula-shell-topline);
+    filter:
+        drop-shadow(0 16px 38px oklch(35% 0.012 245 / 0.09))
+        drop-shadow(0 4px 14px oklch(35% 0.012 245 / 0.05));
+    -webkit-backdrop-filter: blur(18px) saturate(1.08);
+    backdrop-filter: blur(18px) saturate(1.08);
+    transform: translateY(-0.08rem);
+    transform-origin: 2.25rem calc(100% + 0.5rem);
+    transition: none;
+    animation: formula-assistant-pop 150ms var(--ease-out-quart);
+    z-index: 4;
+}
+
+@keyframes formula-assistant-pop {
+    from {
+        opacity: 0;
+        transform: translateY(0.12rem) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(-0.08rem) scale(1);
+    }
+}
+
+.formula-assistant-popover[data-mode="compact"] {
+    width: min(22rem, calc(100vw - 2rem));
+    min-width: min(22rem, calc(100vw - 2rem));
+    max-width: min(24rem, calc(100vw - 2rem));
+    border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .formula-assistant-popover {
+        transition: none;
+        animation: none;
+    }
+}
+
+.formula-assistant-popover[data-mode="signature"] {
+    left: 1.2rem;
+    width: min(27rem, calc(100vw - 2rem));
+    border-radius: 0.72rem;
+}
+
+.formula-assistant-popover[data-mode="signature-expanded"] {
+    left: 1.2rem;
+    width: min(42rem, calc(100vw - 2rem));
+    border-radius: 0.72rem;
+}
+
+.formula-assistant-popover::before,
+.formula-assistant-popover::after {
+    content: "";
+    position: absolute;
+    left: var(--formula-assistant-caret-left, 2.25rem);
+    pointer-events: none;
+    transform: translateX(-50%);
+}
+
+.formula-assistant-popover::before {
+    top: auto;
+    bottom: 0;
+    width: 0.62rem;
+    height: 1px;
+    border-radius: 0;
+    background: var(--formula-assistant-bg);
+    z-index: 2;
+}
+
+.formula-assistant-popover::after {
+    top: calc(100% - 1px);
+    width: 0.62rem;
+    height: 0.42rem;
+    background: var(--formula-assistant-bg);
+    clip-path: polygon(50% 100%, 0 0, 100% 0);
+    z-index: 1;
+}
+
+.formula-assistant-popover[data-mode="signature"]::before,
+.formula-assistant-popover[data-mode="signature"]::after,
+.formula-assistant-popover[data-mode="signature-expanded"]::before,
+.formula-assistant-popover[data-mode="signature-expanded"]::after {
+    left: 1.8rem;
+}
+
+.formula-assistant-popover[data-mode="compact"]::before,
+.formula-assistant-popover[data-mode="compact"]::after {
+    left: 2.1rem;
+}
+
+.formula-assistant-compact {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.78rem;
+    min-height: 2.36rem;
+    padding: 0.26rem 0.62rem 0.26rem 0.68rem;
+}
+
+.formula-assistant-compact-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.52rem;
+    min-width: 0;
+}
+
+.formula-assistant-compact-signature {
+    display: inline-flex;
+    align-items: baseline;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--formula-assistant-ink);
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    font-weight: 760;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.formula-assistant-compact-name {
+    color: color-mix(in oklab, var(--accent) 42%, var(--formula-assistant-ink));
+}
+
+.formula-assistant-compact-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.34rem;
+    color: var(--formula-assistant-muted);
+    font-size: 0.72rem;
+    font-weight: 720;
+    white-space: nowrap;
+}
+
+.formula-assistant-compact-action kbd,
+.formula-assistant-expand-button kbd {
+    min-width: 1.68rem;
+    padding: 0.15rem 0.34rem;
+    border: 1px solid color-mix(in oklab, var(--formula-shell-border) 58%, transparent);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--formula-input-bg-read) 54%, transparent);
+    color: var(--formula-assistant-ink);
+    font-family: var(--font-body);
+    font-size: 0.66rem;
+    font-weight: 760;
+    text-align: center;
+}
+
+.formula-assistant-expand-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.34rem;
+    min-width: 0;
+    height: 1.72rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--formula-assistant-muted);
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    font-weight: 720;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.formula-assistant-expand-button:hover {
+    color: var(--formula-assistant-ink);
+}
+
+.formula-assistant-expand-button:hover kbd {
+    background: color-mix(in oklab, var(--formula-input-bg-focus) 46%, var(--formula-input-bg-read));
+}
+
+.formula-assistant-list-panel {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+    border-radius: inherit;
+}
+
+.formula-assistant-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+    max-height: min(13.4rem, calc(100vh - 11rem));
+    padding: 0.3rem;
+    overflow: auto;
+    scrollbar-width: none;
+}
+
+.formula-assistant-list::-webkit-scrollbar {
+    display: none;
+}
+
+.formula-assistant-option {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(5.8rem, 0.58fr) minmax(13rem, 1.35fr) minmax(5.2rem, 0.42fr);
+    align-items: center;
+    gap: 0.72rem;
+    width: 100%;
+    min-height: 2.2rem;
+    padding: 0.28rem 0.72rem;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--formula-assistant-ink);
+    text-align: left;
+    cursor: pointer;
+}
+
+.formula-assistant-option::before {
+    content: "";
+    position: absolute;
+    left: 0.36rem;
+    top: 0.54rem;
+    bottom: 0.54rem;
+    width: 0.12rem;
+    border-radius: 999px;
+    background: transparent;
+}
+
+.formula-assistant-option:hover {
+    background: var(--formula-assistant-row-hover);
+}
+
+.formula-assistant-option.is-active {
+    border-color: var(--formula-assistant-active-border);
+    background: var(--formula-assistant-active-bg);
+    color: var(--formula-assistant-ink);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--accent) 16%, transparent),
+        inset 0 1px 0 var(--formula-shell-topline);
+}
+
+.formula-assistant-option.is-active::before {
+    background: var(--accent-strong);
+}
+
+.formula-assistant-option.is-active .formula-assistant-option-name {
+    color: color-mix(in oklab, var(--accent) 42%, var(--formula-assistant-ink));
+    font-weight: 780;
+}
+
+.formula-assistant-option-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.48rem;
+    min-width: 0;
+}
+
+.formula-assistant-option-icon {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 1rem;
+    color: color-mix(in oklab, var(--formula-assistant-ink) 76%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
+    font-weight: 820;
+    line-height: 1;
+}
+
+.formula-assistant-option.is-active .formula-assistant-option-icon {
+    color: color-mix(in oklab, var(--accent) 54%, var(--formula-assistant-ink));
+}
+
+.formula-assistant-option-name,
+.formula-assistant-name {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    font-weight: 720;
+    line-height: 1.1;
+    text-transform: lowercase;
+}
+
+.formula-assistant-option-summary,
+.formula-assistant-category {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--formula-assistant-muted);
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    font-weight: 620;
+    line-height: 1.12;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.formula-assistant-option-category {
+    justify-self: end;
+    padding: 0.12rem 0.44rem;
+    border: 1px solid color-mix(in oklab, var(--formula-shell-border) 36%, transparent);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--formula-input-bg-read) 34%, transparent);
+    color: var(--formula-assistant-muted);
+    font-family: var(--font-body);
+    font-size: 0.64rem;
+    font-weight: 720;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.formula-assistant-footer {
+    display: flex;
+    align-items: center;
+    gap: 1.35rem;
+    min-height: 2.1rem;
+    padding: 0 0.72rem;
+    border-top: 1px solid color-mix(in oklab, var(--formula-shell-border) 36%, transparent);
+    color: var(--formula-assistant-dim);
+    font-size: 0.68rem;
+    font-weight: 720;
+    letter-spacing: 0;
+}
+
+.formula-assistant-signature-panel {
+    display: grid;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--formula-assistant-ink);
+}
+
+.formula-assistant-signature-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.8rem;
+    min-height: 2.56rem;
+    padding: 0.42rem 0.6rem 0.36rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--formula-shell-border) 26%, transparent);
+}
+
+.formula-assistant-signature-line {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0.2rem 0.34rem;
+    border-radius: 0.54rem;
+    background: color-mix(in oklab, var(--formula-input-bg-read) 34%, transparent);
+    color: var(--formula-assistant-ink);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    font-weight: 720;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.formula-assistant-signature-name {
+    font-weight: 780;
+}
+
+.formula-assistant-signature-param-wrap {
+    display: inline-flex;
+    align-items: center;
+}
+
+.formula-assistant-return {
+    color: var(--formula-assistant-muted);
+    margin-left: 0.36rem;
+}
+
+.formula-assistant-param {
+    border-radius: 999px;
+    padding: 0.14rem 0.34rem;
+}
+
+.formula-assistant-param.is-active {
+    background: color-mix(in oklab, var(--accent-soft) 86%, var(--formula-input-bg-focus));
+    color: color-mix(in oklab, var(--accent-strong) 84%, var(--formula-input-ink-focus));
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+.formula-assistant-signature-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.34rem;
+    min-width: 2rem;
+    height: 1.8rem;
+    padding: 0 0.38rem;
+    border: 0;
+    border-left: 1px solid color-mix(in oklab, var(--formula-shell-border) 30%, transparent);
+    background: transparent;
+    color: var(--formula-assistant-muted);
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    font-weight: 720;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.formula-assistant-signature-toggle:hover {
+    color: var(--formula-assistant-ink);
+}
+
+.formula-assistant-signature-toggle kbd {
+    min-width: 1.45rem;
+    padding: 0.13rem 0.3rem;
+    border: 1px solid color-mix(in oklab, var(--formula-shell-border) 58%, transparent);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--formula-input-bg-read) 54%, transparent);
+    color: var(--formula-assistant-ink);
+    font-family: var(--font-body);
+    font-size: 0.66rem;
+    font-weight: 760;
+    text-align: center;
+}
+
+.formula-assistant-active-param {
+    display: grid;
+    gap: 0.32rem;
+    padding: 0.72rem 1rem 0.78rem;
+}
+
+.formula-assistant-active-param-name {
+    color: color-mix(in oklab, var(--accent) 44%, var(--formula-assistant-ink));
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.formula-assistant-active-param-summary {
+    color: var(--formula-assistant-muted);
+    font-size: 0.72rem;
+    font-weight: 590;
+    line-height: 1.32;
+}
+
+.formula-assistant-signature-grid {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1.08fr) minmax(11rem, 1fr) minmax(9rem, 0.86fr);
+    min-width: 0;
+    border-bottom: 1px solid color-mix(in oklab, var(--formula-shell-border) 24%, transparent);
+}
+
+.formula-assistant-signature-column {
+    display: grid;
+    align-content: start;
+    gap: 0.42rem;
+    min-width: 0;
+    padding: 0.78rem 0.92rem;
+}
+
+.formula-assistant-signature-column + .formula-assistant-signature-column {
+    border-left: 1px solid color-mix(in oklab, var(--formula-shell-border) 24%, transparent);
+}
+
+.formula-assistant-signature-column-label {
+    color: color-mix(in oklab, var(--accent) 42%, var(--formula-assistant-ink));
+    font-size: 0.68rem;
+    font-weight: 820;
+}
+
+.formula-assistant-param-detail {
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+}
+
+.formula-assistant-param-detail.is-active .formula-assistant-param-name {
+    color: color-mix(in oklab, var(--accent) 48%, var(--formula-assistant-ink));
+}
+
+.formula-assistant-param-name {
+    min-width: 0;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 760;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.formula-assistant-param-type,
+.formula-assistant-signature-description,
+.formula-assistant-signature-example {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--formula-assistant-muted);
+    font-size: 0.69rem;
+    font-weight: 590;
+    line-height: 1.32;
+    text-overflow: ellipsis;
+}
+
+.formula-assistant-signature-example {
+    font-family: var(--font-mono);
+    white-space: nowrap;
+}
+
+.formula-assistant-signature-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.78rem;
+    min-height: 2.08rem;
+    padding: 0 1rem;
+    color: var(--formula-assistant-muted);
+    font-size: 0.72rem;
+    font-weight: 650;
+}
+
+.formula-assistant-signature-footer span + span::before {
+    content: "•";
+    margin-right: 0.78rem;
+    color: var(--formula-assistant-dim);
+}
+
+.formula-assistant-empty {
+    padding: 0.48rem 0.54rem;
+    color: var(--formula-meta-ink-secondary);
+    font-size: 0.64rem;
+    font-weight: 620;
+}
+
+.reference-options-popover {
+    --reference-popover-bg: var(--formula-shell-bg);
+    --reference-popover-border: var(--formula-shell-border);
+    position: absolute;
+    left: 0.56rem;
+    bottom: calc(100% + 1.02rem);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.28rem;
+    width: max-content;
+    max-width: min(36rem, calc(100vw - 2rem));
+    padding: 0.28rem;
+    overflow: visible;
+    border: 0;
+    border-radius: 1.05rem;
+    background: var(--reference-popover-bg);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--reference-popover-border) 82%, transparent),
+        inset 0 1px 0 var(--formula-shell-topline);
+    filter:
+        drop-shadow(0 16px 38px oklch(35% 0.012 245 / 0.09))
+        drop-shadow(0 4px 14px oklch(35% 0.012 245 / 0.05));
+    -webkit-backdrop-filter: blur(8px) saturate(1.08) contrast(1.02);
+    backdrop-filter: blur(8px) saturate(1.08) contrast(1.02);
+    z-index: 2;
+}
+
+.reference-options-popover::before,
+.reference-options-popover::after {
+    content: "";
+    position: absolute;
+    left: var(--reference-popover-caret-left, 1.4rem);
+    pointer-events: none;
+    transform: translateX(-50%);
+}
+
+.reference-options-popover::before {
+    bottom: 0;
+    width: 0.62rem;
+    height: 1px;
+    background: var(--reference-popover-bg);
+    z-index: 2;
+}
+
+.reference-options-popover::after {
+    top: calc(100% - 1px);
+    width: 0.62rem;
+    height: 0.42rem;
+    background: var(--reference-popover-bg);
+    clip-path: polygon(50% 100%, 0 0, 100% 0);
+    z-index: 1;
+}
+
+.reference-option-group {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.12rem;
+    min-width: 0;
+    padding: 0 0.1rem;
+    flex: 0 1 auto;
+}
+
+.reference-option-group + .reference-option-group {
+    margin-left: 0;
+    padding-left: 0.42rem;
+    border-left: 1px solid color-mix(in oklab, var(--formula-shell-border) 72%, transparent);
+}
+
+.reference-option-group-label {
+    width: auto;
+    min-width: 0;
+    padding: 0.02rem 0.18rem 0;
+    color: var(--formula-meta-ink-secondary);
+    font-family: var(--font-body);
+    font-size: 0.56rem;
+    font-weight: 720;
+    letter-spacing: 0;
+    line-height: 1.05;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.reference-option-group-items {
+    display: flex;
+    align-items: center;
+    gap: 0.14rem;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.reference-option {
+    width: clamp(5.85rem, 12vw, 7.05rem);
+    min-width: 0;
+    display: grid;
+    gap: 0.04rem;
+    min-height: 1.96rem;
+    padding: 0.24rem 0.46rem 0.22rem;
+    border: 1px solid transparent;
+    border-radius: 0.78rem;
+    background: color-mix(in oklab, var(--formula-input-bg-read) 72%, transparent);
+    color: var(--formula-input-ink-read);
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color 140ms var(--ease-out-quart),
+        color 140ms var(--ease-out-quart),
+        filter 140ms var(--ease-out-quart);
+}
+
+.reference-option:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--formula-input-bg-focus) 82%, var(--formula-input-bg-read));
+    color: var(--formula-input-ink-focus);
+}
+
+.reference-option.active {
+    border-color: var(--formula-input-border-focus);
+    background: var(--formula-input-bg-focus);
+    color: var(--formula-input-ink-focus);
+    box-shadow:
+        inset 0 1px 0 var(--formula-input-inset-top),
+        inset 0 2px 6px var(--formula-input-inset-depth),
+        inset 0 -1px 0 var(--formula-input-inset-bottom),
+        0 0 0 1px var(--formula-input-focus-ring);
+}
+
+.reference-option.active:hover:not(:disabled) {
+    background: var(--formula-input-bg-focus);
+    color: var(--formula-input-ink-focus);
+}
+
+.reference-option:disabled {
+    cursor: not-allowed;
+    color: color-mix(in oklab, var(--chrome-soft) 72%, transparent);
+    filter: saturate(0.72);
+}
+
+.reference-option-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-body);
+    font-size: 0.66rem;
+    font-weight: 680;
+    letter-spacing: 0;
+}
+
+.reference-option-preview {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    line-height: 1.12;
+    color: color-mix(in oklab, currentColor 76%, var(--chrome-soft));
+}
+
+.reference-option:disabled .reference-option-preview {
+    color: color-mix(in oklab, var(--chrome-soft) 82%, transparent);
+}
+
 .formula-source-input::selection {
     background: color-mix(
         in oklab,
@@ -2626,9 +3752,10 @@ textarea {
 }
 
 .formula-source-row {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 0.24rem;
+    gap: 0.34rem;
     min-width: 0;
     width: 100%;
 }
@@ -2684,6 +3811,41 @@ textarea {
     box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 50%, transparent);
 }
 
+.formula-apply-selection-button {
+    flex: 0 0 auto;
+    height: var(--formula-control-height);
+    max-width: 11rem;
+    min-width: 0;
+    border: 1px solid color-mix(in oklab, var(--accent) 32%, var(--glass-border));
+    border-radius: 999px;
+    padding: 0 0.82rem;
+    background: color-mix(in oklab, var(--accent-soft) 54%, var(--formula-dismiss-bg));
+    color: color-mix(in oklab, var(--accent-strong) 82%, var(--sheet-ink));
+    font: 600 0.76rem/1 var(--font-body);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        background-color 140ms var(--ease-out-quart),
+        color 140ms var(--ease-out-quart),
+        transform 140ms var(--ease-out-quart);
+}
+
+.formula-apply-selection-button:hover {
+    background: color-mix(in oklab, var(--accent-soft) 72%, var(--formula-dismiss-bg-hover));
+    color: color-mix(in oklab, var(--accent-strong) 92%, var(--sheet-ink));
+}
+
+.formula-apply-selection-button:active {
+    transform: scale(0.98);
+}
+
+.formula-apply-selection-button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 50%, transparent);
+}
+
 .formula-dismiss-icon {
     display: inline-flex;
     width: 1rem;
@@ -2703,7 +3865,8 @@ textarea {
     overflow: visible;
 }
 
-.formula-format-control {
+.formula-format-control,
+.formula-function-control {
     position: relative;
     flex: 0 0 auto;
 }
@@ -2713,7 +3876,8 @@ textarea {
     flex: 0 0 auto;
 }
 
-.formula-format-button {
+.formula-format-button,
+.formula-function-button {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -2749,7 +3913,8 @@ textarea {
         background-color 140ms var(--ease-out-quart);
 }
 
-.formula-format-button:hover {
+.formula-format-button:hover,
+.formula-function-button:hover {
     color: var(--menu-hover-ink);
     background: var(--menu-hover-bg);
 }
@@ -2759,7 +3924,8 @@ textarea {
     background: var(--menu-hover-bg);
 }
 
-.formula-format-button.active {
+.formula-format-button.active,
+.formula-function-button.active {
     color: var(--menu-active-ink);
     background: var(--menu-active-bg);
 }
@@ -2784,7 +3950,8 @@ textarea {
     background: color-mix(in oklab, var(--danger-bg) 78%, transparent);
 }
 
-.formula-format-icon {
+.formula-format-icon,
+.formula-function-icon {
     display: inline-flex;
     width: 0.92rem;
     height: 0.92rem;
@@ -2798,7 +3965,8 @@ textarea {
     overflow: visible;
 }
 
-.formula-format-icon svg {
+.formula-format-icon svg,
+.formula-function-icon svg {
     width: 100%;
     height: 100%;
     overflow: visible;
@@ -2875,9 +4043,6 @@ textarea {
 
 .formula-format-menu {
     position: fixed;
-    display: grid;
-    grid-template-columns: minmax(9.2rem, auto) minmax(10rem, auto);
-    gap: 0.32rem;
     padding: var(--menu-surface-padding);
     border: var(--menu-surface-border);
     border-radius: var(--menu-surface-radius);
@@ -2899,8 +4064,112 @@ textarea {
     pointer-events: auto;
 }
 
+.formula-format-layout {
+    display: grid;
+    grid-template-columns: var(--display-meta-menu-nav-width) var(--display-meta-menu-detail-width);
+    gap: 0.36rem;
+    width: max-content;
+    max-width: calc(100vw - 1.5rem);
+    align-content: start;
+    align-items: start;
+    min-width: 0;
+}
+
+.formula-format-layout.has-detail-panel {
+    grid-template-columns: var(--display-meta-menu-nav-width)
+        var(--display-meta-menu-detail-width);
+}
+
+.formula-format-detail-flyout {
+    position: fixed;
+    display: grid;
+    width: min(var(--display-meta-menu-detail-width), calc(100vw - 1.5rem));
+    overflow: visible;
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+    pointer-events: none;
+    z-index: 129;
+    transition:
+        opacity 160ms var(--ease-out-quart),
+        transform 160ms var(--ease-out-quart);
+}
+
+.formula-format-detail-flyout.open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.formula-format-detail-flyout .formula-format-menu-panel {
+    max-height: var(--formula-format-detail-panel-max-height, calc(100vh - 1.5rem));
+    scrollbar-width: thin;
+    scrollbar-color:
+        color-mix(in oklab, var(--chrome-soft) 28%, transparent)
+        transparent;
+}
+
+.formula-format-detail-flyout .formula-format-menu-panel::-webkit-scrollbar {
+    width: 5px;
+}
+
+.formula-format-detail-flyout .formula-format-menu-panel::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.formula-format-detail-flyout .formula-format-menu-panel::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--chrome-soft) 26%, transparent);
+}
+
+.formula-format-detail-flyout .formula-format-menu-panel::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--chrome-soft) 40%, transparent);
+}
+
+.formula-format-error-popover {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.44rem);
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.42rem;
+    min-height: 2rem;
+    padding: 0.38rem 0.52rem;
+    border: 1px solid color-mix(in oklab, var(--danger-border) 48%, transparent);
+    border-radius: calc(var(--menu-item-radius) + 0.1rem);
+    background:
+        radial-gradient(
+            circle at 18% 0%,
+            color-mix(in oklab, var(--sheet-surface) 54%, transparent),
+            transparent 44%
+        ),
+        linear-gradient(
+            160deg,
+            color-mix(in oklab, var(--danger-bg) 70%, oklch(96% 0.06 15 / 0.72)),
+            color-mix(in oklab, var(--danger-border) 18%, var(--danger-bg))
+        );
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklab, var(--sheet-surface) 62%, transparent),
+        inset 0 -1px 0 color-mix(in oklab, var(--danger-border) 12%, transparent),
+        0 10px 24px color-mix(in oklab, var(--danger-border) 16%, transparent),
+        0 2px 7px color-mix(in oklab, var(--sheet-ink) 7%, transparent);
+    color: color-mix(in oklab, var(--danger-ink) 88%, oklch(42% 0.11 20));
+    backdrop-filter: blur(20px) saturate(1.35);
+}
+
+.formula-format-error-message {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.68rem;
+    font-weight: 640;
+    letter-spacing: 0.002em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .formula-style-menu {
     position: fixed;
+    width: min(var(--formula-style-menu-width), calc(100vw - 1.5rem));
     padding: 0;
     border: 0;
     border-radius: 0;
@@ -2938,10 +4207,6 @@ textarea {
         inset 0 1px 0 color-mix(in oklab, var(--sheet-surface) 26%, transparent),
         0 8px 18px color-mix(in oklab, var(--danger-border) 6%, transparent);
     color: var(--danger-ink);
-}
-
-.formula-menu-error-banner--full {
-    grid-column: 1 / -1;
 }
 
 .formula-menu-error-icon {
@@ -2983,7 +4248,26 @@ textarea {
 
 .formula-format-menu-list {
     display: grid;
-    gap: 0.16rem;
+    gap: 0.12rem;
+    align-content: start;
+    width: var(--display-meta-menu-nav-width);
+}
+
+.formula-format-section-label {
+    margin: 0.34rem 0 0.08rem;
+    padding: 0.34rem var(--menu-item-padding-x) 0;
+    border-top: 1px solid color-mix(in oklab, var(--chrome-border) 62%, transparent);
+    color: color-mix(in oklab, var(--chrome-soft) 82%, transparent);
+    font-size: 0.62rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.formula-format-section-label:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
 }
 
 .formula-format-option {
@@ -3055,24 +4339,38 @@ textarea {
 
 .formula-format-menu-panel {
     display: grid;
-    gap: 0.38rem;
-    min-width: 10rem;
-    padding: 0.3rem 0.34rem;
-    border: 1px solid color-mix(in oklab, var(--chrome-border) 70%, transparent);
-    border-radius: var(--menu-item-radius);
-    background: color-mix(in oklab, var(--chrome-bg) 82%, var(--toolbar-pill));
+    gap: 0.58rem;
+    width: min(var(--display-meta-menu-detail-width), 100%);
+    min-width: 0;
+    max-height: inherit;
+    padding: 0.7rem 0.74rem;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 76%, transparent);
+    border-radius: calc(var(--menu-surface-radius) - 0.16rem);
+    background:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, var(--toolbar-pill) 76%, var(--chrome-bg)),
+            color-mix(in oklab, var(--chrome-bg) 82%, var(--toolbar-pill))
+        );
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklab, var(--sheet-surface) 42%, transparent),
+        0 10px 22px color-mix(in oklab, var(--sheet-ink) 5%, transparent);
+    overflow: auto;
+    align-content: start;
 }
 
 .formula-style-menu-panel {
     display: grid;
     gap: 0.42rem;
-    min-width: 18rem;
+    min-width: 0;
     padding: calc(var(--menu-surface-padding) + 0.18rem);
     border: var(--menu-surface-border);
     border-radius: var(--menu-surface-radius);
     background: var(--menu-surface-bg);
     box-shadow: var(--menu-surface-shadow);
     backdrop-filter: var(--menu-surface-backdrop);
+    overflow: hidden;
+    align-content: start;
 }
 
 .formula-style-row {
@@ -3167,14 +4465,224 @@ textarea {
 }
 
 .formula-format-panel-title {
-    font-size: 0.76rem;
-    font-weight: 640;
+    font-size: 0.84rem;
+    font-weight: 680;
     color: var(--chrome-ink);
+}
+
+.formula-format-panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.52rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--chrome-border) 64%, transparent);
+}
+
+.formula-format-current {
+    min-width: 0;
+    color: var(--chrome-soft);
+    font-size: 0.68rem;
+    white-space: nowrap;
+}
+
+.formula-format-current strong {
+    color: color-mix(in oklab, var(--accent-strong) 72%, var(--sheet-ink));
+    font-weight: 680;
 }
 
 .formula-format-field-list {
     display: grid;
-    gap: 0.24rem;
+    gap: 0.42rem;
+    align-content: start;
+}
+
+.formula-format-auto-panel {
+    display: grid;
+    gap: 0.46rem;
+}
+
+.formula-format-auto-row {
+    display: grid;
+    grid-template-columns: 5.6rem minmax(0, 1fr);
+    align-items: baseline;
+    gap: 0.72rem;
+}
+
+.formula-format-auto-label {
+    color: var(--chrome-soft);
+    font-size: 0.66rem;
+}
+
+.formula-format-auto-value {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--chrome-ink);
+    font-size: 0.76rem;
+    font-weight: 640;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.formula-format-auto-value.is-mono {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 560;
+}
+
+.formula-format-auto-note {
+    margin-top: 0.12rem;
+    padding: 0.46rem 0.52rem;
+    border-radius: 0.54rem;
+    background: color-mix(in oklab, var(--toolbar-pill) 58%, transparent);
+    color: var(--chrome-soft);
+    font-size: 0.68rem;
+    line-height: 1.38;
+}
+
+.formula-format-preset-grid {
+    display: grid;
+    gap: 0.54rem;
+}
+
+.formula-format-preset-section {
+    display: grid;
+    gap: 0.32rem;
+    min-width: 0;
+}
+
+.formula-format-preset-section-label {
+    color: color-mix(in oklab, var(--chrome-soft) 84%, transparent);
+    font-size: 0.62rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.formula-format-preset-section-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.42rem;
+}
+
+.formula-format-preset {
+    display: grid;
+    gap: 0.16rem;
+    min-height: 3rem;
+    min-width: 0;
+    padding: 0.52rem 0.56rem;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 68%, transparent);
+    border-radius: 0.55rem;
+    background: color-mix(in oklab, var(--toolbar-pill) 68%, transparent);
+    color: var(--chrome-ink);
+    text-align: left;
+    cursor: default;
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--sheet-surface) 30%, transparent);
+    transition:
+        border-color 140ms var(--ease-out-quart),
+        background-color 140ms var(--ease-out-quart),
+        box-shadow 140ms var(--ease-out-quart),
+        color 140ms var(--ease-out-quart);
+}
+
+.formula-format-preset.is-wide {
+    grid-column: span 2;
+}
+
+.formula-format-preset:hover:not(:disabled) {
+    background: var(--menu-hover-bg);
+    color: var(--menu-hover-ink);
+}
+
+.formula-format-preset.is-selected {
+    border-color: color-mix(in oklab, var(--accent-strong) 58%, var(--chrome-border));
+    background: color-mix(in oklab, var(--accent-soft) 44%, var(--toolbar-pill));
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklab, var(--sheet-surface) 44%, transparent),
+        0 0 0 1px color-mix(in oklab, var(--accent-strong) 18%, transparent);
+}
+
+.formula-format-preset.is-selected:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--accent-strong) 68%, var(--chrome-border));
+    background: color-mix(in oklab, var(--accent-soft) 50%, var(--toolbar-pill));
+    color: var(--chrome-ink);
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklab, var(--sheet-surface) 48%, transparent),
+        0 0 0 1px color-mix(in oklab, var(--accent-strong) 24%, transparent),
+        0 8px 18px color-mix(in oklab, var(--accent-strong) 8%, transparent);
+}
+
+.formula-format-preset:disabled {
+    opacity: 0.58;
+}
+
+.formula-format-preset-preview {
+    min-width: 0;
+    overflow: hidden;
+    color: inherit;
+    font-size: 0.82rem;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.formula-format-preset-pattern {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--chrome-soft);
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.formula-format-custom {
+    display: grid;
+    gap: 0.28rem;
+    padding-top: 0.54rem;
+    border-top: 1px solid color-mix(in oklab, var(--chrome-border) 58%, transparent);
+}
+
+.formula-format-custom-label {
+    color: var(--chrome-soft);
+    font-size: 0.66rem;
+    font-weight: 640;
+}
+
+.formula-format-custom-input {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.02rem;
+    padding: 0.34rem 0.52rem;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 90%, transparent);
+    border-radius: 0.48rem;
+    background: color-mix(in oklab, var(--sheet-surface) 70%, var(--toolbar-pill));
+    color: var(--sheet-ink);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    outline: none;
+    box-shadow: inset 0 1px 2px color-mix(in oklab, var(--sheet-ink) 5%, transparent);
+}
+
+.formula-format-custom-input:focus {
+    border-color: color-mix(in oklab, var(--accent-strong) 64%, var(--chrome-border));
+    box-shadow:
+        inset 0 1px 2px color-mix(in oklab, var(--sheet-ink) 5%, transparent),
+        0 0 0 2px color-mix(in oklab, var(--accent-soft) 54%, transparent);
+}
+
+.formula-format-custom-input.has-error {
+    border-color: color-mix(in oklab, var(--danger-border) 78%, var(--chrome-border));
+}
+
+.formula-format-custom-preview {
+    color: var(--chrome-soft);
+    font-size: 0.66rem;
+    min-height: 0.9rem;
+}
+
+.formula-format-custom-preview.has-error {
+    color: var(--danger-ink);
 }
 
 .formula-format-summary {
@@ -3239,6 +4747,60 @@ textarea {
 .formula-format-panel-footnote {
     font-size: 0.64rem;
     color: var(--chrome-soft);
+}
+
+.formula-format-stepper {
+    display: grid;
+    grid-template-columns: minmax(3.4rem, auto) 1.72rem minmax(2.2rem, auto) 1.72rem;
+    align-items: center;
+    gap: 0.18rem;
+    min-width: 0;
+    width: 100%;
+}
+
+.formula-format-stepper-button,
+.formula-format-stepper-value {
+    min-height: 1.66rem;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
+    font-size: 0.7rem;
+}
+
+.formula-format-stepper-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    color: var(--chrome-soft);
+    font-weight: 620;
+    cursor: default;
+    transition:
+        background-color 140ms var(--ease-out-quart),
+        color 140ms var(--ease-out-quart);
+}
+
+.formula-format-stepper-button:hover:not(:disabled) {
+    background: var(--menu-hover-bg);
+    color: var(--menu-hover-ink);
+}
+
+.formula-format-stepper-button:disabled,
+.formula-style-segment:disabled {
+    opacity: 0.5;
+}
+
+.formula-format-stepper-value {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 var(--menu-item-padding-x);
+    color: var(--chrome-ink);
+    font-weight: 620;
+}
+
+.formula-format-stepper-value.is-default {
+    color: var(--chrome-soft);
+    font-weight: 500;
 }
 
 .formula-meta-chip {
@@ -3440,7 +5002,7 @@ textarea:focus-visible,
     }
 
     .formula-bar-shell {
-        width: calc(100vw - 1rem);
+        width: calc(100% - 1rem);
     }
 
     .column-index-secondary {
@@ -3450,7 +5012,7 @@ textarea:focus-visible,
 
 @media (max-width: 980px) {
     .formula-bar-shell {
-        width: calc(100vw - 1rem);
+        width: calc(100% - 1rem);
         border-radius: 1.02rem;
     }
 
@@ -3466,6 +5028,10 @@ textarea:focus-visible,
 
     .formula-source-row {
         width: 100%;
+    }
+
+    .formula-apply-selection-button {
+        max-width: min(11rem, 34vw);
     }
 
     .formula-subaddress {
@@ -3513,6 +5079,31 @@ textarea:focus-visible,
         font-size: 0.82rem;
     }
 
+    .formula-source-row {
+        gap: 0.28rem;
+    }
+
+    .reference-options-popover {
+        width: calc(100vw - 1.2rem);
+        max-width: calc(100vw - 1.2rem);
+        right: 0.2rem;
+        left: 0.2rem;
+    }
+
+    .reference-option-group-label {
+        width: auto;
+        min-width: 0;
+    }
+
+    .reference-option {
+        width: clamp(5.4rem, 18vw, 6.7rem);
+    }
+
+    .formula-apply-selection-button {
+        max-width: min(10.2rem, 38vw);
+        padding-inline: 0.68rem;
+    }
+
     textarea {
         min-height: calc(100vh - 7.5rem);
     }
@@ -3526,5 +5117,20 @@ textarea:focus-visible,
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
+    }
+}
+
+
+.rail-menu .menu-surface-option-icon {
+    color: currentColor;
+}
+
+.rail-menu .menu-surface-head + .column-rail-menu-body .menu-surface-divider:first-of-type {
+    margin-top: 0.18rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    .rail-menu .formula-format-stepper-value {
+        color: color-mix(in oklab, var(--chrome-ink) 92%, white 8%);
     }
 }

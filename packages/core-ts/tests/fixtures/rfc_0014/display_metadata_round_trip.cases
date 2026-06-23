@@ -3,13 +3,13 @@
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 12.3 | = B2 {:,.2f : >, red } |
+| A    || 12.3 | = B2 {:,.2f} {:: >, red } |
 [/doc]
 [expect]
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 12.3 | 12.3 = B2 {:,.2f:>,red} |
+| A    || 12.3 | 12.3 = B2 {:,.2f} {::>,red} |
 [/expect]
 evaluate: true
 target_row: A
@@ -25,14 +25,14 @@ expect_format_grouping: true
 === column_inline_metadata_spaces_canonicalized
 [doc]
 # Sheet
-| @display |      || {:,.1f : > } | {:d : >} |        |
+| @display |      || {:,.1f} {::>} | {:d} {::>} |        |
 |          | Item || Price         | Qty      | Total  |
 | -------- | ---- || -----         | ---      | -----  |
 |          | A    || 1234.5        | 2        | = B2 * C2 |
 [/doc]
 [expect]
 # Sheet
-| @display |      || {:,.1f:>} | {:d:>} |       |
+| @display |      || {:,.1f} {::>} | {:d} {::>} |       |
 |          | Item || Price     | Qty    | Total |
 | -------- | ---- || --------- | ------ | ----- |
 |          | A    || 1234.5    | 2      | 2469 = B2 * C2 |
@@ -53,7 +53,7 @@ expect_format_grouping: true
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 1 | = B2 {: : bold , blue } |
+| A    || 1 | = B2 {::bold,blue} |
 [/doc]
 [expect]
 # Sheet
@@ -129,13 +129,13 @@ expect_has_errors: false
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 12.345 | = B2 {:,.2f : >} |
+| A    || 12.345 | = B2 {:,.2f} {:: >} |
 [/doc]
 [expect]
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 12.345 | = B2 {:,.2f:>} |
+| A    || 12.345 | = B2 {:,.2f} {::>} |
 [/expect]
 evaluate: false
 target_row: A
@@ -179,13 +179,13 @@ expect_has_errors: true
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 1 | = B2 {:,.2f:>,^} |
+| A    || 1 | = B2 {:,.2f} {::>,^} |
 [/doc]
 [expect]
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 1 | 1 = B2 {:,.2f:>,^} |
+| A    || 1 | 1 = B2 {:,.2f} {::>,^} |
 [/expect]
 evaluate: true
 target_row: A
@@ -254,13 +254,13 @@ expect_has_errors: false
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 2 | = B2 {:,.1f:color=blue,weight=normal,align=right} |
+| A    || 2 | = B2 {:,.1f} {::color=blue,weight=normal,align=right} |
 [/doc]
 [expect]
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 2 | 2 = B2 {:,.1f:>,normal,blue} |
+| A    || 2 | 2 = B2 {:,.1f} {::>,normal,blue} |
 [/expect]
 evaluate: true
 target_row: A

@@ -1,22 +1,13 @@
-import { parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
+import { deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
-const SECTION_RE = /^(\[+)([^\[\]]+)(\]+)$/;
 
 export interface RowIR {
   rowIndex: number;
   cells: string[];
   label: string;
-  kind: "row" | "section";
   depth: number;
-  sectionName: string | null;
-  parentSections: string[];
-}
-
-export interface SectionIR {
-  name: string;
-  depth: number;
-  startRow: number;
+  path: string[];
 }
 
 export interface TableIR {
@@ -24,10 +15,8 @@ export interface TableIR {
   columnCount: number;
   headerRowCount: number;
   headerColumnCount: number;
-  sectionCount: number;
-  maxSectionDepth: number;
+  maxHierarchyDepth: number;
   rows: RowIR[];
-  sections: SectionIR[];
 }
 
 export interface SheetIR {
@@ -59,7 +48,7 @@ export function parseDocumentModel(text: string): DocumentIR {
     const headerColumnCount = headerColumnCountFrom(parsedRows, columnCount);
     const bodyStart = headerRowCount > 0 ? headerRowCount + 1 : 0;
 
-    const { rows, sections, maxDepth } = buildHierarchy(parsedRows, bodyStart);
+    const { rows, maxDepth } = buildHierarchy(parsedRows, bodyStart);
     irSheets.push({
       name: sheet.name,
       table: {
@@ -67,10 +56,8 @@ export function parseDocumentModel(text: string): DocumentIR {
         columnCount,
         headerRowCount,
         headerColumnCount,
-        sectionCount: sections.length,
-        maxSectionDepth: maxDepth,
+        maxHierarchyDepth: maxDepth,
         rows,
-        sections,
       },
       hasMultipleTables: sheet.hasMultipleTables,
     });
@@ -101,72 +88,15 @@ function headerColumnCountFrom(rows: ParsedRow[], columnCount: number): number {
 function buildHierarchy(
   parsedRows: ParsedRow[],
   bodyStart: number,
-): { rows: RowIR[]; sections: SectionIR[]; maxDepth: number } {
-  const rows: RowIR[] = [];
-  const sections: SectionIR[] = [];
-  let stack: SectionIR[] = [];
-  let maxDepth = 0;
-
-  parsedRows.slice(bodyStart).forEach((row, offset) => {
-    const rowIndex = bodyStart + offset + 1;
-    const labelRaw = row.rawCells.length > 0 ? row.rawCells[0] : "";
-    const marker = parseSectionMarker(labelRaw.trim());
-    if (marker) {
-      const [name, depthValue] = marker;
-      let depth = depthValue;
-      while (stack.length > depth) {
-        stack = stack.slice(0, -1);
-      }
-      if (stack.length < depth) {
-        depth = stack.length;
-      }
-      const parentSections = stack.slice(0, depth).map((s) => s.name);
-      const section: SectionIR = { name, depth, startRow: rowIndex };
-      sections.push(section);
-      stack = stack.slice(0, depth);
-      stack.push(section);
-      maxDepth = Math.max(maxDepth, depth);
-      rows.push({
-        rowIndex,
-        cells: row.cells,
-        label: labelRaw.trim(),
-        kind: "section",
-        depth,
-        sectionName: name,
-        parentSections,
-      });
-      return;
-    }
-
-    let indent = indentDepth(labelRaw);
-    if (indent > stack.length) indent = stack.length;
-    while (stack.length > indent) {
-      stack = stack.slice(0, -1);
-    }
-    maxDepth = Math.max(maxDepth, stack.length);
-    rows.push({
-      rowIndex,
-      cells: row.cells,
-      label: labelRaw.trim(),
-      kind: "row",
-      depth: indent,
-      sectionName: null,
-      parentSections: stack.map((s) => s.name),
-    });
-  });
-
-  return { rows, sections, maxDepth };
-}
-
-function parseSectionMarker(label: string): [string, number] | null {
-  const match = SECTION_RE.exec(label);
-  if (!match) return null;
-  const [opens, name, closes] = match.slice(1);
-  if (opens.length !== closes.length) return null;
-  return [name.trim(), opens.length - 1];
-}
-
-function indentDepth(labelRaw: string): number {
-  const leading = labelRaw.length - labelRaw.trimStart().length;
-  return Math.floor(leading / 2);
+): { rows: RowIR[]; maxDepth: number } {
+  const derivedRows = deriveHierarchyRows(parsedRows, bodyStart);
+  const rows: RowIR[] = derivedRows.map((derived, offset) => ({
+    rowIndex: bodyStart + offset + 1,
+    cells: parsedRows[bodyStart + offset]?.cells ?? [],
+    label: derived.content,
+    depth: derived.depth,
+    path: [...derived.path],
+  }));
+  const maxDepth = rows.reduce((acc, row) => Math.max(acc, row.depth), 0);
+  return { rows, maxDepth };
 }

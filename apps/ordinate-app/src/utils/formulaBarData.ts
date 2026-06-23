@@ -2,6 +2,7 @@ import { getCellTextView, type CellTextViewSource, type PresentedCell, type Runt
 
 import type { FormulaBarData, SelectedCell } from "../types/ui";
 import { BLANK_RUNTIME_VALUE, formatLocalView, styleLocalView } from "./appHelpers";
+import { formatLocalViewFromSpec } from "./formatDisplay";
 import { leafLabel, runtimeKindLabel, runtimeValueToText } from "./sheetView";
 
 type RuntimeSheet = {
@@ -13,11 +14,14 @@ type StateCell = CellTextViewSource;
 
 type StateSheet = {
   headerRowCount?: number;
+  bodyStart?: number;
   cells: StateCell[][];
 };
 
 type PresentationSheet = {
   headerDisplayRows?: string[][];
+  columnDefaults?: Array<Pick<PresentedCell, "formatLayer">>;
+  rowDefaults?: Array<Pick<PresentedCell, "formatLayer">>;
   cells?: PresentedCell[][];
 };
 
@@ -30,7 +34,6 @@ type BuildFormulaBarDataParams = {
   sheetColCount: number;
   headerColCount: number;
   headerSemanticLabels: string[];
-  absoluteRowPathLookup: Map<number, string>;
 };
 
 function resolveCellTextView(cell: StateCell | undefined, fallbackCellText: string, mode: "input" | "body") {
@@ -45,6 +48,34 @@ function resolveCellTextView(cell: StateCell | undefined, fallbackCellText: stri
   };
 }
 
+function resolveFormatSource(
+  presentedCell: PresentedCell | undefined,
+  currentSheetPresentation: PresentationSheet | null,
+  rowIndex: number,
+  colIndex: number,
+): "cell" | "row" | "column" | "default" {
+  if (presentedCell?.formatLayer.local) return "cell";
+  const rowDefault = currentSheetPresentation?.rowDefaults?.[rowIndex];
+  if (rowDefault?.formatLayer.effective) return "row";
+  const columnDefault = currentSheetPresentation?.columnDefaults?.[colIndex];
+  if (columnDefault?.formatLayer.effective) return "column";
+  return "default";
+}
+
+function formatViewFields(presentedCell: PresentedCell | undefined, runtimeValue: RuntimeValue | null) {
+  const local = formatLocalViewFromSpec(presentedCell?.formatLayer.local, runtimeValue);
+  const inherited = formatLocalViewFromSpec(presentedCell?.formatLayer.inherited, runtimeValue);
+  const effective = formatLocalViewFromSpec(presentedCell?.formatLayer.effective, runtimeValue);
+  return {
+    formatLocalKey: local.formatLocalKey,
+    formatLocalOptions: local.formatLocalOptions,
+    formatInheritedKey: inherited.formatLocalKey,
+    formatInheritedOptions: inherited.formatLocalOptions,
+    formatEffectiveKey: effective.formatLocalKey,
+    formatEffectiveOptions: effective.formatLocalOptions,
+  };
+}
+
 export function buildFormulaBarData({
   currentSheet,
   currentSheetState,
@@ -54,7 +85,6 @@ export function buildFormulaBarData({
   sheetColCount,
   headerColCount,
   headerSemanticLabels,
-  absoluteRowPathLookup,
 }: BuildFormulaBarDataParams): FormulaBarData | null {
   if (!currentSheet || !currentSheetState || !selectedCell || isActiveSheetBlocked) return null;
 
@@ -77,19 +107,19 @@ export function buildFormulaBarData({
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
       secondaryAddress: `${semanticColLabel} / Header Row ${rowNumber}`,
       chip: "Header Row",
-      displayText: displayText.length > 0 ? displayText : "(blank)",
+      displayText,
       cellText: textView.cellText,
       inputText: textView.inputText,
       ...formatLocalView(null),
+      formatPreviewContext: { value: null, scope: "sample" },
       styleLocal: styleLocalView(null),
     };
   }
 
-  const rowPath = selectedCell.rowPath ?? absoluteRowPathLookup.get(rowNumber);
-  if (!rowPath) return null;
-
-  const rowRel = currentSheet.rowPaths.indexOf(rowPath);
-  if (rowRel < 0) return null;
+  const headerRowCount = currentSheetState.headerRowCount ?? 0;
+  const rowRel = rowNumber - headerRowCount - 1;
+  if (rowRel < 0 || rowRel >= currentSheet.rowPaths.length) return null;
+  const rowPath = currentSheet.rowPaths[rowRel] ?? "";
 
   const rowLeaf = leafLabel(rowPath);
   const presentedCell = currentSheetPresentation?.cells?.[rowRel]?.[colIndex];
@@ -102,10 +132,11 @@ export function buildFormulaBarData({
       primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
       secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
       chip: colIndex === 0 ? "Label" : "Header Col",
-      displayText: displayText.length > 0 ? displayText : "(blank)",
+      displayText,
       cellText: textView.cellText,
       inputText: textView.inputText,
       ...formatLocalView(null),
+      formatPreviewContext: { value: null, scope: "sample" },
       styleLocal: styleLocalView(null),
     };
   }
@@ -123,9 +154,11 @@ export function buildFormulaBarData({
     displayText: presentedCell?.displayText ?? (runtimeValue ? runtimeValueToText(runtimeValue) : ""),
     cellText: textView.cellText,
     inputText: textView.inputText,
-    ...formatLocalView(presentedCell?.formatLayer.local),
+    ...formatViewFields(presentedCell, runtimeValue ?? null),
+    formatPreviewContext: { value: runtimeValue ?? null, scope: runtimeValue ? "cell" : "sample" },
     styleLocal: styleLocalView(presentedCell?.styleLayer.local),
     displaySource: presentedCell?.source,
+    formatSource: resolveFormatSource(presentedCell, currentSheetPresentation, absoluteRowIndex, colIndex),
     displayErrors: presentedCell?.errors ?? [],
   };
 }

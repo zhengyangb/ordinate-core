@@ -53,19 +53,19 @@ evaluate: true
 # Sheet
 | Item        || 2024 | 2025 | Total |
 | ----        || ---- | ---- | ----- |
-| [Revenue]   ||      |      |       |
-|   Product A  || 2    | 3    | = sum(@[Revenue."Product A",2024:2025]) |
-| [Cost]      ||      |      |       |
-|   Materials  || 1    | 1    | = sum(@[Cost.Materials,2024:2025]) |
+| Revenue   ||      |      |       |
+| * Product A            || 2    | 3    | = sum(@[Revenue."Product A",2024:2025]) |
+| Cost      ||      |      |       |
+| * Materials            || 1    | 1    | = sum(@[Cost.Materials,2024:2025]) |
 [/doc]
 [expect]
 # Sheet
 | Item        || 2024 | 2025 | Total |
 | ----        || ---- | ---- | ----- |
-| [Revenue]   ||      |      |       |
-|   Product A  || 2    | 3    | = sum(@[Revenue."Product A",2024:2025]) |
-| [Cost]      ||      |      |       |
-|   Materials  || 1    | 1    | = sum(@[Cost.Materials,2024:2025]) |
+| Revenue   ||      |      |       |
+| * Product A            || 2    | 3    | = sum(@[Revenue."Product A",2024:2025]) |
+| Cost      ||      |      |       |
+| * Materials            || 1    | 1    | = sum(@[Cost.Materials,2024:2025]) |
 [/expect]
 
 === multi_level_header_divider_once
@@ -185,14 +185,14 @@ evaluate: true
 === display_control_frame_round_trip_with_header
 [doc]
 # Sheet
-| @display |      || {:,.1f:>} | {::>,blue} |
+| @display |      || {:,.1f} {::>} | {::>,blue} |
 |          | Item || Val       | Out        |
 | -------- | ---- || ---       | ---        |
 |          | A    || 12.3      | = B2       |
 [/doc]
 [expect]
 # Sheet
-| @display |      || {:,.1f:>} | {::>,blue} |
+| @display |      || {:,.1f} {::>} | {::>,blue} |
 |          | Item || Val       | Out        |
 | -------- | ---- || --------- | ---------- |
 |          | A    || 12.3      | 12.3 = B2  |

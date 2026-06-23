@@ -327,16 +327,16 @@ This RFC does not define the implementation algorithm for cycle detection, but i
 
 | Line Item                || 2024 | 2025 | Actual |
 | ------------------------ || ---- | ---- | ------ |
-| [Revenue]                ||      |      |        |
-|   [[Product Revenue]]    ||      |      |        |
-|     Phone Revenue        || 400  | 450  | 445    |
-|     Computer Revenue     || 500  | 560  | 558    |
-|     Headphones Revenue   || 300  | 390  | 392    |
-|   Service Revenue        || 200  | 240  | 241    |
-| [Cost of Sales]          ||      |      |        |
-|   Materials              || 400  | 460  | 455    |
-|   Fulfillment            || 80   | 95   | 96     |
-|   Depreciation           || 20   | 25   | 24     |
+| Revenue                ||      |      |        |
+| * Product Revenue      ||      |      |        |
+| ** Phone Revenue         || 400  | 450  | 445    |
+| ** Computer Revenue      || 500  | 560  | 558    |
+| ** Headphones Revenue    || 300  | 390  | 392    |
+| * Service Revenue        || 200  | 240  | 241    |
+| Cost of Sales          ||      |      |        |
+| * Materials              || 400  | 460  | 455    |
+| * Fulfillment            || 80   | 95   | 96     |
+| * Depreciation           || 20   | 25   | 24     |
 | Operating Income         || 500  | 620  | 619    |
 ```
 

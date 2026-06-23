@@ -1,6 +1,7 @@
 import { DocumentState } from "./incremental";
 import { stripCellDisplayMetadata } from "./runtime/parse";
-import { type FormatSpec, type RuntimeValue, type StyleSpec } from "./runtime/types";
+import { type Diagnostic, type FormatSpec, type NumericFormatSpec, type RuntimeValue, type StyleSpec } from "./runtime/types";
+import { formatTemporalValue } from "./runtime/temporalFormat";
 
 export interface DisplayLayer<T> {
   local: T | null;
@@ -12,7 +13,14 @@ export interface ColumnDisplayDefault {
   formatLayer: DisplayLayer<FormatSpec>;
   styleLayer: DisplayLayer<StyleSpec>;
   valid: boolean;
-  errors: string[];
+  errors: Diagnostic[];
+}
+
+export interface RowDisplayDefault {
+  formatLayer: DisplayLayer<FormatSpec>;
+  styleLayer: DisplayLayer<StyleSpec>;
+  valid: boolean;
+  errors: Diagnostic[];
 }
 
 export interface PresentedCell {
@@ -21,8 +29,8 @@ export interface PresentedCell {
   displayText: string;
   formatLayer: DisplayLayer<FormatSpec>;
   styleLayer: DisplayLayer<StyleSpec>;
-  source: "cell" | "column" | "default";
-  errors: string[];
+  source: "cell" | "row" | "column" | "default";
+  errors: Diagnostic[];
 }
 
 export interface SheetPresentation {
@@ -30,6 +38,7 @@ export interface SheetPresentation {
   bodyStart: number;
   headerDisplayRows: string[][];
   columnDefaults: ColumnDisplayDefault[];
+  rowDefaults: RowDisplayDefault[];
   cells: PresentedCell[][];
 }
 
@@ -41,7 +50,7 @@ export function formatPresentedCell(cell: {
   value: RuntimeValue | null;
   formatLayer: { effective: FormatSpec | null };
 }): string {
-  return formatRuntimeValue(cell.value, cell.formatLayer.effective);
+  return formatRuntimeValue(cell.value, cell.formatLayer.effective).displayText;
 }
 
 export function resolvePresentationFromText(text: string): PresentationResult {
@@ -55,6 +64,7 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
 
   state.sheets.forEach((sheet, sIdx) => {
     const defaults = computeColumnDefaults(sheet);
+    const rowDefaults = computeRowDefaults(sheet);
     const evalSheet = sIdx < evaluation.sheets.length ? evaluation.sheets[sIdx] : null;
     const headerDisplayRows = computeHeaderDisplayRows(sheet);
     const cells: PresentedCell[][] = [];
@@ -77,41 +87,62 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
               valid: true,
               errors: [],
             };
+        const rowDefault = rAbs < rowDefaults.length
+          ? rowDefaults[rAbs]
+          : {
+              formatLayer: { local: null, inherited: colDefault.formatLayer.effective, effective: colDefault.formatLayer.effective },
+              styleLayer: { local: null, inherited: colDefault.styleLayer.effective, effective: colDefault.styleLayer.effective },
+              valid: true,
+              errors: [],
+            };
+        // Display defaults apply to data cells only; header/label columns keep their semantic text.
         // Format is all-or-nothing: local override replaces inherited format entirely.
+        const inheritedFormat = isHeaderColumn ? null : rowDefault.formatLayer.effective ?? colDefault.formatLayer.effective;
         const formatLayer: DisplayLayer<FormatSpec> = {
           local: cellFormatLocal,
-          inherited: colDefault.formatLayer.effective,
-          effective: cellFormatLocal ?? colDefault.formatLayer.effective,
+          inherited: inheritedFormat,
+          effective: cellFormatLocal ?? inheritedFormat,
         };
         // Style is axis-level cascading: align/weight/color resolve independently.
+        const inheritedStyle = isHeaderColumn ? null : resolveStyleSpec(rowDefault.styleLayer.effective, colDefault.styleLayer.effective);
         const styleLayer: DisplayLayer<StyleSpec> = {
           local: cellStyleLocal,
-          inherited: colDefault.styleLayer.effective,
-          effective: resolveStyleSpec(cellStyleLocal, colDefault.styleLayer.effective),
+          inherited: inheritedStyle,
+          effective: resolveStyleSpec(cellStyleLocal, inheritedStyle),
         };
         const hasCellStyleOverride = hasAnyStyleAxis(cellStyleLocal);
         const hasColumnStyleDefault = hasAnyStyleAxis(colDefault.styleLayer.effective);
+        const hasRowStyleDefault = hasAnyStyleAxis(rowDefault.styleLayer.effective);
         const hasCellOverride = !isHeaderColumn && (cellFormatLocal !== null || hasCellStyleOverride);
+        const hasRowDefault = rowDefault.formatLayer.effective !== null || hasRowStyleDefault;
         const hasColumnDefault = colDefault.formatLayer.effective !== null || hasColumnStyleDefault;
-        const source: "cell" | "column" | "default" = isHeaderColumn
+        const source: "cell" | "row" | "column" | "default" = isHeaderColumn
           ? "default"
           : hasCellOverride
             ? "cell"
-            : hasColumnDefault
-              ? "column"
-              : "default";
-        const errors: string[] = [];
+            : hasRowDefault
+              ? "row"
+              : hasColumnDefault
+                ? "column"
+                : "default";
+        const errors: Diagnostic[] = [];
         if (!isHeaderColumn && parsedDisplay && !parsedDisplay.valid) {
-          errors.push(parsedDisplay.issue.code);
+          errors.push(parsedDisplay.issue);
+        } else if (!isHeaderColumn && rowDefault.valid === false && rowDefault.errors.length > 0) {
+          errors.push(...rowDefault.errors);
         } else if (!isHeaderColumn && colDefault.valid === false && colDefault.errors.length > 0) {
           errors.push(...colDefault.errors);
         }
         const value = c < evalRow.length ? evalRow[c] : null;
+        const formatted = formatRuntimeValue(value, formatLayer.effective);
+        if (formatted.issue) {
+          errors.push(formatted.issue);
+        }
 
         rowCells.push({
           rowIndex: rAbs,
           colIndex: c,
-          displayText: formatRuntimeValue(value, formatLayer.effective),
+          displayText: formatted.displayText,
           formatLayer,
           styleLayer,
           source,
@@ -126,6 +157,7 @@ export function resolveDocumentPresentation(state: DocumentState): PresentationR
       bodyStart: sheet.bodyStart,
       headerDisplayRows,
       columnDefaults: defaults,
+      rowDefaults,
       cells,
     });
   });
@@ -185,16 +217,29 @@ function computeHeaderDisplayRows(sheet: DocumentState["sheets"][number]): strin
         rowLabels.push(label);
         continue;
       }
-      if (rowIndex === depth - 1) {
-        rowLabels.push(sheet.colLabels[colIndex] ?? `C${colIndex + 1}`);
-      } else {
-        rowLabels.push("");
-      }
+      rowLabels.push("");
     }
     matrix.push(rowLabels);
   }
 
   return matrix;
+}
+
+function emptyDisplayDefault(inheritedFormat: FormatSpec | null = null, inheritedStyle: StyleSpec | null = null): RowDisplayDefault {
+  return {
+    formatLayer: {
+      local: null,
+      inherited: inheritedFormat,
+      effective: inheritedFormat,
+    },
+    styleLayer: {
+      local: null,
+      inherited: inheritedStyle,
+      effective: inheritedStyle,
+    },
+    valid: true,
+    errors: [],
+  };
 }
 
 function computeColumnDefaults(sheet: DocumentState["sheets"][number]): ColumnDisplayDefault[] {
@@ -231,22 +276,63 @@ function computeColumnDefaults(sheet: DocumentState["sheets"][number]): ColumnDi
         effective: parsedDisplay.valid ? parsedDisplay.style : null,
       },
       valid: parsedDisplay.valid,
-      errors: parsedDisplay.valid ? [] : [parsedDisplay.issue.code],
+      errors: parsedDisplay.valid ? [] : [parsedDisplay.issue],
     };
   }
   return defaults;
 }
 
-function formatRuntimeValue(value: RuntimeValue | null, format: FormatSpec | null): string {
+function computeRowDefaults(sheet: DocumentState["sheets"][number]): RowDisplayDefault[] {
+  const defaults: RowDisplayDefault[] = Array.from({ length: sheet.rowCount }, () => emptyDisplayDefault());
+  if (sheet.rowCount <= 0) {
+    return defaults;
+  }
+
+  for (let rAbs = sheet.bodyStart; rAbs < sheet.rowCount; rAbs += 1) {
+    const parsedDisplay = rAbs < sheet.rowDisplayMetadata.length ? sheet.rowDisplayMetadata[rAbs] : null;
+    if (!parsedDisplay) continue;
+    defaults[rAbs] = {
+      formatLayer: {
+        local: parsedDisplay.valid ? parsedDisplay.format : null,
+        inherited: null,
+        effective: parsedDisplay.valid ? parsedDisplay.format : null,
+      },
+      styleLayer: {
+        local: parsedDisplay.valid ? parsedDisplay.style : null,
+        inherited: null,
+        effective: parsedDisplay.valid ? parsedDisplay.style : null,
+      },
+      valid: parsedDisplay.valid,
+      errors: parsedDisplay.valid ? [] : [parsedDisplay.issue],
+    };
+  }
+  return defaults;
+}
+
+function formatRuntimeValue(value: RuntimeValue | null, format: FormatSpec | null): { displayText: string; issue: Diagnostic | null } {
   const base = runtimeValueToText(value);
-  if (!format || !value || value.kind !== "number") {
-    return base;
+  if (!format || !value || value.kind === "blank" || value.kind === "null" || value.kind === "error") {
+    return { displayText: base, issue: null };
   }
-  const rawNumber = Number(value.value);
-  if (!Number.isFinite(rawNumber)) {
-    return "#ERROR";
+  if (format.kind === "numeric") {
+    if (value.kind !== "number") {
+      return {
+        displayText: base,
+        issue: diagnostic("format_value_kind_mismatch", { formatKind: "numeric", valueKind: value.kind }),
+      };
+    }
+    const rawNumber = Number(value.value);
+    if (!Number.isFinite(rawNumber)) {
+      return { displayText: "#ERROR", issue: null };
+    }
+    return { displayText: formatNumber(rawNumber, format), issue: null };
   }
-  return formatNumber(rawNumber, format);
+
+  const formatted = formatTemporalValue(value, format);
+  if ("issue" in formatted) {
+    return { displayText: base, issue: formatted.issue };
+  }
+  return { displayText: formatted.text, issue: null };
 }
 
 function runtimeValueToText(value: RuntimeValue | null): string {
@@ -274,7 +360,7 @@ function runtimeValueToText(value: RuntimeValue | null): string {
   }
 }
 
-function formatNumber(value: number, format: FormatSpec): string {
+function formatNumber(value: number, format: NumericFormatSpec): string {
   const isNegative = value < 0 || Object.is(value, -0);
   const abs = Math.abs(value);
 
@@ -313,18 +399,15 @@ function formatNumber(value: number, format: FormatSpec): string {
     signedText = `${signPrefix}${numericText}`;
   }
 
-  if (!format.width || signedText.length >= format.width) {
+  if (format.padWidth === null || format.padWidth <= 0 || signedText.length >= format.padWidth) {
     return signedText;
-  }
-  if (!format.zeroPad) {
-    return signedText.padStart(format.width, " ");
   }
   if (signedText.startsWith("-") || signedText.startsWith("+")) {
     const sign = signedText[0];
-    const body = signedText.slice(1).padStart(format.width - 1, "0");
+    const body = signedText.slice(1).padStart(format.padWidth - 1, "0");
     return `${sign}${body}`;
   }
-  return signedText.padStart(format.width, "0");
+  return signedText.padStart(format.padWidth, "0");
 }
 
 function applyGrouping(text: string): string {
@@ -342,4 +425,8 @@ function serializeNumber(value: number): string {
   }
   const text = Number(value).toPrecision(15);
   return Number(text).toString();
+}
+
+function diagnostic(code: string, context: Record<string, unknown> = {}): Diagnostic {
+  return { code, context };
 }

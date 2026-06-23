@@ -4,9 +4,16 @@ import {
   applyBatchAtomic,
   type CoreCellTarget,
   type CoreEdit,
+  type CoreRegionTarget,
+  type CoreRowDeleteMode,
+  type CoreRowInsertArea,
   DocumentState,
+  previewDeleteColumn,
+  previewDeleteRow,
   resolveDocumentPresentation,
   validateDocument,
+  type CoreDeleteColumnPreview,
+  type CoreDeleteRowPreview,
   type EvaluationResult,
   type FormatSpec,
   type PresentationResult,
@@ -32,9 +39,30 @@ interface EditorState {
   setActiveSheet: (sheetName: string) => void;
   applyCoreEdits: (edits: CoreEdit[], nextActiveSheetHint?: string | null) => void;
   setCellInput: (target: CoreCellTarget, input: string) => void;
+  clearCell: (target: CoreCellTarget) => void;
   renameSheet: (sheet: string, newName: string) => void;
   setCellLocalFormat: (target: CoreCellTarget, format: FormatSpec | null) => void;
+  clearCellLocalFormat: (target: CoreCellTarget) => void;
   setCellLocalStyle: (target: CoreCellTarget, style: StylePatch) => void;
+  clearCellLocalStyle: (target: CoreCellTarget) => void;
+  setColumnDefaultFormat: (sheet: string, colId: number, format: FormatSpec | null) => void;
+  clearColumnDefaultFormat: (sheet: string, colId: number) => void;
+  setColumnDefaultStyle: (sheet: string, colId: number, style: StylePatch) => void;
+  clearColumnDefaultStyle: (sheet: string, colId: number) => void;
+  setRowDefaultFormat: (sheet: string, rowId: number, format: FormatSpec | null) => void;
+  clearRowDefaultFormat: (sheet: string, rowId: number) => void;
+  setRowDefaultStyle: (sheet: string, rowId: number, style: StylePatch) => void;
+  clearRowDefaultStyle: (sheet: string, rowId: number) => void;
+  setRegion: (target: CoreRegionTarget, values: string[][]) => void;
+  clearRegion: (target: CoreRegionTarget) => void;
+  convertRowsToHeader: (sheet: string, rowIds: number[]) => void;
+  convertRowsToBody: (sheet: string, rowIds: number[], depth: number) => void;
+  previewDeleteRow: (sheet: string, rowId: number, mode?: CoreRowDeleteMode) => CoreDeleteRowPreview;
+  previewDeleteColumn: (sheet: string, colIndex: number) => CoreDeleteColumnPreview;
+  insertRow: (sheet: string, area: CoreRowInsertArea, rowGapIndex: number, depth: number) => void;
+  deleteRow: (sheet: string, rowId: number, mode?: CoreRowDeleteMode) => void;
+  insertColumn: (sheet: string, colIndex: number) => void;
+  deleteColumn: (sheet: string, colIndex: number) => void;
   exitSourceMode: () => void;
   enterSourceMode: () => void;
 }
@@ -43,18 +71,18 @@ const sampleDocument = `# Management Report
 |             || 2024 | 2024 | 2025 | 2025 |
 | Line Item   || H1   | H2   | H1   | H2   |
 | ----------- || ---- | ---- | ---- | ---- |
-| [Revenue]   ||      |      |      |      |
-|   Product A || 120  | 140  | 160  | 180  |
-|   Product B || 80   | 95   | 105  | 120  |
+| Revenue   ||      |      |      |      |
+| * Product A || 120  | 140  | 160  | 180  |
+| * Product B || 80   | 95   | 105  | 120  |
 | Revenue Total || = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] |
-| [Cost of Sales] ||      |      |      |      |
-|   Materials  || 60   | 70   | 82   | 90   |
-|   Fulfillment|| 20   | 25   | 28   | 35   |
+| Cost of Sales ||      |      |      |      |
+| * Materials || 60   | 70   | 82   | 90   |
+| * Fulfillment || 20   | 25   | 28   | 35   |
 | Cost of Sales Total || = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] | = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] | = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] | = @["Cost of Sales".Materials,_] + @["Cost of Sales".Fulfillment,_] |
 | Gross Profit || = @["Revenue Total",_] - @["Cost of Sales Total",_] | = @["Revenue Total",_] - @["Cost of Sales Total",_] | = @["Revenue Total",_] - @["Cost of Sales Total",_] | = @["Revenue Total",_] - @["Cost of Sales Total",_] |
-| [Operating Expense] ||      |      |      |      |
-|   Marketing || 15   | 16   | 20   | 22   |
-|   RND       || 18   | 21   | 24   | 26   |
+| Operating Expense ||      |      |      |      |
+| * Marketing || 15   | 16   | 20   | 22   |
+| * RND || 18   | 21   | 24   | 26   |
 | Opex Total || = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] | = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] | = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] | = @["Operating Expense".Marketing,_] + @["Operating Expense".RND,_] |
 | Operating Profit || = @["Gross Profit",_] - @["Opex Total",_] | = @["Gross Profit",_] - @["Opex Total",_] | = @["Gross Profit",_] - @["Opex Total",_] | = @["Gross Profit",_] - @["Opex Total",_] |
 | Margin Ratio || = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] | = @["Operating Profit",_] / @["Revenue Total",_] |
@@ -77,15 +105,15 @@ const sampleDocument = `# Management Report
 # Regional Breakdown
 | Line Item          || Jan | Feb |
 | ------------------ || --- | --- |
-| [North America]    ||     |     |
-|   US               || 100 | 110 |
-|   Canada           || 40  | 45  |
-| [EMEA]             ||     |     |
-|   Germany          || 60  | 70  |
-|   France           || 35  | 38  |
-| [APAC]             ||     |     |
-|   Japan            || 44  | 50  |
-|   Australia        || 22  | 26  |
+| North America    ||     |     |
+| * US               || 100 | 110 |
+| * Canada           || 40  | 45  |
+| EMEA             ||     |     |
+| * Germany          || 60  | 70  |
+| * France           || 35  | 38  |
+| APAC             ||     |     |
+| * Japan            || 44  | 50  |
+| * Australia        || 22  | 26  |
 | Grand Total        || 301 | 339 |
 
 # Quarterly Cube
@@ -93,27 +121,31 @@ const sampleDocument = `# Management Report
 | Line Item   || H1   | H1   | H2   | H2   | H1   | H1   | H2   | H2   |
 |             || Q1   | Q2   | Q3   | Q4   | Q1   | Q2   | Q3   | Q4   |
 | ----------- || ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
-| [Revenue]   ||      |      |      |      |      |      |      |      |
-|   Product A || 58   | 62   | 66   | 71   | 73   | 76   | 79   | 84   |
-|   Product B || 41   | 44   | 46   | 49   | 52   | 55   | 57   | 61   |
+| Revenue   ||      |      |      |      |      |      |      |      |
+| * Product A || 58   | 62   | 66   | 71   | 73   | 76   | 79   | 84   |
+| * Product B || 41   | 44   | 46   | 49   | 52   | 55   | 57   | 61   |
 | Revenue Total || = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] | = @[Revenue."Product A",_] + @[Revenue."Product B",_] |
 | Gross Margin % || = @["Revenue Total",_] / 120 | = @["Revenue Total",_] / 130 | = @["Revenue Total",_] / 140 | = @["Revenue Total",_] / 150 | = @["Revenue Total",_] / 160 | = @["Revenue Total",_] / 170 | = @["Revenue Total",_] / 180 | = @["Revenue Total",_] / 190 |
 
 # A1 Style Demo
-| @display     |      || {:,.1f:<,blue} | {:(),.2f:<} | {:.1%:<} | {::<} | {:,.2f:<,blue,bold} |
+| @display     |      || {:,.1f} {::<,blue} | {:(),.2f} {::<} | {:.1%} {::<} | {::<} | {:,.2f} {::<,blue,bold} |
 |              | Item || Revenue         | Cost        | Margin   | Notes | Calc                |
 | -------- | ---- || -------         | ----        | ------   | ----- | ----                |
 |              | Product A    || 1234.5 {::red}         | -456.7            | 0.125          | "color override" | = B2 + C2 {::red} |
-|              | Product B    || 999.9 {:.3f:>}         | -88.1             | 0.314          | "align + format override" | = B3 + C3 {::normal} |
+|              | Product B    || 999.9 {:.3f} {::>}         | -88.1             | 0.314          | "align + format override" | = B3 + C3 {::normal} |
 |              | Temporal     || 2026-03-24T14:30:00Z {::blue} | PT1H30M {::bold} | 0 | "time literals" | = B2 |
 |              | Column Sum   || 0                 | 0                  | 0               | ""           | = sum(B:B) |
 |              | Row Sum      || 0                 | 0                  | 0               | ""           | = sum(2:2) |
 |              | Mixed        || 0                 | 0                  | 0               | "a1 + ordinate" | = B2 + @[#2,#2] |
-|              | Invalid Meta || 12.5 {:bad fmt}   | 13 {:,.2f:purple}  | 0               | "non-blocking" | = B8 + C8 |
+|              | Invalid Meta || 12.5 {:bad fmt}   | 13 {:,.2f} {::purple}  | 0               | "non-blocking" | = B8 + C8 |
 |              | Div Zero     || 10                | 0                  | 0               | "runtime error" | = B10 / C10 |
 |              | Type Clash   || 4                 | 2                  | 0               | "text operand" | = B11 + E11 |
 |              | Cycle Ref    || 0                 | 0                  | 0               | "self ref" | = @["Cycle Ref",Calc] |
 |              | Parse Crash  || 0                 | 0                  | 0               | "formula parse" | = sum(B2 |
+|              | Text Slice   || 0                 | 0                  | 0               | "text slicing" | = "abcdef"[1:4] |
+|              | Ref Index    || 0                 | 0                  | 0               | "reference postfix index" | = @["Product A",Revenue][0] |
+|              | View Slice   || 0                 | 0                  | 0               | "reference postfix slice" | = sum(@[#2:#3,Revenue][0:2]) |
+|              | Matrix Slice || 0                 | 0                  | 0               | "matrix postfix slice" | = sum(@[#2:#3,Revenue:Cost][:,0]) |
 `;
 
 function toErrorMessage(error: unknown): string {
@@ -239,6 +271,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setCellInput: (target, input) => {
     get().applyCoreEdits([{ op: "set_cell_input", target, input }]);
   },
+  clearCell: (target) => {
+    get().applyCoreEdits([{ op: "clear_cell", target }]);
+  },
   renameSheet: (sheet, newName) => {
     const { activeSheet } = get();
     const nextActiveSheetHint = activeSheet === sheet ? newName.trim() : activeSheet;
@@ -247,8 +282,76 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setCellLocalFormat: (target, format) => {
     get().applyCoreEdits([{ op: "set_cell_local_format", target, format }]);
   },
+  clearCellLocalFormat: (target) => {
+    get().applyCoreEdits([{ op: "clear_cell_local_format", target }]);
+  },
   setCellLocalStyle: (target, style) => {
     get().applyCoreEdits([{ op: "set_cell_local_style", target, style }]);
+  },
+  clearCellLocalStyle: (target) => {
+    get().applyCoreEdits([{ op: "clear_cell_local_style", target }]);
+  },
+  setColumnDefaultFormat: (sheet, colId, format) => {
+    get().applyCoreEdits([{ op: "set_column_default_format", sheet, colId, format }]);
+  },
+  clearColumnDefaultFormat: (sheet, colId) => {
+    get().applyCoreEdits([{ op: "clear_column_default_format", sheet, colId }]);
+  },
+  setColumnDefaultStyle: (sheet, colId, style) => {
+    get().applyCoreEdits([{ op: "set_column_default_style", sheet, colId, style }]);
+  },
+  clearColumnDefaultStyle: (sheet, colId) => {
+    get().applyCoreEdits([{ op: "clear_column_default_style", sheet, colId }]);
+  },
+  setRowDefaultFormat: (sheet, rowId, format) => {
+    get().applyCoreEdits([{ op: "set_row_default_format", sheet, rowId, format }]);
+  },
+  clearRowDefaultFormat: (sheet, rowId) => {
+    get().applyCoreEdits([{ op: "clear_row_default_format", sheet, rowId }]);
+  },
+  setRowDefaultStyle: (sheet, rowId, style) => {
+    get().applyCoreEdits([{ op: "set_row_default_style", sheet, rowId, style }]);
+  },
+  clearRowDefaultStyle: (sheet, rowId) => {
+    get().applyCoreEdits([{ op: "clear_row_default_style", sheet, rowId }]);
+  },
+  setRegion: (target, values) => {
+    get().applyCoreEdits([{ op: "set_region", target, values }]);
+  },
+  clearRegion: (target) => {
+    get().applyCoreEdits([{ op: "clear_region", target }]);
+  },
+  convertRowsToHeader: (sheet, rowIds) => {
+    get().applyCoreEdits([{ op: "convert_rows_to_header", sheet, rowIds }]);
+  },
+  convertRowsToBody: (sheet, rowIds, depth) => {
+    get().applyCoreEdits([{ op: "convert_rows_to_body", sheet, rowIds, depth }]);
+  },
+  previewDeleteRow: (sheet, rowId, mode) => {
+    const { docState } = get();
+    if (!docState) {
+      throw new Error("cannot preview row deletion without an active document state");
+    }
+    return previewDeleteRow(docState, { op: "delete_row", sheet, rowId, mode });
+  },
+  previewDeleteColumn: (sheet, colIndex) => {
+    const { docState } = get();
+    if (!docState) {
+      throw new Error("cannot preview column deletion without an active document state");
+    }
+    return previewDeleteColumn(docState, { sheet, colIndex });
+  },
+  insertRow: (sheet, area, rowGapIndex, depth) => {
+    get().applyCoreEdits([{ op: "insert_row", sheet, area, rowGapIndex, depth }]);
+  },
+  deleteRow: (sheet, rowId, mode) => {
+    get().applyCoreEdits([{ op: "delete_row", sheet, rowId, mode }]);
+  },
+  insertColumn: (sheet, colIndex) => {
+    get().applyCoreEdits([{ op: "insert_column", sheet, colIndex }]);
+  },
+  deleteColumn: (sheet, colIndex) => {
+    get().applyCoreEdits([{ op: "delete_column", sheet, colIndex }]);
   },
   exitSourceMode: () => {
     try {

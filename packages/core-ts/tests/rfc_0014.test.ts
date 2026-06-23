@@ -155,13 +155,12 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     const quotedDatetime = parseCellInput('"2026-03-24T14:30:00Z"');
     expect(literalOf(quotedDatetime)?.kind).toBe("string");
 
-    const both = parseCellInput("1234.5 {:,.2f:>,red}");
+    const both = parseCellInput("1234.5 {:,.2f} {::>,red}");
     expect(both.localDisplay?.valid).toBe(true);
     if (!both.localDisplay?.valid) throw new Error("expected valid display metadata");
     expect(both.localDisplay.format).toMatchObject({
       sign: "default",
-      zeroPad: false,
-      width: null,
+      padWidth: null,
       grouping: true,
       precision: 2,
       type: "f",
@@ -172,7 +171,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       color: "red",
     });
 
-    const styleOnly = parseCellInput("42 {: :bold}");
+    const styleOnly = parseCellInput("42 {::bold}");
     expect(styleOnly.localDisplay?.valid).toBe(true);
     if (!styleOnly.localDisplay?.valid) throw new Error("expected valid display metadata");
     expect(styleOnly.localDisplay.format).toBeNull();
@@ -201,7 +200,47 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     if (conflict.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
     expect(conflict.localDisplay.issue.code).toBe("invalid_format_spec_trailing_chars");
 
-    const styleConflict = parseCellInput("1 {:,.2f:>,^}");
+    const integerPrecision = parseCellInput("1 {:.2d}");
+    expect(integerPrecision.localDisplay?.valid).toBe(false);
+    if (integerPrecision.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(integerPrecision.localDisplay.issue.code).toBe("invalid_format_combination");
+    expect(integerPrecision.localDisplay.issue.context).toMatchObject({
+      type: "d",
+      field: "precision",
+      reason: "disallowed_for_type",
+    });
+
+    const scientificGrouping = parseCellInput("1 {:,.2e}");
+    expect(scientificGrouping.localDisplay?.valid).toBe(false);
+    if (scientificGrouping.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(scientificGrouping.localDisplay.issue.code).toBe("invalid_format_combination");
+    expect(scientificGrouping.localDisplay.issue.context).toMatchObject({
+      type: "e",
+      field: "grouping",
+      reason: "disallowed_for_type",
+    });
+
+    const legacyCombined = parseCellInput("1 {:,.2f:>,red}");
+    expect(legacyCombined.localDisplay?.valid).toBe(false);
+    if (legacyCombined.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(legacyCombined.localDisplay.issue.code).toBe("invalid_format_spec_trailing_chars");
+
+    const legacyStyleOnly = parseCellInput("1 {: :bold}");
+    expect(legacyStyleOnly.localDisplay?.valid).toBe(false);
+    if (legacyStyleOnly.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(legacyStyleOnly.localDisplay.issue.code).toBe("format_spec_contains_whitespace");
+
+    const duplicateFormat = parseCellInput("1 {:,.2f} {:.1%}");
+    expect(duplicateFormat.localDisplay?.valid).toBe(false);
+    if (duplicateFormat.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(duplicateFormat.localDisplay.issue.code).toBe("duplicate_format_metadata");
+
+    const duplicateStyle = parseCellInput("1 {::>} {::blue}");
+    expect(duplicateStyle.localDisplay?.valid).toBe(false);
+    if (duplicateStyle.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
+    expect(duplicateStyle.localDisplay.issue.code).toBe("duplicate_style_metadata");
+
+    const styleConflict = parseCellInput("1 {::>,^}");
     expect(styleConflict.localDisplay?.valid).toBe(false);
     if (styleConflict.localDisplay?.valid !== false) throw new Error("expected invalid display metadata");
     expect(styleConflict.localDisplay.issue.code).toBe("duplicate_align_style");
@@ -216,9 +255,9 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   });
 
   it("splits editable content from trailing display metadata", () => {
-    expect(splitCellDisplayMetadata("= sum(B2:B9) {:,.2f:>,green}")).toEqual({
+    expect(splitCellDisplayMetadata("= sum(B2:B9) {:,.2f} {::>,green}")).toEqual({
       contentText: "= sum(B2:B9)",
-      displayMetaRaw: "{:,.2f:>,green}",
+      displayMetaRaw: "{:,.2f} {::>,green}",
     });
 
     expect(splitCellDisplayMetadata("  42  ")).toEqual({
@@ -230,7 +269,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("resolves effective presentation with cell > column > default precedence", () => {
     const doc = `
 # Sheet
-| @display |      || {:,.1f:>,bold} | {:d:>,bold} | {:,.2f:>,blue,bold} |
+| @display |      || {:,.1f} {::>,bold} | {:d} {::>,bold} | {:,.2f} {::>,blue,bold} |
 |          | Item || Price          | Qty         | Total                |
 | -------- | ---- || ----           | ---         | -----                |
 |          | A    || 1234.5         | 2           | = B2 * C2            |
@@ -301,7 +340,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 12.5 {:bad fmt} | = B2 + 1 {:,.2f:purple} |
+| A    || 12.5 {:bad fmt} | = B2 + 1 {:,.2f} {::purple} |
 `.trim();
 
     const state = DocumentState.fromText(doc);
@@ -330,7 +369,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: -1234.5 },
         formatLayer: {
-          effective: { sign: "parentheses", zeroPad: false, width: null, grouping: true, precision: 2, type: "f" },
+          effective: { kind: "numeric", sign: "parentheses", padWidth: null, grouping: true, precision: 2, type: "f" },
         },
       }),
     ).toBe("(1,234.50)");
@@ -339,7 +378,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: 0.125 },
         formatLayer: {
-          effective: { sign: "plus", zeroPad: false, width: null, grouping: false, precision: 1, type: "%" },
+          effective: { kind: "numeric", sign: "plus", padWidth: null, grouping: false, precision: 1, type: "%" },
         },
       }),
     ).toBe("+12.5%");
@@ -348,7 +387,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
       formatPresentedCell({
         value: { kind: "number", value: 42 },
         formatLayer: {
-          effective: { sign: "default", zeroPad: true, width: 6, grouping: false, precision: null, type: "d" },
+          effective: { kind: "numeric", sign: "default", padWidth: 6, grouping: false, precision: null, type: "d" },
         },
       }),
     ).toBe("000042");
@@ -359,13 +398,13 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 # Sheet
 | Item || Val | Out |
 | ---- || --- | --- |
-| A    || 12.3 | = B2 {:,.2f:>} |
+| A    || 12.3 | = B2 {:,.2f} {::>} |
 `.trim();
 
     const state = DocumentState.fromText(doc);
     state.evaluate();
     const output = serializeDocumentState(state);
-    expect(output).toContain('12.3 = B2 {:,.2f:>}');
+    expect(output).toContain('12.3 = B2 {:,.2f} {::>}');
   });
 
   it("applies column defaults from control frame without header rows", () => {
@@ -428,6 +467,78 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
     expect(result.errors.some((e) => e.message.includes("display control cell must contain only display metadata"))).toBe(
       true,
     );
+  });
+
+  it("reports invalid cell and control-frame display metadata through validateDocument", () => {
+    const doc = `
+# Sheet
+| @display | {:bad fmt} | {::purple} |
+| Label    | Value      | Out         |
+| -------  | -----      | ---         |
+| A        | 12.5 {:bad fmt} | = B2 + 1 {::purple} |
+`.trim();
+
+    const result = validateDocument(doc);
+    expect(result.ok).toBe(false);
+
+    expect(
+      result.errors.some(
+        (e) => e.row === 1 && e.col === 2 && e.code === "format_spec_contains_whitespace",
+      ),
+    ).toBe(true);
+    expect(
+      result.errors.some(
+        (e) => e.row === 1 && e.col === 3 && e.code === "unsupported_style_item:purple",
+      ),
+    ).toBe(true);
+    expect(
+      result.errors.some(
+        (e) => e.row === 3 && e.col === 1 && e.code === "format_spec_contains_whitespace",
+      ),
+    ).toBe(true);
+    expect(
+      result.errors.some(
+        (e) => e.row === 3 && e.col === 2 && e.code === "unsupported_style_item:purple",
+      ),
+    ).toBe(true);
+  });
+
+  it("prints human-readable validation detail for invalid format combinations", () => {
+    const doc = `
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:.2d} |
+`.trim();
+
+    const result = validateDocument(doc);
+    expect(result.ok).toBe(false);
+    expect(
+      result.errors.some(
+        (e) =>
+          e.code === "invalid_format_combination"
+          && e.message.includes("precision is not allowed for integer format"),
+      ),
+    ).toBe(true);
+  });
+
+  it("prints human-readable validation detail for invalid scientific grouping", () => {
+    const doc = `
+# Sheet
+| Item || Out |
+| ---- || --- |
+| A    || 1 {:,.2e} |
+`.trim();
+
+    const result = validateDocument(doc);
+    expect(result.ok).toBe(false);
+    expect(
+      result.errors.some(
+        (e) =>
+          e.code === "invalid_format_combination"
+          && e.message.includes("grouping is not allowed for scientific format"),
+      ),
+    ).toBe(true);
   });
 
   it("fixture cases: read + serialize canonicalization", () => {
