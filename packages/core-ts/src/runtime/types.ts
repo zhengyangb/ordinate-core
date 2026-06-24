@@ -126,6 +126,11 @@ export interface IndexExpr {
   axes: IndexAxisExpr[];
 }
 
+export interface ArrayExpr {
+  rows: ExprNode[][];
+  depth: 1 | 2;
+}
+
 export interface ExprNode {
   kind: string;
   value?: unknown;

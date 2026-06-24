@@ -52,6 +52,27 @@ export type PreservedSheetBlock =
   | { kind: "table"; lines: string[] }
   | { kind: "unparsed"; lines: string[] };
 
+export interface SheetHistoryCellSnapshot {
+  body: CellBodyState;
+  localDisplay: CellDisplayState;
+}
+
+export interface SheetHistorySnapshot {
+  name: string;
+  headerRowCount: number;
+  headerColCount: number;
+  logicalRows: ParsedRow[];
+  cells: SheetHistoryCellSnapshot[][];
+  rowDisplayMetadata: Array<ParsedDisplayMetadata | null>;
+  columnDisplayMetadata: Array<ParsedDisplayMetadata | null>;
+  rowIds: number[];
+  colIds: number[];
+  nextRowId: number;
+  nextColId: number;
+  sourceBlocks: PreservedSheetBlock[];
+  primaryTableBlockIndex: number | null;
+}
+
 export class SheetState {
   name: string;
   rowCount: number;
@@ -282,6 +303,55 @@ export class SheetState {
       colLabels: this.colLabels,
       values,
     };
+  }
+
+  captureHistorySnapshot(): SheetHistorySnapshot {
+    return cloneHistoryValue({
+      name: this.name,
+      headerRowCount: this.headerRowCount,
+      headerColCount: this.headerColCount,
+      logicalRows: this.logicalRows,
+      cells: this.cells.map((row) =>
+        row.map((cell) => ({
+          body: cell.body,
+          localDisplay: cell.localDisplay,
+        })),
+      ),
+      rowDisplayMetadata: this.rowDisplayMetadata,
+      columnDisplayMetadata: this.columnDisplayMetadata,
+      rowIds: this.rowIds,
+      colIds: this.colIds,
+      nextRowId: this.nextRowId,
+      nextColId: this.nextColId,
+      sourceBlocks: this.sourceBlocks,
+      primaryTableBlockIndex: this.primaryTableBlockIndex,
+    });
+  }
+
+  restoreHistorySnapshot(snapshot: SheetHistorySnapshot): void {
+    const restored = cloneHistoryValue(snapshot);
+    this.name = restored.name;
+    this.headerRowCount = restored.headerRowCount;
+    this.headerColCount = restored.headerColCount;
+    this.bodyStart = this.headerRowCount > 0 ? this.headerRowCount : 0;
+    this.logicalRows = restored.logicalRows;
+    this.cells = restored.cells.map((row) =>
+      row.map((cell) => ({
+        body: cell.body,
+        localDisplay: cell.localDisplay,
+        cachedValue: null,
+        dirty: true,
+      })),
+    );
+    this.rowDisplayMetadata = restored.rowDisplayMetadata;
+    this.columnDisplayMetadata = restored.columnDisplayMetadata;
+    this.rowIds = restored.rowIds;
+    this.colIds = restored.colIds;
+    this.nextRowId = restored.nextRowId;
+    this.nextColId = restored.nextColId;
+    this.sourceBlocks = restored.sourceBlocks;
+    this.primaryTableBlockIndex = restored.primaryTableBlockIndex;
+    this.rebuildMetadata();
   }
 
   // Update a cell by row/column labels.
@@ -534,6 +604,24 @@ export class SheetState {
       if (node.kind === "call") {
         const call = node.value as { args: ExprNode[] };
         call.args.forEach((arg) => walk(arg));
+        return;
+      }
+      if (node.kind === "array") {
+        const array = node.value as { rows: ExprNode[][] };
+        array.rows.forEach((row) => row.forEach((element) => walk(element)));
+        return;
+      }
+      if (node.kind === "index") {
+        const index = node.value as { target: ExprNode; axes: Array<{ kind: string; value?: ExprNode; start?: ExprNode | null; end?: ExprNode | null }> };
+        walk(index.target);
+        index.axes.forEach((axis) => {
+          if (axis.kind === "scalar") {
+            walk(axis.value ?? null);
+          } else {
+            walk(axis.start ?? null);
+            walk(axis.end ?? null);
+          }
+        });
         return;
       }
       if (node.kind === "unary") {
@@ -940,6 +1028,27 @@ export class SheetState {
         }
         return;
       }
+      if (node.kind === "array") {
+        for (const row of (node.value as { rows: ExprNode[][] }).rows) {
+          for (const element of row) {
+            walk(element);
+          }
+        }
+        return;
+      }
+      if (node.kind === "index") {
+        const index = node.value as { target: ExprNode; axes: Array<{ kind: string; value?: ExprNode; start?: ExprNode | null; end?: ExprNode | null }> };
+        walk(index.target);
+        for (const axis of index.axes) {
+          if (axis.kind === "scalar") {
+            walk(axis.value ?? null);
+          } else {
+            walk(axis.start ?? null);
+            walk(axis.end ?? null);
+          }
+        }
+        return;
+      }
       if (node.kind === "unary") {
         walk(node.right ?? null);
         return;
@@ -1136,6 +1245,10 @@ function buildIdIndexMap(ids: number[]): Map<number, number> {
   const map = new Map<number, number>();
   ids.forEach((id, idx) => map.set(id, idx));
   return map;
+}
+
+function cloneHistoryValue<T>(value: T): T {
+  return structuredClone(value);
 }
 
 function normalizeCellTextForParsing(

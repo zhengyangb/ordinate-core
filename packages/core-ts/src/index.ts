@@ -63,10 +63,14 @@ export {
 } from "./row_structure";
 export {
   applyBatchAtomic,
+  applyBatchWithUndo,
+  applyCoreEditMemento,
   previewDeleteColumn,
   previewDeleteRow,
   type ApplyBatchAtomicOptions,
   type ApplyBatchAtomicResult,
+  type ApplyBatchWithUndoResult,
+  type ApplyCoreEditMementoResult,
   type CoreAffectedFormulaCell,
   type CoreCellTarget,
   type CoreCellHandle,
@@ -75,6 +79,8 @@ export {
   type CoreEdit,
   type CoreEditError,
   type CoreEditErrorCategory,
+  type CoreEditHistoryDirection,
+  type CoreEditHistoryMemento,
   type CoreRegionTarget,
 } from "./core_edit";
 export type {

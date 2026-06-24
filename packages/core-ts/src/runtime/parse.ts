@@ -1,5 +1,6 @@
 import {
   type Diagnostic,
+  type ArrayExpr,
   type ExprNode,
   type FormatSpec,
   type FunctionCall,
@@ -144,6 +145,28 @@ function parseExpressionError(expr: ExprNode | null): ErrorRuntimeValue | null {
     }
     return null;
   }
+  if (expr.kind === "array") {
+    const array = expr.value as ArrayExpr;
+    for (const row of array.rows) {
+      for (const element of row) {
+        const err = parseExpressionError(element);
+        if (err) return err;
+      }
+    }
+    return null;
+  }
+  if (expr.kind === "index") {
+    const index = expr.value as { target: ExprNode; axes: IndexAxisExpr[] };
+    const targetErr = parseExpressionError(index.target);
+    if (targetErr) return targetErr;
+    for (const axis of index.axes) {
+      const err = axis.kind === "scalar"
+        ? parseExpressionError(axis.value)
+        : parseExpressionError(axis.start ?? null) ?? parseExpressionError(axis.end ?? null);
+      if (err) return err;
+    }
+    return null;
+  }
   return parseExpressionError(expr.left ?? null) ?? parseExpressionError(expr.right ?? null);
 }
 
@@ -259,6 +282,8 @@ function parseExpression(text: string): ExprNode {
   const parser = new ExprParser(tokenizeExpr(text));
   const node = parser.parseExpression();
   if (!parser.atEnd()) {
+    const existingError = parseExpressionError(node);
+    if (existingError) return node;
     return { kind: "literal", value: makeInternalError("parse_expression_trailing_tokens") };
   }
   return node;
@@ -600,6 +625,9 @@ class ExprParser {
       }
       return node;
     }
+    if (this.match("[")) {
+      return this.parseArrayLiteral();
+    }
     const num = this.match("NUMBER");
     if (num) {
       const val = num[1].includes(".") ? Number.parseFloat(num[1]) : Number.parseInt(num[1], 10);
@@ -640,6 +668,78 @@ class ExprParser {
     return { kind: "literal", value: makeInternalError("parse_expression_unexpected_token", { token: tk[0] }) };
   }
 
+  private parseArrayLiteral(): ExprNode {
+    if (this.match("]")) {
+      return { kind: "array", value: { rows: [[]], depth: 1 } as ArrayExpr };
+    }
+
+    const first = this.parseArrayElement();
+    if (parseExpressionError(first) && this.peek()?.[0] !== "," && this.peek()?.[0] !== "]") {
+      return first;
+    }
+    if (this.match("]")) {
+      if (first.kind === "array") {
+        const nested = first.value as ArrayExpr;
+        if (nested.depth !== 1) {
+          return { kind: "literal", value: makeInternalError("parse_array_too_deep") };
+        }
+        return { kind: "array", value: { rows: nested.rows, depth: 2 } as ArrayExpr };
+      }
+      return { kind: "array", value: { rows: [[first]], depth: 1 } as ArrayExpr };
+    }
+
+    if (!this.match(",")) {
+      return { kind: "literal", value: makeInternalError("parse_array_missing_closing_bracket") };
+    }
+    if (this.peek()?.[0] === "]") {
+      return { kind: "literal", value: makeInternalError("parse_array_trailing_comma") };
+    }
+    if (this.peek()?.[0] === ",") {
+      return { kind: "literal", value: makeInternalError("parse_array_missing_element") };
+    }
+
+    const elements: ExprNode[] = [first, this.parseArrayElement()];
+    while (this.match(",")) {
+      if (this.peek()?.[0] === "]") {
+        return { kind: "literal", value: makeInternalError("parse_array_trailing_comma") };
+      }
+      if (this.peek()?.[0] === ",") {
+        return { kind: "literal", value: makeInternalError("parse_array_missing_element") };
+      }
+      elements.push(this.parseArrayElement());
+    }
+    if (!this.match("]")) {
+      return { kind: "literal", value: makeInternalError("parse_array_missing_closing_bracket") };
+    }
+
+    if (elements.every((element) => element.kind === "array")) {
+      const nested = elements.map((element) => element.value as ArrayExpr);
+      if (nested.some((array) => array.depth !== 1)) {
+        return { kind: "literal", value: makeInternalError("parse_array_too_deep") };
+      }
+      const rows = nested.map((array) => array.rows[0] ?? []);
+      if (!arrayRowsHaveSameLength(rows)) {
+        return { kind: "literal", value: makeInternalError("parse_array_ragged_rows") };
+      }
+      return { kind: "array", value: { rows, depth: 2 } as ArrayExpr };
+    }
+    if (elements.some((element) => element.kind === "array")) {
+      return { kind: "literal", value: makeInternalError("parse_array_mixed_rows_and_scalars") };
+    }
+    return { kind: "array", value: { rows: [elements], depth: 1 } as ArrayExpr };
+  }
+
+  private parseArrayElement(): ExprNode {
+    if (this.peek()?.[0] === "," || this.peek()?.[0] === "]") {
+      return { kind: "literal", value: makeInternalError("parse_array_missing_element") };
+    }
+    if (this.peek()?.[0] === "IDENT" && isSpreadsheetLikeReferenceText(this.peek()?.[1] ?? "")) {
+      this.pos += 1;
+      return { kind: "literal", value: makeInternalError("parse_array_spreadsheet_reference_unsupported") };
+    }
+    return this.parseExpression();
+  }
+
   private parseFunctionCall(name: string): ExprNode {
     if (!this.match("(")) {
       return { kind: "literal", value: makeInternalError("parse_function_call_missing_open_paren", { name }) };
@@ -657,6 +757,16 @@ class ExprParser {
     }
     return { kind: "call", value: { name, args } as FunctionCall };
   }
+}
+
+function arrayRowsHaveSameLength(rows: readonly ExprNode[][]): boolean {
+  if (rows.length === 0) return true;
+  const width = rows[0].length;
+  return rows.every((row) => row.length === width);
+}
+
+function isSpreadsheetLikeReferenceText(text: string): boolean {
+  return /^[A-Za-z]+[1-9]\d*$/.test(text);
 }
 
 // Parse a reference expression such as @[Revenue,2025].

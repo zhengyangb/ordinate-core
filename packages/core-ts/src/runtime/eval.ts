@@ -1,6 +1,7 @@
 import { deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "../parser";
 import { parseCellInput, stripCellDisplayMetadata } from "./parse";
 import {
+  type ArrayExpr,
   type EvaluationResult,
   type ExprNode,
   type FunctionCall,
@@ -22,6 +23,7 @@ import { negateDurationValue } from "./temporal";
 import type { EvaluatedArgument } from "./functions/args";
 import {
   isRuntimeView,
+  dimensionForShape,
   makeRuntimeView,
   materializeViewSelection,
   runtimeViewScalarValue,
@@ -232,6 +234,25 @@ function evalExpressionValue(
     return materializeViewSelection(resolved.view, evalCell);
   }
 
+  if (node.kind === "array") {
+    return evalArrayLiteral(
+      node.value as ArrayExpr,
+      rowIdx,
+      colIdx,
+      evalCell,
+      rowMap,
+      colMap,
+      rowCount,
+      colCount,
+      bodyStart,
+      bodyRowCount,
+      dataRowIndices,
+      dataColIndices,
+      rowIdToIndex,
+      colIdToIndex,
+    );
+  }
+
   if (node.kind === "call") {
     const call = node.value as FunctionCall;
     return evalFunctionCall(call, {
@@ -413,6 +434,77 @@ function evalExpressionValue(
     return evalComparison(op, left, right);
   }
   return makeInternalError("unknown_operator", { operator: String(node.value ?? "") });
+}
+
+function evalArrayLiteral(
+  array: ArrayExpr,
+  rowIdx: number,
+  colIdx: number,
+  evalCell: (r: number, c: number) => RuntimeValue,
+  rowMap: Map<string, number[]>,
+  colMap: Map<string, number[]>,
+  rowCount: number,
+  colCount: number,
+  bodyStart: number,
+  bodyRowCount: number,
+  dataRowIndices: number[],
+  dataColIndices: number[],
+  rowIdToIndex?: Map<number, number>,
+  colIdToIndex?: Map<number, number>,
+): ExpressionValue {
+  const rows = array.rows;
+  if (rows.length === 0) {
+    return makeInternalError("invalid_array_literal", { reason: "empty_row_set" });
+  }
+  const width = rows[0].length;
+  if (!rows.every((row) => row.length === width)) {
+    return makeInternalError("invalid_array_literal", { reason: "ragged_rows" });
+  }
+
+  const values: RuntimeValue[] = [];
+  for (const row of rows) {
+    for (const element of row) {
+      if (element.kind === "array") {
+        return makeInternalError("invalid_array_literal", { reason: "array_too_deep" });
+      }
+      const value = evalExpressionValue(
+        element,
+        rowIdx,
+        colIdx,
+        evalCell,
+        rowMap,
+        colMap,
+        rowCount,
+        colCount,
+        bodyStart,
+        bodyRowCount,
+        dataRowIndices,
+        dataColIndices,
+        rowIdToIndex,
+        colIdToIndex,
+      );
+      if (isRuntimeView(value)) {
+        const scalar = runtimeViewScalarValue(value);
+        if (!scalar) {
+          return makeInternalError("invalid_array_literal", { reason: "non_scalar_element", ...runtimeViewShapeContext(value) });
+        }
+        values.push(scalar);
+        continue;
+      }
+      if (isError(value) && !isExplicitErrorLiteral(element)) {
+        return value;
+      }
+      values.push(value);
+    }
+  }
+
+  return makeRuntimeView(dimensionForShape(rows.length, width), rows.length, width, values);
+}
+
+function isExplicitErrorLiteral(node: ExprNode): boolean {
+  if (node.kind !== "literal") return false;
+  const value = node.value as RuntimeValue;
+  return isError(value) && value.internalKind === "literal_error_literal";
 }
 
 function expressionValueToScalarResult(value: ExpressionValue, reason: string): RuntimeValue {

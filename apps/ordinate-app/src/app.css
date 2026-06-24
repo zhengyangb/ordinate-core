@@ -599,6 +599,12 @@ textarea {
     color: var(--chrome-ink);
 }
 
+.tool-button:disabled {
+    opacity: 0.34;
+    color: color-mix(in oklab, var(--chrome-soft) 62%, transparent);
+    pointer-events: none;
+}
+
 .tool-button:focus-visible {
     outline: none;
     background: color-mix(

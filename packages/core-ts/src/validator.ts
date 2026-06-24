@@ -349,6 +349,17 @@ function isParseErrorExpr(expr: ExprNode | null): boolean {
     const call = expr.value as FunctionCall;
     return call.args.some((arg) => isParseErrorExpr(arg));
   }
+  if (expr.kind === "array") {
+    const array = expr.value as { rows: ExprNode[][] };
+    return array.rows.some((row) => row.some((element) => isParseErrorExpr(element)));
+  }
+  if (expr.kind === "index") {
+    const index = expr.value as { target: ExprNode; axes: Array<{ kind: string; value?: ExprNode; start?: ExprNode | null; end?: ExprNode | null }> };
+    return isParseErrorExpr(index.target)
+      || index.axes.some((axis) => axis.kind === "scalar"
+        ? isParseErrorExpr(axis.value ?? null)
+        : isParseErrorExpr(axis.start ?? null) || isParseErrorExpr(axis.end ?? null));
+  }
   return isParseErrorExpr(expr.left ?? null) || isParseErrorExpr(expr.right ?? null);
 }
 
@@ -361,6 +372,17 @@ function hasInvalidReference(expr: ExprNode | null): boolean {
   if (expr.kind === "call") {
     const call = expr.value as FunctionCall;
     return call.args.some((arg) => hasInvalidReference(arg));
+  }
+  if (expr.kind === "array") {
+    const array = expr.value as { rows: ExprNode[][] };
+    return array.rows.some((row) => row.some((element) => hasInvalidReference(element)));
+  }
+  if (expr.kind === "index") {
+    const index = expr.value as { target: ExprNode; axes: Array<{ kind: string; value?: ExprNode; start?: ExprNode | null; end?: ExprNode | null }> };
+    return hasInvalidReference(index.target)
+      || index.axes.some((axis) => axis.kind === "scalar"
+        ? hasInvalidReference(axis.value ?? null)
+        : hasInvalidReference(axis.start ?? null) || hasInvalidReference(axis.end ?? null));
   }
   return hasInvalidReference(expr.left ?? null) || hasInvalidReference(expr.right ?? null);
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject, type SetStateAction } from "react";
 
-import { CodeIcon, MoreIcon, PageSetupIcon, PlusIcon } from "../icons/uiIcons";
+import { CodeIcon, MoreIcon, PageSetupIcon, PlusIcon, RedoIcon, UndoIcon } from "../icons/uiIcons";
 import type { SheetHealth, ToolSpec } from "../types/ui";
 
 type AppChromeProps = {
@@ -24,6 +24,12 @@ type AppChromeProps = {
   sheetSetupOpen: boolean;
   sheetSetupButtonRef: RefObject<HTMLButtonElement>;
   onToggleSheetSetup: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  undoLabel: string | null;
+  redoLabel: string | null;
+  onUndo: () => void;
+  onRedo: () => void;
   onEnterSourceMode: () => void;
   onExitSourceMode: () => void;
   onTooltipEnter: (text: string, target: HTMLElement, delayMs?: number) => void;
@@ -55,6 +61,12 @@ export default function AppChrome({
   sheetSetupOpen,
   sheetSetupButtonRef,
   onToggleSheetSetup,
+  canUndo,
+  canRedo,
+  undoLabel,
+  redoLabel,
+  onUndo,
+  onRedo,
   onEnterSourceMode,
   onExitSourceMode,
   onTooltipEnter,
@@ -149,6 +161,42 @@ export default function AppChrome({
           >
             <span className="tool-icon">
               <PageSetupIcon />
+            </span>
+          </button>
+
+          <button
+            className="tool-button history-button"
+            type="button"
+            disabled={mode !== "table" || !canUndo}
+            onClick={onUndo}
+            aria-label={undoLabel ? `Undo ${undoLabel}` : "Undo"}
+            title={undoLabel ? `Undo ${undoLabel}` : "Undo"}
+            onMouseEnter={(event) => onTooltipEnter(undoLabel ? `Undo ${undoLabel}` : "Undo", event.currentTarget)}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => onTooltipEnter(undoLabel ? `Undo ${undoLabel}` : "Undo", event.currentTarget)}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+          >
+            <span className="tool-icon">
+              <UndoIcon />
+            </span>
+          </button>
+
+          <button
+            className="tool-button history-button"
+            type="button"
+            disabled={mode !== "table" || !canRedo}
+            onClick={onRedo}
+            aria-label={redoLabel ? `Redo ${redoLabel}` : "Redo"}
+            title={redoLabel ? `Redo ${redoLabel}` : "Redo"}
+            onMouseEnter={(event) => onTooltipEnter(redoLabel ? `Redo ${redoLabel}` : "Redo", event.currentTarget)}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => onTooltipEnter(redoLabel ? `Redo ${redoLabel}` : "Redo", event.currentTarget)}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+          >
+            <span className="tool-icon">
+              <RedoIcon />
             </span>
           </button>
 
