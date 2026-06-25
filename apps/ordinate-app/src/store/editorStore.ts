@@ -25,7 +25,7 @@ import {
   serializeDocumentState,
 } from "@ordinate/core";
 
-type EditorMode = "source" | "table";
+export type EditorMode = "source" | "table";
 
 interface EditorHistoryEntry {
   id: number;
@@ -35,7 +35,7 @@ interface EditorHistoryEntry {
   activeSheetAfter: string | null;
 }
 
-interface EditorState {
+export interface EditorState {
   mode: EditorMode;
   sourceText: string;
   docState: DocumentState | null;
@@ -56,6 +56,7 @@ interface EditorState {
   redoLabel: string | null;
   isDirty: boolean;
   setSourceText: (text: string) => void;
+  replaceDocumentText: (text: string) => void;
   setActiveSheet: (sheetName: string) => void;
   applyCoreEdits: (label: string, edits: CoreEdit[], nextActiveSheetHint?: string | null) => void;
   undo: () => void;
@@ -311,6 +312,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   ...initialState,
   ...emptyHistoryState(),
   setSourceText: (text) => set({ sourceText: text, presentation: null, validation: null, sheetIssuesByName: {}, error: null }),
+  replaceDocumentText: (text) => {
+    const nextState = bootstrapFromSource(text);
+    set({
+      ...nextState,
+      ...emptyHistoryState(get().revision + 1),
+    });
+  },
   setActiveSheet: (sheetName) => set({ activeSheet: sheetName }),
   applyCoreEdits: (label, edits, nextActiveSheetHint) => {
     const state = get();

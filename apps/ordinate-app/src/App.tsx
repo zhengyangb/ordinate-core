@@ -16,7 +16,7 @@ import {
   type RuntimeValue,
   type StylePatch,
 } from "@ordinate/core";
-import AppChrome from "./components/AppChrome";
+import AppChrome, { type FileStatusTone } from "./components/AppChrome";
 import ErrorCellChip from "./components/ErrorCellChip";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
@@ -28,6 +28,7 @@ import { useStructureTransition } from "./hooks/useStructureTransition";
 import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
 import { resolveUiLocale } from "./i18n/messages";
 import { useEditorStore } from "./store/editorStore";
+import { getPersistableText, useFileSessionStore, type FileSessionState } from "./store/fileSessionStore";
 import type {
   ColumnMetric,
   ChromeVisibilityPhase,
@@ -143,6 +144,26 @@ type FormulaReferenceOverlay = {
   active: boolean;
 };
 
+function fileSessionStatus(
+  state: Pick<
+    FileSessionState,
+    "operation" | "conflict" | "recoveryDraft" | "backingFileState" | "documentDirty" | "localDraftState" | "lastError" | "file"
+  >,
+): { label: string; tone: FileStatusTone } {
+  if (state.operation?.kind === "open") return { label: "Opening...", tone: "saving" };
+  if (state.operation) return { label: "Saving...", tone: "saving" };
+  if (state.conflict) return { label: "Conflict", tone: "error" };
+  if (state.recoveryDraft) return { label: "Draft available", tone: "warning" };
+  if (state.backingFileState === "external_changed") return { label: "Changed on disk", tone: "warning" };
+  if (state.lastError) return { label: "Save failed", tone: "error" };
+  if (state.localDraftState === "current" && state.documentDirty === "dirty") return { label: "Draft saved", tone: "warning" };
+  if (!state.file && state.localDraftState === "none") return { label: "Unsaved", tone: "neutral" };
+  if (state.documentDirty === "dirty") return { label: "Edited", tone: "dirty" };
+  if (state.file?.adapterKind === "browser-download") return { label: "Downloaded", tone: "neutral" };
+  if (state.file) return { label: "Saved", tone: "neutral" };
+  return { label: "Unsaved", tone: "neutral" };
+}
+
 function isNativeTextEditingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(
@@ -166,6 +187,7 @@ export default function App() {
     sheetIssuesByName,
     activeSheet,
     error,
+    revision,
     setSourceText,
     setActiveSheet,
     renameSheet,
@@ -198,6 +220,39 @@ export default function App() {
     enterSourceMode,
     exitSourceMode,
   } = useEditorStore();
+  const fileSessionFile = useFileSessionStore((state) => state.file);
+  const fileSessionOperation = useFileSessionStore((state) => state.operation);
+  const fileSessionConflict = useFileSessionStore((state) => state.conflict);
+  const fileSessionRecoveryDraft = useFileSessionStore((state) => state.recoveryDraft);
+  const fileSessionExternalSnapshot = useFileSessionStore((state) => state.externalSnapshot);
+  const fileSessionBackingFileState = useFileSessionStore((state) => state.backingFileState);
+  const fileSessionDocumentDirty = useFileSessionStore((state) => state.documentDirty);
+  const fileSessionLocalDraftState = useFileSessionStore((state) => state.localDraftState);
+  const fileSessionLastError = useFileSessionStore((state) => state.lastError);
+  const openFile = useFileSessionStore((state) => state.open);
+  const saveFile = useFileSessionStore((state) => state.save);
+  const saveFileAs = useFileSessionStore((state) => state.saveAs);
+  const autosaveFileNow = useFileSessionStore((state) => state.autosaveNow);
+  const syncFileEditorSnapshot = useFileSessionStore((state) => state.syncEditorSnapshot);
+  const loadUntitledFileDraft = useFileSessionStore((state) => state.loadUntitledDraft);
+  const reloadFileFromDisk = useFileSessionStore((state) => state.reloadFromDisk);
+  const overwriteFileConflict = useFileSessionStore((state) => state.overwriteConflict);
+  const saveFileConflictAsNewFile = useFileSessionStore((state) => state.saveConflictAsNewFile);
+  const cancelFileConflict = useFileSessionStore((state) => state.cancelConflict);
+  const recoverFileDraft = useFileSessionStore((state) => state.recoverDraft);
+  const openSavedFile = useFileSessionStore((state) => state.openSavedFile);
+  const discardFileDraft = useFileSessionStore((state) => state.discardDraft);
+  const fileStatus = fileSessionStatus({
+    operation: fileSessionOperation,
+    conflict: fileSessionConflict,
+    recoveryDraft: fileSessionRecoveryDraft,
+    backingFileState: fileSessionBackingFileState,
+    documentDirty: fileSessionDocumentDirty,
+    localDraftState: fileSessionLocalDraftState,
+    lastError: fileSessionLastError,
+    file: fileSessionFile,
+  });
+  const fileName = fileSessionFile?.displayName ?? "Untitled";
 
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<SheetSelection | null>(null);
@@ -277,6 +332,8 @@ export default function App() {
   const tooltipTimerRef = useRef<number | null>(null);
   const tooltipAnchorRef = useRef<HTMLElement | null>(null);
   const suppressedTooltipTargetRef = useRef<HTMLElement | null>(null);
+  const fileSessionEditorSignatureRef = useRef<string | null>(null);
+  const shouldWarnBeforeUnload = fileSessionDocumentDirty === "dirty" && fileSessionLocalDraftState !== "current";
   const isGridApiAlive = useCallback((api: GridApi<GridRow> | null): api is GridApi<GridRow> => {
     return Boolean(api && !api.isDestroyed());
   }, []);
@@ -291,6 +348,66 @@ export default function App() {
   const setSelectedCell = useCallback((cell: SelectedCell | null) => {
     setSelection(cell ? makeCellSelection(cell.logical) : null);
   }, []);
+
+  useEffect(() => {
+    void loadUntitledFileDraft();
+  }, [loadUntitledFileDraft]);
+
+  useEffect(() => {
+    const editorSignature = `${mode}:${revision}:${sourceText}`;
+    syncFileEditorSnapshot();
+    if (fileSessionEditorSignatureRef.current === null) {
+      fileSessionEditorSignatureRef.current = editorSignature;
+      return;
+    }
+    if (fileSessionEditorSignatureRef.current === editorSignature) {
+      return;
+    }
+    fileSessionEditorSignatureRef.current = editorSignature;
+    const timeout = window.setTimeout(() => {
+      void autosaveFileNow();
+    }, mode === "source" ? 1500 : 750);
+    return () => window.clearTimeout(timeout);
+  }, [mode, revision, sourceText, syncFileEditorSnapshot, autosaveFileNow]);
+
+  useEffect(() => {
+    if (!shouldWarnBeforeUnload) return undefined;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [shouldWarnBeforeUnload]);
+
+  const resolveManualSaveOptions = useCallback((): { allowInvalidSource?: boolean } | null => {
+    const persistableText = getPersistableText({ mode, sourceText, docState });
+    if (persistableText.validity === "valid_document") return {};
+    if (!window.confirm("Source has issues. Save this text anyway?")) return null;
+    return { allowInvalidSource: true };
+  }, [docState, mode, sourceText]);
+
+  const handleOpenFile = useCallback(() => {
+    if (
+      fileSessionDocumentDirty === "dirty"
+      && !window.confirm("Open another file? Unsaved changes in this window will be replaced.")
+    ) {
+      return;
+    }
+    void openFile();
+  }, [fileSessionDocumentDirty, openFile]);
+
+  const handleSaveFile = useCallback(() => {
+    const options = resolveManualSaveOptions();
+    if (!options) return;
+    void saveFile(options);
+  }, [resolveManualSaveOptions, saveFile]);
+
+  const handleSaveFileAs = useCallback(() => {
+    const options = resolveManualSaveOptions();
+    if (!options) return;
+    void saveFileAs(options);
+  }, [resolveManualSaveOptions, saveFileAs]);
 
   const currentSheet = useMemo(() => {
     if (!evaluation || !activeSheet) return null;
@@ -3386,6 +3503,9 @@ export default function App() {
       <div className={mode === "source" ? "app-window source-mode" : "app-window"}>
         <AppChrome
           mode={mode}
+          fileName={fileName}
+          fileStatus={fileStatus.label}
+          fileStatusTone={fileStatus.tone}
           activeSheet={activeSheet}
           sheetNames={sheetNames}
           sheetHealthByName={sheetHealthByName}
@@ -3415,6 +3535,9 @@ export default function App() {
           redoLabel={redoLabel}
           onUndo={undo}
           onRedo={redo}
+          onOpenFile={handleOpenFile}
+          onSaveFile={handleSaveFile}
+          onSaveFileAs={handleSaveFileAs}
           onEnterSourceMode={enterSourceMode}
           onExitSourceMode={exitSourceMode}
           onTooltipEnter={showTooltip}
@@ -3424,6 +3547,72 @@ export default function App() {
           onTabMouseEnter={handleTabMouseEnter}
           onTabMouseLeave={clearTooltip}
         />
+
+        {fileSessionRecoveryDraft ? (
+          <div className="file-session-modal-backdrop" role="presentation">
+            <section className="file-session-modal" role="dialog" aria-modal="true" aria-labelledby="file-recovery-title">
+              <div className="file-session-modal-copy">
+                <h2 id="file-recovery-title">Recover local draft?</h2>
+                <p>A newer local draft exists for this file. Choose which version to keep in the editor.</p>
+              </div>
+              <div className="file-session-modal-actions">
+                <button className="file-session-action primary" type="button" onClick={recoverFileDraft}>
+                  Recover Draft
+                </button>
+                <button className="file-session-action" type="button" onClick={() => void openSavedFile()}>
+                  Open Saved File
+                </button>
+                <button className="file-session-action danger" type="button" onClick={() => void discardFileDraft()}>
+                  Discard Draft
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {fileSessionConflict ? (
+          <div className="file-session-modal-backdrop" role="presentation">
+            <section className="file-session-modal" role="dialog" aria-modal="true" aria-labelledby="file-conflict-title">
+              <div className="file-session-modal-copy">
+                <h2 id="file-conflict-title">File changed on disk</h2>
+                <p>The saved file changed while this window has local edits. Pick how to resolve the conflict.</p>
+              </div>
+              <div className="file-session-modal-actions">
+                <button className="file-session-action primary" type="button" onClick={() => void reloadFileFromDisk()}>
+                  Reload from Disk
+                </button>
+                <button className="file-session-action" type="button" onClick={() => void overwriteFileConflict()}>
+                  Overwrite Disk
+                </button>
+                <button className="file-session-action" type="button" onClick={() => void saveFileConflictAsNewFile()}>
+                  Save as New File
+                </button>
+                <button className="file-session-action" type="button" onClick={cancelFileConflict}>
+                  Cancel
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {!fileSessionConflict && fileSessionExternalSnapshot ? (
+          <div className="file-session-modal-backdrop" role="presentation">
+            <section className="file-session-modal" role="dialog" aria-modal="true" aria-labelledby="file-external-title">
+              <div className="file-session-modal-copy">
+                <h2 id="file-external-title">Saved file changed</h2>
+                <p>The file on disk has a newer version. Your editor is currently clean.</p>
+              </div>
+              <div className="file-session-modal-actions">
+                <button className="file-session-action primary" type="button" onClick={() => void reloadFileFromDisk()}>
+                  Reload from Disk
+                </button>
+                <button className="file-session-action" type="button" onClick={cancelFileConflict}>
+                  Keep Current
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
 
         {error ? (
           <div className="error" role="alert">
