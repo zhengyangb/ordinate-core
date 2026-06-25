@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject, type SetStateAction } from "react";
 
-import { CodeIcon, MoreIcon, PageSetupIcon, PlusIcon, RedoIcon, UndoIcon } from "../icons/uiIcons";
+import { CodeIcon, MoreIcon, OpenIcon, PageSetupIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
 import type { SheetHealth, ToolSpec } from "../types/ui";
+
+export type FileStatusTone = "neutral" | "dirty" | "saving" | "warning" | "error";
 
 type AppChromeProps = {
   mode: "table" | "source";
+  fileName: string;
+  fileStatus: string;
+  fileStatusTone: FileStatusTone;
   activeSheet: string | null;
   sheetNames: string[];
   sheetHealthByName: Record<string, SheetHealth>;
@@ -30,6 +35,9 @@ type AppChromeProps = {
   redoLabel: string | null;
   onUndo: () => void;
   onRedo: () => void;
+  onOpenFile: () => void;
+  onSaveFile: () => void;
+  onSaveFileAs: () => void;
   onEnterSourceMode: () => void;
   onExitSourceMode: () => void;
   onTooltipEnter: (text: string, target: HTMLElement, delayMs?: number) => void;
@@ -42,6 +50,9 @@ type AppChromeProps = {
 
 export default function AppChrome({
   mode,
+  fileName,
+  fileStatus,
+  fileStatusTone,
   activeSheet,
   sheetNames,
   sheetHealthByName,
@@ -67,6 +78,9 @@ export default function AppChrome({
   redoLabel,
   onUndo,
   onRedo,
+  onOpenFile,
+  onSaveFile,
+  onSaveFileAs,
   onEnterSourceMode,
   onExitSourceMode,
   onTooltipEnter,
@@ -141,7 +155,60 @@ export default function AppChrome({
           <span className="brand-name">Ordinate</span>
         </div>
 
-        <nav className="toolbar-tools" aria-label="Placeholder toolbar">
+        <div className="app-title" aria-label="Current file">
+          <span className="app-title-name">{fileName}</span>
+          <span className={`app-title-status app-title-status--${fileStatusTone}`}>{fileStatus}</span>
+        </div>
+
+        <nav className="toolbar-tools" aria-label="Toolbar">
+          <button
+            className="tool-button file-command-button"
+            type="button"
+            onClick={onOpenFile}
+            aria-label="Open file"
+            onMouseEnter={(event) => onTooltipEnter("Open file", event.currentTarget)}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => onTooltipEnter("Open file", event.currentTarget)}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+          >
+            <span className="tool-icon">
+              <OpenIcon />
+            </span>
+          </button>
+
+          <button
+            className="tool-button file-command-button"
+            type="button"
+            onClick={onSaveFile}
+            aria-label="Save file"
+            onMouseEnter={(event) => onTooltipEnter("Save file", event.currentTarget)}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => onTooltipEnter("Save file", event.currentTarget)}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+          >
+            <span className="tool-icon">
+              <SaveIcon />
+            </span>
+          </button>
+
+          <button
+            className="tool-button file-command-button"
+            type="button"
+            onClick={onSaveFileAs}
+            aria-label="Save as"
+            onMouseEnter={(event) => onTooltipEnter("Save as", event.currentTarget)}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => onTooltipEnter("Save as", event.currentTarget)}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+          >
+            <span className="tool-icon">
+              <SaveAsIcon />
+            </span>
+          </button>
+
           <button
             ref={sheetSetupButtonRef}
             className={sheetSetupOpen ? "tool-button sheet-setup-button active" : "tool-button sheet-setup-button"}
