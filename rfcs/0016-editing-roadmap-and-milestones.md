@@ -181,13 +181,14 @@ Read/edit APIs must not expose a cached formula `body` directly as `input`.
 
 - header-row structural operations
 - label rename with rebinding semantics
+- axis-level row/column move and duplicate APIs as defined by RFC-0034
 - region clear/set APIs
 - structured API for column display defaults
 
 ### Explicitly Out of Scope
 
 - cross-client collaboration protocol
-- first-class move/copy region semantics as required APIs
+- general first-class move/copy region semantics as required APIs
 
 ### Exit Criteria
 

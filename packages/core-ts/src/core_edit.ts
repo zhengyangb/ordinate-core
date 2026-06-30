@@ -8,6 +8,16 @@ import {
   type CoreDeleteRowEdit,
   type CoreInsertRowEdit,
 } from "./core_edit_rows";
+import {
+  applyDuplicateColumnsEdit,
+  applyDuplicateRowsEdit,
+  applyMoveColumnsEdit,
+  applyMoveRowsEdit,
+  type CoreDuplicateColumnsEdit,
+  type CoreDuplicateRowsEdit,
+  type CoreMoveColumnsEdit,
+  type CoreMoveRowsEdit,
+} from "./core_edit_axis";
 import { resolveSheetRowStructure } from "./row_structure";
 
 export interface CoreEditError {
@@ -65,6 +75,10 @@ export type CoreEdit =
   | { op: "rename_sheet"; sheet: string; newName: string }
   | CoreInsertRowEdit
   | CoreDeleteRowEdit
+  | CoreMoveColumnsEdit
+  | CoreMoveRowsEdit
+  | CoreDuplicateColumnsEdit
+  | CoreDuplicateRowsEdit
   | { op: "insert_column"; sheet: string; colIndex: number }
   | { op: "delete_column"; sheet: string; colIndex: number };
 
@@ -506,6 +520,30 @@ function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
   if (edit.op === "delete_row") {
     const sheet = resolveSheet(document, edit.sheet);
     applyDeleteRowEdit(sheet, edit, fail);
+    return;
+  }
+
+  if (edit.op === "move_columns") {
+    const sheet = resolveSheet(document, edit.sheet);
+    applyMoveColumnsEdit(sheet, edit, fail);
+    return;
+  }
+
+  if (edit.op === "move_rows") {
+    const sheet = resolveSheet(document, edit.sheet);
+    applyMoveRowsEdit(sheet, edit, fail);
+    return;
+  }
+
+  if (edit.op === "duplicate_columns") {
+    const sheet = resolveSheet(document, edit.sheet);
+    applyDuplicateColumnsEdit(sheet, edit, fail);
+    return;
+  }
+
+  if (edit.op === "duplicate_rows") {
+    const sheet = resolveSheet(document, edit.sheet);
+    applyDuplicateRowsEdit(sheet, edit, fail);
     return;
   }
 
