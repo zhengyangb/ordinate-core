@@ -1,4 +1,4 @@
-import { ChangeKind, DocumentState, SheetState } from "./incremental";
+import { ChangeKind, DocumentState, SheetState, type SheetHistorySnapshot } from "./incremental";
 import { parseCellInput, splitCellDisplayMetadata } from "./runtime";
 import type { FormatSpec, StylePatch } from "./runtime/types";
 import { assertInteger, CoreEditFailure, type CoreEditErrorCategory } from "./core_edit_common";
@@ -74,6 +74,29 @@ export interface ApplyBatchAtomicOptions {
 
 export type { CoreEditErrorCategory } from "./core_edit_common";
 
+export type CoreEditHistoryDirection = "undo" | "redo";
+
+interface CoreEditHistoryEntry {
+  op: CoreEdit["op"];
+  editIndex: number;
+  before: SheetHistorySnapshot;
+  after: SheetHistorySnapshot;
+  beforeSignature: string;
+  afterSignature: string;
+}
+
+interface CoreEditHistoryMementoInternal {
+  kind: "core_edit_history_memento";
+  entryCount: number;
+  entries: CoreEditHistoryEntry[];
+}
+
+export interface CoreEditHistoryMemento {
+  kind: "core_edit_history_memento";
+  entryCount: number;
+  entries: readonly unknown[];
+}
+
 export interface CoreAffectedFormulaCell {
   sheet: string;
   rowId: number;
@@ -97,6 +120,14 @@ export interface CoreDeleteColumnPreview {
 }
 
 export type ApplyBatchAtomicResult =
+  | { ok: true; nextDocument: DocumentState }
+  | { ok: false; error: CoreEditError };
+
+export type ApplyBatchWithUndoResult =
+  | { ok: true; nextDocument: DocumentState; memento: CoreEditHistoryMemento }
+  | { ok: false; error: CoreEditError };
+
+export type ApplyCoreEditMementoResult =
   | { ok: true; nextDocument: DocumentState }
   | { ok: false; error: CoreEditError };
 
@@ -143,6 +174,87 @@ export function applyBatchAtomic(
           op: edit.op,
         },
       };
+    }
+  }
+
+  if (options?.recalculate === true) {
+    staged.evaluate();
+  }
+
+  return { ok: true, nextDocument: staged };
+}
+
+export function applyBatchWithUndo(
+  document: DocumentState,
+  edits: CoreEdit[],
+  options?: ApplyBatchAtomicOptions,
+): ApplyBatchWithUndoResult {
+  const staged = cloneDocumentState(document);
+  const entries: CoreEditHistoryEntry[] = [];
+
+  for (let i = 0; i < edits.length; i += 1) {
+    const edit = edits[i];
+    try {
+      const sheet = resolveSheet(staged, sheetNameForEdit(edit));
+      const before = sheet.captureHistorySnapshot();
+      const beforeSignature = sheetSnapshotSignature(before);
+      applySingleEdit(staged, edit);
+      const after = sheet.captureHistorySnapshot();
+      const afterSignature = sheetSnapshotSignature(after);
+      if (beforeSignature !== afterSignature) {
+        entries.push({
+          op: edit.op,
+          editIndex: i,
+          before,
+          after,
+          beforeSignature,
+          afterSignature,
+        });
+      }
+    } catch (error) {
+      return { ok: false, error: coreEditErrorFromCaught(error, i, edit.op) };
+    }
+  }
+
+  if (options?.recalculate === true) {
+    staged.evaluate();
+  }
+
+  const memento: CoreEditHistoryMementoInternal = {
+    kind: "core_edit_history_memento",
+    entryCount: entries.length,
+    entries,
+  };
+  return { ok: true, nextDocument: staged, memento };
+}
+
+export function applyCoreEditMemento(
+  document: DocumentState,
+  memento: CoreEditHistoryMemento,
+  direction: CoreEditHistoryDirection,
+  options?: ApplyBatchAtomicOptions,
+): ApplyCoreEditMementoResult {
+  const internal = asInternalMemento(memento);
+  const staged = cloneDocumentState(document);
+  const entries = direction === "undo" ? [...internal.entries].reverse() : internal.entries;
+
+  for (const entry of entries) {
+    const expected = direction === "undo" ? entry.after : entry.before;
+    const expectedSignature = direction === "undo" ? entry.afterSignature : entry.beforeSignature;
+    const replacement = direction === "undo" ? entry.before : entry.after;
+
+    try {
+      const sheet = resolveSheet(staged, expected.name);
+      const currentSignature = sheetSnapshotSignature(sheet.captureHistorySnapshot());
+      if (currentSignature !== expectedSignature) {
+        throw new CoreEditFailure(
+          "invalid_operation",
+          `cannot ${direction} ${entry.op}: document state does not match the history entry`,
+        );
+      }
+      sheet.restoreHistorySnapshot(replacement);
+    } catch (error) {
+      return { ok: false, error: coreEditErrorFromCaught(error, entry.editIndex, entry.op) };
     }
   }
 
@@ -209,6 +321,47 @@ function cloneDocumentState(document: DocumentState): DocumentState {
     Object.setPrototypeOf(sheet, SheetState.prototype);
   }
   return clone;
+}
+
+function coreEditErrorFromCaught(error: unknown, editIndex: number, op: CoreEdit["op"]): CoreEditError {
+  if (error instanceof CoreEditFailure) {
+    return {
+      category: error.category,
+      message: error.message,
+      editIndex,
+      op,
+    };
+  }
+  if (error instanceof Error) {
+    return {
+      category: "invalid_operation",
+      message: error.message,
+      editIndex,
+      op,
+    };
+  }
+  return {
+    category: "invalid_operation",
+    message: String(error),
+    editIndex,
+    op,
+  };
+}
+
+function sheetNameForEdit(edit: CoreEdit): string {
+  if ("target" in edit) return edit.target.sheet;
+  return edit.sheet;
+}
+
+function asInternalMemento(memento: CoreEditHistoryMemento): CoreEditHistoryMementoInternal {
+  if (!memento || memento.kind !== "core_edit_history_memento" || !Array.isArray(memento.entries)) {
+    throw new CoreEditFailure("invalid_operation", "invalid core edit history memento");
+  }
+  return memento as CoreEditHistoryMementoInternal;
+}
+
+function sheetSnapshotSignature(snapshot: SheetHistorySnapshot): string {
+  return JSON.stringify(snapshot);
 }
 
 function applySingleEdit(document: DocumentState, edit: CoreEdit): void {

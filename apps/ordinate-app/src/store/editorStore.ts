@@ -1,9 +1,11 @@
 import { create } from "zustand";
 
 import {
-  applyBatchAtomic,
+  applyBatchWithUndo,
+  applyCoreEditMemento,
   type CoreCellTarget,
   type CoreEdit,
+  type CoreEditHistoryMemento,
   type CoreRegionTarget,
   type CoreRowDeleteMode,
   type CoreRowInsertArea,
@@ -23,9 +25,17 @@ import {
   serializeDocumentState,
 } from "@ordinate/core";
 
-type EditorMode = "source" | "table";
+export type EditorMode = "source" | "table";
 
-interface EditorState {
+interface EditorHistoryEntry {
+  id: number;
+  label: string;
+  memento: CoreEditHistoryMemento;
+  activeSheetBefore: string | null;
+  activeSheetAfter: string | null;
+}
+
+export interface EditorState {
   mode: EditorMode;
   sourceText: string;
   docState: DocumentState | null;
@@ -35,9 +45,22 @@ interface EditorState {
   sheetIssuesByName: Record<string, ValidationError[]>;
   activeSheet: string | null;
   error: string | null;
+  revision: number;
+  history: EditorHistoryEntry[];
+  historyCursor: number;
+  savedHistoryCursor: number;
+  nextHistoryId: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  undoLabel: string | null;
+  redoLabel: string | null;
+  isDirty: boolean;
   setSourceText: (text: string) => void;
+  replaceDocumentText: (text: string) => void;
   setActiveSheet: (sheetName: string) => void;
-  applyCoreEdits: (edits: CoreEdit[], nextActiveSheetHint?: string | null) => void;
+  applyCoreEdits: (label: string, edits: CoreEdit[], nextActiveSheetHint?: string | null) => void;
+  undo: () => void;
+  redo: () => void;
   setCellInput: (target: CoreCellTarget, input: string) => void;
   clearCell: (target: CoreCellTarget) => void;
   renameSheet: (sheet: string, newName: string) => void;
@@ -244,88 +267,205 @@ function deriveStateFromDocument(
   };
 }
 
+function historyStatus(
+  history: EditorHistoryEntry[],
+  historyCursor: number,
+  savedHistoryCursor: number,
+): Pick<EditorState, "canUndo" | "canRedo" | "undoLabel" | "redoLabel" | "isDirty"> {
+  const undoEntry = historyCursor > 0 ? history[historyCursor - 1] : undefined;
+  const redoEntry = historyCursor < history.length ? history[historyCursor] : undefined;
+  return {
+    canUndo: undoEntry !== undefined,
+    canRedo: redoEntry !== undefined,
+    undoLabel: undoEntry?.label ?? null,
+    redoLabel: redoEntry?.label ?? null,
+    isDirty: historyCursor !== savedHistoryCursor,
+  };
+}
+
+function emptyHistoryState(revision = 0): Pick<
+  EditorState,
+  | "revision"
+  | "history"
+  | "historyCursor"
+  | "savedHistoryCursor"
+  | "nextHistoryId"
+  | "canUndo"
+  | "canRedo"
+  | "undoLabel"
+  | "redoLabel"
+  | "isDirty"
+> {
+  return {
+    revision,
+    history: [],
+    historyCursor: 0,
+    savedHistoryCursor: 0,
+    nextHistoryId: 1,
+    ...historyStatus([], 0, 0),
+  };
+}
+
 const initialState = bootstrapFromSource(sampleDocument);
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   ...initialState,
+  ...emptyHistoryState(),
   setSourceText: (text) => set({ sourceText: text, presentation: null, validation: null, sheetIssuesByName: {}, error: null }),
+  replaceDocumentText: (text) => {
+    const nextState = bootstrapFromSource(text);
+    set({
+      ...nextState,
+      ...emptyHistoryState(get().revision + 1),
+    });
+  },
   setActiveSheet: (sheetName) => set({ activeSheet: sheetName }),
-  applyCoreEdits: (edits, nextActiveSheetHint) => {
-    const { docState } = get();
+  applyCoreEdits: (label, edits, nextActiveSheetHint) => {
+    const state = get();
+    const { docState } = state;
     if (!docState) {
       throw new Error("cannot apply core edits without an active document state");
     }
 
-    const result = applyBatchAtomic(docState, edits, { recalculate: false });
+    const result = applyBatchWithUndo(docState, edits, { recalculate: false });
     if (!result.ok) {
       throw new Error(`[${result.error.category}] ${result.error.message}`);
     }
 
-    const currentMode = get().mode;
-    const activeHint = nextActiveSheetHint ?? get().activeSheet;
+    const currentMode = state.mode;
+    const activeHint = nextActiveSheetHint ?? state.activeSheet;
+    const nextDocumentState = deriveStateFromDocument(result.nextDocument, activeHint);
+    if (result.memento.entryCount === 0) {
+      set({
+        ...nextDocumentState,
+        mode: currentMode,
+      });
+      return;
+    }
+
+    const retainedHistory = state.history.slice(0, state.historyCursor);
+    const savedHistoryCursor =
+      state.savedHistoryCursor > state.historyCursor ? -1 : state.savedHistoryCursor;
+    const nextHistory: EditorHistoryEntry[] = [
+      ...retainedHistory,
+      {
+        id: state.nextHistoryId,
+        label,
+        memento: result.memento,
+        activeSheetBefore: state.activeSheet,
+        activeSheetAfter: nextDocumentState.activeSheet,
+      },
+    ];
+    const historyCursor = retainedHistory.length + 1;
     set({
-      ...deriveStateFromDocument(result.nextDocument, activeHint),
+      ...nextDocumentState,
       mode: currentMode,
+      history: nextHistory,
+      historyCursor,
+      savedHistoryCursor,
+      nextHistoryId: state.nextHistoryId + 1,
+      revision: state.revision + 1,
+      ...historyStatus(nextHistory, historyCursor, savedHistoryCursor),
+    });
+  },
+  undo: () => {
+    const state = get();
+    const entry = state.historyCursor > 0 ? state.history[state.historyCursor - 1] : undefined;
+    if (!entry) return;
+    if (!state.docState) {
+      throw new Error("cannot undo without an active document state");
+    }
+    const result = applyCoreEditMemento(state.docState, entry.memento, "undo", { recalculate: false });
+    if (!result.ok) {
+      throw new Error(`[${result.error.category}] ${result.error.message}`);
+    }
+    const historyCursor = state.historyCursor - 1;
+    set({
+      ...deriveStateFromDocument(result.nextDocument, entry.activeSheetBefore),
+      mode: state.mode,
+      historyCursor,
+      revision: state.revision + 1,
+      ...historyStatus(state.history, historyCursor, state.savedHistoryCursor),
+    });
+  },
+  redo: () => {
+    const state = get();
+    const entry = state.historyCursor < state.history.length ? state.history[state.historyCursor] : undefined;
+    if (!entry) return;
+    if (!state.docState) {
+      throw new Error("cannot redo without an active document state");
+    }
+    const result = applyCoreEditMemento(state.docState, entry.memento, "redo", { recalculate: false });
+    if (!result.ok) {
+      throw new Error(`[${result.error.category}] ${result.error.message}`);
+    }
+    const historyCursor = state.historyCursor + 1;
+    set({
+      ...deriveStateFromDocument(result.nextDocument, entry.activeSheetAfter),
+      mode: state.mode,
+      historyCursor,
+      revision: state.revision + 1,
+      ...historyStatus(state.history, historyCursor, state.savedHistoryCursor),
     });
   },
   setCellInput: (target, input) => {
-    get().applyCoreEdits([{ op: "set_cell_input", target, input }]);
+    get().applyCoreEdits("Set cell input", [{ op: "set_cell_input", target, input }]);
   },
   clearCell: (target) => {
-    get().applyCoreEdits([{ op: "clear_cell", target }]);
+    get().applyCoreEdits("Clear cell", [{ op: "clear_cell", target }]);
   },
   renameSheet: (sheet, newName) => {
     const { activeSheet } = get();
     const nextActiveSheetHint = activeSheet === sheet ? newName.trim() : activeSheet;
-    get().applyCoreEdits([{ op: "rename_sheet", sheet, newName }], nextActiveSheetHint);
+    get().applyCoreEdits("Rename sheet", [{ op: "rename_sheet", sheet, newName }], nextActiveSheetHint);
   },
   setCellLocalFormat: (target, format) => {
-    get().applyCoreEdits([{ op: "set_cell_local_format", target, format }]);
+    get().applyCoreEdits("Set cell format", [{ op: "set_cell_local_format", target, format }]);
   },
   clearCellLocalFormat: (target) => {
-    get().applyCoreEdits([{ op: "clear_cell_local_format", target }]);
+    get().applyCoreEdits("Clear cell format", [{ op: "clear_cell_local_format", target }]);
   },
   setCellLocalStyle: (target, style) => {
-    get().applyCoreEdits([{ op: "set_cell_local_style", target, style }]);
+    get().applyCoreEdits("Set cell style", [{ op: "set_cell_local_style", target, style }]);
   },
   clearCellLocalStyle: (target) => {
-    get().applyCoreEdits([{ op: "clear_cell_local_style", target }]);
+    get().applyCoreEdits("Clear cell style", [{ op: "clear_cell_local_style", target }]);
   },
   setColumnDefaultFormat: (sheet, colId, format) => {
-    get().applyCoreEdits([{ op: "set_column_default_format", sheet, colId, format }]);
+    get().applyCoreEdits("Set column format", [{ op: "set_column_default_format", sheet, colId, format }]);
   },
   clearColumnDefaultFormat: (sheet, colId) => {
-    get().applyCoreEdits([{ op: "clear_column_default_format", sheet, colId }]);
+    get().applyCoreEdits("Clear column format", [{ op: "clear_column_default_format", sheet, colId }]);
   },
   setColumnDefaultStyle: (sheet, colId, style) => {
-    get().applyCoreEdits([{ op: "set_column_default_style", sheet, colId, style }]);
+    get().applyCoreEdits("Set column style", [{ op: "set_column_default_style", sheet, colId, style }]);
   },
   clearColumnDefaultStyle: (sheet, colId) => {
-    get().applyCoreEdits([{ op: "clear_column_default_style", sheet, colId }]);
+    get().applyCoreEdits("Clear column style", [{ op: "clear_column_default_style", sheet, colId }]);
   },
   setRowDefaultFormat: (sheet, rowId, format) => {
-    get().applyCoreEdits([{ op: "set_row_default_format", sheet, rowId, format }]);
+    get().applyCoreEdits("Set row format", [{ op: "set_row_default_format", sheet, rowId, format }]);
   },
   clearRowDefaultFormat: (sheet, rowId) => {
-    get().applyCoreEdits([{ op: "clear_row_default_format", sheet, rowId }]);
+    get().applyCoreEdits("Clear row format", [{ op: "clear_row_default_format", sheet, rowId }]);
   },
   setRowDefaultStyle: (sheet, rowId, style) => {
-    get().applyCoreEdits([{ op: "set_row_default_style", sheet, rowId, style }]);
+    get().applyCoreEdits("Set row style", [{ op: "set_row_default_style", sheet, rowId, style }]);
   },
   clearRowDefaultStyle: (sheet, rowId) => {
-    get().applyCoreEdits([{ op: "clear_row_default_style", sheet, rowId }]);
+    get().applyCoreEdits("Clear row style", [{ op: "clear_row_default_style", sheet, rowId }]);
   },
   setRegion: (target, values) => {
-    get().applyCoreEdits([{ op: "set_region", target, values }]);
+    get().applyCoreEdits("Set region", [{ op: "set_region", target, values }]);
   },
   clearRegion: (target) => {
-    get().applyCoreEdits([{ op: "clear_region", target }]);
+    get().applyCoreEdits("Clear region", [{ op: "clear_region", target }]);
   },
   convertRowsToHeader: (sheet, rowIds) => {
-    get().applyCoreEdits([{ op: "convert_rows_to_header", sheet, rowIds }]);
+    get().applyCoreEdits("Convert rows to header", [{ op: "convert_rows_to_header", sheet, rowIds }]);
   },
   convertRowsToBody: (sheet, rowIds, depth) => {
-    get().applyCoreEdits([{ op: "convert_rows_to_body", sheet, rowIds, depth }]);
+    get().applyCoreEdits("Convert rows to body", [{ op: "convert_rows_to_body", sheet, rowIds, depth }]);
   },
   previewDeleteRow: (sheet, rowId, mode) => {
     const { docState } = get();
@@ -342,16 +482,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return previewDeleteColumn(docState, { sheet, colIndex });
   },
   insertRow: (sheet, area, rowGapIndex, depth) => {
-    get().applyCoreEdits([{ op: "insert_row", sheet, area, rowGapIndex, depth }]);
+    get().applyCoreEdits("Insert row", [{ op: "insert_row", sheet, area, rowGapIndex, depth }]);
   },
   deleteRow: (sheet, rowId, mode) => {
-    get().applyCoreEdits([{ op: "delete_row", sheet, rowId, mode }]);
+    get().applyCoreEdits("Delete row", [{ op: "delete_row", sheet, rowId, mode }]);
   },
   insertColumn: (sheet, colIndex) => {
-    get().applyCoreEdits([{ op: "insert_column", sheet, colIndex }]);
+    get().applyCoreEdits("Insert column", [{ op: "insert_column", sheet, colIndex }]);
   },
   deleteColumn: (sheet, colIndex) => {
-    get().applyCoreEdits([{ op: "delete_column", sheet, colIndex }]);
+    get().applyCoreEdits("Delete column", [{ op: "delete_column", sheet, colIndex }]);
   },
   exitSourceMode: () => {
     try {
@@ -360,6 +500,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       set({
         mode: "table",
         ...nextState,
+        ...emptyHistoryState(get().revision + 1),
       });
     } catch (error) {
       set({ error: toErrorMessage(error) });

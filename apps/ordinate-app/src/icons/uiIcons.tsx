@@ -127,6 +127,36 @@ export function MoreIcon() {
   );
 }
 
+export function UndoIcon() {
+  return (
+    <ToolbarIcon>
+      <path
+        d="M8 5.2 4.2 9 8 12.8M4.7 9h7.2a4 4 0 0 1 0 8H10"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+    </ToolbarIcon>
+  );
+}
+
+export function RedoIcon() {
+  return (
+    <ToolbarIcon>
+      <path
+        d="M12 5.2 15.8 9 12 12.8M15.3 9H8.1a4 4 0 0 0 0 8H10"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+    </ToolbarIcon>
+  );
+}
+
 export function CodeIcon() {
   return (
     <ToolbarIcon>
@@ -138,6 +168,52 @@ export function CodeIcon() {
         strokeLinejoin="round"
         strokeWidth="1.7"
       />
+    </ToolbarIcon>
+  );
+}
+
+export function OpenIcon() {
+  return (
+    <ToolbarIcon>
+      <path
+        d="M3.2 6.2h5l1.5 1.7h7.1v6.6a1.6 1.6 0 0 1-1.6 1.6H4.8a1.6 1.6 0 0 1-1.6-1.6V6.2Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+      <path d="M3.2 8.2V5.8a1.5 1.5 0 0 1 1.5-1.5h3.2l1.5 1.6h3.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.25" />
+    </ToolbarIcon>
+  );
+}
+
+export function SaveIcon() {
+  return (
+    <ToolbarIcon>
+      <path
+        d="M4.1 3.6h9.6l2.2 2.3v10.5H4.1V3.6Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+      <path d="M6.6 3.6v4.2h6.4V3.6M7 13.8h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.25" />
+    </ToolbarIcon>
+  );
+}
+
+export function SaveAsIcon() {
+  return (
+    <ToolbarIcon>
+      <path
+        d="M4 3.6h9.2l2.1 2.2v10.6H4V3.6Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.25"
+      />
+      <path d="M6.4 3.6v3.9h6.2V3.6" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.15" />
+      <path d="m8 14.1 4.7-4.7 1.9 1.9-4.7 4.7H8v-1.9Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.15" />
     </ToolbarIcon>
   );
 }
