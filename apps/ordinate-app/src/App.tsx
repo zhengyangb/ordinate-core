@@ -382,31 +382,42 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [shouldWarnBeforeUnload]);
 
-  const resolveManualSaveOptions = useCallback((): { allowInvalidSource?: boolean } | null => {
+  const resolveManualSaveOptions = useCallback(async (): Promise<{ allowInvalidSource?: boolean } | null> => {
     const persistableText = getPersistableText({ mode, sourceText, docState });
     if (persistableText.validity === "valid_document") return {};
-    if (!window.confirm("Source has issues. Save this text anyway?")) return null;
+    const confirmed = await requestConfirmation({
+      title: "Save source anyway?",
+      body: <p>The source text has issues. Save the file exactly as written?</p>,
+      confirmLabel: "Save Anyway",
+      cancelLabel: "Cancel",
+      tone: "warning",
+    });
+    if (!confirmed) return null;
     return { allowInvalidSource: true };
-  }, [docState, mode, sourceText]);
+  }, [docState, mode, requestConfirmation, sourceText]);
 
-  const handleOpenFile = useCallback(() => {
-    if (
-      fileSessionDocumentDirty === "dirty"
-      && !window.confirm("Open another file? Unsaved changes in this window will be replaced.")
-    ) {
-      return;
+  const handleOpenFile = useCallback(async () => {
+    if (fileSessionDocumentDirty === "dirty") {
+      const confirmed = await requestConfirmation({
+        title: "Open another file?",
+        body: <p>Unsaved changes in this window will be replaced.</p>,
+        confirmLabel: "Open File",
+        cancelLabel: "Cancel",
+        tone: "warning",
+      });
+      if (!confirmed) return;
     }
     void openFile();
-  }, [fileSessionDocumentDirty, openFile]);
+  }, [fileSessionDocumentDirty, openFile, requestConfirmation]);
 
-  const handleSaveFile = useCallback(() => {
-    const options = resolveManualSaveOptions();
+  const handleSaveFile = useCallback(async () => {
+    const options = await resolveManualSaveOptions();
     if (!options) return;
     void saveFile(options);
   }, [resolveManualSaveOptions, saveFile]);
 
-  const handleSaveFileAs = useCallback(() => {
-    const options = resolveManualSaveOptions();
+  const handleSaveFileAs = useCallback(async () => {
+    const options = await resolveManualSaveOptions();
     if (!options) return;
     void saveFileAs(options);
   }, [resolveManualSaveOptions, saveFileAs]);
