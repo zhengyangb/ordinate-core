@@ -105,6 +105,15 @@ function renderSelector(selector: RefSelector, idToIndex: Map<number, number>, l
   if (selector.kind === "all") return ":";
   if (selector.kind === "range") {
     const [startSel, endSel] = selector.value as [RefSelector | null, RefSelector | null];
+    if (isStructurallyBoundSelector(startSel) && isStructurallyBoundSelector(endSel)) {
+      const startIndex = selectorIndex(startSel, idToIndex);
+      const endIndex = selectorIndex(endSel, idToIndex);
+      if (startIndex !== null && endIndex !== null && startIndex > endIndex) {
+        const startText = renderScalarSelector(endSel, idToIndex, labelsByIndex);
+        const endText = renderScalarSelector(startSel, idToIndex, labelsByIndex);
+        return `${startText}:${endText}`;
+      }
+    }
     const startText = startSel ? renderScalarSelector(startSel, idToIndex, labelsByIndex) : "";
     const endText = endSel ? renderScalarSelector(endSel, idToIndex, labelsByIndex) : "";
     return `${startText}:${endText}`;
@@ -149,6 +158,15 @@ function renderScalarSelector(selector: RefSelector, idToIndex: Map<number, numb
     return parts.map((p) => quotePathComponent(p)).join(".");
   }
   return "?";
+}
+
+function isStructurallyBoundSelector(selector: RefSelector | null): selector is RefSelector {
+  return selector?.kind === "absolute_id" || selector?.kind === "label_id";
+}
+
+function selectorIndex(selector: RefSelector, idToIndex: Map<number, number>): number | null {
+  if (!isStructurallyBoundSelector(selector)) return null;
+  return idToIndex.get(Number(selector.value)) ?? null;
 }
 
 function quotePathComponent(text: string): string {
@@ -231,6 +249,9 @@ function spreadsheetAxis(selector: RefSelector, idToIndex: Map<number, number>):
     const start = spreadsheetScalar(startSel, idToIndex);
     const end = spreadsheetScalar(endSel, idToIndex);
     if (start === null || end === null) return null;
+    if (isStructurallyBoundSelector(startSel) && isStructurallyBoundSelector(endSel) && start > end) {
+      return { kind: "range", start: end, end: start };
+    }
     return { kind: "range", start, end };
   }
   return null;

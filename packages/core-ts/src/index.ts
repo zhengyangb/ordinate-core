@@ -89,6 +89,12 @@ export type {
   CoreRowDeleteMode,
   CoreRowInsertArea,
 } from "./core_edit_rows";
+export type {
+  CoreDuplicateColumnsEdit,
+  CoreDuplicateRowsEdit,
+  CoreMoveColumnsEdit,
+  CoreMoveRowsEdit,
+} from "./core_edit_axis";
 export type { CellInputTextView, CellTextViewSource } from "./runtime";
 export {
   formatPresentedCell,

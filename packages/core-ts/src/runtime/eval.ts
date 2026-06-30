@@ -897,6 +897,9 @@ function resolveAxisSelector(
         : ({ ok: true, index: totalCount - 1 } as const);
     if (!start.ok) return start;
     if (!end.ok) return end;
+    if (isStructurallyBoundSelector(startSel) && isStructurallyBoundSelector(endSel) && start.index > end.index) {
+      return { ok: true, indices: Array.from({ length: start.index - end.index + 1 }, (_, i) => end.index + i) };
+    }
     if (start.index > end.index) {
       return {
         ok: false,
@@ -909,6 +912,10 @@ function resolveAxisSelector(
   const idx = resolveScalarRendered(selector, current, labelMap, totalCount, currentBounds, labelKey, idToIndex);
   if (!idx.ok) return idx;
   return { ok: true, indices: [idx.index] };
+}
+
+function isStructurallyBoundSelector(selector: RefSelector | null): boolean {
+  return selector?.kind === "absolute_id" || selector?.kind === "label_id";
 }
 
 // Resolve a selector that must point to a single position.

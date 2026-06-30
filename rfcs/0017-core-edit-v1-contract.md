@@ -365,7 +365,8 @@ Minimum required suites:
 
 - header APIs (`add/remove/promote/demote`)
 - label rename APIs with rebinding policy options
-- region APIs (`setRegion`, `clearRegion`, `moveRegion`, `copyRegion`)
+- general region APIs (`setRegion`, `clearRegion`, `moveRegion`, `copyRegion`)
+- axis-level row/column move and duplicate APIs are specified separately by RFC-0034
 - explicit transaction handles
 - operation log standardization
 

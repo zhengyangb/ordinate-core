@@ -24,6 +24,7 @@ import {
   type ParsedCell,
   type ParsedDisplayMetadata,
   type FormatSpec,
+  type RefSelector,
   type StyleSpec,
   type StylePatch,
   type ReferenceExpr,
@@ -707,6 +708,84 @@ export class SheetState {
     this.finalizeStructuralRowEdit(eager);
   }
 
+  moveRows(rowIndex: number, count: number, targetGapIndex: number, eager = true) {
+    if (rowIndex < 0 || rowIndex >= this.rowCount) {
+      throw new Error("row index out of range");
+    }
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("row move count must be a positive integer");
+    }
+    if (rowIndex + count > this.rowCount) {
+      throw new Error("row move range out of range");
+    }
+    if (targetGapIndex < 0 || targetGapIndex > this.rowCount - count) {
+      throw new Error("row target gap out of range");
+    }
+
+    const changed = moveContiguousSegment(this.logicalRows, rowIndex, count, targetGapIndex);
+    if (!changed) return;
+    moveContiguousSegment(this.cells, rowIndex, count, targetGapIndex);
+    moveContiguousSegment(this.rowDisplayMetadata, rowIndex, count, targetGapIndex);
+    moveContiguousSegment(this.rowIds, rowIndex, count, targetGapIndex);
+    this.finalizeStructuralRowEdit(eager);
+  }
+
+  duplicateRows(rowIndex: number, count: number, targetGapIndex: number, eager = true) {
+    if (rowIndex < 0 || rowIndex >= this.rowCount) {
+      throw new Error("row index out of range");
+    }
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("row duplicate count must be a positive integer");
+    }
+    if (rowIndex + count > this.rowCount) {
+      throw new Error("row duplicate range out of range");
+    }
+    if (targetGapIndex < 0 || targetGapIndex > this.rowCount) {
+      throw new Error("row duplicate target gap out of range");
+    }
+    if (targetGapIndex > rowIndex && targetGapIndex < rowIndex + count) {
+      throw new Error("row duplicate target gap must not be inside the source segment");
+    }
+
+    const sourceInHeader = rowIndex + count <= this.bodyStart;
+    const sourceInBody = rowIndex >= this.bodyStart;
+    if (!sourceInHeader && !sourceInBody) {
+      throw new Error("row duplicate source must stay within one row region");
+    }
+    if (sourceInHeader && targetGapIndex > this.headerRowCount) {
+      throw new Error("header row duplicate target gap out of range");
+    }
+    if (sourceInBody && targetGapIndex < this.bodyStart) {
+      throw new Error("body row duplicate target gap out of range");
+    }
+
+    const sourceIds = this.rowIds.slice(rowIndex, rowIndex + count);
+    const newRowIds = sourceIds.map(() => this.nextRowId++);
+    const rowIdRemap = buildIdRemap(sourceIds, newRowIds);
+
+    const clonedRows = this.logicalRows
+      .slice(rowIndex, rowIndex + count)
+      .map((row) => structuredClone(row) as ParsedRow);
+    const clonedCells = this.cells
+      .slice(rowIndex, rowIndex + count)
+      .map((rowCells) => rowCells.map((cell) => cloneCellStateForDuplicate(cell, rowIdRemap, new Map())));
+    const clonedRowMetadata = this.rowDisplayMetadata
+      .slice(rowIndex, rowIndex + count)
+      .map((metadata) => structuredClone(metadata) as ParsedDisplayMetadata | null);
+
+    this.logicalRows.splice(targetGapIndex, 0, ...clonedRows);
+    this.cells.splice(targetGapIndex, 0, ...clonedCells);
+    this.rowDisplayMetadata.splice(targetGapIndex, 0, ...clonedRowMetadata);
+    this.rowIds.splice(targetGapIndex, 0, ...newRowIds);
+
+    if (sourceInHeader) {
+      this.headerRowCount += count;
+      this.bodyStart = this.headerRowCount;
+    }
+
+    this.finalizeStructuralRowEdit(eager);
+  }
+
   convertBodyPrefixToHeader(count: number, eager = true) {
     if (!Number.isInteger(count) || count <= 0) {
       throw new Error("row conversion count must be a positive integer");
@@ -790,6 +869,101 @@ export class SheetState {
     }
     this.colIds.splice(colIndex, 1);
     this.columnDisplayMetadata.splice(colIndex, 1);
+
+    this.rebuildMetadata();
+    this.refreshFormulaSourceTexts();
+    this.markAllDirty();
+    if (eager) {
+      this.recalculate();
+    }
+  }
+
+  moveColumns(colIndex: number, count: number, targetGapIndex: number, eager = true) {
+    if (colIndex < this.headerColCount) {
+      throw new Error("header column movement is not supported");
+    }
+    if (colIndex < 0 || colIndex >= this.colCount) {
+      throw new Error("column index out of range");
+    }
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("column move count must be a positive integer");
+    }
+    if (colIndex + count > this.colCount) {
+      throw new Error("column move range out of range");
+    }
+    if (targetGapIndex < 0 || targetGapIndex > this.colCount - count) {
+      throw new Error("column target gap out of range");
+    }
+
+    let changed = false;
+    for (const row of this.logicalRows) {
+      padArray(row.rawCells, this.colCount, "");
+      padArray(row.cells, this.colCount, "");
+      changed = moveContiguousSegment(row.rawCells, colIndex, count, targetGapIndex) || changed;
+      moveContiguousSegment(row.cells, colIndex, count, targetGapIndex);
+    }
+    for (const rowCells of this.cells) {
+      moveContiguousSegment(rowCells, colIndex, count, targetGapIndex);
+    }
+    moveContiguousSegment(this.colIds, colIndex, count, targetGapIndex);
+    moveContiguousSegment(this.columnDisplayMetadata, colIndex, count, targetGapIndex);
+
+    if (!changed) return;
+    this.rebuildMetadata();
+    this.refreshFormulaSourceTexts();
+    this.markAllDirty();
+    if (eager) {
+      this.recalculate();
+    }
+  }
+
+  duplicateColumns(colIndex: number, count: number, targetGapIndex: number, eager = true) {
+    if (colIndex < this.headerColCount) {
+      throw new Error("header column duplication is not supported");
+    }
+    if (colIndex < 0 || colIndex >= this.colCount) {
+      throw new Error("column index out of range");
+    }
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("column duplicate count must be a positive integer");
+    }
+    if (colIndex + count > this.colCount) {
+      throw new Error("column duplicate range out of range");
+    }
+    if (targetGapIndex < 0 || targetGapIndex > this.colCount) {
+      throw new Error("column duplicate target gap out of range");
+    }
+    if (targetGapIndex < this.headerColCount) {
+      throw new Error("column duplicate target gap must be inside data columns");
+    }
+    if (targetGapIndex > colIndex && targetGapIndex < colIndex + count) {
+      throw new Error("column duplicate target gap must not be inside the source segment");
+    }
+
+    const sourceIds = this.colIds.slice(colIndex, colIndex + count);
+    const newColIds = sourceIds.map(() => this.nextColId++);
+    const colIdRemap = buildIdRemap(sourceIds, newColIds);
+
+    for (const row of this.logicalRows) {
+      padArray(row.rawCells, this.colCount, "");
+      padArray(row.cells, this.colCount, "");
+      row.rawCells.splice(targetGapIndex, 0, ...structuredClone(row.rawCells.slice(colIndex, colIndex + count)));
+      row.cells.splice(targetGapIndex, 0, ...structuredClone(row.cells.slice(colIndex, colIndex + count)));
+    }
+    for (const rowCells of this.cells) {
+      const clonedCells = rowCells
+        .slice(colIndex, colIndex + count)
+        .map((cell) => cloneCellStateForDuplicate(cell, new Map(), colIdRemap));
+      rowCells.splice(targetGapIndex, 0, ...clonedCells);
+    }
+    this.colIds.splice(targetGapIndex, 0, ...newColIds);
+    this.columnDisplayMetadata.splice(
+      targetGapIndex,
+      0,
+      ...this.columnDisplayMetadata
+        .slice(colIndex, colIndex + count)
+        .map((metadata) => structuredClone(metadata) as ParsedDisplayMetadata | null),
+    );
 
     this.rebuildMetadata();
     this.refreshFormulaSourceTexts();
@@ -1245,6 +1419,130 @@ function buildIdIndexMap(ids: number[]): Map<number, number> {
   const map = new Map<number, number>();
   ids.forEach((id, idx) => map.set(id, idx));
   return map;
+}
+
+function moveContiguousSegment<T>(items: T[], start: number, count: number, targetGapIndex: number): boolean {
+  if (targetGapIndex === start) return false;
+  const segment = items.splice(start, count);
+  items.splice(targetGapIndex, 0, ...segment);
+  return true;
+}
+
+function padArray<T>(items: T[], length: number, value: T): void {
+  while (items.length < length) {
+    items.push(value);
+  }
+}
+
+function buildIdRemap(sourceIds: number[], newIds: number[]): Map<number, number> {
+  const remap = new Map<number, number>();
+  sourceIds.forEach((sourceId, index) => {
+    const newId = newIds[index];
+    if (newId === undefined) {
+      throw new Error("duplicate ID remap length mismatch");
+    }
+    remap.set(sourceId, newId);
+  });
+  return remap;
+}
+
+function cloneCellStateForDuplicate(
+  cell: CellState,
+  rowIdRemap: Map<number, number>,
+  colIdRemap: Map<number, number>,
+): CellState {
+  const cloned = structuredClone(cell) as CellState;
+  cloned.cachedValue = null;
+  cloned.dirty = true;
+  if (cloned.body.valid && cloned.body.kind === "formula") {
+    remapDuplicateExpressionSelectors(cloned.body.expression, rowIdRemap, colIdRemap);
+  }
+  return cloned;
+}
+
+function remapDuplicateExpressionSelectors(
+  node: ExprNode | null,
+  rowIdRemap: Map<number, number>,
+  colIdRemap: Map<number, number>,
+): void {
+  if (!node) return;
+  if (node.kind === "reference") {
+    const ref = node.value as ReferenceExpr;
+    ref.rowSelector = remapDuplicateSelector(ref.rowSelector, rowIdRemap);
+    ref.colSelector = remapDuplicateSelector(ref.colSelector, colIdRemap);
+    return;
+  }
+  if (node.kind === "call") {
+    const call = node.value as { args: ExprNode[] };
+    call.args.forEach((arg) => remapDuplicateExpressionSelectors(arg, rowIdRemap, colIdRemap));
+    return;
+  }
+  if (node.kind === "array") {
+    const array = node.value as { rows: ExprNode[][] };
+    array.rows.forEach((row) => row.forEach((element) => remapDuplicateExpressionSelectors(element, rowIdRemap, colIdRemap)));
+    return;
+  }
+  if (node.kind === "index") {
+    const index = node.value as {
+      target: ExprNode;
+      axes: Array<{ kind: string; value?: ExprNode; start?: ExprNode | null; end?: ExprNode | null }>;
+    };
+    remapDuplicateExpressionSelectors(index.target, rowIdRemap, colIdRemap);
+    index.axes.forEach((axis) => {
+      if (axis.kind === "scalar") {
+        remapDuplicateExpressionSelectors(axis.value ?? null, rowIdRemap, colIdRemap);
+      } else {
+        remapDuplicateExpressionSelectors(axis.start ?? null, rowIdRemap, colIdRemap);
+        remapDuplicateExpressionSelectors(axis.end ?? null, rowIdRemap, colIdRemap);
+      }
+    });
+    return;
+  }
+  if (node.kind === "unary") {
+    remapDuplicateExpressionSelectors(node.right ?? null, rowIdRemap, colIdRemap);
+    return;
+  }
+  if (node.kind === "binary") {
+    remapDuplicateExpressionSelectors(node.left ?? null, rowIdRemap, colIdRemap);
+    remapDuplicateExpressionSelectors(node.right ?? null, rowIdRemap, colIdRemap);
+  }
+}
+
+function remapDuplicateSelector(selector: RefSelector, idRemap: Map<number, number>): RefSelector {
+  if (selector.kind === "range") {
+    const [startSel, endSel] = selector.value as [RefSelector | null, RefSelector | null];
+    if (
+      isStructurallyBoundSelector(startSel) &&
+      isStructurallyBoundSelector(endSel) &&
+      idRemap.has(Number(startSel.value)) &&
+      idRemap.has(Number(endSel.value))
+    ) {
+      return {
+        kind: "range",
+        value: [
+          remapBoundSelector(startSel, idRemap),
+          remapBoundSelector(endSel, idRemap),
+        ],
+      };
+    }
+    return selector;
+  }
+  if (isStructurallyBoundSelector(selector)) {
+    return remapBoundSelector(selector, idRemap);
+  }
+  return selector;
+}
+
+function isStructurallyBoundSelector(selector: RefSelector | null): selector is RefSelector {
+  return selector?.kind === "absolute_id" || selector?.kind === "label_id";
+}
+
+function remapBoundSelector(selector: RefSelector, idRemap: Map<number, number>): RefSelector {
+  const nextId = idRemap.get(Number(selector.value));
+  if (nextId === undefined) {
+    return selector;
+  }
+  return { kind: selector.kind, value: nextId };
 }
 
 function cloneHistoryValue<T>(value: T): T {
