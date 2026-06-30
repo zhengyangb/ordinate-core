@@ -791,6 +791,211 @@ textarea {
     z-index: 124;
 }
 
+.app-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 240;
+    display: grid;
+    place-items: center;
+    padding: clamp(1rem, 4vw, 2.5rem);
+    background:
+        radial-gradient(
+            circle at 50% 46%,
+            color-mix(in oklab, var(--chrome-bg) 18%, transparent),
+            transparent 46%
+        ),
+        color-mix(in oklab, var(--bg-page) 14%, transparent);
+    -webkit-backdrop-filter: blur(2px) saturate(1.01);
+    backdrop-filter: blur(2px) saturate(1.01);
+    animation: app-modal-backdrop-in 140ms var(--ease-out-quart);
+}
+
+.app-modal-shell {
+    width: min(27rem, calc(100vw - 2rem));
+    outline: none;
+    animation: app-modal-in 160ms var(--ease-out-quart);
+}
+
+.app-modal-content {
+    position: relative;
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    overflow: hidden;
+    border: var(--menu-surface-border);
+    border-radius: calc(var(--menu-surface-radius) + 0.18rem);
+    background: color-mix(in oklab, var(--menu-surface-bg) 88%, var(--formula-shell-bg));
+    color: var(--chrome-ink);
+    box-shadow:
+        inset 0 1px 0 var(--formula-shell-topline),
+        var(--menu-surface-shadow),
+        0 24px 70px color-mix(in oklab, var(--chrome-ink) 14%, transparent);
+    -webkit-backdrop-filter: var(--menu-surface-backdrop);
+    backdrop-filter: var(--menu-surface-backdrop);
+}
+
+.app-modal-content::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 1px;
+    background: color-mix(in oklab, var(--formula-shell-topline) 86%, transparent);
+    pointer-events: none;
+}
+
+.app-modal-content[data-tone="danger"]::after,
+.app-modal-content[data-tone="warning"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+.app-modal-content[data-tone="danger"]::after {
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger-border) 30%, transparent);
+}
+
+.app-modal-content[data-tone="warning"]::after {
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--warning-border) 30%, transparent);
+}
+
+.app-modal-header {
+    display: grid;
+    gap: 0;
+}
+
+.app-modal-header h2 {
+    margin: 0;
+    color: var(--chrome-ink);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.app-modal-body {
+    color: color-mix(in oklab, var(--chrome-ink) 76%, var(--chrome-soft));
+    font-size: 0.86rem;
+    line-height: 1.45;
+    display: grid;
+    gap: 0.34rem;
+}
+
+.app-modal-body p {
+    margin: 0;
+}
+
+.app-modal-target {
+    color: color-mix(in oklab, var(--chrome-ink) 92%, var(--chrome-soft));
+    font-weight: 700;
+}
+
+.app-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding-top: 0.18rem;
+}
+
+.app-modal-action {
+    min-height: 2rem;
+    padding: 0.38rem 0.82rem;
+    border: 1px solid color-mix(in oklab, var(--chrome-border) 78%, transparent);
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    cursor: pointer;
+    transition:
+        border-color 140ms var(--ease-out-quart),
+        background-color 140ms var(--ease-out-quart),
+        color 140ms var(--ease-out-quart),
+        transform 140ms var(--ease-out-quart),
+        box-shadow 140ms var(--ease-out-quart);
+}
+
+.app-modal-action.secondary {
+    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
+    color: color-mix(in oklab, var(--chrome-ink) 82%, var(--chrome-soft));
+}
+
+.app-modal-action.secondary:hover {
+    border-color: color-mix(in oklab, var(--chrome-border) 96%, transparent);
+    background: color-mix(in oklab, var(--toolbar-pill) 92%, var(--chrome-bg));
+    color: var(--chrome-ink);
+}
+
+.app-modal-action.primary {
+    background: color-mix(in oklab, var(--accent-soft) 56%, var(--toolbar-pill));
+    color: color-mix(in oklab, var(--accent-strong) 86%, var(--chrome-ink));
+    border-color: color-mix(in oklab, var(--accent) 34%, var(--chrome-border));
+}
+
+.app-modal-action.primary[data-tone="danger"] {
+    background: color-mix(in oklab, var(--danger-bg) 76%, var(--toolbar-pill));
+    color: color-mix(in oklab, var(--danger-ink) 86%, var(--chrome-ink));
+    border-color: color-mix(in oklab, var(--danger-border) 48%, var(--chrome-border));
+}
+
+.app-modal-action.primary[data-tone="warning"] {
+    background: color-mix(in oklab, var(--warning-bg) 72%, var(--toolbar-pill));
+    color: color-mix(in oklab, var(--warning-ink) 86%, var(--chrome-ink));
+    border-color: color-mix(in oklab, var(--warning-border) 48%, var(--chrome-border));
+}
+
+.app-modal-action.primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px color-mix(in oklab, var(--accent-strong) 10%, transparent);
+}
+
+.app-modal-action.primary[data-tone="danger"]:hover {
+    box-shadow: 0 8px 18px color-mix(in oklab, var(--danger-border) 16%, transparent);
+}
+
+.app-modal-action:active {
+    transform: translateY(0);
+}
+
+.app-modal-action:focus-visible {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 2px;
+}
+
+@keyframes app-modal-backdrop-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes app-modal-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-modal-backdrop,
+    .app-modal-shell {
+        animation: none;
+    }
+
+    .app-modal-action {
+        transition: none;
+    }
+
+    .app-modal-action.primary:hover {
+        transform: none;
+    }
+}
+
 .menu-surface.open {
     opacity: 1;
     transform: translateY(0) scale(1);
