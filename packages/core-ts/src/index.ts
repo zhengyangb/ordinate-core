@@ -82,6 +82,10 @@ export {
   type CoreEditHistoryDirection,
   type CoreEditHistoryMemento,
   type CoreRegionTarget,
+  type CoreDeleteSheetEdit,
+  type CoreInsertSheetEdit,
+  type CoreMoveSheetEdit,
+  type CoreRenameSheetEdit,
 } from "./core_edit";
 export type {
   CoreDeleteRowEdit,

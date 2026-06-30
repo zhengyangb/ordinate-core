@@ -53,6 +53,29 @@ export type CoreRegionTarget = {
   end: { rowId: number; colId: number };
 };
 
+export type CoreInsertSheetEdit = {
+  op: "insert_sheet";
+  name: string;
+  sheetIndex: number;
+};
+
+export type CoreDeleteSheetEdit = {
+  op: "delete_sheet";
+  sheet: string;
+};
+
+export type CoreMoveSheetEdit = {
+  op: "move_sheet";
+  sheet: string;
+  targetGapIndex: number;
+};
+
+export type CoreRenameSheetEdit = {
+  op: "rename_sheet";
+  sheet: string;
+  newName: string;
+};
+
 export type CoreEdit =
   | { op: "set_cell_input"; target: CoreCellTarget; input: string }
   | { op: "clear_cell"; target: CoreCellTarget }
@@ -72,7 +95,10 @@ export type CoreEdit =
   | { op: "clear_region"; target: CoreRegionTarget }
   | { op: "convert_rows_to_header"; sheet: string; rowIds: number[] }
   | { op: "convert_rows_to_body"; sheet: string; rowIds: number[]; depth: number }
-  | { op: "rename_sheet"; sheet: string; newName: string }
+  | CoreRenameSheetEdit
+  | CoreInsertSheetEdit
+  | CoreDeleteSheetEdit
+  | CoreMoveSheetEdit
   | CoreInsertRowEdit
   | CoreDeleteRowEdit
   | CoreMoveColumnsEdit
@@ -90,7 +116,8 @@ export type { CoreEditErrorCategory } from "./core_edit_common";
 
 export type CoreEditHistoryDirection = "undo" | "redo";
 
-interface CoreEditHistoryEntry {
+interface CoreSheetHistoryEntry {
+  kind: "sheet";
   op: CoreEdit["op"];
   editIndex: number;
   before: SheetHistorySnapshot;
@@ -98,6 +125,22 @@ interface CoreEditHistoryEntry {
   beforeSignature: string;
   afterSignature: string;
 }
+
+interface CoreDocumentHistorySnapshot {
+  sheets: SheetHistorySnapshot[];
+}
+
+interface CoreDocumentHistoryEntry {
+  kind: "document";
+  op: CoreEdit["op"];
+  editIndex: number;
+  before: CoreDocumentHistorySnapshot;
+  after: CoreDocumentHistorySnapshot;
+  beforeSignature: string;
+  afterSignature: string;
+}
+
+type CoreEditHistoryEntry = CoreSheetHistoryEntry | CoreDocumentHistoryEntry;
 
 interface CoreEditHistoryMementoInternal {
   kind: "core_edit_history_memento";
@@ -209,21 +252,41 @@ export function applyBatchWithUndo(
   for (let i = 0; i < edits.length; i += 1) {
     const edit = edits[i];
     try {
-      const sheet = resolveSheet(staged, sheetNameForEdit(edit));
-      const before = sheet.captureHistorySnapshot();
-      const beforeSignature = sheetSnapshotSignature(before);
-      applySingleEdit(staged, edit);
-      const after = sheet.captureHistorySnapshot();
-      const afterSignature = sheetSnapshotSignature(after);
-      if (beforeSignature !== afterSignature) {
-        entries.push({
-          op: edit.op,
-          editIndex: i,
-          before,
-          after,
-          beforeSignature,
-          afterSignature,
-        });
+      if (isDocumentHistoryEdit(edit)) {
+        const before = captureDocumentHistorySnapshot(staged);
+        const beforeSignature = documentSnapshotSignature(before);
+        applySingleEdit(staged, edit);
+        const after = captureDocumentHistorySnapshot(staged);
+        const afterSignature = documentSnapshotSignature(after);
+        if (beforeSignature !== afterSignature) {
+          entries.push({
+            kind: "document",
+            op: edit.op,
+            editIndex: i,
+            before,
+            after,
+            beforeSignature,
+            afterSignature,
+          });
+        }
+      } else {
+        const sheet = resolveSheet(staged, sheetNameForEdit(edit));
+        const before = sheet.captureHistorySnapshot();
+        const beforeSignature = sheetSnapshotSignature(before);
+        applySingleEdit(staged, edit);
+        const after = sheet.captureHistorySnapshot();
+        const afterSignature = sheetSnapshotSignature(after);
+        if (beforeSignature !== afterSignature) {
+          entries.push({
+            kind: "sheet",
+            op: edit.op,
+            editIndex: i,
+            before,
+            after,
+            beforeSignature,
+            afterSignature,
+          });
+        }
       }
     } catch (error) {
       return { ok: false, error: coreEditErrorFromCaught(error, i, edit.op) };
@@ -253,20 +316,32 @@ export function applyCoreEditMemento(
   const entries = direction === "undo" ? [...internal.entries].reverse() : internal.entries;
 
   for (const entry of entries) {
-    const expected = direction === "undo" ? entry.after : entry.before;
-    const expectedSignature = direction === "undo" ? entry.afterSignature : entry.beforeSignature;
-    const replacement = direction === "undo" ? entry.before : entry.after;
-
     try {
-      const sheet = resolveSheet(staged, expected.name);
-      const currentSignature = sheetSnapshotSignature(sheet.captureHistorySnapshot());
-      if (currentSignature !== expectedSignature) {
-        throw new CoreEditFailure(
-          "invalid_operation",
-          `cannot ${direction} ${entry.op}: document state does not match the history entry`,
-        );
+      if (entry.kind === "document") {
+        const expectedSignature = direction === "undo" ? entry.afterSignature : entry.beforeSignature;
+        const replacement = direction === "undo" ? entry.before : entry.after;
+        const currentSignature = documentSnapshotSignature(captureDocumentHistorySnapshot(staged));
+        if (currentSignature !== expectedSignature) {
+          throw new CoreEditFailure(
+            "invalid_operation",
+            `cannot ${direction} ${entry.op}: document state does not match the history entry`,
+          );
+        }
+        restoreDocumentHistorySnapshot(staged, replacement);
+      } else {
+        const expected = direction === "undo" ? entry.after : entry.before;
+        const expectedSignature = direction === "undo" ? entry.afterSignature : entry.beforeSignature;
+        const replacement = direction === "undo" ? entry.before : entry.after;
+        const sheet = resolveSheet(staged, expected.name);
+        const currentSignature = sheetSnapshotSignature(sheet.captureHistorySnapshot());
+        if (currentSignature !== expectedSignature) {
+          throw new CoreEditFailure(
+            "invalid_operation",
+            `cannot ${direction} ${entry.op}: document state does not match the history entry`,
+          );
+        }
+        sheet.restoreHistorySnapshot(replacement);
       }
-      sheet.restoreHistorySnapshot(replacement);
     } catch (error) {
       return { ok: false, error: coreEditErrorFromCaught(error, entry.editIndex, entry.op) };
     }
@@ -364,7 +439,24 @@ function coreEditErrorFromCaught(error: unknown, editIndex: number, op: CoreEdit
 
 function sheetNameForEdit(edit: CoreEdit): string {
   if ("target" in edit) return edit.target.sheet;
+  if (
+    edit.op === "insert_sheet" ||
+    edit.op === "delete_sheet" ||
+    edit.op === "move_sheet" ||
+    edit.op === "rename_sheet"
+  ) {
+    throw new CoreEditFailure("invalid_operation", `${edit.op} is a document-level edit`);
+  }
   return edit.sheet;
+}
+
+function isDocumentHistoryEdit(edit: CoreEdit): boolean {
+  return (
+    edit.op === "insert_sheet" ||
+    edit.op === "delete_sheet" ||
+    edit.op === "move_sheet" ||
+    edit.op === "rename_sheet"
+  );
 }
 
 function asInternalMemento(memento: CoreEditHistoryMemento): CoreEditHistoryMementoInternal {
@@ -375,6 +467,27 @@ function asInternalMemento(memento: CoreEditHistoryMemento): CoreEditHistoryMeme
 }
 
 function sheetSnapshotSignature(snapshot: SheetHistorySnapshot): string {
+  return JSON.stringify(snapshot);
+}
+
+function captureDocumentHistorySnapshot(document: DocumentState): CoreDocumentHistorySnapshot {
+  return {
+    sheets: document.sheets.map((sheet) => sheet.captureHistorySnapshot()),
+  };
+}
+
+function restoreDocumentHistorySnapshot(document: DocumentState, snapshot: CoreDocumentHistorySnapshot): void {
+  const restored = structuredClone(snapshot) as CoreDocumentHistorySnapshot;
+  document.sheets = restored.sheets.map(sheetFromHistorySnapshot);
+}
+
+function sheetFromHistorySnapshot(snapshot: SheetHistorySnapshot): SheetState {
+  const sheet = SheetState.fromTableRows(snapshot.name, []);
+  sheet.restoreHistorySnapshot(snapshot);
+  return sheet;
+}
+
+function documentSnapshotSignature(snapshot: CoreDocumentHistorySnapshot): string {
   return JSON.stringify(snapshot);
 }
 
@@ -500,20 +613,23 @@ function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
     return;
   }
 
+  if (edit.op === "insert_sheet") {
+    applyInsertSheetEdit(document, edit);
+    return;
+  }
+
+  if (edit.op === "delete_sheet") {
+    applyDeleteSheetEdit(document, edit);
+    return;
+  }
+
+  if (edit.op === "move_sheet") {
+    applyMoveSheetEdit(document, edit);
+    return;
+  }
+
   if (edit.op === "rename_sheet") {
-    const sheet = resolveSheet(document, edit.sheet);
-    const newName = edit.newName.trim();
-    if (newName.length === 0) {
-      throw new CoreEditFailure("invalid_operation", "sheet name cannot be empty");
-    }
-    if (newName === sheet.name) {
-      return;
-    }
-    const duplicate = document.sheets.some((candidate) => candidate !== sheet && candidate.name === newName);
-    if (duplicate) {
-      throw new CoreEditFailure("invalid_operation", `sheet name '${newName}' already exists`);
-    }
-    sheet.name = newName;
+    applyRenameSheetEdit(document, edit);
     return;
   }
 
@@ -600,6 +716,90 @@ function collectAffectedFormulaCells(
 
 function fail(category: CoreEditErrorCategory, message: string): never {
   throw new CoreEditFailure(category, message);
+}
+
+function applyInsertSheetEdit(document: DocumentState, edit: CoreInsertSheetEdit): void {
+  const name = normalizeSheetName(edit.name);
+  assertUniqueSheetName(document, name);
+  assertInteger(edit.sheetIndex, "sheetIndex", fail);
+  if (edit.sheetIndex < 0 || edit.sheetIndex > document.sheets.length) {
+    throw new CoreEditFailure("out_of_bounds", `sheetIndex ${edit.sheetIndex} out of bounds`);
+  }
+
+  document.sheets.splice(edit.sheetIndex, 0, createBlankSheet(name));
+}
+
+function applyDeleteSheetEdit(document: DocumentState, edit: CoreDeleteSheetEdit): void {
+  const sheetIndex = resolveSheetIndex(document, edit.sheet);
+  if (document.sheets.length <= 1) {
+    throw new CoreEditFailure("invalid_operation", "cannot delete the final sheet");
+  }
+  document.sheets.splice(sheetIndex, 1);
+}
+
+function applyMoveSheetEdit(document: DocumentState, edit: CoreMoveSheetEdit): void {
+  const sheetIndex = resolveSheetIndex(document, edit.sheet);
+  assertInteger(edit.targetGapIndex, "targetGapIndex", fail);
+  const remainingSheetCount = document.sheets.length - 1;
+  if (edit.targetGapIndex < 0 || edit.targetGapIndex > remainingSheetCount) {
+    throw new CoreEditFailure("out_of_bounds", `targetGapIndex ${edit.targetGapIndex} out of bounds after source removal`);
+  }
+  if (edit.targetGapIndex === sheetIndex) {
+    return;
+  }
+  const [sheet] = document.sheets.splice(sheetIndex, 1);
+  if (!sheet) {
+    throw new CoreEditFailure("invalid_target", `unknown sheet '${edit.sheet}'`);
+  }
+  document.sheets.splice(edit.targetGapIndex, 0, sheet);
+}
+
+function applyRenameSheetEdit(document: DocumentState, edit: CoreRenameSheetEdit): void {
+  const sheet = resolveSheet(document, edit.sheet);
+  const newName = normalizeSheetName(edit.newName);
+  if (newName === sheet.name) {
+    return;
+  }
+  assertUniqueSheetName(document, newName, sheet);
+  sheet.name = newName;
+}
+
+function createBlankSheet(name: string): SheetState {
+  return SheetState.fromTableRows(name, ["| |"]);
+}
+
+function normalizeSheetName(name: string): string {
+  if (typeof name !== "string") {
+    throw new CoreEditFailure("invalid_operation", "sheet name must be a string");
+  }
+  const normalized = name.trim();
+  if (normalized.length === 0) {
+    throw new CoreEditFailure("invalid_operation", "sheet name cannot be empty");
+  }
+  return normalized;
+}
+
+function assertUniqueSheetName(document: DocumentState, name: string, except?: SheetState): void {
+  const duplicate = document.sheets.some((candidate) => candidate !== except && candidate.name === name);
+  if (duplicate) {
+    throw new CoreEditFailure("invalid_operation", `sheet name '${name}' already exists`);
+  }
+}
+
+function resolveSheetIndex(document: DocumentState, sheetName: string): number {
+  const matches: number[] = [];
+  document.sheets.forEach((candidate, index) => {
+    if (candidate.name === sheetName) {
+      matches.push(index);
+    }
+  });
+  if (matches.length === 0) {
+    throw new CoreEditFailure("invalid_target", `unknown sheet '${sheetName}'`);
+  }
+  if (matches.length > 1) {
+    throw new CoreEditFailure("ambiguous_target", `ambiguous sheet '${sheetName}'`);
+  }
+  return matches[0];
 }
 
 function resolveSheet(document: DocumentState, sheetName: string): SheetState {
