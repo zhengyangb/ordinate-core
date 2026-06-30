@@ -17,6 +17,7 @@ import {
   type StylePatch,
 } from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
+import { useConfirmationDialog } from "./components/ConfirmationDialog";
 import ErrorCellChip from "./components/ErrorCellChip";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
@@ -148,6 +149,7 @@ const SELECTION_DRAG_SCROLL_MAX_PX = 24;
 
 export default function App() {
   const uiLocale = useMemo(() => resolveUiLocale(window.navigator.language), []);
+  const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
   const {
     mode,
     sourceText,
@@ -374,6 +376,23 @@ export default function App() {
       return [headerLeafLabels[colIndex] ?? `C${colIndex + 1}`];
     });
   }, [currentSheetState, headerLeafLabels, headerMatrix, sheetColCount]);
+
+  const describeRowDeleteTarget = useCallback((rowNumber: number, area: "header" | "body", rowId: number, deletedRowCount: number) => {
+    const rowRange = deletedRowCount > 1 ? `Rows ${rowNumber}-${rowNumber + deletedRowCount - 1}` : `Row ${rowNumber}`;
+    const headerCell = currentSheetState?.cells[rowNumber - 1]?.[0] ?? null;
+    const label = area === "body"
+      ? currentSheetRowStructure.find((row) => row.rowId === rowId)?.label.trim() ?? ""
+      : headerCell
+        ? getCellTextView(headerCell).inputText.trim()
+        : "";
+    return label.length > 0 ? `${rowRange} · ${label}` : rowRange;
+  }, [currentSheetRowStructure, currentSheetState]);
+
+  const describeColumnDeleteTarget = useCallback((colIndex: number) => {
+    const columnLabel = toColumnLetters(colIndex + 1);
+    const semanticPath = headerSemanticLabelPaths[colIndex]?.filter((label) => label.trim().length > 0) ?? [];
+    return semanticPath.length > 0 ? `${columnLabel} · ${semanticPath.join(" / ")}` : columnLabel;
+  }, [headerSemanticLabelPaths]);
 
   const columnHasLocalConfig = useMemo<boolean[]>(() => {
     return buildColumnHasLocalConfig(currentSheetPresentation, sheetColCount);
@@ -3117,7 +3136,7 @@ export default function App() {
     });
   }, [activeSheet, currentSheet, currentSheetState, currentSheetRowStructure, defaultBodyRailColIndex, selectedCell, headerRowCount, startRowTransition, insertRow, closeRailMenu, focusHeaderOverlayCell, focusBodyCellAt]);
 
-  const handleDeleteRow = useCallback((rowNumber: number, area: "header" | "body", rowId: number, mode: "node" | "subtree" = "node") => {
+  const handleDeleteRow = useCallback(async (rowNumber: number, area: "header" | "body", rowId: number, mode: "node" | "subtree" = "node") => {
     if (!activeSheet) {
       throw new Error("row deletion requires an active sheet");
     }
@@ -3128,12 +3147,21 @@ export default function App() {
       throw new Error("row deletion requires at least one selectable column");
     }
     const preview = previewDeleteRow(activeSheet, rowId, mode);
-    if (
-      preview.affectedFormulaCellCount > 0 &&
-      !window.confirm(`Delete this row? ${preview.affectedFormulaCellCount} formula cell(s) reference the deleted row(s).`)
-    ) {
+    if (preview.affectedFormulaCellCount > 0) {
       closeRailMenu();
-      return;
+      const confirmed = await requestConfirmation({
+        title: "Delete row?",
+        body: (
+          <>
+            <p className="app-modal-target">{describeRowDeleteTarget(rowNumber, area, rowId, preview.deletedRowCount)}</p>
+            <p>{preview.affectedFormulaCellCount} formula cell(s) reference the row(s) being deleted.</p>
+          </>
+        ),
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        tone: "danger",
+      });
+      if (!confirmed) return;
     }
     if (area === "header") {
       const nextHeaderRowNumber = headerRowCount <= 1 ? null : Math.min(rowNumber, headerRowCount - 1);
@@ -3192,7 +3220,7 @@ export default function App() {
     window.requestAnimationFrame(() => {
       focusBodyCellAt(nextRowNumber, nextColIndex);
     });
-  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, previewDeleteRow, deleteRow, closeRailMenu, headerRowCount, clearActiveSelection, focusHeaderOverlayCell, startRowTransition, focusBodyCellAt]);
+  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, previewDeleteRow, deleteRow, closeRailMenu, requestConfirmation, describeRowDeleteTarget, headerRowCount, clearActiveSelection, focusHeaderOverlayCell, startRowTransition, focusBodyCellAt]);
 
   const handleConvertRowsToHeader = useCallback((rowId: number) => {
     if (!activeSheet) {
@@ -3267,17 +3295,26 @@ export default function App() {
     setFormulaInputMode("read");
   }, [activeSheet, startColumnTransition, insertColumn, closeRailMenu]);
 
-  const handleDeleteColumn = useCallback((colIndex: number) => {
+  const handleDeleteColumn = useCallback(async (colIndex: number) => {
     if (!activeSheet) {
       throw new Error("column deletion requires an active sheet");
     }
     const preview = previewDeleteColumn(activeSheet, colIndex);
-    if (
-      preview.affectedFormulaCellCount > 0 &&
-      !window.confirm(`Delete this column? ${preview.affectedFormulaCellCount} formula cell(s) reference the deleted column.`)
-    ) {
+    if (preview.affectedFormulaCellCount > 0) {
       closeRailMenu();
-      return;
+      const confirmed = await requestConfirmation({
+        title: "Delete column?",
+        body: (
+          <>
+            <p className="app-modal-target">{describeColumnDeleteTarget(colIndex)}</p>
+            <p>{preview.affectedFormulaCellCount} formula cell(s) reference this column.</p>
+          </>
+        ),
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        tone: "danger",
+      });
+      if (!confirmed) return;
     }
     startColumnTransition("delete");
     deleteColumn(activeSheet, colIndex);
@@ -3290,7 +3327,7 @@ export default function App() {
       setSelectedColumnIndex(null);
     }
     setFormulaInputMode("read");
-  }, [activeSheet, previewDeleteColumn, startColumnTransition, deleteColumn, closeRailMenu, sheetColCount, headerColCount]);
+  }, [activeSheet, previewDeleteColumn, closeRailMenu, requestConfirmation, describeColumnDeleteTarget, startColumnTransition, deleteColumn, sheetColCount, headerColCount]);
 
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -3528,6 +3565,7 @@ export default function App() {
         onSetRowDefaultStyle={handleSetRowDefaultStyle}
         tooltip={tooltip}
       />
+      {confirmationDialog}
     </div>
   );
 }
