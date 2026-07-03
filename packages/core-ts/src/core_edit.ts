@@ -768,7 +768,15 @@ function applyRenameSheetEdit(document: DocumentState, edit: CoreRenameSheetEdit
 }
 
 function createBlankSheet(document: DocumentState, name: string): SheetState {
-  const sheet = SheetState.fromTableRows(name, ["| |"], undefined, undefined, document.nextSheetId);
+  const row = "|      ||      |      |      |      |";
+  const separator = "| ---- || ---- | ---- | ---- | ---- |";
+  const sheet = SheetState.fromTableRows(
+    name,
+    [row, separator, ...Array.from({ length: 9 }, () => row)],
+    undefined,
+    undefined,
+    document.nextSheetId,
+  );
   document.nextSheetId += 1;
   return sheet;
 }
