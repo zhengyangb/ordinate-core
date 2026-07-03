@@ -23,6 +23,12 @@ const THREE_SHEETS_DOC = `
 | 3 |
 `.trim();
 
+const DEFAULT_GRID_ROWS = [
+  "|      ||      |      |      |      |",
+  "| ---- || ---- | ---- | ---- | ---- |",
+  ...Array.from({ length: 9 }, () => "|      ||      |      |      |      |"),
+].join("\n");
+
 const RICH_SHEET_DOC = `
 # Alpha
 | A |
@@ -87,7 +93,7 @@ function expectRoundTrip(document: DocumentState): void {
 }
 
 describe("RFC-0035 core sheet lifecycle: insert sheet", () => {
-  it("inserts sheets at the beginning, middle, and end with a valid minimal table", () => {
+  it("inserts sheets at the beginning, middle, and end with a default editable grid", () => {
     const state = DocumentState.fromText(THREE_SHEETS_DOC);
     expect(sheetIds(state)).toEqual([1, 2, 3]);
     expect(state.nextSheetId).toBe(4);
@@ -97,8 +103,10 @@ describe("RFC-0035 core sheet lifecycle: insert sheet", () => {
     expect(sheetIds(beginning)).toEqual([4, 1, 2, 3]);
     expect(beginning.nextSheetId).toBe(5);
     expectUniqueSheetIds(beginning);
-    expect(beginning.sheets[0].rowCount).toBe(1);
-    expect(beginning.sheets[0].colCount).toBe(1);
+    expect(beginning.sheets[0].rowCount).toBe(10);
+    expect(beginning.sheets[0].colCount).toBe(5);
+    expect(beginning.sheets[0].headerRowCount).toBe(1);
+    expect(beginning.sheets[0].headerColCount).toBe(1);
 
     const middle = expectApply(state, [{ op: "insert_sheet", name: "Middle", sheetIndex: 2 }]);
     expect(sheetNames(middle)).toEqual(["Alpha", "Beta", "Middle", "Gamma"]);
@@ -109,7 +117,7 @@ describe("RFC-0035 core sheet lifecycle: insert sheet", () => {
     expect(sheetNames(end)).toEqual(["Alpha", "Beta", "Gamma", "End"]);
     expect(sheetIds(end)).toEqual([1, 2, 3, 4]);
     expect(end.nextSheetId).toBe(5);
-    expect(serializeDocumentState(end)).toContain("# End\n|  |");
+    expect(serializeDocumentState(end)).toContain("# End\n|     ||     |     |     |     |");
     expectRoundTrip(end);
   });
 
@@ -316,14 +324,14 @@ describe("RFC-0035 core sheet lifecycle: rename and history", () => {
 
     const applied = applyBatchWithUndo(state, [
       { op: "insert_sheet", name: "Delta", sheetIndex: 1 },
-      { op: "set_cell_input", target: { kind: "index", sheet: "Delta", rowIndex: 0, colIndex: 0 }, input: "42" },
+      { op: "set_cell_input", target: { kind: "index", sheet: "Delta", rowIndex: 1, colIndex: 1 }, input: "42" },
       { op: "move_sheet", sheet: "Delta", targetGapIndex: 3 },
     ]);
     expect(applied.ok, applied.ok ? undefined : applied.error.message).toBe(true);
     if (!applied.ok) throw new Error("expected mixed history success");
     expect(sheetNames(applied.nextDocument)).toEqual(["Alpha", "Beta", "Gamma", "Delta"]);
     expect(sheetIds(applied.nextDocument)).toEqual([1, 2, 3, 4]);
-    expect(applied.nextDocument.evaluate().sheets[3].values[0][0]).toMatchObject({ kind: "number", value: 42 });
+    expect(applied.nextDocument.evaluate().sheets[3].values[0][1]).toMatchObject({ kind: "number", value: 42 });
 
     const after = serializeDocumentState(applied.nextDocument);
     const afterIds = sheetIds(applied.nextDocument);
@@ -338,7 +346,7 @@ describe("RFC-0035 core sheet lifecycle: rename and history", () => {
     if (!redone.ok) throw new Error("expected redo success");
     expect(serializeDocumentState(redone.nextDocument)).toBe(after);
     expect(sheetIds(redone.nextDocument)).toEqual(afterIds);
-    expect(redone.nextDocument.evaluate().sheets[3].values[0][0]).toMatchObject({ kind: "number", value: 42 });
+    expect(redone.nextDocument.evaluate().sheets[3].values[0][1]).toMatchObject({ kind: "number", value: 42 });
   });
 
   it("applies sheet-level history to the same sheet ID after sheet reorder", () => {
@@ -479,7 +487,7 @@ describe("RFC-0035 core sheet lifecycle: rename and history", () => {
   it("rejects stale sheet-level history against a same-name same-content replacement", () => {
     const state = DocumentState.fromText(`
 # A
-|  |
+${DEFAULT_GRID_ROWS}
 
 # B
 | 2 |
@@ -487,7 +495,7 @@ describe("RFC-0035 core sheet lifecycle: rename and history", () => {
     const originalAId = state.sheets[0].sheetId;
 
     const edited = applyBatchWithUndo(state, [
-      { op: "set_cell_input", target: { kind: "index", sheet: "A", rowIndex: 0, colIndex: 0 }, input: "99" },
+      { op: "set_cell_input", target: { kind: "index", sheet: "A", rowIndex: 1, colIndex: 1 }, input: "99" },
     ]);
     expect(edited.ok, edited.ok ? undefined : edited.error.message).toBe(true);
     if (!edited.ok) throw new Error("expected sheet edit success");
@@ -495,7 +503,7 @@ describe("RFC-0035 core sheet lifecycle: rename and history", () => {
     const replaced = applyBatchAtomic(edited.nextDocument, [
       { op: "delete_sheet", sheet: "A" },
       { op: "insert_sheet", name: "A", sheetIndex: 0 },
-      { op: "set_cell_input", target: { kind: "index", sheet: "A", rowIndex: 0, colIndex: 0 }, input: "99" },
+      { op: "set_cell_input", target: { kind: "index", sheet: "A", rowIndex: 1, colIndex: 1 }, input: "99" },
     ]);
     expect(replaced.ok, replaced.ok ? undefined : replaced.error.message).toBe(true);
     if (!replaced.ok) throw new Error("expected identical same-name replacement success");

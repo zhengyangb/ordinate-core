@@ -24,6 +24,7 @@ import {
   type ValidationResult,
   serializeDocumentState,
 } from "@ordinate/core";
+import { nextSheetName } from "../utils/sheetTabs";
 
 export type EditorMode = "source" | "table";
 
@@ -63,6 +64,9 @@ export interface EditorState {
   redo: () => void;
   setCellInput: (target: CoreCellTarget, input: string) => void;
   clearCell: (target: CoreCellTarget) => void;
+  insertSheet: (name?: string, sheetIndex?: number) => void;
+  deleteSheet: (sheet: string) => void;
+  moveSheet: (sheet: string, targetGapIndex: number) => void;
   renameSheet: (sheet: string, newName: string) => void;
   setCellLocalFormat: (target: CoreCellTarget, format: FormatSpec | null) => void;
   clearCellLocalFormat: (target: CoreCellTarget) => void;
@@ -418,6 +422,34 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   clearCell: (target) => {
     get().applyCoreEdits("Clear cell", [{ op: "clear_cell", target }]);
   },
+  insertSheet: (name, sheetIndex) => {
+    const { docState } = get();
+    if (!docState) {
+      throw new Error("cannot insert sheet without an active document state");
+    }
+    const sheetNames = docState.sheets.map((sheet) => sheet.name);
+    const nextName = name ?? nextSheetName(sheetNames);
+    const nextSheetIndex = sheetIndex ?? docState.sheets.length;
+    get().applyCoreEdits("Insert sheet", [{ op: "insert_sheet", name: nextName, sheetIndex: nextSheetIndex }], nextName.trim());
+  },
+  deleteSheet: (sheet) => {
+    const { docState, activeSheet } = get();
+    if (!docState) {
+      throw new Error("cannot delete sheet without an active document state");
+    }
+    const sheetIndex = docState.sheets.findIndex((candidate) => candidate.name === sheet);
+    if (sheetIndex < 0) {
+      throw new Error(`cannot delete unknown sheet '${sheet}'`);
+    }
+    const nextActiveSheetHint =
+      activeSheet === sheet
+        ? docState.sheets[sheetIndex + 1]?.name ?? docState.sheets[sheetIndex - 1]?.name ?? null
+        : activeSheet;
+    get().applyCoreEdits("Delete sheet", [{ op: "delete_sheet", sheet }], nextActiveSheetHint);
+  },
+  moveSheet: (sheet, targetGapIndex) => {
+    get().applyCoreEdits("Move sheet", [{ op: "move_sheet", sheet, targetGapIndex }], get().activeSheet);
+  },
   renameSheet: (sheet, newName) => {
     const { activeSheet } = get();
     const nextActiveSheetHint = activeSheet === sheet ? newName.trim() : activeSheet;
@@ -510,13 +542,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().applyCoreEdits("Delete column", [{ op: "delete_column", sheet, colIndex }]);
   },
   exitSourceMode: () => {
+    const state = get();
+    if (state.docState && state.sourceText === serializeDocumentState(state.docState)) {
+      set({
+        mode: "table",
+        ...deriveStateFromDocument(state.docState, state.activeSheet),
+        history: state.history,
+        historyCursor: state.historyCursor,
+        savedHistoryCursor: state.savedHistoryCursor,
+        nextHistoryId: state.nextHistoryId,
+        revision: state.revision,
+        ...historyStatus(state.history, state.historyCursor, state.savedHistoryCursor),
+      });
+      return;
+    }
+
     try {
-      const docState = DocumentState.fromText(get().sourceText);
+      const docState = DocumentState.fromText(state.sourceText);
       const nextState = deriveStateFromDocument(docState, docState.sheets[0]?.name ?? null);
       set({
         mode: "table",
         ...nextState,
-        ...emptyHistoryState(get().revision + 1),
+        ...emptyHistoryState(state.revision + 1),
       });
     } catch (error) {
       set({ error: toErrorMessage(error) });

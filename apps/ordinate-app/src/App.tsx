@@ -342,6 +342,9 @@ export default function App() {
     revision,
     setSourceText,
     setActiveSheet,
+    insertSheet,
+    deleteSheet,
+    moveSheet,
     renameSheet,
     setCellInput,
     clearCell,
@@ -3908,13 +3911,45 @@ export default function App() {
     absoluteRowToDisplayedIndex,
   ]);
   const handleRenameSheet = useCallback((sheetName: string, nextName: string): string | null => {
+    const trimmedName = nextName.trim();
+    if (trimmedName.length === 0) {
+      return "Sheet name cannot be empty.";
+    }
+    if (sheetNames.some((name) => name !== sheetName && name === trimmedName)) {
+      return `A sheet named "${trimmedName}" already exists.`;
+    }
     try {
       renameSheet(sheetName, nextName);
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
     }
-  }, [renameSheet]);
+  }, [renameSheet, sheetNames]);
+  const handleInsertSheet = useCallback(() => {
+    insertSheet();
+  }, [insertSheet]);
+  const handleMoveSheet = useCallback((sheetName: string, targetGapIndex: number) => {
+    moveSheet(sheetName, targetGapIndex);
+  }, [moveSheet]);
+  const handleDeleteSheet = useCallback(async (sheetName: string) => {
+    if (!docState) {
+      throw new Error("cannot delete sheet without an active document state");
+    }
+    if (docState.sheets.length <= 1) return;
+    const confirmed = await requestConfirmation({
+      title: "Delete sheet?",
+      body: (
+        <>
+          <p>This removes the sheet from the document. You can restore it with undo.</p>
+          <p className="app-modal-target">{sheetName}</p>
+        </>
+      ),
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    deleteSheet(sheetName);
+  }, [deleteSheet, docState, requestConfirmation]);
   const handleCommitFormulaInput = useCallback((nextInput: string) => {
     if (!formulaEditSourceCell) {
       throw new Error("formula input commit requires an edit source cell");
@@ -4567,6 +4602,9 @@ export default function App() {
           sheetNames={sheetNames}
           sheetHealthByName={sheetHealthByName}
           setActiveSheet={setActiveSheet}
+          onInsertSheet={handleInsertSheet}
+          onDeleteSheet={handleDeleteSheet}
+          onMoveSheet={handleMoveSheet}
           onRenameSheet={handleRenameSheet}
           visibleTools={visibleTools}
           overflowTools={overflowTools}

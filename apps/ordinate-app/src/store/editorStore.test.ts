@@ -113,11 +113,39 @@ describe("editor store history", () => {
     expect(useEditorStore.getState().history).toHaveLength(0);
   });
 
-  it("clears app history after source mode reparses successfully", () => {
+  it("preserves app history when source mode exits without source changes", () => {
+    useEditorStore.getState().setCellInput({ kind: "index", sheet: "Sheet", rowIndex: 2, colIndex: 1 }, "10");
+    const before = canonicalStoreDocument();
+    const startRevision = useEditorStore.getState().revision;
+    expect(useEditorStore.getState()).toMatchObject({
+      historyCursor: 1,
+      canUndo: true,
+      isDirty: true,
+    });
+
+    useEditorStore.getState().enterSourceMode();
+    useEditorStore.getState().exitSourceMode();
+
+    expect(canonicalStoreDocument()).toBe(before);
+    expect(useEditorStore.getState()).toMatchObject({
+      mode: "table",
+      historyCursor: 1,
+      canUndo: true,
+      canRedo: false,
+      undoLabel: "Set cell input",
+      redoLabel: null,
+      isDirty: true,
+      revision: startRevision,
+    });
+    expect(useEditorStore.getState().history).toHaveLength(1);
+  });
+
+  it("clears app history after changed source mode text reparses successfully", () => {
     useEditorStore.getState().setCellInput({ kind: "index", sheet: "Sheet", rowIndex: 2, colIndex: 1 }, "10");
     expect(useEditorStore.getState().canUndo).toBe(true);
 
     useEditorStore.getState().enterSourceMode();
+    useEditorStore.getState().setSourceText(useEditorStore.getState().sourceText.replace("| * A   || 10", "| * A   || 11"));
     useEditorStore.getState().exitSourceMode();
 
     expect(useEditorStore.getState()).toMatchObject({

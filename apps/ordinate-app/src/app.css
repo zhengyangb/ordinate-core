@@ -1670,6 +1670,8 @@ textarea {
     padding: 0.34rem 0.6rem;
     background: color-mix(in oklab, var(--chrome-bg-strong) 92%, transparent);
     overflow: hidden;
+    display: flex;
+    align-items: center;
     transform: translateY(0);
     transition:
         transform 220ms var(--ease-out-quart),
@@ -1694,6 +1696,12 @@ textarea {
     color: var(--chrome-soft);
     -webkit-user-select: none;
     user-select: none;
+    cursor: pointer;
+    transition:
+        border-color 160ms var(--ease-out-quart),
+        background-color 160ms var(--ease-out-quart),
+        color 160ms var(--ease-out-quart),
+        box-shadow 160ms var(--ease-out-quart);
 }
 
 .sheet-add svg {
@@ -1701,18 +1709,56 @@ textarea {
     height: 0.84rem;
 }
 
+.sheet-add:hover:not(:disabled),
+.sheet-add:focus-visible {
+    border-color: color-mix(in oklab, var(--accent) 42%, var(--chrome-border));
+    background: color-mix(in oklab, var(--accent-soft) 38%, transparent);
+    color: color-mix(in oklab, var(--accent-strong) 84%, var(--chrome-ink));
+    box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.22);
+}
+
+.sheet-add:disabled {
+    cursor: default;
+    opacity: 0.48;
+}
+
+.sheet-tabs-viewport {
+    position: relative;
+    min-width: 0;
+    width: max-content;
+    max-width: calc(100% - 2.2rem);
+    flex: 0 1 auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--chrome-border) 70%, transparent) transparent;
+    overscroll-behavior-x: contain;
+}
+
+.sheet-tabs-viewport::-webkit-scrollbar {
+    height: 4px;
+}
+
+.sheet-tabs-viewport::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sheet-tabs-viewport::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--chrome-border) 62%, transparent);
+}
+
 .sheet-tabs {
     display: flex;
     align-items: center;
     gap: 0.42rem;
-    min-width: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
+    min-width: max-content;
+    padding: 0.02rem 0.08rem 0.16rem 0;
 }
 
 .sheet-tab {
-    flex: 1 1 5.4rem;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: 5.4rem;
     max-width: 10.5rem;
     display: inline-flex;
     align-items: center;
@@ -1732,12 +1778,15 @@ textarea {
         border-color 160ms var(--ease-out-quart),
         color 160ms var(--ease-out-quart),
         box-shadow 160ms var(--ease-out-quart),
+        opacity 160ms var(--ease-out-quart),
+        transform 160ms var(--ease-out-quart),
         backdrop-filter 160ms var(--ease-out-quart);
     -webkit-user-select: none;
     user-select: none;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    touch-action: none;
 }
 
 .sheet-tab.renaming {
@@ -1791,6 +1840,31 @@ textarea {
         oklch(18% 0.02 240 / 0.75)
     );
     color: oklch(98% 0.005 95);
+}
+
+.sheet-tab-rename-error {
+    position: fixed;
+    z-index: 2600;
+    width: 260px;
+    padding: 0.46rem 0.62rem;
+    border: 1px solid color-mix(in oklab, var(--danger-border) 44%, var(--chrome-border));
+    border-radius: 0.62rem;
+    background:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, var(--danger-bg) 18%, var(--menu-bg)) 0%,
+            color-mix(in oklab, var(--danger-bg) 10%, var(--menu-bg)) 100%
+        );
+    color: color-mix(in oklab, var(--danger-ink) 90%, var(--chrome-ink));
+    box-shadow:
+        0 14px 28px color-mix(in oklab, var(--shadow-strong) 16%, transparent),
+        inset 0 1px 0 color-mix(in oklab, oklch(100% 0 0 / 0.2) 84%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(128%);
+    backdrop-filter: blur(18px) saturate(128%);
+    font-size: 0.76rem;
+    font-weight: 620;
+    line-height: 1.25;
+    pointer-events: none;
 }
 
 .sheet-tab-alert {
@@ -1853,12 +1927,43 @@ textarea {
 }
 
 .sheet-tab.active {
-    flex: 1.02 1 5.2rem;
     min-width: clamp(4.4rem, 14vw, 6.8rem);
     max-width: min(11.4rem, 42vw);
     background: var(--accent);
     border-color: color-mix(in oklab, var(--accent-strong) 75%, transparent);
     color: oklch(99.1% 0.003 95);
+}
+
+.sheet-tab.dragging {
+    opacity: 0.68;
+    transform: translateY(-1px);
+    box-shadow:
+        inset 0 1px 0 oklch(100% 0 0 / 0.22),
+        0 12px 24px oklch(30% 0.012 100 / 0.12);
+}
+
+.sheet-tab-drop-indicator {
+    position: absolute;
+    top: 0.18rem;
+    bottom: 0.3rem;
+    width: 2px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--accent-strong) 88%, var(--accent));
+    box-shadow:
+        0 0 0 1px color-mix(in oklab, var(--sheet-surface) 76%, transparent),
+        0 0 16px color-mix(in oklab, var(--accent) 26%, transparent);
+    pointer-events: none;
+    z-index: 3;
+}
+
+.sheet-tab-menu {
+    min-width: 13.6rem;
+    z-index: 124;
+}
+
+.sheet-tab-menu-head {
+    padding-bottom: 0.34rem;
 }
 
 .sheet-tab.active .sheet-tab-alert {

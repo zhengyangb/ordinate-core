@@ -253,6 +253,55 @@ describe("editor store history scenario matrix", () => {
       ],
     },
     {
+      name: "sheet lifecycle commands",
+      source: MULTI_SHEET_DOC,
+      steps: [
+        {
+          name: "insert sheet at end",
+          expectedUndoLabel: "Insert sheet",
+          act: (ctx) => ctx.store().insertSheet(),
+          verifyAfterForward: (ctx) => {
+            expect(ctx.store().activeSheet).toBe("Sheet 1");
+            expect(ctx.sheet("Sheet 1").rowCount).toBe(10);
+            expect(ctx.sheet("Sheet 1").colCount).toBe(5);
+            expect(ctx.sheet("Sheet 1").headerRowCount).toBe(1);
+            expect(ctx.sheet("Sheet 1").headerColCount).toBe(1);
+          },
+          verifyAfterRedo: (ctx) => expect(ctx.store().activeSheet).toBe("Sheet 1"),
+        },
+        {
+          name: "move inserted sheet left",
+          expectedUndoLabel: "Move sheet",
+          act: (ctx) => ctx.store().moveSheet("Sheet 1", 1),
+          verifyAfterForward: (ctx) => {
+            expect(ctx.store().docState?.sheets.map((sheet) => sheet.name)).toEqual(["Sheet", "Sheet 1", "Other"]);
+            expect(ctx.store().activeSheet).toBe("Sheet 1");
+          },
+          verifyAfterRedo: (ctx) => expect(ctx.store().activeSheet).toBe("Sheet 1"),
+        },
+        {
+          name: "delete inactive sheet",
+          expectedUndoLabel: "Delete sheet",
+          act: (ctx) => ctx.store().deleteSheet("Other"),
+          verifyAfterForward: (ctx) => {
+            expect(ctx.store().docState?.sheets.map((sheet) => sheet.name)).toEqual(["Sheet", "Sheet 1"]);
+            expect(ctx.store().activeSheet).toBe("Sheet 1");
+          },
+          verifyAfterRedo: (ctx) => expect(ctx.store().activeSheet).toBe("Sheet 1"),
+        },
+        {
+          name: "delete active sheet",
+          expectedUndoLabel: "Delete sheet",
+          act: (ctx) => ctx.store().deleteSheet("Sheet 1"),
+          verifyAfterForward: (ctx) => {
+            expect(ctx.store().docState?.sheets.map((sheet) => sheet.name)).toEqual(["Sheet"]);
+            expect(ctx.store().activeSheet).toBe("Sheet");
+          },
+          verifyAfterRedo: (ctx) => expect(ctx.store().activeSheet).toBe("Sheet"),
+        },
+      ],
+    },
+    {
       name: "display metadata commands",
       source: DISPLAY_DOC,
       steps: [
@@ -583,6 +632,7 @@ describe("editor store history branch and reset scenarios", () => {
     const revision = useEditorStore.getState().revision;
 
     useEditorStore.getState().renameSheet("Sheet", "Sheet");
+    useEditorStore.getState().moveSheet("Sheet", 0);
 
     expectSnapshot(captureOrdSnapshot(), before, "no-op rename");
     expect(useEditorStore.getState()).toMatchObject({
@@ -595,12 +645,70 @@ describe("editor store history branch and reset scenarios", () => {
     expect(useEditorStore.getState().history).toHaveLength(0);
   });
 
-  it("clears app history after successful source mode reparse", () => {
+  it("fails sheet lifecycle commands without mutating document or history", () => {
+    resetStore(MULTI_SHEET_DOC);
+    const before = captureOrdSnapshot();
+
+    expect(() => useEditorStore.getState().insertSheet("Other")).toThrow("already exists");
+    expect(() => useEditorStore.getState().insertSheet("   ")).toThrow("empty");
+    expect(() => useEditorStore.getState().deleteSheet("Missing")).toThrow("unknown");
+    expect(() => useEditorStore.getState().moveSheet("Sheet", 99)).toThrow("out of bounds");
+
+    expectSnapshot(captureOrdSnapshot(), before, "failed sheet lifecycle commands");
+    expect(useEditorStore.getState()).toMatchObject({
+      historyCursor: 0,
+      canUndo: false,
+      canRedo: false,
+      isDirty: false,
+    });
+  });
+
+  it("rejects deleting the final sheet without mutating document or history", () => {
+    resetStore();
+    const before = captureOrdSnapshot();
+
+    expect(() => useEditorStore.getState().deleteSheet("Sheet")).toThrow("final sheet");
+
+    expectSnapshot(captureOrdSnapshot(), before, "failed final sheet delete");
+    expect(useEditorStore.getState()).toMatchObject({
+      historyCursor: 0,
+      canUndo: false,
+      canRedo: false,
+      isDirty: false,
+    });
+  });
+
+  it("preserves app history when source mode exits without source changes", () => {
+    resetStore();
+    useEditorStore.getState().setCellInput({ kind: "index", sheet: "Sheet", rowIndex: 2, colIndex: 1 }, "10");
+    const before = captureOrdSnapshot();
+    const startRevision = useEditorStore.getState().revision;
+    expect(useEditorStore.getState().historyCursor).toBe(1);
+
+    useEditorStore.getState().enterSourceMode();
+    useEditorStore.getState().exitSourceMode();
+
+    expect(captureOrdSnapshot()).toEqual(before);
+    expect(useEditorStore.getState()).toMatchObject({
+      mode: "table",
+      historyCursor: 1,
+      canUndo: true,
+      canRedo: false,
+      undoLabel: "Set cell input",
+      redoLabel: null,
+      isDirty: true,
+      revision: startRevision,
+    });
+    expect(useEditorStore.getState().history).toHaveLength(1);
+  });
+
+  it("clears app history after changed source mode text reparses successfully", () => {
     resetStore();
     useEditorStore.getState().setCellInput({ kind: "index", sheet: "Sheet", rowIndex: 2, colIndex: 1 }, "10");
     expect(useEditorStore.getState().historyCursor).toBe(1);
 
     useEditorStore.getState().enterSourceMode();
+    useEditorStore.getState().setSourceText(useEditorStore.getState().sourceText.replace("| * A   || 10", "| * A   || 11"));
     useEditorStore.getState().exitSourceMode();
 
     expect(useEditorStore.getState()).toMatchObject({
