@@ -84,6 +84,10 @@ export interface EditorState {
   previewDeleteColumn: (sheet: string, colIndex: number) => CoreDeleteColumnPreview;
   insertRow: (sheet: string, area: CoreRowInsertArea, rowGapIndex: number, depth: number) => void;
   deleteRow: (sheet: string, rowId: number, mode?: CoreRowDeleteMode) => void;
+  moveColumns: (sheet: string, colIds: number[], targetGapIndex: number) => void;
+  moveRows: (sheet: string, rowIds: number[], targetGapIndex: number) => void;
+  duplicateColumns: (sheet: string, colIds: number[], targetGapIndex: number) => void;
+  duplicateRows: (sheet: string, rowIds: number[], targetGapIndex: number) => void;
   insertColumn: (sheet: string, colIndex: number) => void;
   deleteColumn: (sheet: string, colIndex: number) => void;
   exitSourceMode: () => void;
@@ -486,6 +490,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   deleteRow: (sheet, rowId, mode) => {
     get().applyCoreEdits("Delete row", [{ op: "delete_row", sheet, rowId, mode }]);
+  },
+  moveColumns: (sheet, colIds, targetGapIndex) => {
+    get().applyCoreEdits("Move column", [{ op: "move_columns", sheet, colIds, targetGapIndex }]);
+  },
+  moveRows: (sheet, rowIds, targetGapIndex) => {
+    get().applyCoreEdits("Move row", [{ op: "move_rows", sheet, rowIds, targetGapIndex }]);
+  },
+  duplicateColumns: (sheet, colIds, targetGapIndex) => {
+    get().applyCoreEdits("Duplicate column", [{ op: "duplicate_columns", sheet, colIds, targetGapIndex }]);
+  },
+  duplicateRows: (sheet, rowIds, targetGapIndex) => {
+    get().applyCoreEdits("Duplicate row", [{ op: "duplicate_rows", sheet, rowIds, targetGapIndex }]);
   },
   insertColumn: (sheet, colIndex) => {
     get().applyCoreEdits("Insert column", [{ op: "insert_column", sheet, colIndex }]);

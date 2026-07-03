@@ -1,6 +1,7 @@
 import type { GridApi } from "ag-grid-community";
 
 import type { ColumnMetric, GridRow, HeaderOverlayHitResult, RowIndexMetric } from "../types/ui";
+import { mergeColumnMetricsWithVisualOverrides } from "../utils/gridGeometry";
 
 export type GridScrollSnapshot = {
   top: number;
@@ -23,7 +24,12 @@ export type RowMetricsSnapshot = {
 
 export type GridViewportAdapter = {
   collectRowMetrics(api: GridApi<GridRow> | null, rowHeightFallback: number): RowMetricsSnapshot;
-  collectColumnMetrics(api: GridApi<GridRow> | null, colIndexLookup: Map<string, number>, expectedColCount: number): ColumnMetric[];
+  collectColumnMetrics(
+    root: HTMLElement | null,
+    api: GridApi<GridRow> | null,
+    colIndexLookup: Map<string, number>,
+    expectedColCount: number,
+  ): ColumnMetric[];
   readLeafHeaderCells(root: HTMLElement, colIndexLookup: Map<string, number>): LeafHeaderCellMetric[];
   resolveLeafHeaderColIdAtClientX(root: HTMLElement, clientX: number, colIndexLookup: Map<string, number>): string | null;
   resolveHeaderColIdFromTarget(target: HTMLElement | null, colCount: number, colIndexLookup: Map<string, number>): string | null;
@@ -88,7 +94,7 @@ export function createAgGridAdapter(): GridViewportAdapter {
       };
     },
 
-    collectColumnMetrics(api, colIndexLookup, expectedColCount) {
+    collectColumnMetrics(root, api, colIndexLookup, expectedColCount) {
       if (!api) return [];
       const columns = api.getAllDisplayedColumns();
       if (columns.length === 0) return [];
@@ -109,7 +115,8 @@ export function createAgGridAdapter(): GridViewportAdapter {
         .filter((column) => toPinnedZone(column.getPinned()) === "center")
         .reduce((sum, column) => sum + column.getActualWidth(), 0);
 
-      const metrics = columns.map((column) => {
+      const baseByColIndex = new Map<number, { metric: ColumnMetric; zone: "left" | "center" | "right" }>();
+      const baseMetrics = columns.map((column) => {
         const colId = column.getColId();
         const colNumber = colIndexLookup.get(colId);
         if (!colNumber) {
@@ -123,22 +130,55 @@ export function createAgGridAdapter(): GridViewportAdapter {
         if (!(width > 0)) {
           throw new Error(`invalid width for column ${colId}: ${width}`);
         }
-        const pinnedZone = toPinnedZone(column.getPinned());
+        const zone = toPinnedZone(column.getPinned());
         const globalLeft =
-          pinnedZone === "left"
+          zone === "left"
             ? left
-            : pinnedZone === "center"
+            : zone === "center"
               ? leftPinnedWidth + left
               : leftPinnedWidth + centerWidth + left;
-        return {
+        const metric = {
           colIndex: colNumber - 1,
           left: globalLeft,
           width,
         };
+        baseByColIndex.set(metric.colIndex, { metric, zone });
+        return metric;
       });
 
-      metrics.sort((a, b) => a.colIndex - b.colIndex);
-      return metrics;
+      if (!root) {
+        return baseMetrics.sort((a, b) => a.colIndex - b.colIndex);
+      }
+
+      const horizontalViewport = queryHorizontalViewport(root);
+      const scrollLeft = horizontalViewport?.scrollLeft ?? 0;
+      const visualMetrics = this.readLeafHeaderCells(root, colIndexLookup).map((cell) => {
+        const width = cell.right - cell.left;
+        if (!(width > 0)) {
+          throw new Error(`invalid width for column ${cell.colId}: ${width}`);
+        }
+        const base = baseByColIndex.get(cell.colIndex);
+        if (!base) {
+          return {
+            colIndex: cell.colIndex,
+            left: cell.left,
+            width,
+          };
+        }
+        const left =
+          base.zone === "left"
+            ? cell.left
+            : base.zone === "center"
+              ? cell.left + scrollLeft
+              : base.metric.left;
+        return {
+          colIndex: cell.colIndex,
+          left,
+          width,
+        };
+      });
+
+      return mergeColumnMetricsWithVisualOverrides(baseMetrics, visualMetrics).sort((a, b) => a.colIndex - b.colIndex);
     },
 
     readLeafHeaderCells(root, colIndexLookup) {

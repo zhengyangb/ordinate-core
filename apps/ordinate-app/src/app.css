@@ -426,6 +426,7 @@ html,
 body,
 #root {
     height: 100%;
+    overscroll-behavior: none;
 }
 
 html {
@@ -1981,6 +1982,7 @@ textarea {
     height: 100%;
     min-height: calc(100vh - 8.5rem);
     overflow: hidden;
+    overscroll-behavior: contain;
     border: 0;
     border-radius: 0;
     background: var(--sheet-surface);
@@ -2043,10 +2045,11 @@ textarea {
     display: block;
     min-width: 100%;
     height: var(--index-rail-height-active);
-    border: 1px solid var(--index-rail-border);
+    border: 0;
     border-radius: 0.78rem;
     background: var(--index-rail-surface);
     box-shadow:
+        inset 0 0 0 1px var(--index-rail-border),
         inset 0 1px 0 var(--index-rail-highlight),
         var(--sticky-row-shadow);
     overflow: hidden;
@@ -2100,6 +2103,15 @@ textarea {
     background: color-mix(in oklab, var(--accent-soft) 28%, transparent);
 }
 
+.column-index-cell.is-axis-drag-source {
+    z-index: 3;
+    background: color-mix(in oklab, var(--accent-soft) 46%, transparent);
+    color: color-mix(in oklab, var(--sheet-ink) 82%, var(--accent-strong));
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 42%, transparent),
+        0 6px 16px -12px color-mix(in oklab, var(--accent-strong) 38%, transparent);
+}
+
 .column-index-main {
     display: inline-flex;
     align-items: center;
@@ -2117,6 +2129,9 @@ textarea {
     color: inherit;
     cursor: pointer;
     overflow: hidden;
+    -webkit-user-drag: none;
+    touch-action: none;
+    user-select: none;
 }
 
 .column-index-main:focus-visible {
@@ -2184,6 +2199,12 @@ textarea {
 
 .column-index-cell.is-active .column-index-main {
     background: transparent;
+}
+
+.column-index-cell.is-axis-selected {
+    background: color-mix(in oklab, var(--accent-soft) 30%, transparent);
+    color: color-mix(in oklab, var(--sheet-ink) 78%, var(--accent-strong));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 24%, transparent);
 }
 
 .column-index-cell.is-active .column-index-menu-trigger {
@@ -2285,6 +2306,9 @@ textarea {
     color: inherit;
     font: inherit;
     cursor: pointer;
+    -webkit-user-drag: none;
+    touch-action: none;
+    user-select: none;
 }
 
 .row-index-main:focus-visible {
@@ -2306,6 +2330,27 @@ textarea {
     color: color-mix(in oklab, var(--sheet-ink) 78%, var(--accent-strong));
 }
 
+.row-index-cell.is-axis-selected {
+    background: color-mix(in oklab, var(--accent-soft) 32%, transparent);
+    color: color-mix(in oklab, var(--sheet-ink) 80%, var(--accent-strong));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 24%, transparent);
+}
+
+.row-index-cell.is-axis-selection-invalid {
+    background: color-mix(in oklab, var(--danger-bg) 48%, transparent);
+    color: color-mix(in oklab, var(--danger-ink) 86%, var(--sheet-ink));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger-ink) 34%, transparent);
+}
+
+.row-index-cell.is-axis-drag-source {
+    z-index: 2;
+    background: color-mix(in oklab, var(--accent-soft) 48%, transparent);
+    color: color-mix(in oklab, var(--sheet-ink) 82%, var(--accent-strong));
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 40%, transparent),
+        0 6px 16px -12px color-mix(in oklab, var(--accent-strong) 38%, transparent);
+}
+
 .row-index-cell:focus-visible {
     outline: none;
 }
@@ -2316,6 +2361,124 @@ textarea {
     min-height: 0;
     overflow: hidden;
     background: var(--sheet-surface);
+}
+
+.axis-drop-indicator {
+    position: absolute;
+    z-index: 16;
+    pointer-events: none;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--selection-ring-color) 88%, white 8%);
+    box-shadow:
+        0 0 0 1px color-mix(in oklab, var(--workspace-frame) 68%, transparent),
+        0 0 0 3px color-mix(in oklab, var(--selection-ring-color) 16%, transparent),
+        0 6px 18px color-mix(in oklab, var(--selection-ring-color) 22%, transparent);
+    opacity: 0.98;
+}
+
+.axis-drop-indicator.is-invalid {
+    background: color-mix(in oklab, var(--danger-ink) 72%, white 12%);
+    box-shadow:
+        0 0 0 1px color-mix(in oklab, var(--workspace-frame) 72%, transparent),
+        0 0 0 3px color-mix(in oklab, var(--danger-ink) 16%, transparent),
+        0 6px 18px color-mix(in oklab, var(--danger-ink) 20%, transparent);
+}
+
+.axis-drop-indicator.is-noop {
+    opacity: 0.42;
+    box-shadow:
+        0 0 0 1px color-mix(in oklab, var(--workspace-frame) 54%, transparent),
+        0 0 0 2px color-mix(in oklab, var(--sheet-soft) 10%, transparent);
+}
+
+.axis-row-drag-preview {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    pointer-events: none;
+    border: 1px solid color-mix(in oklab, var(--accent-strong) 34%, transparent);
+    border-radius: 6px;
+    background: color-mix(in oklab, var(--accent-soft) 22%, transparent);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, white 34%, transparent),
+        0 9px 24px -20px color-mix(in oklab, var(--accent-strong) 42%, transparent);
+}
+
+.axis-row-drag-preview[data-row-count="1"] {
+    border-radius: 4px;
+}
+
+.axis-row-selection-preview {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 4;
+    pointer-events: none;
+    border: 1px solid color-mix(in oklab, var(--accent-strong) 24%, transparent);
+    border-radius: 6px;
+    background: color-mix(in oklab, var(--accent-soft) 12%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, white 24%, transparent);
+}
+
+.axis-column-selection-viewport {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 4;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.axis-column-selection-scroll-layer {
+    position: absolute;
+    inset: 0;
+    will-change: transform;
+}
+
+.axis-column-selection-preview {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+    border: 1px solid color-mix(in oklab, var(--accent-strong) 24%, transparent);
+    border-radius: 6px;
+    background: color-mix(in oklab, var(--accent-soft) 12%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, white 24%, transparent);
+}
+
+.axis-row-selection-preview.is-invalid {
+    border-color: color-mix(in oklab, var(--danger-ink) 34%, transparent);
+    background: color-mix(in oklab, var(--danger-bg) 32%, transparent);
+}
+
+.axis-row-selection-preview[data-row-count="1"] {
+    border-radius: 4px;
+}
+
+.axis-drag-count-badge {
+    position: absolute;
+    z-index: 15;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid color-mix(in oklab, var(--accent-strong) 28%, transparent);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--menu-surface) 72%, var(--accent-soft) 16%);
+    color: color-mix(in oklab, var(--sheet-ink) 78%, var(--accent-strong));
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklab, white 30%, transparent),
+        0 10px 28px -22px color-mix(in oklab, var(--accent-strong) 42%, transparent);
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0;
+    white-space: nowrap;
 }
 
 .persistent-selection-ring {
@@ -2536,6 +2699,28 @@ textarea {
     width: calc(100% / var(--overlay-slot-count));
 }
 
+.header-matrix-cell.is-axis-selected {
+    z-index: 2;
+    background: color-mix(in oklab, var(--accent-soft) 18%, var(--sheet-header-row)) !important;
+    color: color-mix(in oklab, var(--sheet-ink) 78%, var(--accent-strong));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 22%, transparent);
+}
+
+.header-matrix-cell.is-axis-selection-invalid {
+    background: color-mix(in oklab, var(--danger-bg) 38%, var(--sheet-header-row)) !important;
+    color: color-mix(in oklab, var(--danger-ink) 78%, var(--sheet-ink));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger-ink) 30%, transparent);
+}
+
+.header-matrix-cell.is-axis-drag-source {
+    z-index: 3;
+    background: color-mix(in oklab, var(--accent-soft) 30%, var(--sheet-header-row)) !important;
+    color: color-mix(in oklab, var(--sheet-ink) 84%, var(--accent-strong));
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 32%, transparent),
+        inset 0 1px 0 color-mix(in oklab, white 36%, transparent);
+}
+
 .grid-wrap.suppress-header-focus .ag-header-cell:focus::after,
 .grid-wrap.suppress-header-focus .ag-header-cell:focus-visible::after,
 .grid-wrap.suppress-header-focus .ag-header-group-cell:focus::after,
@@ -2583,6 +2768,7 @@ textarea {
     --ag-range-selection-background-color-2: transparent;
     --ag-range-selection-background-color-3: transparent;
     --ag-range-selection-background-color-4: transparent;
+    overscroll-behavior: contain;
 }
 
 .grid-wrap .ag-root-wrapper {
@@ -2591,12 +2777,20 @@ textarea {
 
 .grid-wrap .ag-body-viewport.ag-layout-normal,
 .grid-wrap .ag-body-viewport {
-    border-inline-start: 1px solid var(--sheet-grid);
-    border-inline-end: 1px solid var(--sheet-grid);
-    border-bottom: 1px solid var(--sheet-grid);
+    border: 0;
+    box-shadow:
+        inset 1px 0 0 var(--sheet-grid),
+        inset -1px 0 0 var(--sheet-grid),
+        inset 0 -1px 0 var(--sheet-grid);
     padding-bottom: var(--formula-bar-safe-space);
     box-sizing: border-box;
     scroll-padding-bottom: calc(var(--formula-bar-safe-space) + 10px);
+    overscroll-behavior: contain;
+}
+
+.grid-wrap .ag-body-horizontal-scroll-viewport,
+.grid-wrap .ag-center-cols-viewport {
+    overscroll-behavior-x: contain;
 }
 
 .grid-wrap .ag-header,
@@ -2615,14 +2809,14 @@ textarea {
     z-index: 7;
 }
 
-.ag-theme-quartz .ag-header-cell {
+.grid-wrap .ag-header-cell {
     padding-inline: 0.75rem;
     font-weight: 500;
     color: var(--sheet-soft);
     line-height: 1.2;
 }
 
-.ag-theme-quartz .ag-header-cell-label {
+.grid-wrap .ag-header-cell-label {
     align-items: center;
 }
 
@@ -2639,12 +2833,12 @@ textarea {
     height: 0 !important;
 }
 
-.ag-theme-quartz .ag-cell,
-.ag-theme-quartz .ag-header-cell {
+.grid-wrap .ag-cell,
+.grid-wrap .ag-header-cell {
     padding-block: 0.18rem;
 }
 
-.ag-theme-quartz .ag-cell {
+.grid-wrap .ag-cell {
     overflow: hidden !important;
 }
 
@@ -2682,13 +2876,25 @@ textarea {
     height: 100%;
 }
 
-.ag-theme-quartz .ag-row.group-row .ag-cell {
+.grid-wrap .ag-row.group-row .ag-cell {
     background: var(--section-bg);
     font-weight: 600;
 }
 
-.ag-theme-quartz .ag-row.group-row .line-item-cell {
+.grid-wrap .ag-row.group-row .line-item-cell {
     background: color-mix(in oklab, var(--section-bg) 90%, var(--line-item-bg));
+}
+
+.grid-wrap .ag-cell.is-axis-selected {
+    background: color-mix(in oklab, var(--accent-soft) 14%, var(--sheet-surface)) !important;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 16%, transparent);
+}
+
+.grid-wrap .ag-cell.is-axis-drag-source {
+    background: color-mix(in oklab, var(--accent-soft) 30%, var(--sheet-surface)) !important;
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 30%, transparent),
+        inset 0 1px 0 color-mix(in oklab, white 38%, transparent);
 }
 
 .data-cell {
@@ -2892,12 +3098,12 @@ textarea {
 .grid-wrap .ag-rtl .ag-cell-focus:not(.ag-cell-range-selected):focus-within,
 .grid-wrap .ag-rtl .ag-cell-range-single-cell,
 .grid-wrap .ag-rtl .ag-cell-range-single-cell.ag-cell-range-handle,
-.ag-theme-quartz .ag-cell:focus,
-.ag-theme-quartz .ag-cell:focus-visible,
-.ag-theme-quartz .ag-cell-focus,
-.ag-theme-quartz .ag-cell-focus:not(.ag-cell-range-selected),
-.ag-theme-quartz .ag-cell-range-single-cell,
-.ag-theme-quartz .ag-cell-range-single-cell.ag-cell-range-handle {
+.grid-wrap .ag-cell:focus,
+.grid-wrap .ag-cell:focus-visible,
+.grid-wrap .ag-cell-focus,
+.grid-wrap .ag-cell-focus:not(.ag-cell-range-selected),
+.grid-wrap .ag-cell-range-single-cell,
+.grid-wrap .ag-cell-range-single-cell.ag-cell-range-handle {
     outline: none !important;
     border-color: transparent !important;
     border-style: solid !important;
@@ -2917,12 +3123,12 @@ textarea {
     .ag-cell-focus:not(.ag-cell-range-selected):focus-within::after,
 .grid-wrap .ag-rtl .ag-cell-range-single-cell::after,
 .grid-wrap .ag-rtl .ag-cell-range-single-cell.ag-cell-range-handle::after,
-.ag-theme-quartz .ag-cell:focus::after,
-.ag-theme-quartz .ag-cell:focus-visible::after,
-.ag-theme-quartz .ag-cell-focus::after,
-.ag-theme-quartz .ag-cell-focus:not(.ag-cell-range-selected)::after,
-.ag-theme-quartz .ag-cell-range-single-cell::after,
-.ag-theme-quartz .ag-cell-range-single-cell.ag-cell-range-handle::after {
+.grid-wrap .ag-cell:focus::after,
+.grid-wrap .ag-cell:focus-visible::after,
+.grid-wrap .ag-cell-focus::after,
+.grid-wrap .ag-cell-focus:not(.ag-cell-range-selected)::after,
+.grid-wrap .ag-cell-range-single-cell::after,
+.grid-wrap .ag-cell-range-single-cell.ag-cell-range-handle::after {
     inset: var(--selection-ring-inset-cell);
 }
 
@@ -2940,12 +3146,12 @@ textarea {
     .ag-cell-focus:not(.ag-cell-range-selected):focus-within::after,
 .grid-wrap .ag-rtl .ag-cell-range-single-cell::after,
 .grid-wrap .ag-rtl .ag-cell-range-single-cell.ag-cell-range-handle::after,
-.ag-theme-quartz .ag-cell:focus::after,
-.ag-theme-quartz .ag-cell:focus-visible::after,
-.ag-theme-quartz .ag-cell-focus::after,
-.ag-theme-quartz .ag-cell-focus:not(.ag-cell-range-selected)::after,
-.ag-theme-quartz .ag-cell-range-single-cell::after,
-.ag-theme-quartz .ag-cell-range-single-cell.ag-cell-range-handle::after,
+.grid-wrap .ag-cell:focus::after,
+.grid-wrap .ag-cell:focus-visible::after,
+.grid-wrap .ag-cell-focus::after,
+.grid-wrap .ag-cell-focus:not(.ag-cell-range-selected)::after,
+.grid-wrap .ag-cell-range-single-cell::after,
+.grid-wrap .ag-cell-range-single-cell.ag-cell-range-handle::after,
 .header-matrix-cell.has-slot-selection::after {
     content: "";
     position: absolute;
@@ -3001,8 +3207,8 @@ textarea {
     overflow: hidden !important;
 }
 
-.ag-theme-quartz .ag-cell-focus .tree-cell,
-.ag-theme-quartz .ag-cell:focus .tree-cell {
+.grid-wrap .ag-cell-focus .tree-cell,
+.grid-wrap .ag-cell:focus .tree-cell {
     background: transparent;
 }
 
@@ -3074,10 +3280,10 @@ textarea {
     color: color-mix(in oklab, var(--sheet-ink) 84%, var(--accent-strong));
 }
 
-.ag-theme-quartz .ag-center-cols-viewport,
-.ag-theme-quartz .ag-center-cols-container,
-.ag-theme-quartz .ag-pinned-left-cols-container,
-.ag-theme-quartz .ag-body-viewport {
+.grid-wrap .ag-center-cols-viewport,
+.grid-wrap .ag-center-cols-container,
+.grid-wrap .ag-pinned-left-cols-container,
+.grid-wrap .ag-body-viewport {
     background: var(--sheet-surface);
 }
 

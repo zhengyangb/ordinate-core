@@ -31,6 +31,15 @@ const MULTI_SHEET_DOC = `${HISTORY_DOC}
 | A    || 1    |
 `;
 
+const HEADER_AXIS_DOC = `
+# Sheet
+| Year || 2024 | 2024 |
+| Half || H1   | H2   |
+| ---- || ---- | ---- |
+| A    || 1    | 2    |
+| B    || 3    | 4    |
+`.trim();
+
 const GROUPED_1F: FormatSpec = {
   kind: "numeric",
   sign: "default",
@@ -447,6 +456,84 @@ describe("editor store history scenario matrix", () => {
           name: "delete inserted column",
           expectedUndoLabel: "Delete column",
           act: (ctx) => ctx.store().deleteColumn("Sheet", ctx.sheet().colIds.indexOf(dataNumber(ctx, "insertedColId"))),
+        },
+      ],
+    },
+    {
+      name: "axis move and duplicate commands",
+      steps: [
+        {
+          name: "move data column",
+          expectedUndoLabel: "Move column",
+          act: (ctx) => {
+            const movedColId = ctx.colId(2);
+            ctx.data.movedColId = movedColId;
+            ctx.store().moveColumns("Sheet", [movedColId], 1);
+          },
+          verifyAfterForward: (ctx) => expect(ctx.sheet().colIds[1]).toBe(dataNumber(ctx, "movedColId")),
+          verifyAfterRedo: (ctx) => expect(ctx.sheet().colIds[1]).toBe(dataNumber(ctx, "movedColId")),
+        },
+        {
+          name: "duplicate moved column",
+          expectedUndoLabel: "Duplicate column",
+          act: (ctx) => {
+            ctx.data.beforeDuplicateColIds = new Set(ctx.sheet().colIds);
+            ctx.store().duplicateColumns("Sheet", [dataNumber(ctx, "movedColId")], 2);
+            rememberInsertedColumn(ctx, "duplicatedColId", ctx.data.beforeDuplicateColIds as Set<number>);
+          },
+          verifyAfterForward: (ctx) => expect(ctx.sheet().colIds[2]).toBe(dataNumber(ctx, "duplicatedColId")),
+          verifyAfterRedo: (ctx) => expect(ctx.sheet().colIds[2]).toBe(dataNumber(ctx, "duplicatedColId")),
+        },
+        {
+          name: "move body leaf row",
+          expectedUndoLabel: "Move row",
+          act: (ctx) => {
+            const movedRowId = ctx.rowId(3);
+            ctx.data.movedRowId = movedRowId;
+            ctx.store().moveRows("Sheet", [movedRowId], 2);
+          },
+          verifyAfterForward: (ctx) => expect(ctx.sheet().rowIds[2]).toBe(dataNumber(ctx, "movedRowId")),
+          verifyAfterRedo: (ctx) => expect(ctx.sheet().rowIds[2]).toBe(dataNumber(ctx, "movedRowId")),
+        },
+        {
+          name: "duplicate body subtree",
+          expectedUndoLabel: "Duplicate row",
+          act: (ctx) => {
+            const sourceRowIds = ctx.sheet().rowIds.slice(2, 5);
+            ctx.data.beforeDuplicateRowIds = new Set(ctx.sheet().rowIds);
+            ctx.store().duplicateRows("Sheet", sourceRowIds, 5);
+            rememberInsertedRow(ctx, "duplicatedGroupRowId", ctx.data.beforeDuplicateRowIds as Set<number>);
+          },
+          verifyAfterForward: (ctx) => expect(ctx.sheet().rowIds).toContain(dataNumber(ctx, "duplicatedGroupRowId")),
+          verifyAfterRedo: (ctx) => expect(ctx.sheet().rowIds).toContain(dataNumber(ctx, "duplicatedGroupRowId")),
+        },
+      ],
+    },
+    {
+      name: "header row axis commands",
+      source: HEADER_AXIS_DOC,
+      steps: [
+        {
+          name: "move header row",
+          expectedUndoLabel: "Move row",
+          act: (ctx) => {
+            const movedHeaderRowId = ctx.rowId(1);
+            ctx.data.movedHeaderRowId = movedHeaderRowId;
+            ctx.store().moveRows("Sheet", [movedHeaderRowId], 0);
+          },
+          verifyAfterForward: (ctx) => expect(ctx.sheet().rowIds[0]).toBe(dataNumber(ctx, "movedHeaderRowId")),
+          verifyAfterRedo: (ctx) => expect(ctx.sheet().rowIds[0]).toBe(dataNumber(ctx, "movedHeaderRowId")),
+        },
+        {
+          name: "duplicate header row",
+          expectedUndoLabel: "Duplicate row",
+          act: (ctx) => {
+            ctx.data.beforeHeaderDuplicateRowIds = new Set(ctx.sheet().rowIds);
+            ctx.store().duplicateRows("Sheet", [dataNumber(ctx, "movedHeaderRowId")], 1);
+            rememberInsertedRow(ctx, "duplicatedHeaderRowId", ctx.data.beforeHeaderDuplicateRowIds as Set<number>);
+          },
+          verifyAfterForward: (ctx) => expect(ctx.sheet().rowIds[1]).toBe(dataNumber(ctx, "duplicatedHeaderRowId")),
+          verifyAfterRedo: (ctx) => expect(ctx.sheet().rowIds[1]).toBe(dataNumber(ctx, "duplicatedHeaderRowId")),
         },
       ],
     },
