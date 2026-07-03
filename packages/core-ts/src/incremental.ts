@@ -59,6 +59,7 @@ export interface SheetHistoryCellSnapshot {
 }
 
 export interface SheetHistorySnapshot {
+  sheetId: number;
   name: string;
   headerRowCount: number;
   headerColCount: number;
@@ -75,6 +76,7 @@ export interface SheetHistorySnapshot {
 }
 
 export class SheetState {
+  sheetId: number;
   name: string;
   rowCount: number;
   colCount: number;
@@ -108,6 +110,7 @@ export class SheetState {
   primaryTableBlockIndex: number | null;
 
   private constructor(
+    sheetId: number,
     name: string,
     rowCount: number,
     colCount: number,
@@ -130,6 +133,7 @@ export class SheetState {
     sourceBlocks: PreservedSheetBlock[],
     primaryTableBlockIndex: number | null,
   ) {
+    this.sheetId = sheetId;
     this.name = name;
     this.rowCount = rowCount;
     this.colCount = colCount;
@@ -169,6 +173,7 @@ export class SheetState {
     rows: string[],
     sourceBlocks?: PreservedSheetBlock[],
     primaryTableBlockIndex?: number | null,
+    sheetId = 1,
   ): SheetState {
     const normalizedBlocks: PreservedSheetBlock[] =
       sourceBlocks && sourceBlocks.length > 0 ? sourceBlocks : [{ kind: "table", lines: [...rows] }];
@@ -186,6 +191,7 @@ export class SheetState {
 
     if (logicalRows.length === 0) {
       return new SheetState(
+        sheetId,
         name,
         0,
         0,
@@ -263,6 +269,7 @@ export class SheetState {
     }
 
     const sheet = new SheetState(
+      sheetId,
       name,
       logicalRows.length,
       colCount,
@@ -308,6 +315,7 @@ export class SheetState {
 
   captureHistorySnapshot(): SheetHistorySnapshot {
     return cloneHistoryValue({
+      sheetId: this.sheetId,
       name: this.name,
       headerRowCount: this.headerRowCount,
       headerColCount: this.headerColCount,
@@ -331,6 +339,7 @@ export class SheetState {
 
   restoreHistorySnapshot(snapshot: SheetHistorySnapshot): void {
     const restored = cloneHistoryValue(snapshot);
+    this.sheetId = restored.sheetId;
     this.name = restored.name;
     this.headerRowCount = restored.headerRowCount;
     this.headerColCount = restored.headerColCount;
@@ -1757,17 +1766,54 @@ function assertKnownKeys(value: object, allowed: string[], label: string): void 
   }
 }
 
+function assignSheetIds(sheets: SheetState[]): number {
+  let nextSheetId = 1;
+  for (const sheet of sheets) {
+    sheet.sheetId = nextSheetId;
+    nextSheetId += 1;
+  }
+  return nextSheetId;
+}
+
+function validateSheetIdentityState(sheets: SheetState[], nextSheetId: number): void {
+  if (!Number.isInteger(nextSheetId) || nextSheetId < 1) {
+    throw new Error("nextSheetId must be a positive integer");
+  }
+
+  const seen = new Set<number>();
+  for (const sheet of sheets) {
+    if (!Number.isInteger(sheet.sheetId) || sheet.sheetId < 1) {
+      throw new Error("sheetId must be a positive integer");
+    }
+    if (seen.has(sheet.sheetId)) {
+      throw new Error(`duplicate sheetId ${sheet.sheetId}`);
+    }
+    seen.add(sheet.sheetId);
+    if (sheet.sheetId >= nextSheetId) {
+      throw new Error("nextSheetId must be greater than every existing sheetId");
+    }
+  }
+}
+
 export class DocumentState {
   sheets: SheetState[];
+  nextSheetId: number;
 
-  constructor(sheets: SheetState[]) {
+  constructor(sheets: SheetState[], nextSheetId?: number) {
     this.sheets = sheets;
+    if (nextSheetId !== undefined) {
+      this.nextSheetId = nextSheetId;
+      validateSheetIdentityState(this.sheets, this.nextSheetId);
+    } else {
+      this.nextSheetId = assignSheetIds(this.sheets);
+    }
   }
 
   // Build a document state from text.
   static fromText(text: string): DocumentState {
     const parsed = parseDocument(text);
     const sheets: SheetState[] = [];
+    let nextSheetId = 1;
     for (const sheet of parsed) {
       const sourceBlocks: PreservedSheetBlock[] = sheet.blocks.map((block) => {
         if (block.kind === "table") {
@@ -1786,10 +1832,12 @@ export class DocumentState {
           primaryRows,
           sourceBlocks,
           primaryTableBlockIndex === -1 ? null : primaryTableBlockIndex,
+          nextSheetId,
         ),
       );
+      nextSheetId += 1;
     }
-    return new DocumentState(sheets);
+    return new DocumentState(sheets, nextSheetId);
   }
 
   // Evaluate the current state into an EvaluationResult.

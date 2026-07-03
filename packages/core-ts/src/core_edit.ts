@@ -127,6 +127,7 @@ interface CoreSheetHistoryEntry {
 }
 
 interface CoreDocumentHistorySnapshot {
+  nextSheetId: number;
   sheets: SheetHistorySnapshot[];
 }
 
@@ -332,7 +333,7 @@ export function applyCoreEditMemento(
         const expected = direction === "undo" ? entry.after : entry.before;
         const expectedSignature = direction === "undo" ? entry.afterSignature : entry.beforeSignature;
         const replacement = direction === "undo" ? entry.before : entry.after;
-        const sheet = resolveSheet(staged, expected.name);
+        const sheet = resolveSheetById(staged, expected.sheetId);
         const currentSignature = sheetSnapshotSignature(sheet.captureHistorySnapshot());
         if (currentSignature !== expectedSignature) {
           throw new CoreEditFailure(
@@ -472,6 +473,7 @@ function sheetSnapshotSignature(snapshot: SheetHistorySnapshot): string {
 
 function captureDocumentHistorySnapshot(document: DocumentState): CoreDocumentHistorySnapshot {
   return {
+    nextSheetId: document.nextSheetId,
     sheets: document.sheets.map((sheet) => sheet.captureHistorySnapshot()),
   };
 }
@@ -479,10 +481,11 @@ function captureDocumentHistorySnapshot(document: DocumentState): CoreDocumentHi
 function restoreDocumentHistorySnapshot(document: DocumentState, snapshot: CoreDocumentHistorySnapshot): void {
   const restored = structuredClone(snapshot) as CoreDocumentHistorySnapshot;
   document.sheets = restored.sheets.map(sheetFromHistorySnapshot);
+  document.nextSheetId = restored.nextSheetId;
 }
 
 function sheetFromHistorySnapshot(snapshot: SheetHistorySnapshot): SheetState {
-  const sheet = SheetState.fromTableRows(snapshot.name, []);
+  const sheet = SheetState.fromTableRows(snapshot.name, [], undefined, undefined, snapshot.sheetId);
   sheet.restoreHistorySnapshot(snapshot);
   return sheet;
 }
@@ -726,7 +729,7 @@ function applyInsertSheetEdit(document: DocumentState, edit: CoreInsertSheetEdit
     throw new CoreEditFailure("out_of_bounds", `sheetIndex ${edit.sheetIndex} out of bounds`);
   }
 
-  document.sheets.splice(edit.sheetIndex, 0, createBlankSheet(name));
+  document.sheets.splice(edit.sheetIndex, 0, createBlankSheet(document, name));
 }
 
 function applyDeleteSheetEdit(document: DocumentState, edit: CoreDeleteSheetEdit): void {
@@ -764,8 +767,10 @@ function applyRenameSheetEdit(document: DocumentState, edit: CoreRenameSheetEdit
   sheet.name = newName;
 }
 
-function createBlankSheet(name: string): SheetState {
-  return SheetState.fromTableRows(name, ["| |"]);
+function createBlankSheet(document: DocumentState, name: string): SheetState {
+  const sheet = SheetState.fromTableRows(name, ["| |"], undefined, undefined, document.nextSheetId);
+  document.nextSheetId += 1;
+  return sheet;
 }
 
 function normalizeSheetName(name: string): string {
@@ -809,6 +814,17 @@ function resolveSheet(document: DocumentState, sheetName: string): SheetState {
   }
   if (matches.length > 1) {
     throw new CoreEditFailure("ambiguous_target", `ambiguous sheet '${sheetName}'`);
+  }
+  return matches[0];
+}
+
+function resolveSheetById(document: DocumentState, sheetId: number): SheetState {
+  const matches = document.sheets.filter((candidate) => candidate.sheetId === sheetId);
+  if (matches.length === 0) {
+    throw new CoreEditFailure("invalid_operation", `unknown sheetId ${sheetId}`);
+  }
+  if (matches.length > 1) {
+    throw new CoreEditFailure("invalid_operation", `duplicate sheetId ${sheetId}`);
   }
   return matches[0];
 }
