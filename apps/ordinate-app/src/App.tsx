@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import {
   AllCommunityModule,
   ModuleRegistry,
@@ -7,6 +7,7 @@ import {
   type FirstDataRenderedEvent,
   type GridApi,
   type GridReadyEvent,
+  type GridSizeChangedEvent,
   type ModelUpdatedEvent,
 } from "ag-grid-community";
 
@@ -31,7 +32,10 @@ import { resolveUiLocale } from "./i18n/messages";
 import { useEditorStore } from "./store/editorStore";
 import { getPersistableText, useFileSessionStore, type FileSessionState } from "./store/fileSessionStore";
 import type {
+  AxisDragPreview,
+  AxisSelectionView,
   ColumnMetric,
+  AxisDropIndicator,
   ChromeVisibilityPhase,
   FloatingMenuPosition,
   FloatingTooltip,
@@ -123,6 +127,32 @@ import {
   type FormulaReferenceContext,
   type FormulaReferenceView,
 } from "./utils/formulaPointMode";
+import {
+  canStartColumnRailMoveDrag,
+  canStartColumnRailSelectionDrag,
+  canStartRowRailMoveDrag,
+  canStartRowRailSelectionDrag,
+  computeAxisAutoPanDelta,
+  resolveBodyRowDropBoundary,
+  resolveBodyRowNumberAtTrackY,
+  resolveColumnDragSource,
+  resolveColumnDropBoundaryInViewport,
+  resolveColumnIndexInViewport,
+  resolveHeaderRowDropBoundary,
+  resolveHeaderRowNumberAtTrackY,
+  resolveRowDragSource,
+  validateColumnMoveDrop,
+  validateRowMoveDrop,
+  type AxisDropValidation,
+  type ColumnAxisSelection,
+  type ColumnDragSource,
+  type RowAxisSelection,
+  type RowDragSource,
+} from "./utils/axisRailDrag";
+import {
+  bodyRowTrackYToViewportY,
+  columnTrackXToViewportX,
+} from "./utils/gridGeometry";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -137,6 +167,55 @@ type FormulaPointPick = {
   focus: LogicalCell;
   range: Rect;
 };
+
+type ColumnAxisDragSession = {
+  axis: "column";
+  sheetName: string;
+  pointerId: number;
+  captureTarget: HTMLElement;
+  startX: number;
+  startY: number;
+  active: boolean;
+  source: Extract<ColumnDragSource, { ok: true }>;
+  lastValidation: AxisDropValidation | null;
+};
+
+type RowAxisDragSession = {
+  axis: "row";
+  sheetName: string;
+  pointerId: number;
+  captureTarget: HTMLElement;
+  startX: number;
+  startY: number;
+  active: boolean;
+  source: Extract<RowDragSource, { ok: true }>;
+  lastValidation: AxisDropValidation | null;
+};
+
+type AxisDragSession = ColumnAxisDragSession | RowAxisDragSession;
+
+type ColumnAxisSelectionDragSession = {
+  axis: "column";
+  pointerId: number;
+  captureTarget: HTMLElement;
+  startX: number;
+  startY: number;
+  active: boolean;
+  anchorColIndex: number;
+};
+
+type RowAxisSelectionDragSession = {
+  axis: "row";
+  area: "header" | "body";
+  pointerId: number;
+  captureTarget: HTMLElement;
+  startX: number;
+  startY: number;
+  active: boolean;
+  anchorRowNumber: number;
+};
+
+type AxisSelectionDragSession = ColumnAxisSelectionDragSession | RowAxisSelectionDragSession;
 
 type FormulaReferenceOverlay = {
   tokenId: string;
@@ -176,6 +255,77 @@ function isNativeTextEditingTarget(target: EventTarget | null): boolean {
 
 const SELECTION_DRAG_SCROLL_EDGE_PX = 48;
 const SELECTION_DRAG_SCROLL_MAX_PX = 24;
+const AXIS_RAIL_AUTO_PAN_EDGE_PX = 48;
+const AXIS_RAIL_AUTO_PAN_MAX_DELTA_PX = 24;
+const AXIS_RAIL_AUTO_PAN_BOUNDARY_INSET_PX = 1;
+const AXIS_RAIL_DRAG_THRESHOLD_PX = 4;
+const AXIS_DROP_INDICATOR_THICKNESS_PX = 3;
+const RAIL_CLICK_SUPPRESSION_MS = 250;
+
+function axisDropIndicatorEqual(previous: AxisDropIndicator | null, next: AxisDropIndicator | null): boolean {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+  return (
+    previous.axis === next.axis &&
+    previous.state === next.state &&
+    previous.left === next.left &&
+    previous.top === next.top &&
+    previous.width === next.width &&
+    previous.height === next.height &&
+    previous.reason === next.reason
+  );
+}
+
+function axisDragPreviewFromSession(session: AxisDragSession): AxisDragPreview {
+  if (session.axis === "column") {
+    return {
+      axis: "column",
+      colStart: session.source.sourceStartIndex,
+      colEnd: session.source.sourceStartIndex + session.source.sourceCount - 1,
+    };
+  }
+  return {
+    axis: "row",
+    area: session.source.area,
+    rowStart: session.source.sourceStartIndex + 1,
+    rowEnd: session.source.sourceStartIndex + session.source.sourceCount,
+    rowCount: session.source.sourceCount,
+  };
+}
+
+function axisColumnSelectionEqual(
+  current: SheetSelection | null,
+  colIndex: number,
+  anchorColIndex: number,
+  colStart: number,
+  colEnd: number,
+): boolean {
+  return (
+    current?.kind === "column" &&
+    current.colIndex === colIndex &&
+    current.anchorColIndex === anchorColIndex &&
+    current.colStart === colStart &&
+    current.colEnd === colEnd
+  );
+}
+
+function axisRowSelectionEqual(
+  current: SheetSelection | null,
+  area: "header" | "body",
+  rowNumber: number,
+  anchorRowNumber: number,
+  rowStart: number,
+  rowEnd: number,
+): boolean {
+  return (
+    current?.kind === "row" &&
+    current.area === area &&
+    current.rowNumber === rowNumber &&
+    current.anchorRowNumber === anchorRowNumber &&
+    current.rowStart === rowStart &&
+    current.rowEnd === rowEnd
+  );
+}
 
 export default function App() {
   const uiLocale = useMemo(() => resolveUiLocale(window.navigator.language), []);
@@ -211,6 +361,10 @@ export default function App() {
     convertRowsToBody,
     insertRow,
     deleteRow,
+    moveColumns,
+    moveRows,
+    duplicateColumns,
+    duplicateRows,
     insertColumn,
     deleteColumn,
     canUndo,
@@ -284,9 +438,13 @@ export default function App() {
   const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
   const [hasVerticalOverlap, setHasVerticalOverlap] = useState(false);
   const [hasHorizontalOverlap, setHasHorizontalOverlap] = useState(false);
+  const [bodyScrollTop, setBodyScrollTop] = useState(0);
+  const [bodyScrollLeft, setBodyScrollLeft] = useState(0);
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
   const [rowIndexTrackHeight, setRowIndexTrackHeight] = useState(0);
   const [columnMetrics, setColumnMetrics] = useState<ColumnMetric[]>([]);
+  const [axisDropIndicator, setAxisDropIndicator] = useState<AxisDropIndicator | null>(null);
+  const [axisDragPreview, setAxisDragPreview] = useState<AxisDragPreview | null>(null);
 
   const gridViewportAdapter = useMemo(() => createAgGridAdapter(), []);
   const {
@@ -299,6 +457,7 @@ export default function App() {
     clearColumnTransition,
   } = useStructureTransition();
   const selectionRingSyncRafRef = useRef<number | null>(null);
+  const gridMetricsSyncRafRef = useRef<number | null>(null);
   const autoPanRafRef = useRef<number | null>(null);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
   const selectionRingRef = useRef<HTMLDivElement | null>(null);
@@ -317,6 +476,7 @@ export default function App() {
   const selectionAutoScrollRafRef = useRef<number | null>(null);
   const suppressCellFocusSelectionUntilRef = useRef(0);
   const columnTrackRef = useRef<HTMLDivElement | null>(null);
+  const axisColumnSelectionTrackRef = useRef<HTMLDivElement | null>(null);
   const headerCenterTrackRef = useRef<HTMLDivElement | null>(null);
   const rowTrackRef = useRef<HTMLDivElement | null>(null);
   const gridApiRef = useRef<GridApi<GridRow> | null>(null);
@@ -331,6 +491,12 @@ export default function App() {
   const selectionMenuRef = useRef<HTMLDivElement | null>(null);
   const railMenuAnchorRef = useRef<HTMLElement | null>(null);
   const railMenuRef = useRef<HTMLDivElement | null>(null);
+  const axisDragSessionRef = useRef<AxisDragSession | null>(null);
+  const axisSelectionDragSessionRef = useRef<AxisSelectionDragSession | null>(null);
+  const axisDragCleanupRef = useRef<(() => void) | null>(null);
+  const axisDragPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const axisAutoPanRafRef = useRef<number | null>(null);
+  const suppressRailClickUntilRef = useRef(0);
   const tooltipTimerRef = useRef<number | null>(null);
   const tooltipAnchorRef = useRef<HTMLElement | null>(null);
   const suppressedTooltipTargetRef = useRef<HTMLElement | null>(null);
@@ -344,7 +510,13 @@ export default function App() {
       if (colIndex == null) {
         return current?.kind === "column" ? null : current;
       }
-      return { kind: "column", colIndex };
+      return {
+        kind: "column",
+        colIndex,
+        anchorColIndex: colIndex,
+        colStart: colIndex,
+        colEnd: colIndex,
+      };
     });
   }, []);
   const setSelectedCell = useCallback((cell: SelectedCell | null) => {
@@ -1184,18 +1356,52 @@ export default function App() {
   }, [formulaInputMode, activeSheet, isActiveSheetBlocked, formulaDraftInput]);
   const selectedColumnIndex = useMemo(() => {
     if (selection?.kind === "column") return selection.colIndex;
-    const firstBodyRow = headerRowCount + 1;
-    if (
-      selection?.kind === "range" &&
-      selectedRange &&
-      selectedRange.colStart === selectedRange.colEnd &&
-      selectedRange.rowStart === firstBodyRow &&
-      selectedRange.rowEnd === sheetRowCount
-    ) {
-      return selectedRange.colStart;
-    }
     return null;
-  }, [selection, selectedRange, sheetRowCount, headerRowCount]);
+  }, [selection]);
+
+  const selectedColumnAxisSelection = useMemo<ColumnAxisSelection | null>(() => (
+    selection?.kind === "column"
+      ? { axis: "column", colStart: selection.colStart, colEnd: selection.colEnd }
+      : null
+  ), [selection]);
+
+  const selectedRowAxisSelection = useMemo<RowAxisSelection | null>(() => (
+    selection?.kind === "row"
+      ? { axis: "row", area: selection.area, rowStart: selection.rowStart, rowEnd: selection.rowEnd }
+      : null
+  ), [selection]);
+
+  const axisSelectionView = useMemo<AxisSelectionView | null>(() => {
+    if (selection?.kind === "column") {
+      return {
+        axis: "column",
+        colStart: selection.colStart,
+        colEnd: selection.colEnd,
+      };
+    }
+    if (selection?.kind !== "row") return null;
+    const rowSelection = {
+      axis: "row" as const,
+      area: selection.area,
+      rowStart: selection.rowStart,
+      rowEnd: selection.rowEnd,
+    };
+    const draggable =
+      currentSheetState != null &&
+      resolveRowDragSource(
+        selection.rowNumber,
+        selection.area,
+        headerRowCount,
+        currentSheetState.rowIds,
+        currentSheetRowStructure,
+        rowSelection,
+      ).ok;
+    return {
+      ...rowSelection,
+      rowCount: selection.rowEnd - selection.rowStart + 1,
+      draggable,
+    };
+  }, [currentSheetRowStructure, currentSheetState, headerRowCount, selection]);
 
   const formulaReferenceContext = useMemo<FormulaReferenceContext>(() => {
     const rowLabelsByAbsoluteIndex = new Map<number, string[]>();
@@ -1267,7 +1473,7 @@ export default function App() {
       setColumnMetrics((current) => (current.length === 0 ? current : []));
       return;
     }
-    const snapshot = gridViewportAdapter.collectColumnMetrics(api, colIndexLookup, sheetColCount);
+    const snapshot = gridViewportAdapter.collectColumnMetrics(gridWrapRef.current, api, colIndexLookup, sheetColCount);
     setColumnMetrics((current) => (columnMetricsEqual(current, snapshot) ? current : snapshot));
   }, [gridViewportAdapter, colIndexLookup, sheetColCount, isGridApiAlive]);
 
@@ -1545,11 +1751,56 @@ export default function App() {
     });
   }, [syncSelectionRing, syncFormulaReferenceOverlays]);
 
+  const scheduleGridMetricsSync = useCallback(
+    (api: GridApi<GridRow> | null) => {
+      if (gridMetricsSyncRafRef.current != null) {
+        window.cancelAnimationFrame(gridMetricsSyncRafRef.current);
+      }
+      gridMetricsSyncRafRef.current = window.requestAnimationFrame(() => {
+        gridMetricsSyncRafRef.current = window.requestAnimationFrame(() => {
+          gridMetricsSyncRafRef.current = null;
+          if (!isGridApiAlive(api)) return;
+          syncRowIndexMetrics(api);
+          syncColumnMetrics(api);
+          scheduleSelectionRingSync();
+        });
+      });
+    },
+    [isGridApiAlive, syncRowIndexMetrics, syncColumnMetrics, scheduleSelectionRingSync],
+  );
+
+  useEffect(() => {
+    if (mode === "source" || isActiveSheetBlocked) return;
+    const root = gridWrapRef.current;
+    const api = gridApiRef.current;
+    if (!root || !isGridApiAlive(api)) return;
+    if (typeof ResizeObserver === "undefined") {
+      throw new Error("ResizeObserver is required for grid metric sync");
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleGridMetricsSync(api);
+    });
+    resizeObserver.observe(root);
+    root.querySelectorAll<HTMLElement>(".ag-header-cell[col-id]").forEach((cell) => {
+      resizeObserver.observe(cell);
+    });
+    scheduleGridMetricsSync(api);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [mode, isActiveSheetBlocked, activeSheet, sheetColCount, rowData.length, isGridApiAlive, scheduleGridMetricsSync]);
+
   useEffect(() => {
     return () => {
       if (selectionRingSyncRafRef.current != null) {
         window.cancelAnimationFrame(selectionRingSyncRafRef.current);
         selectionRingSyncRafRef.current = null;
+      }
+      if (gridMetricsSyncRafRef.current != null) {
+        window.cancelAnimationFrame(gridMetricsSyncRafRef.current);
+        gridMetricsSyncRafRef.current = null;
       }
       if (autoPanRafRef.current != null) {
         window.cancelAnimationFrame(autoPanRafRef.current);
@@ -1591,12 +1842,21 @@ export default function App() {
     [syncRowIndexMetrics, syncColumnMetrics, scheduleSelectionRingSync],
   );
 
+  const handleGridSizeChanged = useCallback(
+    (event: GridSizeChangedEvent<GridRow>) => {
+      scheduleGridMetricsSync(event.api);
+    },
+    [scheduleGridMetricsSync],
+  );
+
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
     if (!isGridApiAlive(gridApiRef.current)) return;
     syncColumnMetrics(gridApiRef.current);
     scheduleSelectionRingSync();
   }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, scheduleSelectionRingSync, syncColumnMetrics, isGridApiAlive]);
+
+  const axisColumnDragPreview = axisDragPreview?.axis === "column" ? axisDragPreview : null;
 
   const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
     if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
@@ -1727,6 +1987,16 @@ export default function App() {
           }
           return classes.join(" ");
         },
+        cellClassRules: {
+          "is-axis-selected": () =>
+            selectedColumnAxisSelection != null &&
+            colIndex >= selectedColumnAxisSelection.colStart &&
+            colIndex <= selectedColumnAxisSelection.colEnd,
+          "is-axis-drag-source": () =>
+            axisColumnDragPreview != null &&
+            colIndex >= axisColumnDragPreview.colStart &&
+            colIndex <= axisColumnDragPreview.colEnd,
+        },
       } satisfies ColDef<GridRow>;
     });
   }, [
@@ -1740,6 +2010,8 @@ export default function App() {
     uiLocale,
     showTooltip,
     clearTooltip,
+    selectedColumnAxisSelection,
+    axisColumnDragPreview,
   ]);
 
   const headerIndexMetrics = useMemo<HeaderIndexMetric[]>(() => {
@@ -2203,27 +2475,49 @@ export default function App() {
     railMenuAnchorRef.current = null;
   }, []);
 
+  const suppressRailClickForCurrentGesture = useCallback(() => {
+    suppressRailClickUntilRef.current = performance.now() + RAIL_CLICK_SUPPRESSION_MS;
+  }, []);
+
+  const shouldSuppressRailClick = useCallback(() => {
+    const until = suppressRailClickUntilRef.current;
+    if (until <= 0) return false;
+    suppressRailClickUntilRef.current = 0;
+    return performance.now() <= until;
+  }, []);
+
   const handleIndexRailsHoverChange = useCallback((hovering: boolean) => {
     setIsIndexRailsHovered(hovering);
   }, []);
 
   const handleColumnRailSelect = useCallback(
-    (colIndex: number) => {
+    (colIndex: number, event?: { shiftKey: boolean }) => {
+      if (shouldSuppressRailClick()) {
+        return;
+      }
       if (mode === "source" || isActiveSheetBlocked) return;
       if (colIndex < 0 || colIndex >= sheetColCount) return;
       if (colIndex < headerColCount) return;
-      const firstBodyRow = headerRowCount + 1;
-      if (firstBodyRow > sheetRowCount) return;
-      const focus = { rAbs: firstBodyRow, cAbs: colIndex };
-      const anchor = { rAbs: firstBodyRow, cAbs: colIndex };
-      const end = { rAbs: sheetRowCount, cAbs: colIndex };
-      setSelection(makeRangeSelectionWithFocus(anchor, end, focus));
+      const anchorColIndex =
+        event?.shiftKey === true && selection?.kind === "column"
+          ? selection.anchorColIndex
+          : colIndex;
+      const colStart = Math.min(anchorColIndex, colIndex);
+      const colEnd = Math.max(anchorColIndex, colIndex);
+      if (colStart < headerColCount || colEnd >= sheetColCount) return;
+      setSelection({
+        kind: "column",
+        colIndex,
+        anchorColIndex,
+        colStart,
+        colEnd,
+      });
       suppressCellFocusSelectionUntilRef.current = performance.now() + 320;
       setFormulaInputMode("read");
       setFormulaBarSnapshot(null);
       closeRailMenu();
     },
-    [mode, isActiveSheetBlocked, sheetColCount, headerColCount, headerRowCount, sheetRowCount, closeRailMenu],
+    [mode, isActiveSheetBlocked, sheetColCount, headerColCount, selection, closeRailMenu, shouldSuppressRailClick],
   );
 
   const handleColumnRailMenuOpen = useCallback(
@@ -2264,7 +2558,10 @@ export default function App() {
   );
 
   const handleRowRailSelect = useCallback(
-    (rowNumber: number, area: "header" | "body") => {
+    (rowNumber: number, area: "header" | "body", event?: { shiftKey: boolean }) => {
+      if (shouldSuppressRailClick()) {
+        return;
+      }
       if (mode === "source" || isActiveSheetBlocked) return;
       if (sheetColCount <= 0) return;
       const clampedRowNumber =
@@ -2278,15 +2575,22 @@ export default function App() {
       }
       const firstDataCol = headerColCount;
       if (firstDataCol >= sheetColCount) return;
-      const focus = {
-        rAbs: clampedRowNumber,
-        cAbs: firstDataCol,
-      };
-      setSelection(makeRangeSelectionWithFocus(
-        { rAbs: clampedRowNumber, cAbs: firstDataCol },
-        { rAbs: clampedRowNumber, cAbs: sheetColCount - 1 },
-        focus,
-      ));
+      const anchorRowNumber =
+        event?.shiftKey === true && selection?.kind === "row" && selection.area === area
+          ? selection.anchorRowNumber
+          : clampedRowNumber;
+      const rowStart = Math.min(anchorRowNumber, clampedRowNumber);
+      const rowEnd = Math.max(anchorRowNumber, clampedRowNumber);
+      if (area === "header" && (rowStart < 1 || rowEnd > headerRowCount)) return;
+      if (area === "body" && rowStart <= headerRowCount) return;
+      setSelection({
+        kind: "row",
+        area,
+        rowNumber: clampedRowNumber,
+        anchorRowNumber,
+        rowStart,
+        rowEnd,
+      });
       suppressCellFocusSelectionUntilRef.current = performance.now() + 320;
       setFormulaInputMode("read");
       closeRailMenu();
@@ -2295,7 +2599,7 @@ export default function App() {
         active.blur();
       }
     },
-    [mode, isActiveSheetBlocked, sheetColCount, headerRowCount, headerColCount, absoluteRowToDisplayedIndex, closeRailMenu],
+    [mode, isActiveSheetBlocked, sheetColCount, headerRowCount, headerColCount, absoluteRowToDisplayedIndex, selection, closeRailMenu, shouldSuppressRailClick],
   );
 
   useEffect(() => {
@@ -2386,6 +2690,10 @@ export default function App() {
     return gridViewportAdapter.attachViewportSync(root, ({ top, left, hasVerticalOverlap: nextVertical, hasHorizontalOverlap: nextHorizontal }) => {
       rowTrack.style.transform = `translateY(${-top}px)`;
       columnTrack.style.transform = `translateX(${-left}px)`;
+      const axisColumnSelectionTrack = axisColumnSelectionTrackRef.current;
+      if (axisColumnSelectionTrack) {
+        axisColumnSelectionTrack.style.transform = `translateX(${-left}px)`;
+      }
       if (headerCenterTrack) {
         headerCenterTrack.style.transform = `translateX(${-left}px)`;
       }
@@ -2393,6 +2701,8 @@ export default function App() {
       syncFormulaReferenceOverlays(root);
       setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
       setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
+      setBodyScrollTop((current) => (Math.abs(current - top) < 0.5 ? current : top));
+      setBodyScrollLeft((current) => (Math.abs(current - left) < 0.5 ? current : left));
     });
   }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, headerOverlayHeight, syncSelectionRing, syncFormulaReferenceOverlays, gridViewportAdapter]);
 
@@ -2720,6 +3030,617 @@ export default function App() {
     gridApiRef.current.setFocusedCell(displayedRowIndex, selectedCell.colId);
   }, [mode, isActiveSheetBlocked, selectedCell, absoluteRowToDisplayedIndex, isGridApiAlive]);
 
+  const stopAxisAutoPan = useCallback(() => {
+    if (axisAutoPanRafRef.current != null) {
+      window.cancelAnimationFrame(axisAutoPanRafRef.current);
+      axisAutoPanRafRef.current = null;
+    }
+    axisDragPointRef.current = null;
+  }, []);
+
+  const clearAxisDragSession = useCallback(() => {
+    const session = axisDragSessionRef.current;
+    if (session?.captureTarget.hasPointerCapture(session.pointerId)) {
+      session.captureTarget.releasePointerCapture(session.pointerId);
+    }
+    const selectionSession = axisSelectionDragSessionRef.current;
+    if (selectionSession?.captureTarget.hasPointerCapture(selectionSession.pointerId)) {
+      selectionSession.captureTarget.releasePointerCapture(selectionSession.pointerId);
+    }
+    axisDragCleanupRef.current?.();
+    axisDragCleanupRef.current = null;
+    axisDragSessionRef.current = null;
+    axisSelectionDragSessionRef.current = null;
+    stopAxisAutoPan();
+    setAxisDropIndicator(null);
+    setAxisDragPreview(null);
+  }, [stopAxisAutoPan]);
+
+  useEffect(() => {
+    return () => clearAxisDragSession();
+  }, [clearAxisDragSession]);
+
+  useEffect(() => {
+    const hasAxisGesture = () => axisDragSessionRef.current !== null || axisSelectionDragSessionRef.current !== null;
+    const blockNativeAxisDrag = (event: DragEvent) => {
+      if (!hasAxisGesture()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.type === "drop" || event.type === "dragend") {
+        clearAxisDragSession();
+      }
+    };
+    window.addEventListener("dragstart", blockNativeAxisDrag, true);
+    window.addEventListener("dragover", blockNativeAxisDrag, true);
+    window.addEventListener("drop", blockNativeAxisDrag, true);
+    window.addEventListener("dragend", blockNativeAxisDrag, true);
+    return () => {
+      window.removeEventListener("dragstart", blockNativeAxisDrag, true);
+      window.removeEventListener("dragover", blockNativeAxisDrag, true);
+      window.removeEventListener("drop", blockNativeAxisDrag, true);
+      window.removeEventListener("dragend", blockNativeAxisDrag, true);
+    };
+  }, [clearAxisDragSession]);
+
+  useEffect(() => {
+    clearAxisDragSession();
+  }, [activeSheet, mode, isActiveSheetBlocked, clearAxisDragSession]);
+
+  const updateAxisDropIndicator = useCallback((session: AxisDragSession, clientX: number, clientY: number): AxisDropValidation | null => {
+    const root = gridWrapRef.current;
+    const gridRect = root?.getBoundingClientRect();
+    if (!root || !gridRect) return null;
+
+    if (session.axis === "column") {
+      const horizontalViewport = queryGridHorizontalViewport(root);
+      const columnViewport = {
+        pinnedWidth: pinnedHeaderWidth,
+        scrollLeft: horizontalViewport?.scrollLeft ?? 0,
+      };
+      const boundary = resolveColumnDropBoundaryInViewport(clientX - gridRect.left, columnMetrics, columnViewport);
+      if (!boundary) return null;
+      const validation = validateColumnMoveDrop(
+        session.source,
+        boundary.gapIndex,
+        headerColCount,
+        sheetColCount,
+      );
+      const nextIndicator: AxisDropIndicator = {
+        axis: "column",
+        state: validation.ok
+          ? validation.mapping.kind === "noop"
+            ? "noop"
+            : "valid"
+          : "invalid",
+        left: columnTrackXToViewportX(boundary.position, columnViewport) - AXIS_DROP_INDICATOR_THICKNESS_PX / 2,
+        top: 0,
+        width: AXIS_DROP_INDICATOR_THICKNESS_PX,
+        height: Math.max(gridRect.height, headerOverlayHeight + rowIndexTrackHeight),
+        reason: validation.ok ? undefined : validation.reason,
+      };
+      setAxisDropIndicator((current) => (axisDropIndicatorEqual(current, nextIndicator) ? current : nextIndicator));
+      return validation;
+    }
+
+    const bodyViewport = session.source.area === "body" ? queryGridBodyViewport(root) : null;
+    const currentBodyScrollTop = bodyViewport?.scrollTop ?? bodyScrollTop;
+    const boundary = session.source.area === "header"
+      ? resolveHeaderRowDropBoundary(clientY - gridRect.top, headerIndexMetrics)
+      : rowTrackRef.current
+        ? resolveBodyRowDropBoundary(
+          clientY - rowTrackRef.current.getBoundingClientRect().top,
+          rowIndexMetrics,
+          rowData,
+          currentSheetRowStructure,
+        )
+        : null;
+    if (!boundary) return null;
+    const validation = validateRowMoveDrop(
+      session.source,
+      boundary.gapIndex,
+      headerRowCount,
+      sheetRowCount,
+      currentSheetRowStructure,
+    );
+    const nextIndicator: AxisDropIndicator = {
+      axis: "row",
+      state: validation.ok
+        ? validation.mapping.kind === "noop"
+          ? "noop"
+          : "valid"
+        : "invalid",
+      left: 0,
+      top: (
+        session.source.area === "header"
+          ? boundary.position
+          : bodyRowTrackYToViewportY(boundary.position, headerOverlayHeight, currentBodyScrollTop)
+      ) - AXIS_DROP_INDICATOR_THICKNESS_PX / 2,
+      width: Math.max(gridRect.width, columnMetrics.reduce((max, metric) => Math.max(max, metric.left + metric.width), 0)),
+      height: AXIS_DROP_INDICATOR_THICKNESS_PX,
+      reason: validation.ok ? undefined : validation.reason,
+    };
+    setAxisDropIndicator((current) => (axisDropIndicatorEqual(current, nextIndicator) ? current : nextIndicator));
+    return validation;
+  }, [
+    columnMetrics,
+    currentSheetRowStructure,
+    headerColCount,
+    headerIndexMetrics,
+    headerOverlayHeight,
+    headerRowCount,
+    bodyScrollTop,
+    pinnedHeaderWidth,
+    rowData,
+    rowIndexMetrics,
+    rowIndexTrackHeight,
+    sheetColCount,
+    sheetRowCount,
+  ]);
+
+  const applyAxisHorizontalAutoPan = useCallback((clientX: number): boolean => {
+    const root = gridWrapRef.current;
+    if (!root) return false;
+    const horizontalViewport = queryGridHorizontalViewport(root);
+    const centerViewport = root.querySelector<HTMLElement>(".ag-center-cols-viewport") ?? horizontalViewport;
+    const viewportRect = centerViewport?.getBoundingClientRect();
+    if (!horizontalViewport || !viewportRect) return false;
+    const delta = computeAxisAutoPanDelta({
+      pointerPosition: clientX,
+      viewportStart: viewportRect.left,
+      viewportEnd: viewportRect.right,
+      scrollPosition: horizontalViewport.scrollLeft,
+      scrollSize: horizontalViewport.scrollWidth,
+      viewportSize: horizontalViewport.clientWidth,
+      edgeSize: AXIS_RAIL_AUTO_PAN_EDGE_PX,
+      maxDelta: AXIS_RAIL_AUTO_PAN_MAX_DELTA_PX,
+      scrollBoundaryInset: AXIS_RAIL_AUTO_PAN_BOUNDARY_INSET_PX,
+    });
+    if (Math.abs(delta) <= 0.5) return false;
+    horizontalViewport.scrollLeft += delta;
+    return true;
+  }, []);
+
+  const applyAxisBodyVerticalAutoPan = useCallback((clientY: number): boolean => {
+    const root = gridWrapRef.current;
+    if (!root) return false;
+    const bodyViewport = queryGridBodyViewport(root);
+    const viewportRect = bodyViewport?.getBoundingClientRect();
+    if (!bodyViewport || !viewportRect) return false;
+    const delta = computeAxisAutoPanDelta({
+      pointerPosition: clientY,
+      viewportStart: viewportRect.top,
+      viewportEnd: viewportRect.bottom,
+      scrollPosition: bodyViewport.scrollTop,
+      scrollSize: bodyViewport.scrollHeight,
+      viewportSize: bodyViewport.clientHeight,
+      edgeSize: AXIS_RAIL_AUTO_PAN_EDGE_PX,
+      maxDelta: AXIS_RAIL_AUTO_PAN_MAX_DELTA_PX,
+      scrollBoundaryInset: AXIS_RAIL_AUTO_PAN_BOUNDARY_INSET_PX,
+    });
+    if (Math.abs(delta) <= 0.5) return false;
+    bodyViewport.scrollTop += delta;
+    return true;
+  }, []);
+
+  const commitAxisDragSession = useCallback((session: AxisDragSession, validation: AxisDropValidation | null) => {
+    clearAxisDragSession();
+    if (!validation?.ok || validation.mapping.kind === "noop") return;
+    if (!activeSheet) {
+      throw new Error("axis move requires an active sheet");
+    }
+    if (session.sheetName !== activeSheet) {
+      throw new Error("axis move session sheet changed before commit");
+    }
+    if (session.axis === "column") {
+      startColumnTransition("insert");
+      moveColumns(activeSheet, session.source.colIds, validation.mapping.targetGapIndex);
+      setSelection({
+        kind: "column",
+        colIndex: validation.mapping.targetGapIndex,
+        anchorColIndex: validation.mapping.targetGapIndex,
+        colStart: validation.mapping.targetGapIndex,
+        colEnd: validation.mapping.targetGapIndex + session.source.sourceCount - 1,
+      });
+      setFormulaInputMode("read");
+      return;
+    }
+    const nextRowNumber = validation.mapping.targetGapIndex + 1;
+    if (session.source.area === "body") {
+      startRowTransition("insert", nextRowNumber);
+    }
+    moveRows(activeSheet, session.source.rowIds, validation.mapping.targetGapIndex);
+    setSelection({
+      kind: "row",
+      area: session.source.area,
+      rowNumber: nextRowNumber,
+      anchorRowNumber: nextRowNumber,
+      rowStart: nextRowNumber,
+      rowEnd: nextRowNumber + session.source.sourceCount - 1,
+    });
+    setFormulaInputMode("read");
+  }, [
+    activeSheet,
+    clearAxisDragSession,
+    moveColumns,
+    moveRows,
+    startColumnTransition,
+    startRowTransition,
+  ]);
+
+  const beginAxisDragSession = useCallback((initialSession: AxisDragSession) => {
+    clearAxisDragSession();
+    axisDragSessionRef.current = initialSession;
+    const tickAxisAutoPan = () => {
+      axisAutoPanRafRef.current = null;
+      const session = axisDragSessionRef.current;
+      const point = axisDragPointRef.current;
+      if (!session?.active || !point) return;
+      const didScroll =
+        session.axis === "column"
+          ? applyAxisHorizontalAutoPan(point.clientX)
+          : session.source.area === "body"
+            ? applyAxisBodyVerticalAutoPan(point.clientY)
+            : false;
+      if (!didScroll) return;
+      const validation = updateAxisDropIndicator(session, point.clientX, point.clientY);
+      session.lastValidation = validation;
+      axisAutoPanRafRef.current = window.requestAnimationFrame(tickAxisAutoPan);
+    };
+    const ensureAxisAutoPan = () => {
+      if (axisAutoPanRafRef.current != null) return;
+      axisAutoPanRafRef.current = window.requestAnimationFrame(tickAxisAutoPan);
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      const session = axisDragSessionRef.current;
+      if (!session || event.pointerId !== session.pointerId) return;
+      const moved = Math.hypot(event.clientX - session.startX, event.clientY - session.startY);
+      if (!session.active && moved < AXIS_RAIL_DRAG_THRESHOLD_PX) return;
+      if (!session.active) {
+        session.active = true;
+        setAxisDragPreview(axisDragPreviewFromSession(session));
+        suppressRailClickForCurrentGesture();
+        closeRailMenu();
+        setFormulaInputMode("read");
+        setFormulaBarSnapshot(null);
+      }
+      event.preventDefault();
+      axisDragPointRef.current = { clientX: event.clientX, clientY: event.clientY };
+      const validation = updateAxisDropIndicator(session, event.clientX, event.clientY);
+      session.lastValidation = validation;
+      ensureAxisAutoPan();
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      const session = axisDragSessionRef.current;
+      if (!session || event.pointerId !== session.pointerId) return;
+      const validation = session.active
+        ? updateAxisDropIndicator(session, event.clientX, event.clientY) ?? session.lastValidation
+        : null;
+      if (session.active) {
+        suppressRailClickForCurrentGesture();
+      }
+      commitAxisDragSession(session, validation);
+    };
+    const handlePointerCancel = (event: PointerEvent) => {
+      const session = axisDragSessionRef.current;
+      if (!session || event.pointerId !== session.pointerId) return;
+      if (session.active) {
+        suppressRailClickForCurrentGesture();
+      }
+      clearAxisDragSession();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      suppressRailClickForCurrentGesture();
+      clearAxisDragSession();
+    };
+    const handleWindowBlur = () => {
+      const session = axisDragSessionRef.current;
+      if (session?.active) {
+        suppressRailClickForCurrentGesture();
+      }
+      clearAxisDragSession();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "hidden") return;
+      handleWindowBlur();
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    axisDragCleanupRef.current = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    applyAxisBodyVerticalAutoPan,
+    applyAxisHorizontalAutoPan,
+    clearAxisDragSession,
+    closeRailMenu,
+    commitAxisDragSession,
+    suppressRailClickForCurrentGesture,
+    updateAxisDropIndicator,
+  ]);
+
+  const updateAxisSelectionDrag = useCallback((session: AxisSelectionDragSession, clientX: number, clientY: number): boolean => {
+    const root = gridWrapRef.current;
+    const gridRect = root?.getBoundingClientRect();
+    if (!root || !gridRect) return false;
+
+    if (session.axis === "column") {
+      if (sheetColCount <= headerColCount) return false;
+      const horizontalViewport = queryGridHorizontalViewport(root);
+      const currentColIndex = resolveColumnIndexInViewport(
+        clientX - gridRect.left,
+        columnMetrics,
+        {
+          pinnedWidth: pinnedHeaderWidth,
+          scrollLeft: horizontalViewport?.scrollLeft ?? 0,
+        },
+      );
+      if (currentColIndex == null) return false;
+      const colIndex = Math.max(headerColCount, Math.min(sheetColCount - 1, currentColIndex));
+      const colStart = Math.min(session.anchorColIndex, colIndex);
+      const colEnd = Math.max(session.anchorColIndex, colIndex);
+      setSelection((current) => (
+        axisColumnSelectionEqual(current, colIndex, session.anchorColIndex, colStart, colEnd)
+          ? current
+          : {
+              kind: "column",
+              colIndex,
+              anchorColIndex: session.anchorColIndex,
+              colStart,
+              colEnd,
+            }
+      ));
+      return true;
+    }
+
+    const rowNumber = session.area === "header"
+      ? resolveHeaderRowNumberAtTrackY(clientY - gridRect.top, headerIndexMetrics)
+      : rowTrackRef.current
+        ? resolveBodyRowNumberAtTrackY(clientY - rowTrackRef.current.getBoundingClientRect().top, rowIndexMetrics)
+        : null;
+    if (rowNumber == null) return false;
+    const clampedRowNumber = session.area === "header"
+      ? Math.max(1, Math.min(headerRowCount, rowNumber))
+      : Math.max(headerRowCount + 1, Math.min(sheetRowCount, rowNumber));
+    const rowStart = Math.min(session.anchorRowNumber, clampedRowNumber);
+    const rowEnd = Math.max(session.anchorRowNumber, clampedRowNumber);
+    setSelection((current) => (
+      axisRowSelectionEqual(current, session.area, clampedRowNumber, session.anchorRowNumber, rowStart, rowEnd)
+        ? current
+        : {
+            kind: "row",
+            area: session.area,
+            rowNumber: clampedRowNumber,
+            anchorRowNumber: session.anchorRowNumber,
+            rowStart,
+            rowEnd,
+          }
+    ));
+    return true;
+  }, [
+    columnMetrics,
+    headerColCount,
+    headerIndexMetrics,
+    headerRowCount,
+    pinnedHeaderWidth,
+    rowIndexMetrics,
+    sheetColCount,
+    sheetRowCount,
+  ]);
+
+  const beginAxisSelectionDragSession = useCallback((initialSession: AxisSelectionDragSession) => {
+    clearAxisDragSession();
+    axisSelectionDragSessionRef.current = initialSession;
+    const tickAxisAutoPan = () => {
+      axisAutoPanRafRef.current = null;
+      const session = axisSelectionDragSessionRef.current;
+      const point = axisDragPointRef.current;
+      if (!session?.active || !point) return;
+      const didScroll =
+        session.axis === "column"
+          ? applyAxisHorizontalAutoPan(point.clientX)
+          : session.area === "body"
+            ? applyAxisBodyVerticalAutoPan(point.clientY)
+            : false;
+      if (!didScroll) return;
+      updateAxisSelectionDrag(session, point.clientX, point.clientY);
+      axisAutoPanRafRef.current = window.requestAnimationFrame(tickAxisAutoPan);
+    };
+    const ensureAxisAutoPan = () => {
+      if (axisAutoPanRafRef.current != null) return;
+      axisAutoPanRafRef.current = window.requestAnimationFrame(tickAxisAutoPan);
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      const session = axisSelectionDragSessionRef.current;
+      if (!session || event.pointerId !== session.pointerId) return;
+      const moved = Math.hypot(event.clientX - session.startX, event.clientY - session.startY);
+      if (!session.active && moved < AXIS_RAIL_DRAG_THRESHOLD_PX) return;
+      if (!session.active) {
+        session.active = true;
+        suppressRailClickForCurrentGesture();
+        closeRailMenu();
+        setFormulaInputMode("read");
+        setFormulaBarSnapshot(null);
+      }
+      event.preventDefault();
+      axisDragPointRef.current = { clientX: event.clientX, clientY: event.clientY };
+      updateAxisSelectionDrag(session, event.clientX, event.clientY);
+      ensureAxisAutoPan();
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      const session = axisSelectionDragSessionRef.current;
+      if (!session || event.pointerId !== session.pointerId) return;
+      if (session.active) {
+        suppressRailClickForCurrentGesture();
+        updateAxisSelectionDrag(session, event.clientX, event.clientY);
+      }
+      clearAxisDragSession();
+    };
+    const handlePointerCancel = (event: PointerEvent) => {
+      const session = axisSelectionDragSessionRef.current;
+      if (!session || event.pointerId !== session.pointerId) return;
+      if (session.active) {
+        suppressRailClickForCurrentGesture();
+      }
+      clearAxisDragSession();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      suppressRailClickForCurrentGesture();
+      clearAxisDragSession();
+    };
+    const handleWindowBlur = () => {
+      const session = axisSelectionDragSessionRef.current;
+      if (session?.active) {
+        suppressRailClickForCurrentGesture();
+      }
+      clearAxisDragSession();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "hidden") return;
+      handleWindowBlur();
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    axisDragCleanupRef.current = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    applyAxisBodyVerticalAutoPan,
+    applyAxisHorizontalAutoPan,
+    clearAxisDragSession,
+    closeRailMenu,
+    suppressRailClickForCurrentGesture,
+    updateAxisSelectionDrag,
+  ]);
+
+  const handleColumnRailPointerDown = useCallback((colIndex: number, event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || mode === "source" || isActiveSheetBlocked) return;
+    event.preventDefault();
+    const canStartMove = canStartColumnRailMoveDrag(colIndex, selectedColumnAxisSelection, event);
+    if (!canStartMove) {
+      if (!canStartColumnRailSelectionDrag(colIndex, headerColCount, sheetColCount, selectedColumnAxisSelection, event)) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      beginAxisSelectionDragSession({
+        axis: "column",
+        pointerId: event.pointerId,
+        captureTarget: event.currentTarget,
+        startX: event.clientX,
+        startY: event.clientY,
+        active: false,
+        anchorColIndex: colIndex,
+      });
+      return;
+    }
+    if (!activeSheet) {
+      throw new Error("column rail drag requires an active sheet");
+    }
+    if (!currentSheetState) {
+      throw new Error("column rail drag requires current sheet state");
+    }
+    const source = resolveColumnDragSource(colIndex, headerColCount, currentSheetState.colIds, selectedColumnAxisSelection);
+    if (!source.ok) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    beginAxisDragSession({
+      axis: "column",
+      sheetName: activeSheet,
+      pointerId: event.pointerId,
+      captureTarget: event.currentTarget,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      source,
+      lastValidation: null,
+    });
+  }, [
+    activeSheet,
+    beginAxisDragSession,
+    beginAxisSelectionDragSession,
+    currentSheetState,
+    headerColCount,
+    isActiveSheetBlocked,
+    mode,
+    selectedColumnAxisSelection,
+    sheetColCount,
+  ]);
+
+  const handleRowRailPointerDown = useCallback((rowNumber: number, area: "header" | "body", event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || mode === "source" || isActiveSheetBlocked) return;
+    event.preventDefault();
+    const canStartMove = canStartRowRailMoveDrag(rowNumber, area, selectedRowAxisSelection, event);
+    if (!canStartMove) {
+      if (!canStartRowRailSelectionDrag(rowNumber, area, headerRowCount, sheetRowCount, selectedRowAxisSelection, event)) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      beginAxisSelectionDragSession({
+        axis: "row",
+        area,
+        pointerId: event.pointerId,
+        captureTarget: event.currentTarget,
+        startX: event.clientX,
+        startY: event.clientY,
+        active: false,
+        anchorRowNumber: rowNumber,
+      });
+      return;
+    }
+    if (!activeSheet) {
+      throw new Error("row rail drag requires an active sheet");
+    }
+    if (!currentSheetState) {
+      throw new Error("row rail drag requires current sheet state");
+    }
+    const source = resolveRowDragSource(
+      rowNumber,
+      area,
+      headerRowCount,
+      currentSheetState.rowIds,
+      currentSheetRowStructure,
+      selectedRowAxisSelection,
+    );
+    if (!source.ok) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    beginAxisDragSession({
+      axis: "row",
+      sheetName: activeSheet,
+      pointerId: event.pointerId,
+      captureTarget: event.currentTarget,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      source,
+      lastValidation: null,
+    });
+  }, [
+    activeSheet,
+    beginAxisDragSession,
+    beginAxisSelectionDragSession,
+    currentSheetRowStructure,
+    currentSheetState,
+    headerRowCount,
+    isActiveSheetBlocked,
+    mode,
+    selectedRowAxisSelection,
+    sheetRowCount,
+  ]);
+
   useEffect(() => {
     if (mode !== "table" || isActiveSheetBlocked) return;
     if (!isRangeSelection || !selectedCell || selectedCell.area !== "body") return;
@@ -2885,7 +3806,9 @@ export default function App() {
 
   const chromeVisibilityPhase: ChromeVisibilityPhase =
     mode === "table"
-      ? selectedColumnIndex != null
+      ? axisSelectionView != null
+        ? "visible"
+        : selectedColumnIndex != null
         ? "visible"
         : isIndexRailsHovered || railMenuOpen
           ? "visible"
@@ -3305,6 +4228,69 @@ export default function App() {
     });
   }, [activeSheet, currentSheet, currentSheetState, currentSheetRowStructure, defaultBodyRailColIndex, selectedCell, headerRowCount, startRowTransition, insertRow, closeRailMenu, focusHeaderOverlayCell, focusBodyCellAt]);
 
+  const handleDuplicateRow = useCallback((rowNumber: number, area: "header" | "body", rowId: number) => {
+    if (!activeSheet) {
+      throw new Error("row duplication requires an active sheet");
+    }
+    if (!currentSheetState) {
+      throw new Error("row duplication requires current sheet state");
+    }
+    if (area === "body" && defaultBodyRailColIndex == null) {
+      throw new Error("row duplication requires at least one selectable column");
+    }
+
+    const rowIndex = rowNumber - 1;
+    let rowIds: number[];
+    let targetGapIndex: number;
+    if (area === "header") {
+      if (rowIndex < 0 || rowIndex >= headerRowCount) {
+        throw new Error("header row duplication target must be inside the header region");
+      }
+      rowIds = [rowId];
+      targetGapIndex = rowNumber;
+    } else {
+      const row = currentSheetRowStructure.find((candidate) => candidate.rowId === rowId);
+      if (!row) {
+        throw new Error("body row duplication requires a visible body row structure");
+      }
+      const sourceCount = row.hasChildren ? row.subtreeRowCount : 1;
+      rowIds = currentSheetState.rowIds.slice(row.absoluteRowIndex, row.absoluteRowIndex + sourceCount);
+      if (rowIds.length !== sourceCount) {
+        throw new Error("body row duplication source segment is incomplete");
+      }
+      targetGapIndex = row.absoluteRowIndex + sourceCount;
+    }
+
+    const nextRowNumber = targetGapIndex + 1;
+    if (area === "body") {
+      startRowTransition("insert", nextRowNumber);
+    }
+    duplicateRows(activeSheet, rowIds, targetGapIndex);
+    closeRailMenu();
+    setSelectedColumnIndex(null);
+    setFormulaInputMode("read");
+    const nextColIndex =
+      area === "header"
+        ? selectedCell?.logical.cAbs ?? defaultBodyRailColIndex ?? 0
+        : resolvePostRowStructureColumnIndex(selectedCell, defaultBodyRailColIndex ?? 0);
+    setSelectedCell({
+      area,
+      logical: {
+        rAbs: nextRowNumber,
+        cAbs: nextColIndex,
+      },
+      colId: toColFieldId(nextColIndex),
+      rowPath: null,
+    });
+    window.requestAnimationFrame(() => {
+      if (area === "header") {
+        focusHeaderOverlayCell(nextRowNumber, nextColIndex);
+      } else {
+        focusBodyCellAt(nextRowNumber, nextColIndex);
+      }
+    });
+  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, headerRowCount, currentSheetRowStructure, startRowTransition, duplicateRows, closeRailMenu, selectedCell, focusHeaderOverlayCell, focusBodyCellAt]);
+
   const handleDeleteRow = useCallback(async (rowNumber: number, area: "header" | "body", rowId: number, mode: "node" | "subtree" = "node") => {
     if (!activeSheet) {
       throw new Error("row deletion requires an active sheet");
@@ -3463,6 +4449,29 @@ export default function App() {
     setSelectedColumnIndex(nextColIndex);
     setFormulaInputMode("read");
   }, [activeSheet, startColumnTransition, insertColumn, closeRailMenu]);
+
+  const handleDuplicateColumn = useCallback((colIndex: number) => {
+    if (!activeSheet) {
+      throw new Error("column duplication requires an active sheet");
+    }
+    if (!currentSheetState) {
+      throw new Error("column duplication requires current sheet state");
+    }
+    if (colIndex < headerColCount || colIndex >= sheetColCount) {
+      throw new Error("column duplication target must be inside data columns");
+    }
+    const colId = currentSheetState.colIds[colIndex];
+    if (colId == null) {
+      throw new Error("column duplication requires a valid source column id");
+    }
+    const nextColIndex = colIndex + 1;
+    startColumnTransition("insert");
+    duplicateColumns(activeSheet, [colId], nextColIndex);
+    closeRailMenu();
+    setSelectedCell(null);
+    setSelectedColumnIndex(nextColIndex);
+    setFormulaInputMode("read");
+  }, [activeSheet, currentSheetState, headerColCount, sheetColCount, startColumnTransition, duplicateColumns, closeRailMenu]);
 
   const handleDeleteColumn = useCallback(async (colIndex: number) => {
     if (!activeSheet) {
@@ -3696,10 +4705,13 @@ export default function App() {
                 showGridHeader={showGridHeader}
                 pinnedHeaderWidth={pinnedHeaderWidth}
                 rowIndexTrackHeight={rowIndexTrackHeight}
+                bodyScrollTop={bodyScrollTop}
+                bodyScrollLeft={bodyScrollLeft}
                 indexRailsPhase={chromeVisibilityPhase}
                 handleIndexRailsHoverChange={handleIndexRailsHoverChange}
                 rowIndexMetrics={rowIndexMetrics}
                 columnTrackRef={columnTrackRef}
+                axisColumnSelectionTrackRef={axisColumnSelectionTrackRef}
                 headerCenterTrackRef={headerCenterTrackRef}
                 rowTrackRef={rowTrackRef}
                 gridWrapRef={gridWrapRef}
@@ -3721,12 +4733,18 @@ export default function App() {
                 handleHeaderOverlayDoubleClick={handleHeaderOverlayDoubleClick}
                 handleHeaderOverlayKeyDown={handleHeaderOverlayKeyDown}
                 handleColumnRailSelect={handleColumnRailSelect}
+                handleColumnRailPointerDown={handleColumnRailPointerDown}
                 handleColumnRailMenuOpen={handleColumnRailMenuOpen}
                 handleRowRailSelect={handleRowRailSelect}
+                handleRowRailPointerDown={handleRowRailPointerDown}
                 handleRowRailMenuOpen={handleRowRailMenuOpen}
+                axisDropIndicator={axisDropIndicator}
+                axisDragPreview={axisDragPreview}
+                axisSelection={axisSelectionView}
                 handleGridReady={handleGridReady}
                 handleFirstDataRendered={handleFirstDataRendered}
                 handleModelUpdated={handleModelUpdated}
+                handleGridSizeChanged={handleGridSizeChanged}
                 handleCellFocused={handleCellFocused}
                 handleCellMouseDown={handleCellMouseDown}
                 handleCellDoubleClicked={handleCellDoubleClicked}
@@ -3803,7 +4821,9 @@ export default function App() {
         onDeleteRow={handleDeleteRow}
         onInsertColumnLeft={(colIndex) => handleInsertColumn(colIndex, "left")}
         onInsertColumnRight={(colIndex) => handleInsertColumn(colIndex, "right")}
+        onDuplicateColumn={handleDuplicateColumn}
         onDeleteColumn={handleDeleteColumn}
+        onDuplicateRow={handleDuplicateRow}
         onConvertRowsToHeader={handleConvertRowsToHeader}
         onConvertRowsToBody={handleConvertRowsToBody}
         onSetColumnDefaultFormat={handleSetColumnDefaultFormat}

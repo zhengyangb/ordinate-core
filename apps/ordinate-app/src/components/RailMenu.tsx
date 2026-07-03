@@ -59,10 +59,20 @@ function DeleteGlyph() {
   );
 }
 
+function DuplicateGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path d="M7.2 7.2h7v7h-7z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.25" />
+      <path d="M5.8 12.8h-1v-7h7v1" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.25" />
+    </svg>
+  );
+}
+
 function RowStructurePanel({
   railMenu,
   onInsertAbove,
   onInsertBelow,
+  onDuplicate,
   onDelete,
   onConvertRowsToHeader,
   onConvertRowsToBody,
@@ -70,6 +80,7 @@ function RowStructurePanel({
   railMenu: Extract<RailMenuView, { kind: "row" }>;
   onInsertAbove: (rowNumber: number, area: "header" | "body") => void;
   onInsertBelow: (rowNumber: number, area: "header" | "body") => void;
+  onDuplicate: (rowNumber: number, area: "header" | "body", rowId: number) => void;
   onDelete: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
   onConvertRowsToHeader: (rowId: number) => void;
   onConvertRowsToBody: (rowId: number) => void;
@@ -81,6 +92,9 @@ function RowStructurePanel({
       </MenuOption>
       <MenuOption className="rail-structure-action" icon={<InsertBelowGlyph />} onClick={() => onInsertBelow(railMenu.rowNumber, railMenu.area)}>
         Insert Below
+      </MenuOption>
+      <MenuOption className="rail-structure-action" icon={<DuplicateGlyph />} onClick={() => onDuplicate(railMenu.rowNumber, railMenu.area, railMenu.rowId)}>
+        {railMenu.hasChildren ? "Duplicate Row and Children" : "Duplicate Row"}
       </MenuOption>
       {railMenu.canConvertToHeader ? (
         <MenuOption className="rail-structure-action" icon={<InsertAboveGlyph />} onClick={() => onConvertRowsToHeader(railMenu.rowId)}>
@@ -114,7 +128,9 @@ type RailMenuProps = {
   onDeleteRow: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
   onInsertColumnLeft: (colIndex: number) => void;
   onInsertColumnRight: (colIndex: number) => void;
+  onDuplicateColumn: (colIndex: number) => void;
   onDeleteColumn: (colIndex: number) => void;
+  onDuplicateRow: (rowNumber: number, area: "header" | "body", rowId: number) => void;
   onConvertRowsToHeader: (rowId: number) => void;
   onConvertRowsToBody: (rowId: number) => void;
   onSetColumnDefaultFormat: (colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
@@ -133,7 +149,9 @@ export default function RailMenu({
   onDeleteRow,
   onInsertColumnLeft,
   onInsertColumnRight,
+  onDuplicateColumn,
   onDeleteColumn,
+  onDuplicateRow,
   onConvertRowsToHeader,
   onConvertRowsToBody,
   onSetColumnDefaultFormat,
@@ -220,6 +238,9 @@ export default function RailMenu({
                       <MenuOption className="column-rail-menu-action" icon={<InsertRightGlyph />} onClick={() => onInsertColumnRight(railMenu.colIndex)}>
                         Insert Right
                       </MenuOption>
+                      <MenuOption className="column-rail-menu-action" icon={<DuplicateGlyph />} onClick={() => onDuplicateColumn(railMenu.colIndex)}>
+                        Duplicate Column
+                      </MenuOption>
                       <MenuOption className="column-rail-menu-action" icon={<DeleteGlyph />} tone="danger" onClick={() => onDeleteColumn(railMenu.colIndex)}>
                         Delete Column
                       </MenuOption>
@@ -269,6 +290,7 @@ export default function RailMenu({
                     railMenu={railMenu}
                     onInsertAbove={onInsertRowAbove}
                     onInsertBelow={onInsertRowBelow}
+                    onDuplicate={onDuplicateRow}
                     onDelete={onDeleteRow}
                     onConvertRowsToHeader={onConvertRowsToHeader}
                     onConvertRowsToBody={onConvertRowsToBody}

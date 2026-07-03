@@ -40,11 +40,17 @@ export type SheetSelection =
   | {
       kind: "column";
       colIndex: number;
+      anchorColIndex: number;
+      colStart: number;
+      colEnd: number;
     }
   | {
       kind: "row";
       rowNumber: number;
       area: "header" | "body";
+      anchorRowNumber: number;
+      rowStart: number;
+      rowEnd: number;
     };
 
 export type SelectedCell = {
@@ -120,6 +126,45 @@ export type ColumnMetric = {
   left: number;
   width: number;
 };
+
+export type AxisDropIndicator = {
+  axis: "column" | "row";
+  state: "valid" | "invalid" | "noop";
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  reason?: string;
+};
+
+export type AxisDragPreview =
+  | {
+      axis: "column";
+      colStart: number;
+      colEnd: number;
+    }
+  | {
+      axis: "row";
+      area: "header" | "body";
+      rowStart: number;
+      rowEnd: number;
+      rowCount: number;
+    };
+
+export type AxisSelectionView =
+  | {
+      axis: "column";
+      colStart: number;
+      colEnd: number;
+    }
+  | {
+      axis: "row";
+      area: "header" | "body";
+      rowStart: number;
+      rowEnd: number;
+      rowCount: number;
+      draggable: boolean;
+    };
 
 export type ThemeMode = "auto" | "light" | "dark";
 

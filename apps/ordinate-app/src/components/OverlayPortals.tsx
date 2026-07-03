@@ -50,7 +50,9 @@ type OverlayPortalsProps = {
   onDeleteRow: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
   onInsertColumnLeft: (colIndex: number) => void;
   onInsertColumnRight: (colIndex: number) => void;
+  onDuplicateColumn: (colIndex: number) => void;
   onDeleteColumn: (colIndex: number) => void;
+  onDuplicateRow: (rowNumber: number, area: "header" | "body", rowId: number) => void;
   onConvertRowsToHeader: (rowId: number) => void;
   onConvertRowsToBody: (rowId: number) => void;
   onSetColumnDefaultFormat: (colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => void;
@@ -92,7 +94,9 @@ export default function OverlayPortals({
   onDeleteRow,
   onInsertColumnLeft,
   onInsertColumnRight,
+  onDuplicateColumn,
   onDeleteColumn,
+  onDuplicateRow,
   onConvertRowsToHeader,
   onConvertRowsToBody,
   onSetColumnDefaultFormat,
@@ -164,7 +168,9 @@ export default function OverlayPortals({
           onDeleteRow={onDeleteRow}
           onInsertColumnLeft={onInsertColumnLeft}
           onInsertColumnRight={onInsertColumnRight}
+          onDuplicateColumn={onDuplicateColumn}
           onDeleteColumn={onDeleteColumn}
+          onDuplicateRow={onDuplicateRow}
           onConvertRowsToHeader={onConvertRowsToHeader}
           onConvertRowsToBody={onConvertRowsToBody}
           onSetColumnDefaultFormat={onSetColumnDefaultFormat}
