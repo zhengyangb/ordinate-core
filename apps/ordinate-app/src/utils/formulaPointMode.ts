@@ -1,5 +1,6 @@
 import type { LogicalCell, Rect } from "../types/ui";
 import { toColumnLetters } from "./appHelpers";
+import { scanOrdinateReferenceEnd } from "./formulaReferenceScan";
 import { normalizeRect } from "./selectionModel";
 
 export type ReferenceStyle = "spreadsheet-a1" | "ordinate-label" | "ordinate-positional" | "ordinate-relative";
@@ -10,6 +11,7 @@ export type FormulaReferenceToken = {
   end: number;
   text: string;
   style: ReferenceStyle;
+  sheetName: string | null;
 };
 
 export type FormulaReferenceEdit = {
@@ -64,17 +66,24 @@ export type FormulaReferenceView = FormulaReferenceToken & {
   options: FormulaReferenceOption[];
 };
 
-export type FormulaReferenceContext = {
+export type FormulaReferenceSheetContext = {
   rowCount: number;
   colCount: number;
   headerRowCount: number;
   rowLabelsByAbsoluteIndex: Map<number, string[]>;
   colLabelPathsByIndex: string[][];
+};
+
+type FormulaReferenceGenerationContext = FormulaReferenceSheetContext & {
   sourceCell: LogicalCell | null;
 };
 
+export type FormulaReferenceContext = FormulaReferenceGenerationContext & {
+  currentSheetName?: string | null;
+  sheetsByName?: Map<string, FormulaReferenceSheetContext>;
+};
+
 const A1_REFERENCE_RE = /\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?/g;
-const ORDINATE_REFERENCE_RE = /@\[([^\]\r\n]+)\]/g;
 const REFERENCE_COLOR_COUNT = 8;
 
 function tokenId(start: number, end: number): string {
@@ -87,26 +96,49 @@ function hasReferenceBoundary(text: string, start: number, end: number): boolean
   return !/[A-Za-z0-9_$]/.test(before) && !/[A-Za-z0-9_$]/.test(after);
 }
 
+function selectorRangeUsesRelative(text: string): boolean {
+  return splitTopLevel(text, ":").some((part) => {
+    const trimmed = part.trim();
+    return trimmed === "_" || /^_[+-]\d+$/.test(trimmed);
+  });
+}
+
+function selectorRangeUsesPosition(text: string): boolean {
+  return splitTopLevel(text, ":").some((part) => /^#[1-9]\d*!?$/.test(part.trim()));
+}
+
 function classifyOrdinateStyle(text: string): ReferenceStyle {
-  if (/@\[[^\]]*_[+-]?\d*[^\]]*\]/.test(text)) return "ordinate-relative";
-  if (/@\[[^\]]*#[0-9]+!?[^\]]*\]/.test(text)) return "ordinate-positional";
+  const parsed = parseOrdinateReferenceTarget(text);
+  const targetInner = parsed?.targetInner ?? text.slice(2, -1);
+  const selectors = splitTopLevel(targetInner, ",");
+  if (selectors.some(selectorRangeUsesRelative)) return "ordinate-relative";
+  if (selectors.some(selectorRangeUsesPosition)) return "ordinate-positional";
   return "ordinate-label";
 }
 
 export function tokenizeFormulaReferences(draft: string): FormulaReferenceToken[] {
   const tokens: FormulaReferenceToken[] = [];
 
-  for (const match of draft.matchAll(ORDINATE_REFERENCE_RE)) {
-    if (match.index == null) continue;
-    const start = match.index;
-    const end = start + match[0].length;
+  let cursor = 0;
+  while (cursor < draft.length) {
+    const start = draft.indexOf("@[", cursor);
+    if (start < 0) break;
+    const end = scanOrdinateReferenceEnd(draft, start);
+    if (end == null) {
+      cursor = start + 2;
+      continue;
+    }
+    const text = draft.slice(start, end);
+    const parsed = parseOrdinateReferenceTarget(text);
     tokens.push({
       id: tokenId(start, end),
       start,
       end,
-      text: match[0],
-      style: classifyOrdinateStyle(match[0]),
+      text,
+      style: classifyOrdinateStyle(text),
+      sheetName: parsed?.sheetName ?? null,
     });
+    cursor = end;
   }
 
   for (const match of draft.matchAll(A1_REFERENCE_RE)) {
@@ -122,6 +154,7 @@ export function tokenizeFormulaReferences(draft: string): FormulaReferenceToken[
       end,
       text: match[0],
       style: "spreadsheet-a1",
+      sheetName: null,
     });
   }
 
@@ -312,6 +345,11 @@ function quoteLabelPart(text: string): string {
   return JSON.stringify(text);
 }
 
+function quoteSheetSelector(text: string): string {
+  if (/^[A-Za-z0-9]+$/.test(text)) return text;
+  return JSON.stringify(text);
+}
+
 function formatLabelPath(parts: string[]): string {
   return parts.map(quoteLabelPart).join(".");
 }
@@ -349,16 +387,28 @@ function formatLabelAxisSelector(
 function referenceTextForRect(
   rect: Rect,
   style: ReferenceStyle,
-  context: FormulaReferenceContext,
+  context: FormulaReferenceGenerationContext,
+  sheetName: string | null = null,
 ): { text: string | null; disabledReason: string | null } {
+  if (sheetName && style === "spreadsheet-a1") {
+    return { text: null, disabledReason: "Cross-sheet A1 references are not supported." };
+  }
+  if (sheetName && style === "ordinate-relative") {
+    return { text: null, disabledReason: "Cross-sheet references cannot use relative selectors." };
+  }
+
+  let text: string | null = null;
+  let disabledReason: string | null = null;
   if (style === "spreadsheet-a1") {
-    return { text: formatA1ReferenceForRect(rect), disabledReason: null };
+    text = formatA1ReferenceForRect(rect);
+    return { text, disabledReason };
   }
 
   if (style === "ordinate-positional") {
     const rows = formatSelectorRange(formatAbsoluteIndex(rect.rowStart - 1), formatAbsoluteIndex(rect.rowEnd - 1));
     const cols = formatSelectorRange(formatAbsoluteIndex(rect.colStart), formatAbsoluteIndex(rect.colEnd));
-    return { text: `@[${rows},${cols}]`, disabledReason: null };
+    text = `@[${rows},${cols}]`;
+    return { text: sheetName ? wrapCrossSheetReference(text, sheetName) : text, disabledReason };
   }
 
   if (style === "ordinate-relative") {
@@ -373,7 +423,8 @@ function referenceTextForRect(
       formatRelativeIndex(rect.colStart, context.sourceCell.cAbs),
       formatRelativeIndex(rect.colEnd, context.sourceCell.cAbs),
     );
-    return { text: `@[${rows},${cols}]`, disabledReason: null };
+    text = `@[${rows},${cols}]`;
+    return { text, disabledReason };
   }
 
   const rowLabelMap = buildReverseRowLabelMap(context);
@@ -405,10 +456,23 @@ function referenceTextForRect(
   if (!rowSelector.text || !colSelector.text) {
     return { text: null, disabledReason: rowSelector.disabledReason ?? colSelector.disabledReason ?? "Labels are unavailable for this target." };
   }
-  return { text: `@[${rowSelector.text},${colSelector.text}]`, disabledReason: null };
+  text = `@[${rowSelector.text},${colSelector.text}]`;
+  return { text: sheetName ? wrapCrossSheetReference(text, sheetName) : text, disabledReason };
 }
 
-export function buildReferenceOptions(rect: Rect, context: FormulaReferenceContext): FormulaReferenceOption[] {
+function wrapCrossSheetReference(localReferenceText: string, sheetName: string): string {
+  if (!localReferenceText.startsWith("@[") || !localReferenceText.endsWith("]")) {
+    throw new Error(`Cannot qualify non-ordinate reference text: ${localReferenceText}`);
+  }
+  const inner = localReferenceText.slice(2, -1);
+  return `@[${quoteSheetSelector(sheetName)}::[${inner}]]`;
+}
+
+export function buildReferenceOptions(
+  rect: Rect,
+  context: FormulaReferenceGenerationContext,
+  sheetName: string | null = null,
+): FormulaReferenceOption[] {
   const specs: Array<{ style: ReferenceStyle; label: string }> = [
     { style: "spreadsheet-a1", label: "A1" },
     { style: "ordinate-label", label: "Label" },
@@ -416,7 +480,7 @@ export function buildReferenceOptions(rect: Rect, context: FormulaReferenceConte
     { style: "ordinate-relative", label: "Relative" },
   ];
   return specs.map((spec) => {
-    const result = referenceTextForRect(rect, spec.style, context);
+    const result = referenceTextForRect(rect, spec.style, context, sheetName);
     return { ...spec, ...result };
   });
 }
@@ -470,6 +534,8 @@ function splitTopLevel(text: string, delimiter: string): string[] {
   let start = 0;
   let inQuote = false;
   let escaped = false;
+  let bracketDepth = 0;
+  let parenDepth = 0;
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
     if (escaped) {
@@ -484,13 +550,102 @@ function splitTopLevel(text: string, delimiter: string): string[] {
       inQuote = !inQuote;
       continue;
     }
-    if (!inQuote && ch === delimiter) {
+    if (inQuote) continue;
+    if (ch === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (ch === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+    if (ch === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (ch === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (bracketDepth === 0 && parenDepth === 0 && ch === delimiter) {
       parts.push(text.slice(start, i));
       start = i + 1;
     }
   }
   parts.push(text.slice(start));
   return parts;
+}
+
+function findTopLevelDoubleColon(text: string): number | null {
+  let inQuote = false;
+  let escaped = false;
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  for (let i = 0; i < text.length - 1; i += 1) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === "\"") {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (inQuote) continue;
+    if (ch === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (ch === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+    if (ch === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (ch === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (bracketDepth === 0 && parenDepth === 0 && ch === ":" && text[i + 1] === ":") {
+      return i;
+    }
+  }
+  return null;
+}
+
+function parseSheetNameSelector(text: string): string | null {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.startsWith("\"")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return typeof parsed === "string" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return /^[A-Za-z0-9]+$/.test(trimmed) ? trimmed : null;
+}
+
+function parseOrdinateReferenceTarget(text: string): { sheetName: string | null; targetInner: string } | null {
+  if (!text.startsWith("@[") || !text.endsWith("]")) return null;
+  const inner = text.slice(2, -1).trim();
+  const sheetDelimiter = findTopLevelDoubleColon(inner);
+  if (sheetDelimiter === null) return { sheetName: null, targetInner: inner };
+
+  const sheetName = parseSheetNameSelector(inner.slice(0, sheetDelimiter));
+  const targetText = inner.slice(sheetDelimiter + 2).trim();
+  if (!sheetName || !targetText.startsWith("[") || !targetText.endsWith("]")) return null;
+  return {
+    sheetName,
+    targetInner: targetText.slice(1, -1).trim(),
+  };
 }
 
 function parseLabelPath(text: string): string[] | null {
@@ -507,7 +662,7 @@ function labelKey(parts: string[]): string {
   return JSON.stringify(parts);
 }
 
-function buildReverseRowLabelMap(context: FormulaReferenceContext): Map<string, number[]> {
+function buildReverseRowLabelMap(context: FormulaReferenceSheetContext): Map<string, number[]> {
   const map = new Map<string, number[]>();
   for (const [index, labels] of context.rowLabelsByAbsoluteIndex) {
     const key = labelKey(labels);
@@ -518,7 +673,7 @@ function buildReverseRowLabelMap(context: FormulaReferenceContext): Map<string, 
   return map;
 }
 
-function buildReverseColLabelMap(context: FormulaReferenceContext): Map<string, number[]> {
+function buildReverseColLabelMap(context: FormulaReferenceSheetContext): Map<string, number[]> {
   const map = new Map<string, number[]>();
   context.colLabelPathsByIndex.forEach((path, index) => {
     const key = labelKey(path);
@@ -532,7 +687,7 @@ function buildReverseColLabelMap(context: FormulaReferenceContext): Map<string, 
 function resolveScalarSelector(
   text: string,
   axis: "row" | "col",
-  context: FormulaReferenceContext,
+  context: FormulaReferenceGenerationContext,
   rowLabels: Map<string, number[]>,
   colLabels: Map<string, number[]>,
 ): number | null {
@@ -556,7 +711,7 @@ function resolveScalarSelector(
 function resolveSelectorRange(
   text: string,
   axis: "row" | "col",
-  context: FormulaReferenceContext,
+  context: FormulaReferenceGenerationContext,
   rowLabels: Map<string, number[]>,
   colLabels: Map<string, number[]>,
 ): { start: number; end: number } | null {
@@ -568,9 +723,10 @@ function resolveSelectorRange(
   return { start: Math.min(start, end), end: Math.max(start, end) };
 }
 
-function parseOrdinateRect(text: string, context: FormulaReferenceContext): Rect | null {
-  const inner = text.slice(2, -1).trim();
-  const parts = splitTopLevel(inner, ",");
+function parseOrdinateRect(text: string, context: FormulaReferenceGenerationContext): Rect | null {
+  const parsed = parseOrdinateReferenceTarget(text);
+  if (!parsed) return null;
+  const parts = splitTopLevel(parsed.targetInner, ",");
   if (parts.length !== 2) return null;
   const rowLabels = buildReverseRowLabelMap(context);
   const colLabels = buildReverseColLabelMap(context);
@@ -585,20 +741,41 @@ function parseOrdinateRect(text: string, context: FormulaReferenceContext): Rect
   };
 }
 
-function clampRectToSheet(rect: Rect, context: FormulaReferenceContext): Rect | null {
+function clampRectToSheet(rect: Rect, context: FormulaReferenceSheetContext): Rect | null {
   if (rect.rowStart < 1 || rect.rowEnd > context.rowCount || rect.colStart < 0 || rect.colEnd >= context.colCount) return null;
   return rect;
 }
 
+function resolveTokenContext(
+  token: FormulaReferenceToken,
+  context: FormulaReferenceContext,
+): { context: FormulaReferenceGenerationContext; sheetName: string | null } | null {
+  if (!token.sheetName) return { context, sheetName: null };
+  const sheetContext = context.sheetsByName?.get(token.sheetName);
+  if (!sheetContext) return null;
+  return {
+    context: {
+      ...sheetContext,
+      sourceCell: null,
+    },
+    sheetName: token.sheetName,
+  };
+}
+
 export function resolveFormulaReferenceViews(draft: string, context: FormulaReferenceContext): FormulaReferenceView[] {
   return tokenizeFormulaReferences(draft).map((token, index) => {
-    const rect = token.style === "spreadsheet-a1" ? parseA1Rect(token.text) : parseOrdinateRect(token.text, context);
-    const validRect = rect ? clampRectToSheet(rect, context) : null;
+    const target = token.style === "spreadsheet-a1" ? { context, sheetName: null } : resolveTokenContext(token, context);
+    const rect = target
+      ? token.style === "spreadsheet-a1"
+        ? parseA1Rect(token.text)
+        : parseOrdinateRect(token.text, target.context)
+      : null;
+    const validRect = rect && target ? clampRectToSheet(rect, target.context) : null;
     return {
       ...token,
       rect: validRect,
       colorIndex: index % REFERENCE_COLOR_COUNT,
-      options: validRect ? buildReferenceOptions(validRect, context) : [],
+      options: validRect && target ? buildReferenceOptions(validRect, target.context, target.sheetName) : [],
     };
   });
 }

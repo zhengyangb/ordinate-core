@@ -84,9 +84,15 @@ export interface RefSelector {
   value?: unknown;
 }
 
+export interface SheetRefSelector {
+  kind: "sheet_name";
+  value: string;
+}
+
 export type ReferenceStyle = "ordinate" | "spreadsheet";
 
 export interface ReferenceExpr {
+  sheetSelector?: SheetRefSelector;
   rowSelector: RefSelector;
   colSelector: RefSelector;
   style?: ReferenceStyle;

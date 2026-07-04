@@ -4,15 +4,16 @@ import { escapeCellText } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import { type ExprNode, type FormatSpec, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue, type StyleSpec } from "./runtime/types";
 import { isError, isValidExternalErrorKind } from "./runtime/errors";
-import { renderFormulaExpression } from "./runtime/renderFormula";
+import { renderFormulaExpression, type FormulaRenderContext, type FormulaSheetRenderContext } from "./runtime/renderFormula";
 
 // Serialize a DocumentState to canonical .ord text.
 export function serializeDocumentState(state: DocumentState): string {
+  const formulaRenderContext = buildFormulaRenderContext(state);
   const lines: string[] = [];
 
   state.sheets.forEach((sheet, sheetIdx) => {
     lines.push(`# ${sheet.name}`);
-    lines.push(...serializeSheetBodyLines(sheet));
+    lines.push(...serializeSheetBodyLines(sheet, formulaRenderContext));
     if (sheetIdx !== state.sheets.length - 1) {
       lines.push("");
     }
@@ -22,8 +23,8 @@ export function serializeDocumentState(state: DocumentState): string {
   return formatDocument(intermediate);
 }
 
-function serializeSheetBodyLines(sheet: SheetState): string[] {
-  const tableLines = serializeCurrentTableLines(sheet);
+function serializeSheetBodyLines(sheet: SheetState, formulaRenderContext: FormulaRenderContext): string[] {
+  const tableLines = serializeCurrentTableLines(sheet, formulaRenderContext);
   if (sheet.sourceBlocks.length === 0) {
     return tableLines;
   }
@@ -56,7 +57,7 @@ function serializeSheetBodyLines(sheet: SheetState): string[] {
   return output;
 }
 
-function serializeCurrentTableLines(sheet: SheetState): string[] {
+function serializeCurrentTableLines(sheet: SheetState, formulaRenderContext: FormulaRenderContext): string[] {
   if (sheet.rowCount === 0 || sheet.colCount === 0) {
     return [];
   }
@@ -99,7 +100,16 @@ function serializeCurrentTableLines(sheet: SheetState): string[] {
         const headerCellText = rowDefaultDisplay ? `${stripCellDisplayMetadata(rawHeaderCell)}${renderDisplayBlock(rowDefaultDisplay)}` : rawHeaderCell;
         cells.push(encodeTableCellText(headerCellText));
       } else {
-        cells.push(encodeTableCellText(serializeCellState(cellState, rowIdToIndex, colIdToIndex, rowLabelPathsByIndex, sheet.colLabels)));
+        cells.push(encodeTableCellText(serializeCellState(
+          cellState,
+          rowIdToIndex,
+          colIdToIndex,
+          {
+            ...formulaRenderContext,
+            rowLabelPathsByIndex,
+            colLabelsByIndex: sheet.colLabels,
+          },
+        )));
       }
     }
     lines.push(buildRow(cells, rowBoundary));
@@ -112,8 +122,7 @@ function serializeCellState(
   cellState: SheetState["cells"][number][number],
   rowIdToIndex: Map<number, number>,
   colIdToIndex: Map<number, number>,
-  rowLabelPathsByIndex: string[][],
-  colLabelsByIndex: string[],
+  formulaRenderContext: FormulaRenderContext,
 ): string {
   const body = cellState.body;
   const displaySuffix = renderDisplayBlock(cellState.localDisplay);
@@ -124,14 +133,27 @@ function serializeCellState(
     return `${serializeLiteralBody(body.literal, body.inputText)}${displaySuffix}`;
   }
 
-  const rhs = renderFormulaExpression(body.expression, rowIdToIndex, colIdToIndex, {
-    rowLabelPathsByIndex,
-    colLabelsByIndex,
-  }) ?? body.expressionText;
+  const rhs = renderFormulaExpression(body.expression, rowIdToIndex, colIdToIndex, formulaRenderContext) ?? body.expressionText;
   if (!cellState.dirty && cellState.cachedValue !== null && cellState.cachedValue.kind !== "blank") {
     return `${serializeValue(cellState.cachedValue)} = ${rhs}${displaySuffix}`;
   }
   return `= ${rhs}${displaySuffix}`;
+}
+
+function buildFormulaRenderContext(state: DocumentState): FormulaRenderContext {
+  const sheetsById = new Map<number, FormulaSheetRenderContext>();
+  for (const sheet of state.sheets) {
+    sheetsById.set(sheet.sheetId, {
+      sheetName: sheet.name,
+      rowIdToIndex: buildIdIndexMap(sheet.rowIds),
+      colIdToIndex: buildIdIndexMap(sheet.colIds),
+      rowLabelPathsByIndex: Array.from({ length: sheet.rowCount }, (_, rowIndex) =>
+        rowIndex >= sheet.bodyStart ? (sheet.rowPaths[rowIndex - sheet.bodyStart] ?? "").split(".") : [],
+      ),
+      colLabelsByIndex: sheet.colLabels,
+    });
+  }
+  return { sheetsById };
 }
 
 function serializeLiteralBody(value: RuntimeValue, inputText: string): string {

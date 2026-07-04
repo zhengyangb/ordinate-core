@@ -127,6 +127,20 @@ const sampleDocument = `# Management Report
 | Decision | "Prioritize margin quality and controlled hiring in Q4." |
 | Owner | "Finance + Operations" |
 
+# Planning Assumptions
+| Metric || Value |
+| ------ || ----- |
+| Forecast Multiplier || 1.08 |
+| Hiring Plan || 12 |
+| Risk Buffer || 0.15 |
+
+# Cross Sheet Summary
+| Item || Value |
+| ---- || ----- |
+| Management 2025 H2 Revenue || = @["Management Report"::["Revenue Total","2025".H2]] |
+| Forecast Multiplier || = @["Planning Assumptions"::["Forecast Multiplier",Value]] |
+| Forecast Revenue || = @["Cross Sheet Summary"::["Management 2025 H2 Revenue",Value]] * @["Planning Assumptions"::["Forecast Multiplier",Value]] |
+
 # Error Playground
 | Line Item             || 2024 | 2025 |
 | --------------------- || ---- | ---- |
