@@ -1,4 +1,11 @@
-import { getCellTextView, type CellTextViewSource, type PresentedCell, type RuntimeValue } from "@ordinate/core";
+import {
+  getCellTextView,
+  type CellTextViewSource,
+  type CoreRowDeleteMode,
+  type PresentedCell,
+  type RuntimeValue,
+  type SheetBodyRowStructure,
+} from "@ordinate/core";
 
 import type {
   ColumnMetric,
@@ -7,6 +14,7 @@ import type {
   HeaderOverlayCell,
   RailMenuView,
   RowRailMenuView,
+  SheetSelection,
   SheetHealth,
   SheetIssueViewModel,
   ThemeMode,
@@ -447,6 +455,105 @@ export function buildRailMenu(
     currentSheetPresentation,
     headerColCount,
   );
+}
+
+export type RowDeleteTarget = {
+  rowNumber: number;
+  rowId: number;
+  mode: CoreRowDeleteMode;
+  deletedRowCount: number;
+};
+
+export function resolveColumnDeleteTargets(
+  colIndex: number,
+  selection: SheetSelection | null,
+  headerColCount: number,
+  sheetColCount: number,
+): number[] {
+  if (colIndex < headerColCount || colIndex >= sheetColCount) {
+    throw new Error("column delete target must be inside data columns");
+  }
+  if (
+    selection?.kind !== "column" ||
+    colIndex < selection.colStart ||
+    colIndex > selection.colEnd
+  ) {
+    return [colIndex];
+  }
+  if (selection.colStart < headerColCount || selection.colEnd >= sheetColCount) {
+    throw new Error("column selection delete target must be inside data columns");
+  }
+  return Array.from(
+    { length: selection.colEnd - selection.colStart + 1 },
+    (_, offset) => selection.colStart + offset,
+  );
+}
+
+export function resolveRowDeleteTargets(
+  rowNumber: number,
+  area: "header" | "body",
+  rowId: number,
+  selection: SheetSelection | null,
+  currentSheetState: StateSheet,
+  rowStructure: SheetBodyRowStructure[],
+): RowDeleteTarget[] {
+  const selectedRange =
+    selection?.kind === "row" &&
+    selection.area === area &&
+    rowNumber >= selection.rowStart &&
+    rowNumber <= selection.rowEnd
+      ? { start: selection.rowStart, end: selection.rowEnd }
+      : { start: rowNumber, end: rowNumber };
+
+  if (area === "header") {
+    const headerRowCount = currentSheetState.headerRowCount ?? 0;
+    if (selectedRange.start < 1 || selectedRange.end > headerRowCount) {
+      throw new Error("header row delete target must be inside header rows");
+    }
+    return Array.from({ length: selectedRange.end - selectedRange.start + 1 }, (_, offset) => {
+      const targetRowNumber = selectedRange.start + offset;
+      const targetRowId = currentSheetState.rowIds?.[targetRowNumber - 1];
+      if (targetRowId == null) {
+        throw new Error(`missing rowId for header row ${targetRowNumber}`);
+      }
+      return {
+        rowNumber: targetRowNumber,
+        rowId: targetRowId,
+        mode: "node",
+        deletedRowCount: 1,
+      };
+    });
+  }
+
+  const rows = rowStructure.filter((row) => (
+    row.absoluteRowNumber >= selectedRange.start &&
+    row.absoluteRowNumber <= selectedRange.end
+  ));
+  if (rows.length === 0) {
+    throw new Error("body row delete target must resolve to row structure");
+  }
+  if (selectedRange.start === rowNumber && selectedRange.end === rowNumber && rows[0]?.rowId !== rowId) {
+    throw new Error("body row delete target rowId does not match row structure");
+  }
+
+  const targets: RowDeleteTarget[] = [];
+  let coveredThroughRowNumber = 0;
+  for (const row of rows) {
+    if (row.absoluteRowNumber <= coveredThroughRowNumber) continue;
+    const mode: CoreRowDeleteMode = row.hasChildren ? "subtree" : "node";
+    const deletedRowCount = row.hasChildren ? row.subtreeRowCount : 1;
+    coveredThroughRowNumber = row.absoluteRowNumber + deletedRowCount - 1;
+    targets.push({
+      rowNumber: row.absoluteRowNumber,
+      rowId: row.rowId,
+      mode,
+      deletedRowCount,
+    });
+  }
+  if (targets.length === 0) {
+    throw new Error("body row delete target resolved to no delete targets");
+  }
+  return targets;
 }
 
 export function resolveRailMenuWidthPx(kind: RailMenuView["kind"]): number {

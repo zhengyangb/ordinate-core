@@ -14,6 +14,7 @@ import {
 import {
   getCellTextView,
   resolveSheetRowStructure,
+  type CoreAffectedFormulaCell,
   type RuntimeValue,
   type StylePatch,
 } from "@ordinate/core";
@@ -98,6 +99,8 @@ import {
   queryGridBodyViewport,
   queryGridHorizontalViewport,
   resolveAnchoredMenuPosition,
+  resolveColumnDeleteTargets,
+  resolveRowDeleteTargets,
   resolveRailMenuPosition,
   resolveInitialThemeMode,
   ringRectEqual,
@@ -216,6 +219,14 @@ type RowAxisSelectionDragSession = {
 };
 
 type AxisSelectionDragSession = ColumnAxisSelectionDragSession | RowAxisSelectionDragSession;
+
+function countUniqueAffectedFormulaCells(cells: CoreAffectedFormulaCell[]): number {
+  const keys = new Set<string>();
+  for (const cell of cells) {
+    keys.add(`${cell.sheet}:${cell.rowId}:${cell.colId}`);
+  }
+  return keys.size;
+}
 
 type FormulaReferenceOverlay = {
   tokenId: string;
@@ -363,13 +374,13 @@ export default function App() {
     convertRowsToHeader,
     convertRowsToBody,
     insertRow,
-    deleteRow,
+    deleteRows,
     moveColumns,
     moveRows,
     duplicateColumns,
     duplicateRows,
     insertColumn,
-    deleteColumn,
+    deleteColumns,
     canUndo,
     canRedo,
     undoLabel,
@@ -717,7 +728,7 @@ export default function App() {
   }, [currentSheetPresentation, sheetColCount]);
 
   const railMenu = useMemo<RailMenuView | null>(() => {
-    return buildRailMenu(
+    const baseMenu = buildRailMenu(
       openRailMenuTarget,
       sheetColCount,
       headerColCount,
@@ -726,7 +737,32 @@ export default function App() {
       currentSheetPresentation,
       columnHasLocalConfig,
     );
-  }, [openRailMenuTarget, sheetColCount, headerColCount, currentSheet, currentSheetState, currentSheetPresentation, columnHasLocalConfig]);
+    if (!baseMenu) return null;
+    if (
+      baseMenu.kind === "column" &&
+      selection?.kind === "column" &&
+      baseMenu.colIndex >= selection.colStart &&
+      baseMenu.colIndex <= selection.colEnd
+    ) {
+      return {
+        ...baseMenu,
+        deleteSelectionCount: selection.colEnd - selection.colStart + 1,
+      };
+    }
+    if (
+      baseMenu.kind === "row" &&
+      selection?.kind === "row" &&
+      baseMenu.area === selection.area &&
+      baseMenu.rowNumber >= selection.rowStart &&
+      baseMenu.rowNumber <= selection.rowEnd
+    ) {
+      return {
+        ...baseMenu,
+        deleteSelectionCount: selection.rowEnd - selection.rowStart + 1,
+      };
+    }
+    return baseMenu;
+  }, [openRailMenuTarget, sheetColCount, headerColCount, currentSheet, currentSheetState, currentSheetPresentation, columnHasLocalConfig, selection]);
 
   useEffect(() => {
     if (selection?.kind !== "column") return;
@@ -4326,7 +4362,7 @@ export default function App() {
     });
   }, [activeSheet, currentSheetState, defaultBodyRailColIndex, headerRowCount, currentSheetRowStructure, startRowTransition, duplicateRows, closeRailMenu, selectedCell, focusHeaderOverlayCell, focusBodyCellAt]);
 
-  const handleDeleteRow = useCallback(async (rowNumber: number, area: "header" | "body", rowId: number, mode: "node" | "subtree" = "node") => {
+  const handleDeleteRow = useCallback(async (rowNumber: number, area: "header" | "body", rowId: number, _mode: "node" | "subtree" = "node") => {
     if (!activeSheet) {
       throw new Error("row deletion requires an active sheet");
     }
@@ -4336,15 +4372,22 @@ export default function App() {
     if (area === "body" && defaultBodyRailColIndex == null) {
       throw new Error("row deletion requires at least one selectable column");
     }
-    const preview = previewDeleteRow(activeSheet, rowId, mode);
-    if (preview.affectedFormulaCellCount > 0) {
+    const targets = resolveRowDeleteTargets(rowNumber, area, rowId, selection, currentSheetState, currentSheetRowStructure);
+    const previews = targets.map((target) => previewDeleteRow(activeSheet, target.rowId, target.mode));
+    const deletedRowCount = previews.reduce((sum, preview) => sum + preview.deletedRowCount, 0);
+    const affectedFormulaCellCount = countUniqueAffectedFormulaCells(previews.flatMap((preview) => preview.affectedFormulaCells));
+    if (affectedFormulaCellCount > 0) {
+      const firstTarget = targets[0];
+      if (!firstTarget) {
+        throw new Error("row deletion expected at least one delete target");
+      }
       closeRailMenu();
       const confirmed = await requestConfirmation({
         title: "Delete row?",
         body: (
           <>
-            <p className="app-modal-target">{describeRowDeleteTarget(rowNumber, area, rowId, preview.deletedRowCount)}</p>
-            <p>{preview.affectedFormulaCellCount} formula cell(s) reference the row(s) being deleted.</p>
+            <p className="app-modal-target">{describeRowDeleteTarget(firstTarget.rowNumber, area, firstTarget.rowId, deletedRowCount)}</p>
+            <p>{affectedFormulaCellCount} formula cell(s) reference the row(s) being deleted.</p>
           </>
         ),
         confirmLabel: "Delete",
@@ -4354,8 +4397,12 @@ export default function App() {
       if (!confirmed) return;
     }
     if (area === "header") {
-      const nextHeaderRowNumber = headerRowCount <= 1 ? null : Math.min(rowNumber, headerRowCount - 1);
-      deleteRow(activeSheet, rowId, mode);
+      const firstTarget = targets[0];
+      if (!firstTarget) {
+        throw new Error("header row deletion expected at least one delete target");
+      }
+      const nextHeaderRowNumber = headerRowCount <= deletedRowCount ? null : Math.min(firstTarget.rowNumber, headerRowCount - deletedRowCount);
+      deleteRows(activeSheet, targets.map((target) => ({ rowId: target.rowId, mode: target.mode })));
       closeRailMenu();
       setFormulaInputMode("read");
       setSelectedColumnIndex(null);
@@ -4382,14 +4429,24 @@ export default function App() {
       throw new Error("row deletion requires at least one selectable column");
     }
     const bodyRowCount = currentSheet?.values.length ?? 0;
-    const nextRowNumber = bodyRowCount <= 1 ? null : rowNumber < headerRowCount + bodyRowCount ? rowNumber : rowNumber - 1;
+    const firstTarget = targets[0];
+    if (!firstTarget) {
+      throw new Error("body row deletion expected at least one delete target");
+    }
+    const nextBodyRowCount = bodyRowCount - deletedRowCount;
+    const nextRowNumber =
+      nextBodyRowCount <= 0
+        ? null
+        : firstTarget.rowNumber <= headerRowCount + nextBodyRowCount
+          ? firstTarget.rowNumber
+          : headerRowCount + nextBodyRowCount;
     if (nextRowNumber != null) {
       startRowTransition("delete", nextRowNumber);
     }
-    deleteRow(activeSheet, rowId, mode);
+    deleteRows(activeSheet, targets.map((target) => ({ rowId: target.rowId, mode: target.mode })));
     closeRailMenu();
     setFormulaInputMode("read");
-    if (bodyRowCount <= 1) {
+    if (nextBodyRowCount <= 0) {
       clearActiveSelection();
       return;
     }
@@ -4410,7 +4467,7 @@ export default function App() {
     window.requestAnimationFrame(() => {
       focusBodyCellAt(nextRowNumber, nextColIndex);
     });
-  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, previewDeleteRow, deleteRow, closeRailMenu, requestConfirmation, describeRowDeleteTarget, headerRowCount, clearActiveSelection, focusHeaderOverlayCell, startRowTransition, focusBodyCellAt]);
+  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, selection, currentSheetRowStructure, previewDeleteRow, deleteRows, closeRailMenu, requestConfirmation, describeRowDeleteTarget, headerRowCount, clearActiveSelection, focusHeaderOverlayCell, startRowTransition, focusBodyCellAt]);
 
   const handleConvertRowsToHeader = useCallback((rowId: number) => {
     if (!activeSheet) {
@@ -4512,15 +4569,26 @@ export default function App() {
     if (!activeSheet) {
       throw new Error("column deletion requires an active sheet");
     }
-    const preview = previewDeleteColumn(activeSheet, colIndex);
-    if (preview.affectedFormulaCellCount > 0) {
+    const colIndices = resolveColumnDeleteTargets(colIndex, selection, headerColCount, sheetColCount);
+    const previews = colIndices.map((targetColIndex) => previewDeleteColumn(activeSheet, targetColIndex));
+    const affectedFormulaCellCount = countUniqueAffectedFormulaCells(previews.flatMap((preview) => preview.affectedFormulaCells));
+    if (affectedFormulaCellCount > 0) {
+      const firstColIndex = colIndices[0];
+      const lastColIndex = colIndices[colIndices.length - 1];
+      if (firstColIndex == null || lastColIndex == null) {
+        throw new Error("column deletion expected at least one delete target");
+      }
+      const targetLabel =
+        firstColIndex === lastColIndex
+          ? describeColumnDeleteTarget(firstColIndex)
+          : `${toColumnLetters(firstColIndex + 1)}:${toColumnLetters(lastColIndex + 1)}`;
       closeRailMenu();
       const confirmed = await requestConfirmation({
         title: "Delete column?",
         body: (
           <>
-            <p className="app-modal-target">{describeColumnDeleteTarget(colIndex)}</p>
-            <p>{preview.affectedFormulaCellCount} formula cell(s) reference this column.</p>
+            <p className="app-modal-target">{targetLabel}</p>
+            <p>{affectedFormulaCellCount} formula cell(s) reference the column(s) being deleted.</p>
           </>
         ),
         confirmLabel: "Delete",
@@ -4530,17 +4598,22 @@ export default function App() {
       if (!confirmed) return;
     }
     startColumnTransition("delete");
-    deleteColumn(activeSheet, colIndex);
+    deleteColumns(activeSheet, colIndices);
     closeRailMenu();
     setSelectedCell(null);
-    const nextColIndex = colIndex < sheetColCount - 1 ? colIndex : colIndex - 1;
+    const firstColIndex = colIndices[0];
+    if (firstColIndex == null) {
+      throw new Error("column deletion expected at least one delete target");
+    }
+    const nextSheetColCount = sheetColCount - colIndices.length;
+    const nextColIndex = firstColIndex < nextSheetColCount ? firstColIndex : firstColIndex - 1;
     if (nextColIndex >= headerColCount) {
       setSelectedColumnIndex(nextColIndex);
     } else {
       setSelectedColumnIndex(null);
     }
     setFormulaInputMode("read");
-  }, [activeSheet, previewDeleteColumn, closeRailMenu, requestConfirmation, describeColumnDeleteTarget, startColumnTransition, deleteColumn, sheetColCount, headerColCount]);
+  }, [activeSheet, selection, headerColCount, sheetColCount, previewDeleteColumn, closeRailMenu, requestConfirmation, describeColumnDeleteTarget, startColumnTransition, deleteColumns]);
 
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;

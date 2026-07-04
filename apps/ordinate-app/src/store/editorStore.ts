@@ -88,12 +88,14 @@ export interface EditorState {
   previewDeleteColumn: (sheet: string, colIndex: number) => CoreDeleteColumnPreview;
   insertRow: (sheet: string, area: CoreRowInsertArea, rowGapIndex: number, depth: number) => void;
   deleteRow: (sheet: string, rowId: number, mode?: CoreRowDeleteMode) => void;
+  deleteRows: (sheet: string, targets: Array<{ rowId: number; mode?: CoreRowDeleteMode }>) => void;
   moveColumns: (sheet: string, colIds: number[], targetGapIndex: number) => void;
   moveRows: (sheet: string, rowIds: number[], targetGapIndex: number) => void;
   duplicateColumns: (sheet: string, colIds: number[], targetGapIndex: number) => void;
   duplicateRows: (sheet: string, rowIds: number[], targetGapIndex: number) => void;
   insertColumn: (sheet: string, colIndex: number) => void;
   deleteColumn: (sheet: string, colIndex: number) => void;
+  deleteColumns: (sheet: string, colIndices: number[]) => void;
   exitSourceMode: () => void;
   enterSourceMode: () => void;
 }
@@ -523,6 +525,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   deleteRow: (sheet, rowId, mode) => {
     get().applyCoreEdits("Delete row", [{ op: "delete_row", sheet, rowId, mode }]);
   },
+  deleteRows: (sheet, targets) => {
+    if (targets.length === 0) {
+      throw new Error("deleteRows requires at least one row target");
+    }
+    const seen = new Set<number>();
+    const edits: CoreEdit[] = targets.map((target) => {
+      if (seen.has(target.rowId)) {
+        throw new Error(`deleteRows received duplicate rowId ${target.rowId}`);
+      }
+      seen.add(target.rowId);
+      return { op: "delete_row", sheet, rowId: target.rowId, mode: target.mode };
+    });
+    get().applyCoreEdits(targets.length === 1 ? "Delete row" : "Delete rows", edits);
+  },
   moveColumns: (sheet, colIds, targetGapIndex) => {
     get().applyCoreEdits("Move column", [{ op: "move_columns", sheet, colIds, targetGapIndex }]);
   },
@@ -540,6 +556,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   deleteColumn: (sheet, colIndex) => {
     get().applyCoreEdits("Delete column", [{ op: "delete_column", sheet, colIndex }]);
+  },
+  deleteColumns: (sheet, colIndices) => {
+    if (colIndices.length === 0) {
+      throw new Error("deleteColumns requires at least one column index");
+    }
+    const sorted = [...colIndices].sort((a, b) => b - a);
+    for (let index = 1; index < sorted.length; index += 1) {
+      if (sorted[index] === sorted[index - 1]) {
+        throw new Error(`deleteColumns received duplicate column index ${sorted[index]}`);
+      }
+    }
+    get().applyCoreEdits(
+      sorted.length === 1 ? "Delete column" : "Delete columns",
+      sorted.map((colIndex) => ({ op: "delete_column", sheet, colIndex })),
+    );
   },
   exitSourceMode: () => {
     const state = get();

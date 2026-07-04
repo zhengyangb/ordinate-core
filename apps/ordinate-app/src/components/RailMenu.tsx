@@ -85,6 +85,12 @@ function RowStructurePanel({
   onConvertRowsToHeader: (rowId: number) => void;
   onConvertRowsToBody: (rowId: number) => void;
 }) {
+  const deleteLabel =
+    railMenu.deleteSelectionCount && railMenu.deleteSelectionCount > 1
+      ? "Delete Rows"
+      : railMenu.hasChildren
+        ? "Delete Row and Children"
+        : "Delete Row";
   return (
     <MenuGroup className="rail-structure-panel">
       <MenuOption className="rail-structure-action" icon={<InsertAboveGlyph />} onClick={() => onInsertAbove(railMenu.rowNumber, railMenu.area)}>
@@ -112,7 +118,7 @@ function RowStructurePanel({
         tone="danger"
         onClick={() => onDelete(railMenu.rowNumber, railMenu.area, railMenu.rowId, railMenu.hasChildren ? "subtree" : "node")}
       >
-        {railMenu.hasChildren ? "Delete Row and Children" : "Delete Row"}
+        {deleteLabel}
       </MenuOption>
     </MenuGroup>
   );
@@ -242,7 +248,7 @@ export default function RailMenu({
                         Duplicate Column
                       </MenuOption>
                       <MenuOption className="column-rail-menu-action" icon={<DeleteGlyph />} tone="danger" onClick={() => onDeleteColumn(railMenu.colIndex)}>
-                        Delete Column
+                        {railMenu.deleteSelectionCount && railMenu.deleteSelectionCount > 1 ? "Delete Columns" : "Delete Column"}
                       </MenuOption>
                     </MenuGroup>
                   ) : null}
