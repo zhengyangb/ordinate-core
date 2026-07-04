@@ -30,37 +30,64 @@ import {
   runtimeViewShapeContext,
   runtimeViewShapesMatch,
 } from "./view";
+import { getBoundSheetId, setBoundSheetId } from "./references";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 
-type ExpressionValue = RuntimeValue | RuntimeView;
+export type ExpressionValue = RuntimeValue | RuntimeView;
+
+export type CrossSheetResolver = (
+  ref: ReferenceExpr,
+  rowIdx: number,
+  colIdx: number,
+) => ExpressionValue | null;
+
+interface EvalSheetContext {
+  sheetId: number;
+  name: string;
+  logicalRows: ParsedRow[];
+  rowPaths: string[];
+  colLabels: string[];
+  rowMap: Map<string, number[]>;
+  colMap: Map<string, number[]>;
+  rowCount: number;
+  colCount: number;
+  bodyStart: number;
+  bodyRowCount: number;
+  dataRowIndices: number[];
+  dataColIndices: number[];
+  allCells: string[][];
+}
 
 // Evaluate a full document into runtime values.
 export function evaluateDocument(text: string): EvaluationResult {
   const parsed = parseDocument(text);
-  const sheetEvals: SheetEvaluation[] = [];
-  for (const sheet of parsed) {
-    if (!sheet.table) {
-      sheetEvals.push({ name: sheet.name, rowPaths: [], colLabels: [], values: [] });
-      continue;
-    }
-    sheetEvals.push(evaluateSheet(sheet.name, sheet.table.rows));
-  }
-  return { sheets: sheetEvals };
+  const contexts = parsed.map((sheet, index) =>
+    sheet.table ? buildEvalSheetContext(index + 1, sheet.name, sheet.table.rows) : emptyEvalSheetContext(index + 1, sheet.name));
+  return { sheets: evaluateSheetContexts(contexts) };
 }
 
 // Evaluate a single sheet (table rows only).
 function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
+  return evaluateSheetContexts([buildEvalSheetContext(1, name, rows)])[0] ?? {
+    name,
+    rowPaths: [],
+    colLabels: [],
+    values: [],
+  };
+}
+
+function buildEvalSheetContext(sheetId: number, name: string, rows: string[]): EvalSheetContext {
   const parsedRows: ParsedRow[] = rows.map((r) => parseTableRow(r));
   const semanticRows = stripDisplayControlFrame(parsedRows).rows;
   if (semanticRows.length === 0) {
-    return { name, rowPaths: [], colLabels: [], values: [] };
+    return emptyEvalSheetContext(sheetId, name);
   }
 
   const separatorIndex = separatorRowIndex(semanticRows);
   const logicalRows: ParsedRow[] = semanticRows.filter((_, idx) => idx !== separatorIndex);
   if (logicalRows.length === 0) {
-    return { name, rowPaths: [], colLabels: [], values: [] };
+    return emptyEvalSheetContext(sheetId, name);
   }
 
   const colCount = logicalRows.reduce((m, r) => Math.max(m, r.cells.length), 0);
@@ -97,12 +124,53 @@ function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
   const dataRowIndices = computeDataRowIndices(logicalRows, bodyStart);
   const dataColIndices = Array.from({ length: colCount - headerColCount }, (_, i) => i + headerColCount);
 
+  return {
+    sheetId,
+    name,
+    logicalRows,
+    rowPaths,
+    colLabels,
+    rowMap,
+    colMap,
+    rowCount: logicalRows.length,
+    colCount,
+    bodyStart,
+    bodyRowCount,
+    dataRowIndices,
+    dataColIndices,
+    allCells,
+  };
+}
+
+function emptyEvalSheetContext(sheetId: number, name: string): EvalSheetContext {
+  return {
+    sheetId,
+    name,
+    logicalRows: [],
+    rowPaths: [],
+    colLabels: [],
+    rowMap: new Map(),
+    colMap: new Map(),
+    rowCount: 0,
+    colCount: 0,
+    bodyStart: 0,
+    bodyRowCount: 0,
+    dataRowIndices: [],
+    dataColIndices: [],
+    allCells: [],
+  };
+}
+
+function evaluateSheetContexts(contexts: EvalSheetContext[]): SheetEvaluation[] {
   const states = new Map<string, string>();
   const memo = new Map<string, RuntimeValue>();
 
-  // Evaluate a single cell with memoization and cycle detection.
-  const evalCell = (rAbs: number, c: number): RuntimeValue => {
-    const key = `${rAbs},${c}`;
+  const evalCell = (sheetIndex: number, rAbs: number, c: number): RuntimeValue => {
+    const ctx = contexts[sheetIndex];
+    if (!ctx) {
+      return makeInternalError("unresolved_reference_sheet", { sheetIndex });
+    }
+    const key = `${sheetIndex}:${rAbs},${c}`;
     const state = states.get(key);
     if (state === "visiting") {
       return makeInternalError("cycle");
@@ -112,7 +180,7 @@ function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
     }
 
     states.set(key, "visiting");
-    const cellText = rAbs >= 0 && rAbs < allCells.length && c >= 0 && c < colCount ? allCells[rAbs][c] : "";
+    const cellText = rAbs >= 0 && rAbs < ctx.allCells.length && c >= 0 && c < ctx.colCount ? ctx.allCells[rAbs][c] : "";
     const parsedCell = parseCellInput(cellText);
     const body = parsedCell.body;
 
@@ -126,15 +194,18 @@ function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
         body.expression,
         rAbs,
         c,
-        evalCell,
-        rowMap,
-        colMap,
-        logicalRows.length,
-        colCount,
-        bodyStart,
-        bodyRowCount,
-        dataRowIndices,
-        dataColIndices,
+        (rDep, cDep) => evalCell(sheetIndex, rDep, cDep),
+        ctx.rowMap,
+        ctx.colMap,
+        ctx.rowCount,
+        ctx.colCount,
+        ctx.bodyStart,
+        ctx.bodyRowCount,
+        ctx.dataRowIndices,
+        ctx.dataColIndices,
+        undefined,
+        undefined,
+        (ref, currentRow, currentCol) => resolveCrossSheetReference(ref, currentRow, currentCol, contexts, evalCell),
       );
     }
 
@@ -143,12 +214,69 @@ function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
     return value;
   };
 
-  const values: RuntimeValue[][] = [];
-  for (let rAbs = bodyStart; rAbs < logicalRows.length; rAbs += 1) {
-    values.push(Array.from({ length: colCount }, (_, c) => evalCell(rAbs, c)));
+  return contexts.map((ctx, sheetIndex) => {
+    const values: RuntimeValue[][] = [];
+    for (let rAbs = ctx.bodyStart; rAbs < ctx.rowCount; rAbs += 1) {
+      values.push(Array.from({ length: ctx.colCount }, (_, c) => evalCell(sheetIndex, rAbs, c)));
+    }
+    return {
+      name: ctx.name,
+      rowPaths: ctx.rowPaths,
+      colLabels: ctx.colLabels,
+      values,
+    };
+  });
+}
+
+function resolveCrossSheetReference(
+  ref: ReferenceExpr,
+  rowIdx: number,
+  colIdx: number,
+  contexts: EvalSheetContext[],
+  evalCell: (sheetIndex: number, r: number, c: number) => RuntimeValue,
+): ExpressionValue | null {
+  if (!ref.sheetSelector) return null;
+
+  let targetIndex = -1;
+  const boundSheetId = getBoundSheetId(ref.sheetSelector);
+  if (boundSheetId !== null) {
+    targetIndex = contexts.findIndex((ctx) => ctx.sheetId === boundSheetId);
+    if (targetIndex < 0) {
+      return makeInternalError("unresolved_reference_sheet", { sheet: ref.sheetSelector.value, sheetId: boundSheetId });
+    }
+  } else {
+    const matches: number[] = [];
+    contexts.forEach((ctx, index) => {
+      if (ctx.name === ref.sheetSelector?.value) matches.push(index);
+    });
+    if (matches.length === 0) {
+      return makeInternalError("unresolved_reference_sheet", { sheet: ref.sheetSelector.value });
+    }
+    if (matches.length > 1) {
+      return makeInternalError("ambiguous_reference_sheet", { sheet: ref.sheetSelector.value });
+    }
+    targetIndex = matches[0];
+    setBoundSheetId(ref.sheetSelector, contexts[targetIndex].sheetId);
   }
 
-  return { name, rowPaths, colLabels, values };
+  const target = contexts[targetIndex];
+  const resolved = selectViewDetailed(
+    ref,
+    rowIdx,
+    colIdx,
+    target.rowMap,
+    target.colMap,
+    target.rowCount,
+    target.colCount,
+    target.bodyStart,
+    target.bodyRowCount,
+    target.dataRowIndices,
+    target.dataColIndices,
+  );
+  if (!resolved.ok) {
+    return makeInternalError(resolved.internalKind, resolved.context);
+  }
+  return materializeViewSelection(resolved.view, (r, c) => evalCell(targetIndex, r, c));
 }
 
 // Evaluate an expression AST node.
@@ -167,6 +295,7 @@ export function evalExpr(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
+  crossSheetResolver?: CrossSheetResolver,
 ): RuntimeValue {
   const value = evalExpressionValue(
     node,
@@ -183,6 +312,7 @@ export function evalExpr(
     dataColIndices,
     rowIdToIndex,
     colIdToIndex,
+    crossSheetResolver,
   );
   return expressionValueToScalarResult(value, "final_result");
 }
@@ -202,6 +332,7 @@ function evalExpressionValue(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
+  crossSheetResolver?: CrossSheetResolver,
 ): ExpressionValue {
   if (!node) {
     return makeInternalError("parse_expression_empty");
@@ -213,6 +344,11 @@ function evalExpressionValue(
 
   if (node.kind === "reference") {
     const ref = node.value as ReferenceExpr;
+    const crossSheet = crossSheetResolver?.(ref, rowIdx, colIdx);
+    if (crossSheet) return crossSheet;
+    if (ref.sheetSelector) {
+      return makeInternalError("unresolved_reference_sheet", { sheet: ref.sheetSelector.value });
+    }
     const resolved = selectViewDetailed(
       ref,
       rowIdx,
@@ -250,6 +386,7 @@ function evalExpressionValue(
       dataColIndices,
       rowIdToIndex,
       colIdToIndex,
+      crossSheetResolver,
     );
   }
 
@@ -273,6 +410,7 @@ function evalExpressionValue(
           dataColIndices,
           rowIdToIndex,
           colIdToIndex,
+          crossSheetResolver,
         ),
       evalRawArgValue: (arg) =>
         evalRawArgValue(
@@ -290,6 +428,7 @@ function evalExpressionValue(
           dataColIndices,
           rowIdToIndex,
           colIdToIndex,
+          crossSheetResolver,
         ),
       evalScalarArg: (arg) =>
         evalScalarArg(
@@ -307,6 +446,7 @@ function evalExpressionValue(
           dataColIndices,
           rowIdToIndex,
           colIdToIndex,
+          crossSheetResolver,
         ),
       evalExpressionValue: (arg) =>
         evalExpressionValue(
@@ -324,6 +464,7 @@ function evalExpressionValue(
           dataColIndices,
           rowIdToIndex,
           colIdToIndex,
+          crossSheetResolver,
         ),
     });
   }
@@ -345,6 +486,7 @@ function evalExpressionValue(
       dataColIndices,
       rowIdToIndex,
       colIdToIndex,
+      crossSheetResolver,
     );
   }
 
@@ -365,6 +507,7 @@ function evalExpressionValue(
       dataColIndices,
       rowIdToIndex,
       colIdToIndex,
+      crossSheetResolver,
     );
     const right = expressionValueToScalarResult(rightValue, "unary_operand");
     if (isError(right)) {
@@ -400,6 +543,7 @@ function evalExpressionValue(
     dataColIndices,
     rowIdToIndex,
     colIdToIndex,
+    crossSheetResolver,
   );
   const right = evalExpressionValue(
     node.right ?? null,
@@ -416,6 +560,7 @@ function evalExpressionValue(
     dataColIndices,
     rowIdToIndex,
     colIdToIndex,
+    crossSheetResolver,
   );
   if (isExpressionError(left)) return left;
   if (isExpressionError(right)) return right;
@@ -451,6 +596,7 @@ function evalArrayLiteral(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
+  crossSheetResolver?: CrossSheetResolver,
 ): ExpressionValue {
   const rows = array.rows;
   if (rows.length === 0) {
@@ -482,6 +628,7 @@ function evalArrayLiteral(
         dataColIndices,
         rowIdToIndex,
         colIdToIndex,
+        crossSheetResolver,
       );
       if (isRuntimeView(value)) {
         const scalar = runtimeViewScalarValue(value);
@@ -537,6 +684,7 @@ function evalIndexExpression(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
+  crossSheetResolver?: CrossSheetResolver,
 ): ExpressionValue {
   const target = evalExpressionValue(
     index.target,
@@ -553,6 +701,7 @@ function evalIndexExpression(
     dataColIndices,
     rowIdToIndex,
     colIdToIndex,
+    crossSheetResolver,
   );
   if (isExpressionError(target)) return target;
 
@@ -573,6 +722,7 @@ function evalIndexExpression(
       dataColIndices,
       rowIdToIndex,
       colIdToIndex,
+      crossSheetResolver,
     );
     if (isError(evaluated as RuntimeValue)) return evaluated as RuntimeValue;
     axes.push(evaluated as RuntimeIndexAxis);
@@ -596,6 +746,7 @@ function evalIndexAxis(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
+  crossSheetResolver?: CrossSheetResolver,
 ): RuntimeIndexAxis | RuntimeValue {
   if (axis.kind === "scalar") {
     const value = evalIndexAxisScalar(
@@ -613,6 +764,7 @@ function evalIndexAxis(
       dataColIndices,
       rowIdToIndex,
       colIdToIndex,
+      crossSheetResolver,
     );
     if (isError(value)) return value;
     return { kind: "scalar", value };
@@ -634,6 +786,7 @@ function evalIndexAxis(
         dataColIndices,
         rowIdToIndex,
         colIdToIndex,
+        crossSheetResolver,
       )
     : null;
   if (start && isError(start)) return start;
@@ -654,6 +807,7 @@ function evalIndexAxis(
         dataColIndices,
         rowIdToIndex,
         colIdToIndex,
+        crossSheetResolver,
       )
     : null;
   if (end && isError(end)) return end;
@@ -676,6 +830,7 @@ function evalIndexAxisScalar(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
+  crossSheetResolver?: CrossSheetResolver,
 ): RuntimeValue {
   const value = evalExpressionValue(
     node,
@@ -692,6 +847,7 @@ function evalIndexAxisScalar(
     dataColIndices,
     rowIdToIndex,
     colIdToIndex,
+    crossSheetResolver,
   );
   return expressionValueToScalarResult(value, "index_axis");
 }
@@ -831,7 +987,7 @@ type ViewResolution =
   | { ok: true; view: ViewSelection }
   | { ok: false; internalKind: string; context: Record<string, unknown> };
 
-function selectViewDetailed(
+export function selectViewDetailed(
   ref: ReferenceExpr,
   rowIdx: number,
   colIdx: number,
@@ -1110,9 +1266,19 @@ function evalArgValue(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
+  crossSheetResolver?: CrossSheetResolver,
 ): EvaluatedArgument {
   if (node.kind === "reference") {
     const ref = node.value as ReferenceExpr;
+    const crossSheet = crossSheetResolver?.(ref, rowIdx, colIdx);
+    if (crossSheet) {
+      if (isExpressionError(crossSheet)) return ["error", crossSheet];
+      if (isRuntimeView(crossSheet)) return ["view", crossSheet];
+      return ["scalar", crossSheet];
+    }
+    if (ref.sheetSelector) {
+      return ["error", makeInternalError("unresolved_reference_sheet", { sheet: ref.sheetSelector.value })];
+    }
     const view = selectViewDetailed(
       ref,
       rowIdx,
@@ -1146,6 +1312,7 @@ function evalArgValue(
     dataColIndices,
     rowIdToIndex,
     colIdToIndex,
+    crossSheetResolver,
   );
   if (isExpressionError(value)) return ["error", value];
   if (isRuntimeView(value)) return ["view", value];
@@ -1168,6 +1335,7 @@ function evalRawArgValue(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
+  crossSheetResolver?: CrossSheetResolver,
 ): EvaluatedArgument {
   if (node.kind === "reference") {
     return evalArgValue(
@@ -1185,6 +1353,7 @@ function evalRawArgValue(
       dataColIndices,
       rowIdToIndex,
       colIdToIndex,
+      crossSheetResolver,
     );
   }
   const value = evalExpressionValue(
@@ -1202,6 +1371,7 @@ function evalRawArgValue(
     dataColIndices,
     rowIdToIndex,
     colIdToIndex,
+    crossSheetResolver,
   );
   if (isRuntimeView(value)) return ["view", value];
   return ["scalar", value];
@@ -1223,6 +1393,7 @@ function evalScalarArg(
   dataColIndices: number[],
   rowIdToIndex?: Map<number, number>,
   colIdToIndex?: Map<number, number>,
+  crossSheetResolver?: CrossSheetResolver,
 ): RuntimeValue {
   const [kind, value] = evalArgValue(
     node,
@@ -1239,6 +1410,7 @@ function evalScalarArg(
     dataColIndices,
     rowIdToIndex,
     colIdToIndex,
+    crossSheetResolver,
   );
   if (kind === "error") return value as RuntimeValue;
   if (kind === "scalar") return value as RuntimeValue;

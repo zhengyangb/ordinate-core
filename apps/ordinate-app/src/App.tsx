@@ -14,6 +14,8 @@ import {
 import {
   getCellTextView,
   resolveSheetRowStructure,
+  type SheetEvaluation,
+  type SheetPresentation,
   type RuntimeValue,
   type StylePatch,
 } from "@ordinate/core";
@@ -125,6 +127,7 @@ import {
   referenceTextForPreferredStyle,
   resolveFormulaReferenceViews,
   type FormulaReferenceContext,
+  type FormulaReferenceSheetContext,
   type FormulaReferenceView,
 } from "./utils/formulaPointMode";
 import {
@@ -1407,23 +1410,76 @@ export default function App() {
   }, [currentSheetRowStructure, currentSheetState, headerRowCount, selection]);
 
   const formulaReferenceContext = useMemo<FormulaReferenceContext>(() => {
-    const rowLabelsByAbsoluteIndex = new Map<number, string[]>();
-    currentSheet?.rowPaths.forEach((path, index) => {
-      const absoluteRowNumber = headerRowCount + index + 1;
-      const parts = path.split(".").map((part) => part.trim()).filter(Boolean);
-      if (parts.length > 0) {
-        rowLabelsByAbsoluteIndex.set(absoluteRowNumber, parts);
-      }
+    const runtimeSheetsByName = new Map<string, SheetEvaluation>();
+    evaluation?.sheets.forEach((sheet) => runtimeSheetsByName.set(sheet.name, sheet));
+    const presentationSheetsByName = new Map<string, SheetPresentation>();
+    presentation?.sheets.forEach((sheet) => presentationSheetsByName.set(sheet.name, sheet));
+    const sheetsByName = new Map<string, FormulaReferenceSheetContext>();
+
+    docState?.sheets.forEach((sheetState) => {
+      const runtimeSheet = runtimeSheetsByName.get(sheetState.name) ?? null;
+      const presentationSheet = presentationSheetsByName.get(sheetState.name) ?? null;
+      const targetColCount = trimSheetColCount(sheetState, runtimeSheet);
+      const targetHeaderRowCount = sheetState.headerRowCount;
+      const targetHeaderMatrix = buildHeaderMatrix(
+        sheetState,
+        runtimeSheet,
+        presentationSheet,
+        targetColCount,
+        targetHeaderRowCount,
+      );
+      const targetHeaderLeafLabels = Array.from({ length: targetColCount }, (_, colIndex) => {
+        const leafRow = targetHeaderMatrix[targetHeaderMatrix.length - 1] ?? [];
+        return compactColLabel(leafRow[colIndex] ?? "");
+      });
+      const colLabelPathsByIndex = Array.from({ length: targetColCount }, (_, colIndex) => {
+        const path = targetHeaderMatrix
+          .map((row) => compactColLabel(row[colIndex] ?? ""))
+          .filter((label) => label.length > 0);
+        if (path.length > 0) return path;
+        const fromLabels = sheetState.colLabels[colIndex];
+        if (fromLabels && fromLabels.length > 0) return [fromLabels];
+        return [targetHeaderLeafLabels[colIndex] ?? `C${colIndex + 1}`];
+      });
+      const rowLabelsByAbsoluteIndex = new Map<number, string[]>();
+      runtimeSheet?.rowPaths.forEach((path, index) => {
+        const absoluteRowNumber = targetHeaderRowCount + index + 1;
+        const parts = path.split(".").map((part) => part.trim()).filter(Boolean);
+        if (parts.length > 0) {
+          rowLabelsByAbsoluteIndex.set(absoluteRowNumber, parts);
+        }
+      });
+      sheetsByName.set(sheetState.name, {
+        rowCount: sheetState.cells.length,
+        colCount: targetColCount,
+        headerRowCount: targetHeaderRowCount,
+        rowLabelsByAbsoluteIndex,
+        colLabelPathsByIndex,
+      });
     });
+
+    const activeSheetContext = activeSheet ? sheetsByName.get(activeSheet) : null;
     return {
-      rowCount: sheetRowCount,
-      colCount: sheetColCount,
-      headerRowCount,
-      rowLabelsByAbsoluteIndex,
-      colLabelPathsByIndex: headerSemanticLabelPaths,
+      rowCount: activeSheetContext?.rowCount ?? sheetRowCount,
+      colCount: activeSheetContext?.colCount ?? sheetColCount,
+      headerRowCount: activeSheetContext?.headerRowCount ?? headerRowCount,
+      rowLabelsByAbsoluteIndex: activeSheetContext?.rowLabelsByAbsoluteIndex ?? new Map<number, string[]>(),
+      colLabelPathsByIndex: activeSheetContext?.colLabelPathsByIndex ?? headerSemanticLabelPaths,
       sourceCell: formulaEditSourceCell?.logical ?? null,
+      currentSheetName: activeSheet,
+      sheetsByName,
     };
-  }, [currentSheet, formulaEditSourceCell, headerRowCount, headerSemanticLabelPaths, sheetColCount, sheetRowCount]);
+  }, [
+    activeSheet,
+    docState,
+    evaluation,
+    formulaEditSourceCell,
+    headerRowCount,
+    headerSemanticLabelPaths,
+    presentation,
+    sheetColCount,
+    sheetRowCount,
+  ]);
 
   useEffect(() => {
     if (formulaInputMode !== "edit" || formulaEditSourceCell || !selectedCell) return;
@@ -1448,14 +1504,16 @@ export default function App() {
 
   const formulaReferenceOverlays = useMemo<FormulaReferenceOverlay[]>(() => {
     return formulaReferenceViews
-      .filter((view): view is FormulaReferenceView & { rect: Rect } => view.rect != null)
+      .filter((view): view is FormulaReferenceView & { rect: Rect } => (
+        view.rect != null && (!view.sheetName || view.sheetName === activeSheet)
+      ))
       .map((view) => ({
         tokenId: view.id,
         rect: view.rect,
         colorIndex: view.colorIndex,
         active: view.id === activeReferenceTokenId,
       }));
-  }, [activeReferenceTokenId, formulaReferenceViews]);
+  }, [activeReferenceTokenId, activeSheet, formulaReferenceViews]);
 
 
   useEffect(() => {

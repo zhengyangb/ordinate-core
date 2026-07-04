@@ -1,9 +1,19 @@
 import { isError, isValidExternalErrorKind } from "./errors";
+import { getBoundSheetId, selectorSource } from "./references";
 import type { ArrayExpr, ExprNode, IndexAxisExpr, IndexExpr, ReferenceExpr, RefSelector, RuntimeValue } from "./types";
 
 export type FormulaRenderContext = {
   rowLabelPathsByIndex?: string[][];
   colLabelsByIndex?: string[];
+  sheetsById?: Map<number, FormulaSheetRenderContext>;
+};
+
+export type FormulaSheetRenderContext = {
+  sheetName: string;
+  rowIdToIndex: Map<number, number>;
+  colIdToIndex: Map<number, number>;
+  rowLabelPathsByIndex: string[][];
+  colLabelsByIndex: string[];
 };
 
 export function renderFormulaExpression(
@@ -29,6 +39,9 @@ export function renderFormulaExpression(
   }
   if (node.kind === "reference") {
     const ref = node.value as ReferenceExpr;
+    if (ref.sheetSelector) {
+      return renderCrossSheetReference(ref, context);
+    }
     if (ref.style === "spreadsheet") {
       const spreadsheet = renderSpreadsheetReference(ref, rowIdToIndex, colIdToIndex);
       if (spreadsheet) return spreadsheet;
@@ -74,6 +87,27 @@ export function renderFormulaExpression(
     return parentPrec > prec ? `(${text})` : text;
   }
   return null;
+}
+
+function renderCrossSheetReference(ref: ReferenceExpr, context: FormulaRenderContext): string {
+  const boundSheetId = boundSheetIdOf(ref);
+  const targetContext = boundSheetId === null ? undefined : context.sheetsById?.get(boundSheetId);
+  const sheetName = targetContext?.sheetName ?? ref.sheetSelector?.value ?? "";
+  const rowSel = renderSelector(
+    ref.rowSelector,
+    targetContext?.rowIdToIndex ?? new Map<number, number>(),
+    targetContext?.rowLabelPathsByIndex,
+  );
+  const colSel = renderSelector(
+    ref.colSelector,
+    targetContext?.colIdToIndex ?? new Map<number, number>(),
+    targetContext?.colLabelsByIndex.map((label) => [label]),
+  );
+  return `@[${quoteSheetSelector(sheetName)}::[${rowSel},${colSel}]]`;
+}
+
+function boundSheetIdOf(ref: ReferenceExpr): number | null {
+  return getBoundSheetId(ref.sheetSelector);
 }
 
 function precedence(op: string): number {
@@ -137,12 +171,12 @@ function renderScalarSelector(selector: RefSelector, idToIndex: Map<number, numb
   }
   if (selector.kind === "absolute_id") {
     const idx = idToIndex.get(Number(selector.value));
-    if (idx === undefined) return "#?";
+    if (idx === undefined) return renderSelectorSourceFallback(selector, idToIndex, labelsByIndex) ?? "#?";
     return `#${idx + 1}`;
   }
   if (selector.kind === "label_id") {
     const idx = idToIndex.get(Number(selector.value));
-    if (idx === undefined) return "#?";
+    if (idx === undefined) return renderSelectorSourceFallback(selector, idToIndex, labelsByIndex) ?? "#?";
     const label = labelsByIndex?.[idx];
     if (label && label.length > 0) {
       const key = JSON.stringify(label);
@@ -160,6 +194,11 @@ function renderScalarSelector(selector: RefSelector, idToIndex: Map<number, numb
   return "?";
 }
 
+function renderSelectorSourceFallback(selector: RefSelector, idToIndex: Map<number, number>, labelsByIndex?: string[][]): string | null {
+  const source = selectorSource(selector);
+  return source ? renderSelector(source, idToIndex, labelsByIndex) : null;
+}
+
 function isStructurallyBoundSelector(selector: RefSelector | null): selector is RefSelector {
   return selector?.kind === "absolute_id" || selector?.kind === "label_id";
 }
@@ -171,6 +210,13 @@ function selectorIndex(selector: RefSelector, idToIndex: Map<number, number>): n
 
 function quotePathComponent(text: string): string {
   if (/^[A-Za-z0-9_]+$/.test(text)) {
+    return text;
+  }
+  return serializeString(text);
+}
+
+function quoteSheetSelector(text: string): string {
+  if (/^[A-Za-z0-9]+$/.test(text)) {
     return text;
   }
   return serializeString(text);

@@ -12,9 +12,10 @@ import {
   type FormulaPointEditorState,
   type FormulaPointReplacementTarget,
   type FormulaReferenceContext,
+  type FormulaReferenceSheetContext,
 } from "./formulaPointMode";
 
-function context(overrides: Partial<FormulaReferenceContext> = {}): FormulaReferenceContext {
+function sheetContext(overrides: Partial<FormulaReferenceSheetContext> = {}): FormulaReferenceSheetContext {
   return {
     rowCount: 8,
     colCount: 5,
@@ -25,6 +26,13 @@ function context(overrides: Partial<FormulaReferenceContext> = {}): FormulaRefer
       [4, ["Profit"]],
     ]),
     colLabelPathsByIndex: [["Metric"], ["2024"], ["2025"], ["2026"], ["Notes"]],
+    ...overrides,
+  };
+}
+
+function context(overrides: Partial<FormulaReferenceContext> = {}): FormulaReferenceContext {
+  return {
+    ...sheetContext(),
     sourceCell: { rAbs: 4, cAbs: 3 },
     ...overrides,
   };
@@ -147,6 +155,69 @@ describe("formula point mode", () => {
       { rowStart: 4, rowEnd: 5, colStart: 3, colEnd: 4 },
     ]);
     expect(new Set(views.map((view) => view.colorIndex)).size).toBe(3);
+  });
+
+  it("tokenizes sheet-qualified references as complete nested-bracket tokens", () => {
+    const first = "@[\"Management Report\"::[\"Revenue [Gross]\",\"2025\".H2]]";
+    const second = "@[Inputs::[Cost,Amount]]";
+    const draft = `=${first}+${second}`;
+    const tokens = tokenizeFormulaReferences(draft);
+
+    expect(tokens.map((token) => token.text)).toEqual([first, second]);
+    expect(tokens.map((token) => token.sheetName)).toEqual(["Management Report", "Inputs"]);
+    expect(tokens[0].start).toBe(1);
+    expect(draft.slice(tokens[0].start, tokens[0].end)).toBe(first);
+  });
+
+  it("keeps underscore labels classified as labels instead of relative references", () => {
+    const [token] = tokenizeFormulaReferences("=@[\"Input_Sheet\"::[Forecast_Multiplier,Value]]");
+
+    expect(token?.style).toBe("ordinate-label");
+  });
+
+  it("resolves cross-sheet reference options against the target sheet", () => {
+    const management = sheetContext({
+      rowLabelsByAbsoluteIndex: new Map([
+        [2, ["Revenue Total"]],
+        [3, ["Cost Total"]],
+      ]),
+      colLabelPathsByIndex: [["Line Item"], ["2025", "H1"], ["2025", "H2"]],
+      colCount: 3,
+    });
+    const ctx = context({
+      currentSheetName: "Summary",
+      sheetsByName: new Map([
+        ["Summary", sheetContext()],
+        ["Management Report", management],
+      ]),
+    });
+    const formula = "=@[\"Management Report\"::[\"Revenue Total\",\"2025\".H2]]";
+    const [view] = resolveFormulaReferenceViews(formula, ctx);
+
+    expect(view.text).toBe("@[\"Management Report\"::[\"Revenue Total\",\"2025\".H2]]");
+    expect(view.sheetName).toBe("Management Report");
+    expect(view.rect).toEqual({ rowStart: 2, rowEnd: 2, colStart: 2, colEnd: 2 });
+    expect(view.options.find((option) => option.style === "ordinate-label")?.text).toBe(
+      "@[\"Management Report\"::[\"Revenue Total\",2025.H2]]",
+    );
+    expect(view.options.find((option) => option.style === "ordinate-positional")?.text).toBe(
+      "@[\"Management Report\"::[#2,#3]]",
+    );
+    expect(view.options.find((option) => option.style === "spreadsheet-a1")?.disabledReason).toMatch(/Cross-sheet A1/);
+    expect(view.options.find((option) => option.style === "ordinate-relative")?.disabledReason).toMatch(/Cross-sheet/);
+  });
+
+  it("arms and replaces a selected cross-sheet token as a single reference", () => {
+    const draft = "=@[\"Inputs\"::[Revenue,Amount]]+1";
+    const target = armed(draft, "@[\"Inputs\"::[Revenue,Amount]]");
+    const result = applyFormulaPointPickToState(
+      state(draft, target.end, target.end, { activeTokenId: target.tokenId, armedToken: target }),
+      "@[Inputs::[#3,#2]]",
+      1,
+    );
+
+    expect(result.nextState.draft).toBe("=@[Inputs::[#3,#2]]+1");
+    expect(tokenizeFormulaReferences(result.nextState.draft).map((token) => token.text)).toEqual(["@[Inputs::[#3,#2]]"]);
   });
 
   describe("point-pick editor state", () => {

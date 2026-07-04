@@ -28,6 +28,8 @@ describe("formula assistant", () => {
   it("does not offer function-name autocomplete inside strings or references", () => {
     expect(resolveFunctionNameContext("=\"su", 4)).toBeNull();
     expect(resolveFunctionNameContext("=@[su", 5)).toBeNull();
+    const crossSheetDraft = "=@[\"Inputs\"::[su";
+    expect(resolveFunctionNameContext(crossSheetDraft, crossSheetDraft.length)).toBeNull();
   });
 
   it("uses prefix matching only and includes matching aliases", () => {
@@ -123,6 +125,12 @@ describe("formula assistant", () => {
       argumentIndex: 1,
     });
     expect(resolveActiveFunctionCallContext("=sum(@[Revenue,2025], ", 22)).toEqual({
+      kind: "call",
+      name: "sum",
+      argumentIndex: 1,
+    });
+    const crossSheetDraft = "=sum(@[\"Inputs\"::[Revenue,Amount]], ";
+    expect(resolveActiveFunctionCallContext(crossSheetDraft, crossSheetDraft.length)).toEqual({
       kind: "call",
       name: "sum",
       argumentIndex: 1,
