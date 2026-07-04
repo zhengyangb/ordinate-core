@@ -11,9 +11,12 @@ import {
   buildRowKeys,
   computeDataRowIndices,
   evalExpr,
+  type CrossSheetResolver,
+  type ExpressionValue,
   headerColCountFrom,
   headerRowCountFrom,
   selectView,
+  selectViewDetailed,
   separatorRowIndex,
 } from "./runtime/eval";
 import {
@@ -33,6 +36,14 @@ import {
   type ViewSelection,
 } from "./runtime/types";
 import { makeInternalError, runtimeErrorFromDiagnostic } from "./runtime/errors";
+import {
+  copyExpressionReferenceMetadata,
+  getBoundSheetId,
+  setBoundSheetId,
+  structurallyBindSelector,
+  walkExpressionReferences,
+} from "./runtime/references";
+import { materializeViewSelection } from "./runtime/view";
 
 export enum ChangeKind {
   VALUE = "value",
@@ -314,7 +325,7 @@ export class SheetState {
   }
 
   captureHistorySnapshot(): SheetHistorySnapshot {
-    return cloneHistoryValue({
+    const raw: SheetHistorySnapshot = {
       sheetId: this.sheetId,
       name: this.name,
       headerRowCount: this.headerRowCount,
@@ -334,11 +345,15 @@ export class SheetState {
       nextColId: this.nextColId,
       sourceBlocks: this.sourceBlocks,
       primaryTableBlockIndex: this.primaryTableBlockIndex,
-    });
+    };
+    const cloned = cloneHistoryValue(raw);
+    copySheetHistoryReferenceMetadata(raw, cloned);
+    return cloned;
   }
 
   restoreHistorySnapshot(snapshot: SheetHistorySnapshot): void {
     const restored = cloneHistoryValue(snapshot);
+    copySheetHistoryReferenceMetadata(snapshot, restored);
     this.sheetId = restored.sheetId;
     this.name = restored.name;
     this.headerRowCount = restored.headerRowCount;
@@ -565,86 +580,11 @@ export class SheetState {
       return parsed;
     }
 
-    const bindSelector = (selector: any, axis: "row" | "col"): any => {
-      if (!selector || typeof selector !== "object") return selector;
-      if (selector.kind === "range") {
-        const [startSel, endSel] = selector.value as [any | null, any | null];
-        return {
-          kind: "range",
-          value: [
-            startSel ? bindSelector(startSel, axis) : null,
-            endSel ? bindSelector(endSel, axis) : null,
-          ],
-        };
-      }
-      if (selector.kind === "absolute") {
-        const index = Number(selector.value);
-        const ids = axis === "row" ? this.rowIds : this.colIds;
-        if (index < 0 || index >= ids.length) {
-          return { kind: "invalid" };
-        }
-        return { kind: "absolute_id", value: ids[index] };
-      }
-      if (selector.kind === "label") {
-        const key = axis === "row"
-          ? JSON.stringify(selector.value as string[])
-          : (selector.value as string[]).join(".");
-        const matches = axis === "row" ? this.rowMap.get(key) ?? [] : this.colMap.get(key) ?? [];
-        if (matches.length !== 1) {
-          return selector;
-        }
-        const ids = axis === "row" ? this.rowIds : this.colIds;
-        const id = ids[matches[0]];
-        return id == null ? selector : { kind: "label_id", value: id };
-      }
-      if (selector.kind === "absolute_fixed") {
-        return selector;
-      }
-      return selector;
-    };
-
-    const walk = (node: ExprNode | null) => {
-      if (!node) return;
-      if (node.kind === "reference") {
-        const ref = node.value as any;
-        ref.rowSelector = bindSelector(ref.rowSelector, "row");
-        ref.colSelector = bindSelector(ref.colSelector, "col");
-        return;
-      }
-      if (node.kind === "call") {
-        const call = node.value as { args: ExprNode[] };
-        call.args.forEach((arg) => walk(arg));
-        return;
-      }
-      if (node.kind === "array") {
-        const array = node.value as { rows: ExprNode[][] };
-        array.rows.forEach((row) => row.forEach((element) => walk(element)));
-        return;
-      }
-      if (node.kind === "index") {
-        const index = node.value as { target: ExprNode; axes: Array<{ kind: string; value?: ExprNode; start?: ExprNode | null; end?: ExprNode | null }> };
-        walk(index.target);
-        index.axes.forEach((axis) => {
-          if (axis.kind === "scalar") {
-            walk(axis.value ?? null);
-          } else {
-            walk(axis.start ?? null);
-            walk(axis.end ?? null);
-          }
-        });
-        return;
-      }
-      if (node.kind === "unary") {
-        walk(node.right ?? null);
-        return;
-      }
-      if (node.kind === "binary") {
-        walk(node.left ?? null);
-        walk(node.right ?? null);
-      }
-    };
-
-    walk(parsed.body.expression);
+    walkExpressionReferences(parsed.body.expression, (ref) => {
+      if (ref.sheetSelector) return;
+      ref.rowSelector = structurallyBindSelector(ref.rowSelector, "row", this.rowIds, this.rowMap);
+      ref.colSelector = structurallyBindSelector(ref.colSelector, "col", this.colIds, this.colMap);
+    });
     return parsed;
   }
 
@@ -1187,8 +1127,10 @@ export class SheetState {
     const walk = (node: ExprNode | null) => {
       if (!node) return;
       if (node.kind === "reference") {
+        const ref = node.value as ReferenceExpr;
+        if (ref.sheetSelector) return;
         const view = selectView(
-          node.value as ReferenceExpr,
+          ref,
           rAbs,
           c,
           this.rowMap,
@@ -1477,6 +1419,7 @@ function remapDuplicateExpressionSelectors(
   if (!node) return;
   if (node.kind === "reference") {
     const ref = node.value as ReferenceExpr;
+    if (ref.sheetSelector) return;
     ref.rowSelector = remapDuplicateSelector(ref.rowSelector, rowIdRemap);
     ref.colSelector = remapDuplicateSelector(ref.colSelector, colIdRemap);
     return;
@@ -1556,6 +1499,24 @@ function remapBoundSelector(selector: RefSelector, idRemap: Map<number, number>)
 
 function cloneHistoryValue<T>(value: T): T {
   return structuredClone(value);
+}
+
+function copySheetHistoryReferenceMetadata(source: SheetHistorySnapshot, target: SheetHistorySnapshot): void {
+  source.cells.forEach((row, rAbs) => {
+    row.forEach((cell, c) => {
+      const sourceBody = cell.body;
+      const targetBody = target.cells[rAbs]?.[c]?.body;
+      if (
+        !sourceBody.valid ||
+        sourceBody.kind !== "formula" ||
+        !targetBody?.valid ||
+        targetBody.kind !== "formula"
+      ) {
+        return;
+      }
+      copyExpressionReferenceMetadata(sourceBody.expression, targetBody.expression);
+    });
+  });
 }
 
 function normalizeCellTextForParsing(
@@ -1837,15 +1798,105 @@ export class DocumentState {
       );
       nextSheetId += 1;
     }
-    return new DocumentState(sheets, nextSheetId);
+    const document = new DocumentState(sheets, nextSheetId);
+    document.bindCrossSheetFormulas();
+    return document;
+  }
+
+  bindCrossSheetFormulas(): void {
+    for (const sheet of this.sheets) {
+      for (let rAbs = 0; rAbs < sheet.rowCount; rAbs += 1) {
+        for (let c = 0; c < sheet.colCount; c += 1) {
+          const cell = sheet.cells[rAbs][c];
+          if (!cell.body.valid || cell.body.kind !== "formula") continue;
+          walkExpressionReferences(cell.body.expression, (ref) => {
+            if (!ref.sheetSelector) return;
+            const target = this.resolveSheetForFormulaReference(ref);
+            if (!target) return;
+            setBoundSheetId(ref.sheetSelector, target.sheetId);
+            ref.sheetSelector.value = target.name;
+            ref.rowSelector = structurallyBindSelector(ref.rowSelector, "row", target.rowIds, target.rowMap);
+            ref.colSelector = structurallyBindSelector(ref.colSelector, "col", target.colIds, target.colMap);
+          });
+        }
+      }
+    }
   }
 
   // Evaluate the current state into an EvaluationResult.
   evaluate(): EvaluationResult {
-    const sheetEvals: SheetEvaluation[] = [];
-    for (const sheetState of this.sheets) {
-      sheetEvals.push(sheetState.toEvaluation());
-    }
+    this.bindCrossSheetFormulas();
+    const states = new Map<string, string>();
+    const memo = new Map<string, RuntimeValue>();
+
+    const evalCell = (sheetIndex: number, rAbs: number, c: number): RuntimeValue => {
+      const sheet = this.sheets[sheetIndex];
+      if (!sheet) {
+        return makeInternalError("unresolved_reference_sheet", { sheetIndex });
+      }
+      const key = `${sheet.sheetId}:${rAbs},${c}`;
+      const state = states.get(key);
+      if (state === "visiting") {
+        return makeInternalError("cycle");
+      }
+      if (state === "done") {
+        return memo.get(key) ?? { kind: "blank", value: null };
+      }
+
+      states.set(key, "visiting");
+      const cell = rAbs >= 0 && rAbs < sheet.rowCount && c >= 0 && c < sheet.colCount ? sheet.cells[rAbs][c] : null;
+      const body = cell?.body;
+
+      let value: RuntimeValue;
+      if (!body) {
+        value = { kind: "blank", value: null };
+      } else if (!body.valid) {
+        value = runtimeErrorFromDiagnostic(body.issue);
+      } else if (body.kind === "literal") {
+        value = body.literal;
+      } else {
+        const crossSheetResolver: CrossSheetResolver = (ref, rowIdx, colIdx) =>
+          this.resolveCrossSheetExpressionValue(ref, rowIdx, colIdx, evalCell);
+        value = evalExpr(
+          body.expression,
+          rAbs,
+          c,
+          (rDep, cDep) => evalCell(sheetIndex, rDep, cDep),
+          sheet.rowMap,
+          sheet.colMap,
+          sheet.rowCount,
+          sheet.colCount,
+          sheet.bodyStart,
+          sheet.bodyRowCount,
+          sheet.dataRowIndices,
+          sheet.dataColIndices,
+          sheet.rowIdToIndex,
+          sheet.colIdToIndex,
+          crossSheetResolver,
+        );
+      }
+
+      if (cell) {
+        cell.cachedValue = value;
+        cell.dirty = false;
+      }
+      states.set(key, "done");
+      memo.set(key, value);
+      return value;
+    };
+
+    const sheetEvals: SheetEvaluation[] = this.sheets.map((sheet, sheetIndex) => {
+      const values: RuntimeValue[][] = [];
+      for (let rAbs = sheet.bodyStart; rAbs < sheet.rowCount; rAbs += 1) {
+        values.push(Array.from({ length: sheet.colCount }, (_, c) => evalCell(sheetIndex, rAbs, c)));
+      }
+      return {
+        name: sheet.name,
+        rowPaths: sheet.rowPaths,
+        colLabels: sheet.colLabels,
+        values,
+      };
+    });
     return { sheets: sheetEvals };
   }
 
@@ -1944,6 +1995,67 @@ export class DocumentState {
       throw new Error(`unknown sheet '${name}'`);
     }
     return sheet;
+  }
+
+  private resolveSheetForFormulaReference(ref: ReferenceExpr): SheetState | null {
+    if (!ref.sheetSelector) return null;
+    const boundSheetId = getBoundSheetId(ref.sheetSelector);
+    if (boundSheetId !== null) {
+      return this.sheets.find((candidate) => candidate.sheetId === boundSheetId) ?? null;
+    }
+    const matches = this.sheets.filter((candidate) => candidate.name === ref.sheetSelector?.value);
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  private resolveCrossSheetExpressionValue(
+    ref: ReferenceExpr,
+    rowIdx: number,
+    colIdx: number,
+    evalCell: (sheetIndex: number, r: number, c: number) => RuntimeValue,
+  ): ExpressionValue | null {
+    if (!ref.sheetSelector) return null;
+    const boundSheetId = getBoundSheetId(ref.sheetSelector);
+    let targetIndex = -1;
+    if (boundSheetId !== null) {
+      targetIndex = this.sheets.findIndex((candidate) => candidate.sheetId === boundSheetId);
+      if (targetIndex < 0) {
+        return makeInternalError("unresolved_reference_sheet", { sheet: ref.sheetSelector.value, sheetId: boundSheetId });
+      }
+    } else {
+      const matches: number[] = [];
+      this.sheets.forEach((candidate, index) => {
+        if (candidate.name === ref.sheetSelector?.value) matches.push(index);
+      });
+      if (matches.length === 0) {
+        return makeInternalError("unresolved_reference_sheet", { sheet: ref.sheetSelector.value });
+      }
+      if (matches.length > 1) {
+        return makeInternalError("ambiguous_reference_sheet", { sheet: ref.sheetSelector.value });
+      }
+      targetIndex = matches[0];
+      setBoundSheetId(ref.sheetSelector, this.sheets[targetIndex].sheetId);
+    }
+
+    const target = this.sheets[targetIndex];
+    const resolved = selectViewDetailed(
+      ref,
+      rowIdx,
+      colIdx,
+      target.rowMap,
+      target.colMap,
+      target.rowCount,
+      target.colCount,
+      target.bodyStart,
+      target.bodyRowCount,
+      target.dataRowIndices,
+      target.dataColIndices,
+      target.rowIdToIndex,
+      target.colIdToIndex,
+    );
+    if (!resolved.ok) {
+      return makeInternalError(resolved.internalKind, resolved.context);
+    }
+    return materializeViewSelection(resolved.view, (r, c) => evalCell(targetIndex, r, c));
   }
 }
 

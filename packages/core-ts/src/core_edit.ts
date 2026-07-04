@@ -1,6 +1,7 @@
 import { ChangeKind, DocumentState, SheetState, type SheetHistorySnapshot } from "./incremental";
 import { parseCellInput, splitCellDisplayMetadata } from "./runtime";
 import type { FormatSpec, StylePatch } from "./runtime/types";
+import { copyExpressionReferenceMetadata } from "./runtime/references";
 import { assertInteger, CoreEditFailure, type CoreEditErrorCategory } from "./core_edit_common";
 import {
   applyDeleteRowEdit,
@@ -200,6 +201,7 @@ export function applyBatchAtomic(
     const edit = edits[i];
     try {
       applySingleEdit(staged, edit);
+      staged.bindCrossSheetFormulas();
     } catch (error) {
       if (error instanceof CoreEditFailure) {
         return {
@@ -257,6 +259,7 @@ export function applyBatchWithUndo(
         const before = captureDocumentHistorySnapshot(staged);
         const beforeSignature = documentSnapshotSignature(before);
         applySingleEdit(staged, edit);
+        staged.bindCrossSheetFormulas();
         const after = captureDocumentHistorySnapshot(staged);
         const afterSignature = documentSnapshotSignature(after);
         if (beforeSignature !== afterSignature) {
@@ -275,6 +278,7 @@ export function applyBatchWithUndo(
         const before = sheet.captureHistorySnapshot();
         const beforeSignature = sheetSnapshotSignature(before);
         applySingleEdit(staged, edit);
+        staged.bindCrossSheetFormulas();
         const after = sheet.captureHistorySnapshot();
         const afterSignature = sheetSnapshotSignature(after);
         if (beforeSignature !== afterSignature) {
@@ -329,6 +333,7 @@ export function applyCoreEditMemento(
           );
         }
         restoreDocumentHistorySnapshot(staged, replacement);
+        staged.bindCrossSheetFormulas();
       } else {
         const expected = direction === "undo" ? entry.after : entry.before;
         const expectedSignature = direction === "undo" ? entry.afterSignature : entry.beforeSignature;
@@ -342,6 +347,7 @@ export function applyCoreEditMemento(
           );
         }
         sheet.restoreHistorySnapshot(replacement);
+        staged.bindCrossSheetFormulas();
       }
     } catch (error) {
       return { ok: false, error: coreEditErrorFromCaught(error, entry.editIndex, entry.op) };
@@ -410,6 +416,7 @@ function cloneDocumentState(document: DocumentState): DocumentState {
   for (const sheet of clone.sheets) {
     Object.setPrototypeOf(sheet, SheetState.prototype);
   }
+  copyDocumentReferenceMetadata(document, clone);
   return clone;
 }
 
@@ -480,6 +487,7 @@ function captureDocumentHistorySnapshot(document: DocumentState): CoreDocumentHi
 
 function restoreDocumentHistorySnapshot(document: DocumentState, snapshot: CoreDocumentHistorySnapshot): void {
   const restored = structuredClone(snapshot) as CoreDocumentHistorySnapshot;
+  copyDocumentHistoryReferenceMetadata(snapshot, restored);
   document.sheets = restored.sheets.map(sheetFromHistorySnapshot);
   document.nextSheetId = restored.nextSheetId;
 }
@@ -492,6 +500,57 @@ function sheetFromHistorySnapshot(snapshot: SheetHistorySnapshot): SheetState {
 
 function documentSnapshotSignature(snapshot: CoreDocumentHistorySnapshot): string {
   return JSON.stringify(snapshot);
+}
+
+function copyDocumentReferenceMetadata(source: DocumentState, target: DocumentState): void {
+  source.sheets.forEach((sheet, sheetIndex) => {
+    const targetSheet = target.sheets[sheetIndex];
+    if (!targetSheet) return;
+    sheet.cells.forEach((row, rAbs) => {
+      row.forEach((cell, c) => {
+        const sourceBody = cell.body;
+        const targetBody = targetSheet.cells[rAbs]?.[c]?.body;
+        if (
+          !sourceBody.valid ||
+          sourceBody.kind !== "formula" ||
+          !targetBody?.valid ||
+          targetBody.kind !== "formula"
+        ) {
+          return;
+        }
+        copyExpressionReferenceMetadata(sourceBody.expression, targetBody.expression);
+      });
+    });
+  });
+}
+
+function copyDocumentHistoryReferenceMetadata(
+  source: CoreDocumentHistorySnapshot,
+  target: CoreDocumentHistorySnapshot,
+): void {
+  source.sheets.forEach((sheet, sheetIndex) => {
+    const targetSheet = target.sheets[sheetIndex];
+    if (!targetSheet) return;
+    copySheetSnapshotReferenceMetadata(sheet, targetSheet);
+  });
+}
+
+function copySheetSnapshotReferenceMetadata(source: SheetHistorySnapshot, target: SheetHistorySnapshot): void {
+  source.cells.forEach((row, rAbs) => {
+    row.forEach((cell, c) => {
+      const sourceBody = cell.body;
+      const targetBody = target.cells[rAbs]?.[c]?.body;
+      if (
+        !sourceBody.valid ||
+        sourceBody.kind !== "formula" ||
+        !targetBody?.valid ||
+        targetBody.kind !== "formula"
+      ) {
+        return;
+      }
+      copyExpressionReferenceMetadata(sourceBody.expression, targetBody.expression);
+    });
+  });
 }
 
 function applySingleEdit(document: DocumentState, edit: CoreEdit): void {

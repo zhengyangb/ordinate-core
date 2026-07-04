@@ -1,5 +1,7 @@
 import { getStandardFunctionMetadata, type FunctionMetadata } from "@ordinate/core";
 
+import { scanFormulaLexicalState, scanOrdinateReferenceEnd } from "./formulaReferenceScan";
+
 export type FormulaAssistantNameContext = {
   kind: "name";
   query: string;
@@ -87,8 +89,12 @@ export function resolveActiveFunctionCallContext(
       continue;
     }
     if (char === "@" && draft[index + 1] === "[") {
-      referenceDepth += 1;
-      index += 1;
+      const referenceEnd = scanOrdinateReferenceEnd(draft, index);
+      if (referenceEnd === null || referenceEnd > safeCaret) {
+        referenceDepth = 1;
+        break;
+      }
+      index = referenceEnd - 1;
       continue;
     }
     if (referenceDepth > 0) {
@@ -322,33 +328,6 @@ function isFormulaFunctionNameStart(char: string): boolean {
 function isFunctionNameBoundary(char: string | undefined): boolean {
   if (char == null) return true;
   return /\s|[=+\-*/^(),<>]/.test(char);
-}
-
-function scanFormulaLexicalState(text: string, end: number): { inString: boolean; referenceDepth: number } {
-  let inString = false;
-  let referenceDepth = 0;
-  const limit = Math.max(0, Math.min(end, text.length));
-  for (let index = 0; index < limit; index += 1) {
-    const char = text[index];
-    const prev = text[index - 1];
-    if (inString) {
-      if (char === "\"" && prev !== "\\") inString = false;
-      continue;
-    }
-    if (char === "\"") {
-      inString = true;
-      continue;
-    }
-    if (char === "@" && text[index + 1] === "[") {
-      referenceDepth += 1;
-      index += 1;
-      continue;
-    }
-    if (char === "]" && referenceDepth > 0) {
-      referenceDepth -= 1;
-    }
-  }
-  return { inString, referenceDepth };
 }
 
 function getSingleTextInsertion(previousText: string, nextText: string): { start: number; text: string } | null {

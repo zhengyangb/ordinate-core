@@ -662,7 +662,7 @@ class ExprParser {
     }
     const ref = this.match("REF");
     if (ref) {
-      return { kind: "reference", value: parseReference(ref[1]) };
+      return parseReferenceNode(ref[1]);
     }
     this.pos += 1;
     return { kind: "literal", value: makeInternalError("parse_expression_unexpected_token", { token: tk[0] }) };
@@ -769,18 +769,133 @@ function isSpreadsheetLikeReferenceText(text: string): boolean {
   return /^[A-Za-z]+[1-9]\d*$/.test(text);
 }
 
-// Parse a reference expression such as @[Revenue,2025].
-function parseReference(text: string): ReferenceExpr {
+// Parse a reference expression such as @[Revenue,2025] or @["Inputs"::[Revenue,2025]].
+function parseReferenceNode(text: string): ExprNode {
+  const parsed = parseReference(text);
+  if (!parsed.ok) {
+    return { kind: "literal", value: makeInternalError(parsed.internalKind, parsed.context) };
+  }
+  return { kind: "reference", value: parsed.ref };
+}
+
+type ParsedReference =
+  | { ok: true; ref: ReferenceExpr }
+  | { ok: false; internalKind: string; context: Record<string, unknown> };
+
+function parseReference(text: string): ParsedReference {
   const inner = text.slice(2, -1).trim();
+  const sheetDelimiter = findTopLevelDoubleColon(inner);
+  if (sheetDelimiter !== null) {
+    const sheetText = inner.slice(0, sheetDelimiter).trim();
+    const targetText = inner.slice(sheetDelimiter + 2).trim();
+    const sheetSelector = parseSheetSelector(sheetText);
+    if (!sheetSelector) {
+      return { ok: false, internalKind: "parse_cross_sheet_reference_invalid_sheet_selector", context: { source: text } };
+    }
+    if (!targetText.startsWith("[") || !targetText.endsWith("]")) {
+      return { ok: false, internalKind: "parse_cross_sheet_reference_missing_target_brackets", context: { source: text } };
+    }
+    const targetInner = targetText.slice(1, -1).trim();
+    const targetParts = splitTopLevel(targetInner, ",");
+    if (targetParts.length !== 2) {
+      return { ok: false, internalKind: "parse_cross_sheet_reference_invalid_target", context: { source: text } };
+    }
+    const rowSelector = parseSelector(targetParts[0].trim(), true);
+    const colSelector = parseSelector(targetParts[1].trim(), false);
+    if (rowSelector.kind === "invalid" || colSelector.kind === "invalid") {
+      return { ok: false, internalKind: "parse_cross_sheet_reference_invalid_target", context: { source: text } };
+    }
+    if (selectorHasContextualReference(rowSelector) || selectorHasContextualReference(colSelector)) {
+      return { ok: false, internalKind: "parse_cross_sheet_reference_contextual_selector", context: { source: text } };
+    }
+    return {
+      ok: true,
+      ref: {
+        sheetSelector,
+        rowSelector,
+        colSelector,
+        style: "ordinate",
+      },
+    };
+  }
+
   const parts = splitTopLevel(inner, ",");
   if (parts.length !== 2) {
-    return { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "ordinate" };
+    return {
+      ok: true,
+      ref: { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "ordinate" },
+    };
   }
   return {
-    rowSelector: parseSelector(parts[0].trim(), true),
-    colSelector: parseSelector(parts[1].trim(), false),
-    style: "ordinate",
+    ok: true,
+    ref: {
+      rowSelector: parseSelector(parts[0].trim(), true),
+      colSelector: parseSelector(parts[1].trim(), false),
+      style: "ordinate",
+    },
   };
+}
+
+function findTopLevelDoubleColon(text: string): number | null {
+  let inQuote = false;
+  let escaped = false;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  for (let i = 0; i < text.length - 1; i += 1) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (inQuote) continue;
+    if (ch === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (ch === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (ch === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (ch === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+    if (ch === ":" && text[i + 1] === ":" && parenDepth === 0 && bracketDepth === 0) {
+      return i;
+    }
+  }
+  return null;
+}
+
+function parseSheetSelector(text: string): { kind: "sheet_name"; value: string } | null {
+  if (text === "") return null;
+  if (isQuoted(text)) {
+    return { kind: "sheet_name", value: unescapeQuoted(text.slice(1, -1)) };
+  }
+  if (!/^[A-Za-z0-9]+$/.test(text)) return null;
+  return { kind: "sheet_name", value: text };
+}
+
+function selectorHasContextualReference(selector: RefSelector | null): boolean {
+  if (!selector) return false;
+  if (selector.kind === "current" || selector.kind === "offset") return true;
+  if (selector.kind === "range") {
+    const [startSel, endSel] = selector.value as [RefSelector | null, RefSelector | null];
+    return selectorHasContextualReference(startSel) || selectorHasContextualReference(endSel);
+  }
+  return false;
 }
 
 // Parse a spreadsheet-style reference such as A1, A1:B5, A:A, or 1:1.
