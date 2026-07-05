@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, type CSSProperties, type MutableRefObject, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 
 import { AgGridReact } from "ag-grid-react";
 import {
@@ -18,8 +18,13 @@ import {
   bodyRowTrackYToViewportY,
   clipColumnTrackSpanToCenterLayer,
   projectColumnTrackSpanToViewport,
+  resolveColumnCenterTrackWidth,
+  resolveAppendRowSlot,
   resolveColumnTrackSpan,
+  shouldShowAppendColumnControl,
 } from "../utils/gridGeometry";
+import { computeQuickAddDragCount, hasQuickAddDragThreshold, type QuickAddAxis } from "../utils/quickAddControls";
+import { APPEND_ROW_SLOT_HEIGHT } from "../utils/appHelpers";
 
 type FormulaReferenceOverlay = {
   tokenId: string;
@@ -41,6 +46,7 @@ type TableStageProps = {
   rowIndexTrackHeight: number;
   bodyScrollTop: number;
   bodyScrollLeft: number;
+  centerViewportWidth: number;
   indexRailsPhase: ChromeVisibilityPhase;
   handleIndexRailsHoverChange: (hovering: boolean) => void;
   rowIndexMetrics: RowIndexMetric[];
@@ -66,12 +72,16 @@ type TableStageProps = {
   handleHeaderOverlaySelect: (rowNumber: number, colIndex: number, event?: ReactPointerEvent<HTMLElement>) => void;
   handleHeaderOverlayDoubleClick: (rowNumber: number, colIndex: number) => void;
   handleHeaderOverlayKeyDown: (event: KeyboardEvent, rowNumber: number, colIndex: number) => void;
+  handleHeaderHorizontalWheel: (event: ReactWheelEvent<HTMLElement>) => void;
   handleColumnRailSelect: (colIndex: number, event?: { shiftKey: boolean }) => void;
   handleColumnRailPointerDown: (colIndex: number, event: ReactPointerEvent<HTMLElement>) => void;
   handleColumnRailMenuOpen: (colIndex: number, anchorEl: HTMLElement) => void;
   handleRowRailSelect: (rowNumber: number, area: "header" | "body", event?: { shiftKey: boolean }) => void;
   handleRowRailPointerDown: (rowNumber: number, area: "header" | "body", event: ReactPointerEvent<HTMLElement>) => void;
   handleRowRailMenuOpen: (rowNumber: number, area: "header" | "body", anchorEl: HTMLElement) => void;
+  quickAddDisabled: boolean;
+  onQuickAddRows: (count: number) => void;
+  onQuickAddColumns: (count: number) => void;
   axisDropIndicator: AxisDropIndicator | null;
   axisDragPreview: AxisDragPreview | null;
   axisSelection: AxisSelectionView | null;
@@ -87,6 +97,14 @@ type TableStageProps = {
     column?: string | { getColId(): string } | null;
     event?: Event | null;
   }) => void;
+};
+
+type QuickAddDragSession = {
+  axis: QuickAddAxis;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  active: boolean;
 };
 
 function toColumnLetters(colNumber: number): string {
@@ -125,6 +143,7 @@ export default function TableStage({
   rowIndexTrackHeight,
   bodyScrollTop,
   bodyScrollLeft,
+  centerViewportWidth,
   indexRailsPhase,
   handleIndexRailsHoverChange,
   rowIndexMetrics,
@@ -150,12 +169,16 @@ export default function TableStage({
   handleHeaderOverlaySelect,
   handleHeaderOverlayDoubleClick,
   handleHeaderOverlayKeyDown,
+  handleHeaderHorizontalWheel,
   handleColumnRailSelect,
   handleColumnRailPointerDown,
   handleColumnRailMenuOpen,
   handleRowRailSelect,
   handleRowRailPointerDown,
   handleRowRailMenuOpen,
+  quickAddDisabled,
+  onQuickAddRows,
+  onQuickAddColumns,
   axisDropIndicator,
   axisDragPreview,
   axisSelection,
@@ -168,6 +191,9 @@ export default function TableStage({
   handleCellDoubleClicked,
   handleCellKeyDown,
 }: TableStageProps) {
+  const [quickAddPreview, setQuickAddPreview] = useState<{ axis: QuickAddAxis; count: number } | null>(null);
+  const quickAddDragSessionRef = useRef<QuickAddDragSession | null>(null);
+  const quickAddCommittedDuringPointerRef = useRef(false);
   const animateTableStructure = shouldAnimateTableStructure();
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
   const defaultColDef = useMemo<ColDef<GridRow>>(() => ({
@@ -185,8 +211,13 @@ export default function TableStage({
   const activeColumnIndex = selectedColumnIndex ?? selectedCell?.logical.cAbs ?? null;
   const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < headerColCount);
   const centerOverlayCells = headerOverlayCells.filter((cell) => cell.startCol >= headerColCount);
-  const columnTrackWidth = columnMetrics.length === 0 ? 0 : Math.max(...columnMetrics.map((metric) => metric.left + metric.width));
-  const centerTrackWidth = Math.max(0, columnTrackWidth - pinnedHeaderWidth);
+  const appendRowSlot = resolveAppendRowSlot(rowIndexTrackHeight, APPEND_ROW_SLOT_HEIGHT);
+  const centerTrackWidth = resolveColumnCenterTrackWidth(columnMetrics, pinnedHeaderWidth);
+  const showAppendColumnControl = shouldShowAppendColumnControl({
+    centerTrackWidth,
+    centerViewportWidth,
+    scrollLeft: bodyScrollLeft,
+  });
   const pinnedColumnMetrics = columnMetrics.filter((metric) => metric.colIndex < headerColCount);
   const centerColumnMetrics = columnMetrics.filter((metric) => metric.colIndex >= headerColCount);
   const isColumnDragPreview = (colIndex: number) =>
@@ -332,6 +363,182 @@ export default function TableStage({
     );
   };
 
+  const renderAppendColumnOutboardControl = () => {
+    if (quickAddDisabled || !showAppendColumnControl) return null;
+    return (
+      <div className={`column-quick-add-outboard ${railsPhaseClass}`}>
+        <button
+          className="axis-quick-add axis-quick-add--column"
+          type="button"
+          aria-label="Add column"
+          onPointerDown={(event) => beginQuickAddDrag("column", event)}
+          onPointerMove={updateQuickAddDrag}
+          onPointerUp={finishQuickAddDrag}
+          onPointerCancel={cancelQuickAddDrag}
+          onClick={() => handleQuickAddClick("column")}
+        >
+          +
+        </button>
+      </div>
+    );
+  };
+
+  const commitQuickAddDrag = useCallback((session: QuickAddDragSession, currentX: number, currentY: number) => {
+    if (!session.active) {
+      throw new Error("quick add drag cannot commit before crossing the drag threshold");
+    }
+    const count = computeQuickAddDragCount({
+      axis: session.axis,
+      startX: session.startX,
+      startY: session.startY,
+      currentX,
+      currentY,
+    });
+    quickAddDragSessionRef.current = null;
+    quickAddCommittedDuringPointerRef.current = true;
+    window.setTimeout(() => {
+      quickAddCommittedDuringPointerRef.current = false;
+    }, 0);
+    setQuickAddPreview(null);
+    if (session.axis === "row") {
+      onQuickAddRows(count);
+    } else {
+      onQuickAddColumns(count);
+    }
+  }, [onQuickAddRows, onQuickAddColumns]);
+
+  const cancelActiveQuickAddDrag = useCallback(() => {
+    quickAddDragSessionRef.current = null;
+    setQuickAddPreview(null);
+  }, []);
+
+  const updateActiveQuickAddDrag = useCallback((session: QuickAddDragSession, currentX: number, currentY: number) => {
+    const active =
+      session.active ||
+      hasQuickAddDragThreshold({
+        axis: session.axis,
+        startX: session.startX,
+        startY: session.startY,
+        currentX,
+        currentY,
+      });
+    if (!active) return false;
+    if (!session.active) {
+      quickAddDragSessionRef.current = { ...session, active: true };
+    }
+    const count = computeQuickAddDragCount({
+      axis: session.axis,
+      startX: session.startX,
+      startY: session.startY,
+      currentX,
+      currentY,
+    });
+    setQuickAddPreview((current) =>
+      current?.axis === session.axis && current.count === count ? current : { axis: session.axis, count },
+    );
+    return true;
+  }, []);
+
+  const finishQuickAddDragSession = useCallback((session: QuickAddDragSession, currentX: number, currentY: number) => {
+    const active = session.active || updateActiveQuickAddDrag(session, currentX, currentY);
+    if (!active) {
+      cancelActiveQuickAddDrag();
+      return false;
+    }
+    const activeSession = quickAddDragSessionRef.current;
+    if (!activeSession || activeSession.pointerId !== session.pointerId) {
+      throw new Error("quick add drag session disappeared before commit");
+    }
+    commitQuickAddDrag(activeSession, currentX, currentY);
+    return true;
+  }, [cancelActiveQuickAddDrag, commitQuickAddDrag, updateActiveQuickAddDrag]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const session = quickAddDragSessionRef.current;
+      if (!session || session.pointerId !== event.pointerId) return;
+      if (updateActiveQuickAddDrag(session, event.clientX, event.clientY)) {
+        event.preventDefault();
+      }
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      const session = quickAddDragSessionRef.current;
+      if (!session || session.pointerId !== event.pointerId) return;
+      if (finishQuickAddDragSession(session, event.clientX, event.clientY)) {
+        event.preventDefault();
+      }
+    };
+    const handlePointerCancel = (event: PointerEvent) => {
+      const session = quickAddDragSessionRef.current;
+      if (session && session.pointerId !== event.pointerId) return;
+      cancelActiveQuickAddDrag();
+    };
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("pointercancel", handlePointerCancel, true);
+    window.addEventListener("blur", cancelActiveQuickAddDrag);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("pointercancel", handlePointerCancel, true);
+      window.removeEventListener("blur", cancelActiveQuickAddDrag);
+    };
+  }, [cancelActiveQuickAddDrag, finishQuickAddDragSession, updateActiveQuickAddDrag]);
+
+  const beginQuickAddDrag = (axis: QuickAddAxis, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (quickAddDisabled || event.button !== 0) return;
+    quickAddCommittedDuringPointerRef.current = false;
+    quickAddDragSessionRef.current = {
+      axis,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const updateQuickAddDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const session = quickAddDragSessionRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    if (updateActiveQuickAddDrag(session, event.clientX, event.clientY)) {
+      event.preventDefault();
+    }
+  };
+
+  const finishQuickAddDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const session = quickAddDragSessionRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    if (finishQuickAddDragSession(session, event.clientX, event.clientY)) {
+      event.preventDefault();
+    }
+  };
+
+  const cancelQuickAddDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const session = quickAddDragSessionRef.current;
+    if (session && session.pointerId !== event.pointerId) return;
+    cancelActiveQuickAddDrag();
+  };
+
+  const handleQuickAddClick = (axis: QuickAddAxis) => {
+    if (quickAddDisabled) return;
+    if (quickAddCommittedDuringPointerRef.current) {
+      quickAddCommittedDuringPointerRef.current = false;
+      return;
+    }
+    const session = quickAddDragSessionRef.current;
+    if (session && session.axis !== axis) {
+      throw new Error(`quick add click axis mismatch: expected ${session.axis}, got ${axis}`);
+    }
+    quickAddDragSessionRef.current = null;
+    setQuickAddPreview(null);
+    if (axis === "row") {
+      onQuickAddRows(1);
+    } else {
+      onQuickAddColumns(1);
+    }
+  };
+
   const renderOverlayCell = (cell: HeaderOverlayCell, leftOffset = 0) => {
     const span = Math.max(1, cell.endCol - cell.startCol + 1);
     const selectedSlot =
@@ -432,10 +639,10 @@ export default function TableStage({
         className={`column-index-strip ${railsPhaseClass}`}
         onMouseEnter={() => handleIndexRailsHoverChange(true)}
         onMouseLeave={() => handleIndexRailsHoverChange(false)}
+        onWheel={handleHeaderHorizontalWheel}
       >
         <div
           className="column-index-track"
-          style={columnTrackWidth > 0 ? { width: `${columnTrackWidth}px` } : undefined}
           aria-hidden="true"
         >
           {pinnedColumnMetrics.map((metric) => renderColumnRailCell(metric, metric.left, true))}
@@ -443,15 +650,21 @@ export default function TableStage({
             className="column-index-center-track"
             style={{
               left: `${pinnedHeaderWidth}px`,
-              width: `${centerTrackWidth}px`,
+              right: 0,
             }}
           >
-            <div ref={columnTrackRef} className="column-index-center-scroll-layer">
+            <div
+              ref={columnTrackRef}
+              className="column-index-center-scroll-layer"
+              style={centerTrackWidth > 0 ? { width: `${centerTrackWidth}px` } : undefined}
+            >
               {centerColumnMetrics.map((metric) => renderColumnRailCell(metric, metric.left - pinnedHeaderWidth, false))}
             </div>
           </div>
         </div>
       </div>
+
+      {renderAppendColumnOutboardControl()}
 
       <div
         className={`row-index-strip ${railsPhaseClass}`}
@@ -497,7 +710,7 @@ export default function TableStage({
             <div
               ref={rowTrackRef}
               className="row-index-track"
-              style={rowIndexTrackHeight > 0 ? { height: `${rowIndexTrackHeight}px` } : undefined}
+              style={appendRowSlot.bottom > 0 ? { height: `${appendRowSlot.bottom}px` } : undefined}
             >
               {rowIndexMetrics.map((row) => (
                 <div
@@ -533,6 +746,28 @@ export default function TableStage({
                   </button>
                 </div>
               ))}
+              {!quickAddDisabled ? (
+                <div
+                  className="row-index-cell row-index-append-cell"
+                  style={{
+                    top: `${appendRowSlot.top}px`,
+                    height: `${appendRowSlot.height}px`,
+                  }}
+                >
+                  <button
+                    className="axis-quick-add axis-quick-add--row"
+                    type="button"
+                    aria-label="Add row"
+                    onPointerDown={(event) => beginQuickAddDrag("row", event)}
+                    onPointerMove={updateQuickAddDrag}
+                    onPointerUp={finishQuickAddDrag}
+                    onPointerCancel={cancelQuickAddDrag}
+                    onClick={() => handleQuickAddClick("row")}
+                  >
+                    +
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -544,7 +779,7 @@ export default function TableStage({
             className="axis-column-selection-viewport"
             style={{
               left: `${pinnedHeaderWidth}px`,
-              width: `${centerTrackWidth}px`,
+              right: 0,
             }}
             aria-hidden="true"
           >
@@ -598,6 +833,14 @@ export default function TableStage({
             aria-hidden="true"
           >
             {axisDragCountBadge.label}
+          </div>
+        ) : null}
+        {quickAddPreview ? (
+          <div
+            className={`axis-quick-add-preview axis-quick-add-preview--${quickAddPreview.axis}`}
+            aria-hidden="true"
+          >
+            +{quickAddPreview.count} {quickAddPreview.axis === "row" ? (quickAddPreview.count === 1 ? "row" : "rows") : (quickAddPreview.count === 1 ? "column" : "columns")}
           </div>
         ) : null}
         {axisDropIndicator ? (
@@ -673,11 +916,12 @@ export default function TableStage({
                 {
                   height: `${headerOverlayHeight}px`,
                   left: `${Math.max(0, pinnedHeaderWidth)}px`,
-                  width: `${centerTrackWidth}px`,
+                  right: 0,
                   "--header-overlay-pinned-width": `${Math.max(0, pinnedHeaderWidth)}px`,
                 } as CSSProperties
               }
               aria-hidden="true"
+              onWheel={handleHeaderHorizontalWheel}
             >
               <div
                 ref={headerCenterTrackRef}

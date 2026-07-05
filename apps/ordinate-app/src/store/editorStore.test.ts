@@ -219,6 +219,70 @@ describe("editor store history", () => {
     expect(canonicalStoreDocument()).toBe(afterEdit);
   });
 
+  it("inserts multiple rows as one history command", () => {
+    const before = canonicalStoreDocument();
+    const beforeSheet = useEditorStore.getState().docState?.sheets[0];
+    if (!beforeSheet) throw new Error("expected sheet");
+    const beforeRowIds = new Set(beforeSheet.rowIds);
+
+    useEditorStore.getState().insertRows("Sheet", "body", beforeSheet.rowIds.length, 3, 0);
+    const after = canonicalStoreDocument();
+    const afterSheet = useEditorStore.getState().docState?.sheets[0];
+    if (!afterSheet) throw new Error("expected sheet after insert");
+    const insertedRowIds = afterSheet.rowIds.filter((rowId) => !beforeRowIds.has(rowId));
+
+    expect(insertedRowIds).toHaveLength(3);
+    expect(useEditorStore.getState()).toMatchObject({
+      historyCursor: 1,
+      undoLabel: "Insert rows",
+    });
+
+    useEditorStore.getState().undo();
+    expect(canonicalStoreDocument()).toBe(before);
+
+    useEditorStore.getState().redo();
+    expect(canonicalStoreDocument()).toBe(after);
+    expect(useEditorStore.getState().docState?.sheets[0]?.rowIds).toEqual(afterSheet.rowIds);
+  });
+
+  it("inserts multiple columns as one history command", () => {
+    const before = canonicalStoreDocument();
+    const beforeSheet = useEditorStore.getState().docState?.sheets[0];
+    if (!beforeSheet) throw new Error("expected sheet");
+    const beforeColIds = new Set(beforeSheet.colIds);
+
+    useEditorStore.getState().insertColumns("Sheet", beforeSheet.colIds.length, 2);
+    const after = canonicalStoreDocument();
+    const afterSheet = useEditorStore.getState().docState?.sheets[0];
+    if (!afterSheet) throw new Error("expected sheet after insert");
+    const insertedColIds = afterSheet.colIds.filter((colId) => !beforeColIds.has(colId));
+
+    expect(insertedColIds).toHaveLength(2);
+    expect(useEditorStore.getState()).toMatchObject({
+      historyCursor: 1,
+      undoLabel: "Insert columns",
+    });
+
+    useEditorStore.getState().undo();
+    expect(canonicalStoreDocument()).toBe(before);
+
+    useEditorStore.getState().redo();
+    expect(canonicalStoreDocument()).toBe(after);
+    expect(useEditorStore.getState().docState?.sheets[0]?.colIds).toEqual(afterSheet.colIds);
+  });
+
+  it("fails early for invalid batch insert counts", () => {
+    const before = canonicalStoreDocument();
+    expect(() => useEditorStore.getState().insertRows("Sheet", "body", 3, 0, 0)).toThrow(
+      "insertRows requires a positive integer count",
+    );
+    expect(() => useEditorStore.getState().insertColumns("Sheet", 2, -1)).toThrow(
+      "insertColumns requires a positive integer count",
+    );
+    expect(canonicalStoreDocument()).toBe(before);
+    expect(useEditorStore.getState().history).toHaveLength(0);
+  });
+
   it("restores the active sheet recorded by history entries", () => {
     const multiSheet = `${TEST_DOC}
 

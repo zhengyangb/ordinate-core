@@ -117,6 +117,22 @@ export function PlusIcon() {
   );
 }
 
+export function ChevronLeftIcon() {
+  return (
+    <ToolbarIcon>
+      <path d="m12.4 5.4-4.6 4.6 4.6 4.6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+    </ToolbarIcon>
+  );
+}
+
+export function ChevronRightIcon() {
+  return (
+    <ToolbarIcon>
+      <path d="m7.6 5.4 4.6 4.6-4.6 4.6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+    </ToolbarIcon>
+  );
+}
+
 export function MoreIcon() {
   return (
     <ToolbarIcon>

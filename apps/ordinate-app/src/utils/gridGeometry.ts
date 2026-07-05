@@ -20,6 +20,24 @@ export type ColumnViewportSpan = {
   center: number;
 };
 
+export type AppendRowSlot = {
+  top: number;
+  height: number;
+  bottom: number;
+};
+
+export type HorizontalWheelInput = {
+  deltaX: number;
+  deltaY: number;
+  shiftKey: boolean;
+};
+
+export type AppendColumnControlVisibilityInput = {
+  centerTrackWidth: number;
+  centerViewportWidth: number;
+  scrollLeft: number;
+};
+
 export function mergeColumnMetricsWithVisualOverrides(
   baseMetrics: ColumnMetric[],
   visualMetrics: ColumnMetric[],
@@ -152,6 +170,49 @@ export function clipColumnTrackSpanToCenterLayer(
     width,
     center: clippedLeft - pinnedWidth + width / 2,
   };
+}
+
+export function resolveColumnCenterTrackWidth(metrics: ColumnMetric[], pinnedWidth: number): number {
+  assertNonNegativeFiniteNumber(pinnedWidth, "pinnedWidth");
+  if (metrics.length === 0) return 0;
+  let right = 0;
+  const seen = new Set<number>();
+  for (const metric of metrics) {
+    assertColumnMetric(metric);
+    if (seen.has(metric.colIndex)) {
+      throw new Error(`duplicate column metric: ${metric.colIndex}`);
+    }
+    seen.add(metric.colIndex);
+    right = Math.max(right, metric.left + metric.width);
+  }
+  return Math.max(0, right - pinnedWidth);
+}
+
+export function resolveAppendRowSlot(trackHeight: number, height: number): AppendRowSlot {
+  assertNonNegativeFiniteNumber(trackHeight, "appendRow.trackHeight");
+  assertPositiveFiniteNumber(height, "appendRow.height");
+  return {
+    top: trackHeight,
+    height,
+    bottom: trackHeight + height,
+  };
+}
+
+export function resolveHorizontalWheelDelta(input: HorizontalWheelInput): number {
+  assertFiniteNumber(input.deltaX, "wheel.deltaX");
+  assertFiniteNumber(input.deltaY, "wheel.deltaY");
+  if (Math.abs(input.deltaX) > 0) return input.deltaX;
+  if (input.shiftKey && Math.abs(input.deltaY) > 0) return input.deltaY;
+  return 0;
+}
+
+export function shouldShowAppendColumnControl(input: AppendColumnControlVisibilityInput): boolean {
+  assertNonNegativeFiniteNumber(input.centerTrackWidth, "appendColumn.centerTrackWidth");
+  assertNonNegativeFiniteNumber(input.centerViewportWidth, "appendColumn.centerViewportWidth");
+  assertNonNegativeFiniteNumber(input.scrollLeft, "appendColumn.scrollLeft");
+  if (input.centerTrackWidth <= 0 || input.centerViewportWidth <= 0) return false;
+  if (input.centerTrackWidth <= input.centerViewportWidth + COLUMN_EDGE_EPSILON_PX) return true;
+  return input.scrollLeft >= input.centerTrackWidth - input.centerViewportWidth - COLUMN_EDGE_EPSILON_PX;
 }
 
 export function bodyRowTrackYToViewportY(trackY: number, headerOverlayHeight: number, scrollTop: number): number {

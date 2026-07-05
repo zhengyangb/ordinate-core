@@ -1684,7 +1684,8 @@ textarea {
     opacity: 0;
 }
 
-.sheet-add {
+.sheet-add,
+.sheet-scroll-button {
     display: inline-grid;
     place-items: center;
     width: 1.75rem;
@@ -1704,25 +1705,32 @@ textarea {
         box-shadow 160ms var(--ease-out-quart);
 }
 
-.sheet-add svg {
+.sheet-add svg,
+.sheet-scroll-button svg {
     width: 0.84rem;
     height: 0.84rem;
 }
 
 .sheet-add:hover:not(:disabled),
-.sheet-add:focus-visible {
+.sheet-add:focus-visible,
+.sheet-scroll-button:hover:not(:disabled),
+.sheet-scroll-button:focus-visible {
     border-color: color-mix(in oklab, var(--accent) 42%, var(--chrome-border));
     background: color-mix(in oklab, var(--accent-soft) 38%, transparent);
     color: color-mix(in oklab, var(--accent-strong) 84%, var(--chrome-ink));
     box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.22);
 }
 
-.sheet-add:disabled {
+.sheet-add:disabled,
+.sheet-scroll-button:disabled {
     cursor: default;
     opacity: 0.48;
 }
 
 .sheet-tabs-viewport {
+    --sheet-tabs-left-fade-stop: 0;
+    --sheet-tabs-right-fade-stop: 100%;
+
     position: relative;
     min-width: 0;
     width: max-content;
@@ -1730,22 +1738,34 @@ textarea {
     flex: 0 1 auto;
     overflow-x: auto;
     overflow-y: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--chrome-border) 70%, transparent) transparent;
+    scrollbar-width: none;
     overscroll-behavior-x: contain;
+    -webkit-mask-image: linear-gradient(
+        90deg,
+        transparent 0,
+        #000 var(--sheet-tabs-left-fade-stop),
+        #000 var(--sheet-tabs-right-fade-stop),
+        transparent 100%
+    );
+    mask-image: linear-gradient(
+        90deg,
+        transparent 0,
+        #000 var(--sheet-tabs-left-fade-stop),
+        #000 var(--sheet-tabs-right-fade-stop),
+        transparent 100%
+    );
+}
+
+.sheet-tabs-viewport.can-fade-left {
+    --sheet-tabs-left-fade-stop: 1.2rem;
+}
+
+.sheet-tabs-viewport.can-fade-right {
+    --sheet-tabs-right-fade-stop: calc(100% - 1.2rem);
 }
 
 .sheet-tabs-viewport::-webkit-scrollbar {
-    height: 4px;
-}
-
-.sheet-tabs-viewport::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.sheet-tabs-viewport::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: color-mix(in oklab, var(--chrome-border) 62%, transparent);
+    display: none;
 }
 
 .sheet-tabs {
@@ -1757,6 +1777,8 @@ textarea {
 }
 
 .sheet-tab {
+    --sheet-tab-fade-bg: var(--toolbar-pill);
+
     flex: 0 0 auto;
     min-width: 5.4rem;
     max-width: 10.5rem;
@@ -1784,9 +1806,9 @@ textarea {
     -webkit-user-select: none;
     user-select: none;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
     touch-action: none;
+    position: relative;
 }
 
 .sheet-tab.renaming {
@@ -1814,10 +1836,29 @@ textarea {
 }
 
 .sheet-tab-label {
+    position: relative;
     min-width: 0;
+    max-width: 100%;
     overflow: hidden;
-    text-overflow: ellipsis;
+    text-overflow: clip;
     white-space: nowrap;
+}
+
+.sheet-tab:not(.renaming)::after {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    inset-block: 2px;
+    inset-inline-end: 0.46rem;
+    width: 1.05rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, var(--sheet-tab-fade-bg) 82%);
+    pointer-events: none;
+}
+
+.sheet-tab:not(.renaming) .sheet-tab-label,
+.sheet-tab:not(.renaming) .sheet-tab-alert {
+    z-index: 0;
 }
 
 .sheet-tab-rename-input {
@@ -1910,6 +1951,12 @@ textarea {
 }
 
 .sheet-tab:hover {
+    --sheet-tab-fade-bg: color-mix(
+        in oklab,
+        var(--toolbar-pill) 70%,
+        oklch(100% 0 0 / 0.18)
+    );
+
     background: color-mix(
         in oklab,
         var(--toolbar-pill) 70%,
@@ -1927,8 +1974,10 @@ textarea {
 }
 
 .sheet-tab.active {
-    min-width: clamp(4.4rem, 14vw, 6.8rem);
-    max-width: min(11.4rem, 42vw);
+    --sheet-tab-fade-bg: var(--accent);
+
+    min-width: clamp(5.8rem, 16vw, 8rem);
+    max-width: min(14rem, 44vw);
     background: var(--accent);
     border-color: color-mix(in oklab, var(--accent-strong) 75%, transparent);
     color: oklch(99.1% 0.003 95);
@@ -2062,6 +2111,7 @@ textarea {
     --index-rail-gap: 8px;
     --index-rail-width-active: var(--index-rail-width);
     --index-rail-height-active: var(--index-row-height);
+    --column-quick-add-gutter: 46px;
     --index-rail-surface: color-mix(
         in oklab,
         oklch(100% 0 0) 90%,
@@ -2080,7 +2130,7 @@ textarea {
     display: grid;
     grid-template-columns: calc(
             var(--index-rail-width-active) + var(--index-rail-gap)
-        ) minmax(0, 1fr);
+        ) minmax(0, 1fr) var(--column-quick-add-gutter);
     grid-template-rows: calc(
             var(--index-rail-height-active) + var(--index-rail-gap)
         ) minmax(0, 1fr);
@@ -2128,6 +2178,8 @@ textarea {
 }
 
 .table-corner {
+    grid-column: 1;
+    grid-row: 1;
     justify-self: start;
     align-self: start;
     width: calc(var(--index-rail-width-active) + var(--index-rail-gap));
@@ -2138,6 +2190,9 @@ textarea {
 }
 
 .column-index-strip {
+    grid-column: 2;
+    grid-row: 1;
+    position: relative;
     align-self: start;
     overflow: hidden;
     padding-bottom: var(--index-rail-gap);
@@ -2170,7 +2225,9 @@ textarea {
 
 .column-index-center-scroll-layer {
     position: absolute;
-    inset: 0;
+    top: 0;
+    bottom: 0;
+    left: 0;
     will-change: transform;
 }
 
@@ -2316,7 +2373,41 @@ textarea {
     color: color-mix(in oklab, var(--accent-strong) 88%, var(--sheet-soft));
 }
 
+.column-quick-add-outboard {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: start;
+    justify-self: stretch;
+    position: relative;
+    display: grid;
+    place-items: center;
+    height: var(--index-rail-height-active);
+    min-width: 0;
+    padding-bottom: var(--index-rail-gap);
+    background: var(--sheet-surface);
+    pointer-events: none;
+}
+
+.column-quick-add-outboard.index-rail {
+    transform: translateY(2px);
+}
+
+.column-quick-add-outboard.index-rail--visible {
+    transform: translate(0, 0);
+}
+
+.column-quick-add-outboard .axis-quick-add {
+    pointer-events: auto;
+}
+
+.column-quick-add-outboard:not(.index-rail--visible) .axis-quick-add {
+    pointer-events: none;
+}
+
 .row-index-strip {
+    grid-column: 1;
+    grid-row: 2;
+    position: relative;
     display: block;
     align-self: stretch;
     overflow: hidden;
@@ -2325,6 +2416,82 @@ textarea {
     padding-inline-end: var(--index-rail-gap);
     transform: translateX(-5px);
     background: var(--sheet-surface);
+}
+
+.axis-quick-add {
+    --axis-quick-add-size: 1.72rem;
+
+    position: relative;
+    z-index: 24;
+    display: grid;
+    place-items: center;
+    width: var(--axis-quick-add-size);
+    height: var(--axis-quick-add-size);
+    border: 1px solid color-mix(in oklab, var(--index-rail-border) 78%, transparent);
+    border-radius: 999px;
+    background:
+        linear-gradient(
+            180deg,
+            color-mix(in oklab, var(--index-rail-surface) 92%, white 8%) 0%,
+            color-mix(in oklab, var(--index-rail-surface) 94%, black 4%) 100%
+        );
+    color: color-mix(in oklab, var(--sheet-soft) 86%, var(--accent-strong));
+    box-shadow:
+        inset 0 1px 0 var(--index-rail-highlight),
+        0 8px 18px -14px color-mix(in oklab, var(--shadow-strong) 36%, transparent);
+    font-size: 1.12rem;
+    font-weight: 430;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+    transition:
+        background-color 150ms var(--ease-out-quart),
+        border-color 150ms var(--ease-out-quart),
+        color 150ms var(--ease-out-quart),
+        box-shadow 150ms var(--ease-out-quart),
+        transform 150ms var(--ease-out-quart);
+}
+
+.axis-quick-add:hover,
+.axis-quick-add:focus-visible {
+    outline: none;
+    border-color: color-mix(in oklab, var(--accent) 42%, var(--index-rail-border));
+    background: color-mix(in oklab, var(--accent-soft) 38%, var(--index-rail-surface));
+    color: color-mix(in oklab, var(--accent-strong) 84%, var(--sheet-ink));
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklab, white 32%, transparent),
+        0 10px 22px -16px color-mix(in oklab, var(--accent-strong) 42%, transparent);
+}
+
+.axis-quick-add:active {
+    transform: scale(0.96);
+}
+
+.axis-quick-add--column {
+    --axis-quick-add-size: min(1.85rem, calc(var(--index-rail-height-active) - 2px));
+
+    transform: none;
+    border-color: color-mix(in oklab, var(--index-rail-border) 92%, var(--accent) 8%);
+    color: color-mix(in oklab, var(--sheet-soft) 78%, var(--accent-strong));
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklab, white 34%, transparent),
+        0 8px 18px -15px color-mix(in oklab, var(--shadow-strong) 42%, transparent);
+}
+
+.axis-quick-add--column:active {
+    transform: scale(0.96);
+}
+
+.axis-quick-add--row {
+    --axis-quick-add-size: min(1.72rem, calc(var(--index-rail-width-active) - 4px));
+
+    transform: translateX(-1px);
+}
+
+.axis-quick-add--row:active {
+    transform: translateX(-1px) scale(0.96);
 }
 
 .row-index-shell {
@@ -2456,11 +2623,25 @@ textarea {
         0 6px 16px -12px color-mix(in oklab, var(--accent-strong) 38%, transparent);
 }
 
+.row-index-append-cell {
+    display: grid;
+    place-items: center;
+    border-bottom: 0;
+    background: transparent;
+}
+
+.row-index-append-cell:hover,
+.row-index-append-cell:focus-within {
+    background: transparent;
+}
+
 .row-index-cell:focus-visible {
     outline: none;
 }
 
 .grid-shell {
+    grid-column: 2;
+    grid-row: 2;
     position: relative;
     min-width: 0;
     min-height: 0;
@@ -2537,7 +2718,9 @@ textarea {
 
 .axis-column-selection-scroll-layer {
     position: absolute;
-    inset: 0;
+    top: 0;
+    bottom: 0;
+    left: 0;
     will-change: transform;
 }
 
@@ -2584,6 +2767,37 @@ textarea {
     line-height: 1;
     letter-spacing: 0;
     white-space: nowrap;
+}
+
+.axis-quick-add-preview {
+    position: absolute;
+    z-index: 26;
+    display: inline-grid;
+    place-items: center;
+    min-width: 4.6rem;
+    height: 1.5rem;
+    padding-inline: 0.64rem;
+    border: 1px solid color-mix(in oklab, var(--accent-strong) 38%, var(--chrome-border));
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--menu-bg) 86%, var(--accent-soft) 14%);
+    color: color-mix(in oklab, var(--accent-strong) 70%, var(--sheet-ink));
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklab, white 24%, transparent),
+        0 10px 24px -18px color-mix(in oklab, var(--accent-strong) 40%, transparent);
+    font-size: 0.72rem;
+    font-weight: 680;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.axis-quick-add-preview--column {
+    top: calc(var(--index-rail-height-active) + 0.5rem);
+    right: 1rem;
+}
+
+.axis-quick-add-preview--row {
+    left: calc(var(--index-rail-width-active) + 0.7rem);
+    bottom: calc(var(--formula-bar-safe-space) + 0.66rem);
 }
 
 .persistent-selection-ring {
@@ -5792,6 +6006,7 @@ textarea:focus-visible,
         --index-rail-width-active: 28px;
         --index-rail-height-active: 24px;
         --index-rail-gap: 5px;
+        --column-quick-add-gutter: 34px;
         min-height: 22rem;
     }
 

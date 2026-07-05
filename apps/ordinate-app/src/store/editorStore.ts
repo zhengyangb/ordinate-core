@@ -87,6 +87,7 @@ export interface EditorState {
   previewDeleteRow: (sheet: string, rowId: number, mode?: CoreRowDeleteMode) => CoreDeleteRowPreview;
   previewDeleteColumn: (sheet: string, colIndex: number) => CoreDeleteColumnPreview;
   insertRow: (sheet: string, area: CoreRowInsertArea, rowGapIndex: number, depth: number) => void;
+  insertRows: (sheet: string, area: CoreRowInsertArea, rowGapIndex: number, count: number, depth: number) => void;
   deleteRow: (sheet: string, rowId: number, mode?: CoreRowDeleteMode) => void;
   deleteRows: (sheet: string, targets: Array<{ rowId: number; mode?: CoreRowDeleteMode }>) => void;
   moveColumns: (sheet: string, colIds: number[], targetGapIndex: number) => void;
@@ -94,6 +95,7 @@ export interface EditorState {
   duplicateColumns: (sheet: string, colIds: number[], targetGapIndex: number) => void;
   duplicateRows: (sheet: string, rowIds: number[], targetGapIndex: number) => void;
   insertColumn: (sheet: string, colIndex: number) => void;
+  insertColumns: (sheet: string, colIndex: number, count: number) => void;
   deleteColumn: (sheet: string, colIndex: number) => void;
   deleteColumns: (sheet: string, colIndices: number[]) => void;
   exitSourceMode: () => void;
@@ -536,6 +538,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   insertRow: (sheet, area, rowGapIndex, depth) => {
     get().applyCoreEdits("Insert row", [{ op: "insert_row", sheet, area, rowGapIndex, depth }]);
   },
+  insertRows: (sheet, area, rowGapIndex, count, depth) => {
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("insertRows requires a positive integer count");
+    }
+    const edits: CoreEdit[] = Array.from({ length: count }, (_, offset) => ({
+      op: "insert_row",
+      sheet,
+      area,
+      rowGapIndex: rowGapIndex + offset,
+      depth,
+    }));
+    get().applyCoreEdits(count === 1 ? "Insert row" : "Insert rows", edits);
+  },
   deleteRow: (sheet, rowId, mode) => {
     get().applyCoreEdits("Delete row", [{ op: "delete_row", sheet, rowId, mode }]);
   },
@@ -567,6 +582,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   insertColumn: (sheet, colIndex) => {
     get().applyCoreEdits("Insert column", [{ op: "insert_column", sheet, colIndex }]);
+  },
+  insertColumns: (sheet, colIndex, count) => {
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("insertColumns requires a positive integer count");
+    }
+    const edits: CoreEdit[] = Array.from({ length: count }, (_, offset) => ({
+      op: "insert_column",
+      sheet,
+      colIndex: colIndex + offset,
+    }));
+    get().applyCoreEdits(count === 1 ? "Insert column" : "Insert columns", edits);
   },
   deleteColumn: (sheet, colIndex) => {
     get().applyCoreEdits("Delete column", [{ op: "delete_column", sheet, colIndex }]);

@@ -8,7 +8,11 @@ import {
   mergeColumnMetricsWithVisualOverrides,
   projectColumnTrackSpanToCenterLayer,
   projectColumnTrackSpanToViewport,
+  resolveColumnCenterTrackWidth,
+  resolveAppendRowSlot,
   resolveColumnTrackSpan,
+  resolveHorizontalWheelDelta,
+  shouldShowAppendColumnControl,
 } from "./gridGeometry";
 
 describe("grid geometry helpers", () => {
@@ -203,8 +207,52 @@ describe("grid geometry helpers", () => {
     );
   });
 
+  it("keeps the center track width scoped to real columns", () => {
+    expect(resolveColumnCenterTrackWidth([
+      { colIndex: 0, left: 0, width: 280 },
+      { colIndex: 1, left: 280, width: 132 },
+      { colIndex: 2, left: 412, width: 168 },
+    ], 280)).toBe(300);
+  });
+
+  it("shows column append chrome only when the real center track is at its right edge", () => {
+    expect(shouldShowAppendColumnControl({
+      centerTrackWidth: 660,
+      centerViewportWidth: 400,
+      scrollLeft: 0,
+    })).toBe(false);
+    expect(shouldShowAppendColumnControl({
+      centerTrackWidth: 660,
+      centerViewportWidth: 400,
+      scrollLeft: 260,
+    })).toBe(true);
+    expect(shouldShowAppendColumnControl({
+      centerTrackWidth: 300,
+      centerViewportWidth: 400,
+      scrollLeft: 0,
+    })).toBe(true);
+  });
+
+  it("places the append row immediately after the body row track", () => {
+    expect(resolveAppendRowSlot(684, 38)).toEqual({
+      top: 684,
+      height: 38,
+      bottom: 722,
+    });
+  });
+
+  it("fails early for invalid append slots", () => {
+    expect(() => resolveAppendRowSlot(-1, 38)).toThrow("appendRow.trackHeight must be a non-negative finite number");
+  });
+
   it("projects body row track positions into the visible grid viewport", () => {
     expect(bodyRowTrackYToViewportY(240, 80, 0)).toBe(320);
     expect(bodyRowTrackYToViewportY(240, 80, 120)).toBe(200);
+  });
+
+  it("recognizes horizontal wheel intent without hijacking vertical scrolling", () => {
+    expect(resolveHorizontalWheelDelta({ deltaX: 42, deltaY: 0, shiftKey: false })).toBe(42);
+    expect(resolveHorizontalWheelDelta({ deltaX: 0, deltaY: 42, shiftKey: true })).toBe(42);
+    expect(resolveHorizontalWheelDelta({ deltaX: 0, deltaY: 42, shiftKey: false })).toBe(0);
   });
 });
