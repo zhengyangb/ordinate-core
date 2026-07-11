@@ -476,6 +476,19 @@ describe("editor store history scenario matrix", () => {
       ],
     },
     {
+      name: "batch row delete command",
+      steps: [
+        {
+          name: "delete selected sibling rows",
+          expectedUndoLabel: "Delete rows",
+          act: (ctx) => ctx.store().deleteRows("Sheet", [
+            { rowId: ctx.rowId(2), mode: "node" },
+            { rowId: ctx.rowId(3), mode: "node" },
+          ]),
+        },
+      ],
+    },
+    {
       name: "structural column insert edit and delete",
       steps: [
         {
@@ -505,6 +518,16 @@ describe("editor store history scenario matrix", () => {
           name: "delete inserted column",
           expectedUndoLabel: "Delete column",
           act: (ctx) => ctx.store().deleteColumn("Sheet", ctx.sheet().colIds.indexOf(dataNumber(ctx, "insertedColId"))),
+        },
+      ],
+    },
+    {
+      name: "batch column delete command",
+      steps: [
+        {
+          name: "delete selected data columns",
+          expectedUndoLabel: "Delete columns",
+          act: (ctx) => ctx.store().deleteColumns("Sheet", [1, 2]),
         },
       ],
     },

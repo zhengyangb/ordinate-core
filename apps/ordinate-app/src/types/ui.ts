@@ -214,6 +214,7 @@ export type ColumnRailMenuView = {
   colIndex: number;
   colId: number;
   colLabel: string;
+  deleteSelectionCount?: number;
   hasLocalConfig: boolean;
   canStructureEdit: boolean;
   formatLocalKey: FormatLocalKey;
@@ -229,6 +230,7 @@ export type RowRailMenuView = {
   rowId: number;
   rowPath: string | null;
   hasChildren: boolean;
+  deleteSelectionCount?: number;
   canDisplayEdit: boolean;
   hasLocalConfig: boolean;
   formatLocalKey: FormatLocalKey;

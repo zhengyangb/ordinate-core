@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 
-import { CodeIcon, MoreIcon, OpenIcon, PageSetupIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
+import { ChevronLeftIcon, ChevronRightIcon, CodeIcon, MoreIcon, OpenIcon, PageSetupIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
 import { MenuDivider, MenuGroup, MenuHead, MenuOption, MenuSurface, MenuTitle } from "./MenuSurface";
 import type { SheetHealth, ToolSpec } from "../types/ui";
 import {
   computeSheetDropIndicator,
   computeSheetMoveTargetGapIndex,
+  computeSheetTabScrollState,
   computeSheetTabAutoScrollDelta,
   SHEET_DRAG_START_THRESHOLD_PX,
   type SheetTabRect,
+  type SheetTabScrollState,
 } from "../utils/sheetTabs";
 
 export type FileStatusTone = "neutral" | "dirty" | "saving" | "warning" | "error";
@@ -185,6 +187,10 @@ export default function AppChrome({
   const [renameError, setRenameError] = useState<SheetRenameErrorState | null>(null);
   const [sheetMenu, setSheetMenu] = useState<SheetMenuState | null>(null);
   const [sheetDragView, setSheetDragView] = useState<SheetDragView | null>(null);
+  const [sheetTabScrollState, setSheetTabScrollState] = useState<SheetTabScrollState>({
+    canScrollLeft: false,
+    canScrollRight: false,
+  });
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const sheetTabsViewportRef = useRef<HTMLDivElement | null>(null);
   const sheetMenuRef = useRef<HTMLDivElement | null>(null);
@@ -194,6 +200,24 @@ export default function AppChrome({
   const suppressClickSheetRef = useRef<string | null>(null);
   const latestSheetDragXRef = useRef<number | null>(null);
   const sheetDragAutoScrollRafRef = useRef<number | null>(null);
+
+  const refreshSheetTabScrollState = useCallback(() => {
+    const viewport = sheetTabsViewportRef.current;
+    if (!viewport) {
+      setSheetTabScrollState({ canScrollLeft: false, canScrollRight: false });
+      return;
+    }
+    const nextState = computeSheetTabScrollState({
+      scrollLeft: viewport.scrollLeft,
+      clientWidth: viewport.clientWidth,
+      scrollWidth: viewport.scrollWidth,
+    });
+    setSheetTabScrollState((current) =>
+      current.canScrollLeft === nextState.canScrollLeft && current.canScrollRight === nextState.canScrollRight
+        ? current
+        : nextState,
+    );
+  }, []);
 
   useEffect(() => {
     if (!renamingSheet) return;
@@ -217,7 +241,34 @@ export default function AppChrome({
   useEffect(() => {
     const activeTab = activeSheet ? sheetTabRefs.current.get(activeSheet) : null;
     activeTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeSheet, sheetNames]);
+    window.requestAnimationFrame(refreshSheetTabScrollState);
+  }, [activeSheet, sheetNames, refreshSheetTabScrollState]);
+
+  useEffect(() => {
+    const viewport = sheetTabsViewportRef.current;
+    if (!viewport) return undefined;
+    refreshSheetTabScrollState();
+    const handleScroll = () => refreshSheetTabScrollState();
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+    const observer = new ResizeObserver(() => refreshSheetTabScrollState());
+    observer.observe(viewport);
+    const tabs = viewport.firstElementChild;
+    if (tabs) observer.observe(tabs);
+    return () => {
+      viewport.removeEventListener("scroll", handleScroll);
+      observer.disconnect();
+    };
+  }, [refreshSheetTabScrollState, sheetNames]);
+
+  const scrollSheetTabs = useCallback((direction: "left" | "right") => {
+    const viewport = sheetTabsViewportRef.current;
+    if (!viewport) throw new Error("sheet tab scroll requires a sheet tab viewport");
+    const distance = Math.max(120, Math.floor(viewport.clientWidth * 0.72));
+    viewport.scrollBy({
+      left: direction === "left" ? -distance : distance,
+      behavior: "smooth",
+    });
+  }, []);
 
   useEffect(() => {
     if (!sheetMenu) return;
@@ -437,6 +488,7 @@ export default function AppChrome({
   };
 
   const sheetMenuIndex = sheetMenu ? sheetNames.indexOf(sheetMenu.sheetName) : -1;
+  const showSheetTabScrollControls = sheetTabScrollState.canScrollLeft || sheetTabScrollState.canScrollRight;
 
   return (
     <header className={mode === "source" ? "app-chrome source-mode" : "app-chrome"}>
@@ -640,7 +692,31 @@ export default function AppChrome({
 
       <div className="sheetbar-shell" aria-hidden={mode === "source"}>
         <div className="sheetbar">
-          <div className="sheet-tabs-viewport" ref={sheetTabsViewportRef}>
+          {showSheetTabScrollControls ? (
+            <button
+              className="sheet-scroll-button sheet-scroll-button--left"
+              type="button"
+              aria-label="Scroll sheets left"
+              disabled={mode !== "table" || !sheetTabScrollState.canScrollLeft}
+              tabIndex={mode === "source" ? -1 : 0}
+              onClick={() => scrollSheetTabs("left")}
+              onMouseEnter={(event) => onTooltipEnter("Scroll sheets left", event.currentTarget)}
+              onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+              onFocus={(event) => onTooltipEnter("Scroll sheets left", event.currentTarget)}
+              onBlur={(event) => onTooltipRelease(event.currentTarget)}
+              onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+            >
+              <ChevronLeftIcon />
+            </button>
+          ) : null}
+          <div
+            className={[
+              "sheet-tabs-viewport",
+              sheetTabScrollState.canScrollLeft ? "can-fade-left" : "",
+              sheetTabScrollState.canScrollRight ? "can-fade-right" : "",
+            ].filter(Boolean).join(" ")}
+            ref={sheetTabsViewportRef}
+          >
             <div className="sheet-tabs" role="tablist" aria-label="Sheets">
             {sheetNames.map((sheetName, sheetIndex) => (
               <button
@@ -695,6 +771,7 @@ export default function AppChrome({
                   }
                 }}
                 aria-invalid={sheetHealthByName[sheetName] === "invalid"}
+                title={sheetName}
               >
                 {sheetName === renamingSheet ? (
                   <input
@@ -743,6 +820,23 @@ export default function AppChrome({
               ) : null}
             </div>
           </div>
+          {showSheetTabScrollControls ? (
+            <button
+              className="sheet-scroll-button sheet-scroll-button--right"
+              type="button"
+              aria-label="Scroll sheets right"
+              disabled={mode !== "table" || !sheetTabScrollState.canScrollRight}
+              tabIndex={mode === "source" ? -1 : 0}
+              onClick={() => scrollSheetTabs("right")}
+              onMouseEnter={(event) => onTooltipEnter("Scroll sheets right", event.currentTarget)}
+              onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+              onFocus={(event) => onTooltipEnter("Scroll sheets right", event.currentTarget)}
+              onBlur={(event) => onTooltipRelease(event.currentTarget)}
+              onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+            >
+              <ChevronRightIcon />
+            </button>
+          ) : null}
           <button
             className="sheet-add"
             type="button"

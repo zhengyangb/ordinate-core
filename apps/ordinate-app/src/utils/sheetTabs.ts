@@ -13,12 +13,37 @@ export type SheetDropIndicator = {
   left: number;
 };
 
+export type SheetTabScrollState = {
+  canScrollLeft: boolean;
+  canScrollRight: boolean;
+};
+
 export function nextSheetName(existingNames: readonly string[]): string {
   const used = new Set(existingNames);
   for (let index = 1; ; index += 1) {
     const candidate = `Sheet ${index}`;
     if (!used.has(candidate)) return candidate;
   }
+}
+
+export function computeSheetTabScrollState(args: {
+  scrollLeft: number;
+  clientWidth: number;
+  scrollWidth: number;
+}): SheetTabScrollState {
+  const { scrollLeft, clientWidth, scrollWidth } = args;
+  assertFiniteNumber(scrollLeft, "scrollLeft");
+  assertFiniteNumber(clientWidth, "clientWidth");
+  assertFiniteNumber(scrollWidth, "scrollWidth");
+  if (scrollLeft < 0 || clientWidth < 0 || scrollWidth < 0) {
+    throw new Error("sheet tab scroll metrics must be non-negative");
+  }
+  const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
+  const epsilon = 1;
+  return {
+    canScrollLeft: scrollLeft > epsilon,
+    canScrollRight: scrollLeft < maxScrollLeft - epsilon,
+  };
 }
 
 export function computeSheetMoveTargetGapIndex(sourceIndex: number, rawGapIndex: number): number {

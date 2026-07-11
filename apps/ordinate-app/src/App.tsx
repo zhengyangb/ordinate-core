@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import {
   AllCommunityModule,
   ModuleRegistry,
@@ -14,6 +14,7 @@ import {
 import {
   getCellTextView,
   resolveSheetRowStructure,
+  type CoreAffectedFormulaCell,
   type SheetEvaluation,
   type SheetPresentation,
   type RuntimeValue,
@@ -69,9 +70,10 @@ import { formatSpecFromLocalSelection } from "./utils/formatDisplay";
 import { resolvePostRowStructureColumnIndex, resolveRowInsert } from "./utils/rowStructureEdits";
 import {
   BLANK_RUNTIME_VALUE,
+  APPEND_AXIS_SLOT_GAP,
+  APPEND_COLUMN_WIDTH,
   CHROME_TRANSITION_MS,
   CONTROL_TOOLTIP_DELAY_MS,
-  DATA_COLUMN_MIN_WIDTH,
   FLOATING_MENU_GAP,
   FLOATING_MENU_VIEWPORT_MARGIN,
   FORMULA_BAR_AUTO_PAN_CLEARANCE,
@@ -100,6 +102,10 @@ import {
   queryGridBodyViewport,
   queryGridHorizontalViewport,
   resolveAnchoredMenuPosition,
+  resolveColumnDeleteTargets,
+  resolveDataColumnSizingPolicy,
+  resolveGridInstanceKey,
+  resolveRowDeleteTargets,
   resolveRailMenuPosition,
   resolveInitialThemeMode,
   ringRectEqual,
@@ -107,10 +113,24 @@ import {
   toColumnLetters,
   trimSheetColCount,
 } from "./utils/appHelpers";
+import {
+  EMPTY_GRID_SCROLL_SNAPSHOT,
+  gridScrollSnapshotEqual,
+  projectActiveSheetGridScrollSnapshot,
+  bodyRowTrackYToViewportY,
+  columnTrackXToViewportX,
+  resolveColumnCenterTrackWidth,
+  resolveHorizontalWheelDelta,
+  type GridScrollSnapshot,
+  type SheetGridScrollSnapshot,
+} from "./utils/gridGeometry";
 import { selectionDebugLog } from "./utils/selectionDebug";
 import {
+  resolveReferenceOverlayPlane,
+  resolveSelectionOverlayPlane,
   resolveSelectionRingCell,
   resolveSelectionRingRect,
+  type SelectionOverlayPlane,
 } from "./utils/selectionRing";
 import { buildFormulaBarData } from "./utils/formulaBarData";
 import { resolveCoreRegionTarget } from "./utils/coreTargets";
@@ -153,10 +173,9 @@ import {
   type RowDragSource,
 } from "./utils/axisRailDrag";
 import {
-  bodyRowTrackYToViewportY,
-  columnTrackXToViewportX,
-} from "./utils/gridGeometry";
-
+  resolveAppendAnchorScrollPositionAfterSizeChange,
+  resolveAppendEndScrollPosition,
+} from "./utils/quickAddControls";
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 type AutoPanTarget = {
@@ -220,11 +239,20 @@ type RowAxisSelectionDragSession = {
 
 type AxisSelectionDragSession = ColumnAxisSelectionDragSession | RowAxisSelectionDragSession;
 
+function countUniqueAffectedFormulaCells(cells: CoreAffectedFormulaCell[]): number {
+  const keys = new Set<string>();
+  for (const cell of cells) {
+    keys.add(`${cell.sheet}:${cell.rowId}:${cell.colId}`);
+  }
+  return keys.size;
+}
+
 type FormulaReferenceOverlay = {
   tokenId: string;
   rect: Rect;
   colorIndex: number;
   active: boolean;
+  plane: SelectionOverlayPlane;
 };
 
 function fileSessionStatus(
@@ -366,13 +394,15 @@ export default function App() {
     convertRowsToHeader,
     convertRowsToBody,
     insertRow,
-    deleteRow,
+    insertRows,
+    deleteRows,
     moveColumns,
     moveRows,
     duplicateColumns,
     duplicateRows,
     insertColumn,
-    deleteColumn,
+    insertColumns,
+    deleteColumns,
     canUndo,
     canRedo,
     undoLabel,
@@ -442,10 +472,7 @@ export default function App() {
   >(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
-  const [hasVerticalOverlap, setHasVerticalOverlap] = useState(false);
-  const [hasHorizontalOverlap, setHasHorizontalOverlap] = useState(false);
-  const [bodyScrollTop, setBodyScrollTop] = useState(0);
-  const [bodyScrollLeft, setBodyScrollLeft] = useState(0);
+  const [gridScrollSnapshot, setGridScrollSnapshot] = useState<SheetGridScrollSnapshot>(EMPTY_GRID_SCROLL_SNAPSHOT);
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
   const [rowIndexTrackHeight, setRowIndexTrackHeight] = useState(0);
   const [columnMetrics, setColumnMetrics] = useState<ColumnMetric[]>([]);
@@ -465,6 +492,24 @@ export default function App() {
   const selectionRingSyncRafRef = useRef<number | null>(null);
   const gridMetricsSyncRafRef = useRef<number | null>(null);
   const autoPanRafRef = useRef<number | null>(null);
+  const appendRowAnchorRafRef = useRef<number | null>(null);
+  const appendColumnAnchorRafRef = useRef<number | null>(null);
+  const activeSheetRef = useRef(activeSheet);
+  const pendingAppendRowAnchorScrollRef = useRef<{
+    sheetName: string;
+    previousScrollTop: number;
+    previousScrollHeight: number;
+    attemptsRemaining: number;
+    settleFramesRemaining: number;
+    focusTarget: { rAbs: number; colId: string } | null;
+    focusApplied: boolean;
+  } | null>(null);
+  const pendingAppendColumnAnchorScrollRef = useRef<{
+    sheetName: string;
+    expectedColumnCount: number;
+    attemptsRemaining: number;
+    settleFramesRemaining: number;
+  } | null>(null);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
   const selectionRingRef = useRef<HTMLDivElement | null>(null);
   const selectionRangeRef = useRef<HTMLDivElement | null>(null);
@@ -481,12 +526,10 @@ export default function App() {
   const selectionDragPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const selectionAutoScrollRafRef = useRef<number | null>(null);
   const suppressCellFocusSelectionUntilRef = useRef(0);
-  const columnTrackRef = useRef<HTMLDivElement | null>(null);
-  const axisColumnSelectionTrackRef = useRef<HTMLDivElement | null>(null);
-  const headerCenterTrackRef = useRef<HTMLDivElement | null>(null);
   const rowTrackRef = useRef<HTMLDivElement | null>(null);
   const gridApiRef = useRef<GridApi<GridRow> | null>(null);
   const pendingHeaderSelectionRef = useRef<{ colId: string; rAbs: number; expiresAt: number } | null>(null);
+  const pendingBodyFocusRef = useRef<{ rAbs: number; cAbs: number; expiresAt: number } | null>(null);
   const themeControlRef = useRef<HTMLDivElement | null>(null);
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
   const toolButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -508,6 +551,11 @@ export default function App() {
   const suppressedTooltipTargetRef = useRef<HTMLElement | null>(null);
   const fileSessionEditorSignatureRef = useRef<string | null>(null);
   const shouldWarnBeforeUnload = fileSessionDocumentDirty === "dirty" && fileSessionLocalDraftState !== "current";
+
+  useLayoutEffect(() => {
+    activeSheetRef.current = activeSheet;
+  }, [activeSheet]);
+
   const isGridApiAlive = useCallback((api: GridApi<GridRow> | null): api is GridApi<GridRow> => {
     return Boolean(api && !api.isDestroyed());
   }, []);
@@ -656,6 +704,16 @@ export default function App() {
       0,
     );
   }, [headerColCount]);
+  const projectedGridScrollSnapshot = useMemo<GridScrollSnapshot>(() => {
+    const centerTrackWidth = resolveColumnCenterTrackWidth(columnMetrics, pinnedHeaderWidth);
+    return projectActiveSheetGridScrollSnapshot({
+      activeSheet,
+      snapshot: gridScrollSnapshot,
+      centerTrackWidth,
+      appendSlotSize: APPEND_COLUMN_WIDTH,
+      appendGap: APPEND_AXIS_SLOT_GAP,
+    });
+  }, [activeSheet, gridScrollSnapshot, columnMetrics, pinnedHeaderWidth]);
 
   const headerMatrix = useMemo(() => {
     return buildHeaderMatrix(
@@ -720,7 +778,7 @@ export default function App() {
   }, [currentSheetPresentation, sheetColCount]);
 
   const railMenu = useMemo<RailMenuView | null>(() => {
-    return buildRailMenu(
+    const baseMenu = buildRailMenu(
       openRailMenuTarget,
       sheetColCount,
       headerColCount,
@@ -729,7 +787,32 @@ export default function App() {
       currentSheetPresentation,
       columnHasLocalConfig,
     );
-  }, [openRailMenuTarget, sheetColCount, headerColCount, currentSheet, currentSheetState, currentSheetPresentation, columnHasLocalConfig]);
+    if (!baseMenu) return null;
+    if (
+      baseMenu.kind === "column" &&
+      selection?.kind === "column" &&
+      baseMenu.colIndex >= selection.colStart &&
+      baseMenu.colIndex <= selection.colEnd
+    ) {
+      return {
+        ...baseMenu,
+        deleteSelectionCount: selection.colEnd - selection.colStart + 1,
+      };
+    }
+    if (
+      baseMenu.kind === "row" &&
+      selection?.kind === "row" &&
+      baseMenu.area === selection.area &&
+      baseMenu.rowNumber >= selection.rowStart &&
+      baseMenu.rowNumber <= selection.rowEnd
+    ) {
+      return {
+        ...baseMenu,
+        deleteSelectionCount: selection.rowEnd - selection.rowStart + 1,
+      };
+    }
+    return baseMenu;
+  }, [openRailMenuTarget, sheetColCount, headerColCount, currentSheet, currentSheetState, currentSheetPresentation, columnHasLocalConfig, selection]);
 
   useEffect(() => {
     if (selection?.kind !== "column") return;
@@ -1512,8 +1595,9 @@ export default function App() {
         rect: view.rect,
         colorIndex: view.colorIndex,
         active: view.id === activeReferenceTokenId,
+        plane: resolveReferenceOverlayPlane(view.rect, headerRowCount, headerColCount),
       }));
-  }, [activeReferenceTokenId, activeSheet, formulaReferenceViews]);
+  }, [activeReferenceTokenId, activeSheet, formulaReferenceViews, headerColCount, headerRowCount]);
 
 
   useEffect(() => {
@@ -1534,7 +1618,12 @@ export default function App() {
       setColumnMetrics((current) => (current.length === 0 ? current : []));
       return;
     }
-    const snapshot = gridViewportAdapter.collectColumnMetrics(gridWrapRef.current, api, colIndexLookup, sheetColCount);
+    const snapshot = gridViewportAdapter.collectColumnMetrics(
+      gridWrapRef.current,
+      api,
+      colIndexLookup,
+      sheetColCount,
+    );
     setColumnMetrics((current) => (columnMetricsEqual(current, snapshot) ? current : snapshot));
   }, [gridViewportAdapter, colIndexLookup, sheetColCount, isGridApiAlive]);
 
@@ -1701,12 +1790,29 @@ export default function App() {
         return;
       }
 
-      ring.classList.remove("is-hidden");
-      if (!ringRectEqual(selectionRingRectRef.current, nextRect)) {
-        ring.style.transform = `translate3d(${nextRect.left}px, ${nextRect.top}px, 0)`;
-        ring.style.width = `${nextRect.width}px`;
-        ring.style.height = `${nextRect.height}px`;
-        selectionRingRectRef.current = nextRect;
+      const planeClass = `selection-plane--${resolveSelectionOverlayPlane(
+        selectedCell.area,
+        selectedCell.logical.cAbs,
+        headerColCount,
+      )}`;
+      ring.classList.remove(
+        "selection-plane--header-native",
+        "selection-plane--body-center",
+        "selection-plane--body-pinned",
+      );
+      ring.classList.add(planeClass);
+
+      if (selectedCell.area === "header") {
+        ring.classList.add("is-hidden");
+        selectionRingRectRef.current = null;
+      } else {
+        ring.classList.remove("is-hidden");
+        if (!ringRectEqual(selectionRingRectRef.current, nextRect)) {
+          ring.style.transform = `translate3d(${nextRect.left}px, ${nextRect.top}px, 0)`;
+          ring.style.width = `${nextRect.width}px`;
+          ring.style.height = `${nextRect.height}px`;
+          selectionRingRectRef.current = nextRect;
+        }
       }
 
       if (!selectedRange || !isRangeSelection) {
@@ -1738,7 +1844,7 @@ export default function App() {
         selectionRangeRectRef.current = rangeRect;
       }
     },
-    [mode, isActiveSheetBlocked, selectedCell, selectedRange, isRangeSelection, hideSelectionOverlays, resolveLogicalCellRect],
+    [mode, isActiveSheetBlocked, selectedCell, selectedRange, isRangeSelection, headerColCount, hideSelectionOverlays, resolveLogicalCellRect],
   );
 
   const syncFormulaReferenceOverlays = useCallback(
@@ -1767,6 +1873,13 @@ export default function App() {
       for (const reference of formulaReferenceOverlays) {
         const overlay = layer.querySelector<HTMLElement>(`.formula-reference-range[data-token-id="${CSS.escape(reference.tokenId)}"]`);
         if (!overlay) continue;
+        const planeClass = `formula-plane--${reference.plane}`;
+        overlay.classList.remove(
+          "formula-plane--header-native",
+          "formula-plane--body-center",
+          "formula-plane--body-pinned",
+        );
+        overlay.classList.add(planeClass);
         const startRect = resolveLogicalCellRect(root, gridShell, {
           rAbs: reference.rect.rowStart,
           cAbs: reference.rect.colStart,
@@ -1830,6 +1943,102 @@ export default function App() {
     [isGridApiAlive, syncRowIndexMetrics, syncColumnMetrics, scheduleSelectionRingSync],
   );
 
+  const applyPendingAppendRowAnchorScroll = useCallback(() => {
+    const pending = pendingAppendRowAnchorScrollRef.current;
+    if (!pending) return false;
+    if (pending.sheetName !== activeSheetRef.current) {
+      pendingAppendRowAnchorScrollRef.current = null;
+      return false;
+    }
+    const root = gridWrapRef.current;
+    if (!root) return false;
+    const bodyViewport = queryGridBodyViewport(root);
+    if (!bodyViewport) return false;
+    const targetScrollTop = resolveAppendAnchorScrollPositionAfterSizeChange({
+      scrollPosition: pending.previousScrollTop,
+      previousScrollSize: pending.previousScrollHeight,
+      nextScrollSize: bodyViewport.scrollHeight,
+      viewportSize: bodyViewport.clientHeight,
+    });
+    if (targetScrollTop == null) return false;
+    bodyViewport.scrollTop = targetScrollTop;
+    if (pending.focusTarget && !pending.focusApplied && isGridApiAlive(gridApiRef.current)) {
+      const displayedRowIndex = absoluteRowToDisplayedIndex.get(pending.focusTarget.rAbs);
+      if (displayedRowIndex != null) {
+        gridApiRef.current.setFocusedCell(displayedRowIndex, pending.focusTarget.colId);
+        bodyViewport.scrollTop = targetScrollTop;
+        pending.focusApplied = true;
+      }
+    }
+    return true;
+  }, [absoluteRowToDisplayedIndex, isGridApiAlive]);
+
+  const applyPendingAppendColumnAnchorScroll = useCallback(() => {
+    const pending = pendingAppendColumnAnchorScrollRef.current;
+    if (!pending) return false;
+    if (pending.sheetName !== activeSheetRef.current) {
+      pendingAppendColumnAnchorScrollRef.current = null;
+      return false;
+    }
+    const api = gridApiRef.current;
+    if (!isGridApiAlive(api) || api.getAllDisplayedColumns().length !== pending.expectedColumnCount) {
+      return false;
+    }
+    const root = gridWrapRef.current;
+    const horizontalViewport = root ? queryGridHorizontalViewport(root) : null;
+    if (!horizontalViewport || horizontalViewport.clientWidth <= 0) return false;
+    const targetScrollLeft = resolveAppendEndScrollPosition({
+      scrollSize: horizontalViewport.scrollWidth,
+      viewportSize: horizontalViewport.clientWidth,
+    });
+    horizontalViewport.scrollLeft = targetScrollLeft;
+    setGridScrollSnapshot((current) => {
+      const sheetName = activeSheetRef.current;
+      const next = {
+        ...current,
+        sheetName,
+        left: targetScrollLeft,
+        hasHorizontalOverlap: targetScrollLeft > 0.5,
+      };
+      return gridScrollSnapshotEqual(current, next) ? current : next;
+    });
+    scheduleGridMetricsSync(api);
+    return true;
+  }, [isGridApiAlive, scheduleGridMetricsSync]);
+
+  const scheduleAppendRowAnchorScrollFlush = useCallback(() => {
+    if (appendRowAnchorRafRef.current != null) {
+      window.cancelAnimationFrame(appendRowAnchorRafRef.current);
+    }
+
+    const tick = () => {
+      appendRowAnchorRafRef.current = null;
+      const pending = pendingAppendRowAnchorScrollRef.current;
+      if (!pending) return;
+
+      const applied = applyPendingAppendRowAnchorScroll();
+      const latestPending = pendingAppendRowAnchorScrollRef.current;
+      if (!latestPending) return;
+      if (applied) {
+        latestPending.settleFramesRemaining -= 1;
+      } else {
+        latestPending.attemptsRemaining -= 1;
+      }
+
+      if (
+        (applied && latestPending.settleFramesRemaining <= 0) ||
+        (!applied && latestPending.attemptsRemaining <= 0)
+      ) {
+        pendingAppendRowAnchorScrollRef.current = null;
+        return;
+      }
+
+      appendRowAnchorRafRef.current = window.requestAnimationFrame(tick);
+    };
+
+    appendRowAnchorRafRef.current = window.requestAnimationFrame(tick);
+  }, [applyPendingAppendRowAnchorScroll]);
+
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
     const root = gridWrapRef.current;
@@ -1866,6 +2075,14 @@ export default function App() {
       if (autoPanRafRef.current != null) {
         window.cancelAnimationFrame(autoPanRafRef.current);
       }
+      if (appendRowAnchorRafRef.current != null) {
+        window.cancelAnimationFrame(appendRowAnchorRafRef.current);
+        appendRowAnchorRafRef.current = null;
+      }
+      if (appendColumnAnchorRafRef.current != null) {
+        window.cancelAnimationFrame(appendColumnAnchorRafRef.current);
+        appendColumnAnchorRafRef.current = null;
+      }
     };
   }, []);
 
@@ -1896,11 +2113,13 @@ export default function App() {
 
   const handleModelUpdated = useCallback(
     (event: ModelUpdatedEvent<GridRow>) => {
+      applyPendingAppendRowAnchorScroll();
+      applyPendingAppendColumnAnchorScroll();
       syncRowIndexMetrics(event.api);
       syncColumnMetrics(event.api);
       scheduleSelectionRingSync();
     },
-    [syncRowIndexMetrics, syncColumnMetrics, scheduleSelectionRingSync],
+    [applyPendingAppendRowAnchorScroll, applyPendingAppendColumnAnchorScroll, syncRowIndexMetrics, syncColumnMetrics, scheduleSelectionRingSync],
   );
 
   const handleGridSizeChanged = useCallback(
@@ -1909,6 +2128,24 @@ export default function App() {
     },
     [scheduleGridMetricsSync],
   );
+
+  const handleHeaderHorizontalWheel = useCallback((event: ReactWheelEvent<HTMLElement>) => {
+    const deltaLeft = resolveHorizontalWheelDelta({
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      shiftKey: event.shiftKey,
+    });
+    if (deltaLeft === 0) return;
+
+    const root = gridWrapRef.current;
+    if (!root) {
+      throw new Error("header horizontal wheel requires grid root");
+    }
+    const didScroll = gridViewportAdapter.scrollHorizontalViewport(root, deltaLeft);
+    if (!didScroll) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, [gridViewportAdapter]);
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -1922,7 +2159,8 @@ export default function App() {
   const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
     if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
 
-    return Array.from({ length: sheetColCount }, (_, colIndex) => {
+    const dataColumnSizing = resolveDataColumnSizingPolicy(sheetColCount, headerColCount, headerRowCount);
+    const realColumnDefs = Array.from({ length: sheetColCount }, (_, colIndex) => {
       const field = toColFieldId(colIndex);
       const isHeaderColumn = colIndex < headerColCount;
       const leafHeader = headerLeafLabels[colIndex] ?? `C${colIndex + 1}`;
@@ -1999,8 +2237,7 @@ export default function App() {
 
       return {
         ...baseDef,
-        minWidth: DATA_COLUMN_MIN_WIDTH,
-        flex: 1,
+        ...dataColumnSizing,
         headerClass: "data-column-header",
         cellRenderer: (params: { data?: GridRow; value?: unknown }) => {
           const kind = params.data?.[`__kind_${colIndex}`];
@@ -2060,11 +2297,14 @@ export default function App() {
         },
       } satisfies ColDef<GridRow>;
     });
+
+    return realColumnDefs;
   }, [
     currentSheet,
     currentSheetState,
     sheetColCount,
     headerColCount,
+    headerRowCount,
     headerLeafLabels,
     headerSemanticLabels,
     toggleCollapse,
@@ -2743,29 +2983,33 @@ export default function App() {
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
     const root = gridWrapRef.current;
-    const columnTrack = columnTrackRef.current;
-    const headerCenterTrack = headerCenterTrackRef.current;
-    const rowTrack = rowTrackRef.current;
-    if (!root || !columnTrack || !rowTrack) return;
+    if (!root) return;
 
-    return gridViewportAdapter.attachViewportSync(root, ({ top, left, hasVerticalOverlap: nextVertical, hasHorizontalOverlap: nextHorizontal }) => {
-      rowTrack.style.transform = `translateY(${-top}px)`;
-      columnTrack.style.transform = `translateX(${-left}px)`;
-      const axisColumnSelectionTrack = axisColumnSelectionTrackRef.current;
-      if (axisColumnSelectionTrack) {
-        axisColumnSelectionTrack.style.transform = `translateX(${-left}px)`;
+    return gridViewportAdapter.attachViewportSync(root, (snapshot) => {
+      setGridScrollSnapshot((current) => {
+        const next = { ...snapshot, sheetName: activeSheet };
+        return gridScrollSnapshotEqual(current, next) ? current : next;
+      });
+    }, ({ top, left }) => {
+      const tableStage = root.closest<HTMLElement>(".table-stage");
+      if (!tableStage) {
+        throw new Error("grid viewport sync requires a table stage");
       }
-      if (headerCenterTrack) {
-        headerCenterTrack.style.transform = `translateX(${-left}px)`;
-      }
+      tableStage.classList.toggle("has-scroll-y", top > 0.5);
+      tableStage.classList.toggle("has-scroll-x", left > 0.5);
       syncSelectionRing(root);
       syncFormulaReferenceOverlays(root);
-      setHasVerticalOverlap((current) => (current === nextVertical ? current : nextVertical));
-      setHasHorizontalOverlap((current) => (current === nextHorizontal ? current : nextHorizontal));
-      setBodyScrollTop((current) => (Math.abs(current - top) < 0.5 ? current : top));
-      setBodyScrollLeft((current) => (Math.abs(current - left) < 0.5 ? current : left));
     });
-  }, [mode, isActiveSheetBlocked, activeSheet, rowData.length, headerOverlayHeight, syncSelectionRing, syncFormulaReferenceOverlays, gridViewportAdapter]);
+  }, [
+    mode,
+    isActiveSheetBlocked,
+    activeSheet,
+    rowData.length,
+    headerOverlayHeight,
+    syncSelectionRing,
+    syncFormulaReferenceOverlays,
+    gridViewportAdapter,
+  ]);
 
   useEffect(() => {
     scheduleSelectionRingSync();
@@ -3055,11 +3299,11 @@ export default function App() {
 
   const focusBodyCellAt = useCallback(
     (rAbs: number, cAbs: number) => {
-      if (mode !== "table" || isActiveSheetBlocked) return;
-      if (!isGridApiAlive(gridApiRef.current)) return;
+      if (mode !== "table" || isActiveSheetBlocked) return false;
+      if (!isGridApiAlive(gridApiRef.current)) return false;
 
       const displayedRowIndex = absoluteRowToDisplayedIndex.get(rAbs);
-      if (displayedRowIndex == null) return;
+      if (displayedRowIndex == null) return false;
 
       const colId = toColFieldId(cAbs);
       const rowPath = resolveAbsoluteRowPath(rAbs);
@@ -3077,9 +3321,22 @@ export default function App() {
       requestAnimationFrame(() => {
         gridApiRef.current?.setFocusedCell(displayedRowIndex, colId);
       });
+      return true;
     },
     [mode, isActiveSheetBlocked, resolveAbsoluteRowPath, absoluteRowToDisplayedIndex, isGridApiAlive],
   );
+
+  useEffect(() => {
+    const pending = pendingBodyFocusRef.current;
+    if (!pending) return;
+    if (performance.now() > pending.expiresAt) {
+      pendingBodyFocusRef.current = null;
+      return;
+    }
+    if (!absoluteRowToDisplayedIndex.has(pending.rAbs)) return;
+    pendingBodyFocusRef.current = null;
+    focusBodyCellAt(pending.rAbs, pending.cAbs);
+  }, [absoluteRowToDisplayedIndex, focusBodyCellAt]);
 
   const focusSelectedBodyCell = useCallback(() => {
     if (mode !== "table" || isActiveSheetBlocked) return;
@@ -3090,6 +3347,91 @@ export default function App() {
     suppressCellFocusSelectionUntilRef.current = performance.now() + 320;
     gridApiRef.current.setFocusedCell(displayedRowIndex, selectedCell.colId);
   }, [mode, isActiveSheetBlocked, selectedCell, absoluteRowToDisplayedIndex, isGridApiAlive]);
+
+  const scheduleColumnIntoView = useCallback((colIndex: number) => {
+    if (!Number.isInteger(colIndex) || colIndex < 0) {
+      throw new Error("column visibility target requires a non-negative integer column index");
+    }
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (!isGridApiAlive(gridApiRef.current)) return;
+        gridApiRef.current.ensureColumnVisible(toColFieldId(colIndex), "end");
+        scheduleGridMetricsSync(gridApiRef.current);
+      });
+    });
+  }, [isGridApiAlive, scheduleGridMetricsSync]);
+
+  const queueAppendRowAnchorScroll = useCallback((
+    sheetName: string,
+    previousScrollTop: number,
+    previousScrollHeight: number,
+    focusTarget: { rAbs: number; colId: string } | null,
+  ) => {
+    if (!sheetName) {
+      throw new Error("append row anchor requires a sheet name");
+    }
+    if (!Number.isFinite(previousScrollTop) || previousScrollTop < 0) {
+      throw new Error("append row anchor requires a non-negative previous scroll top");
+    }
+    if (!Number.isFinite(previousScrollHeight) || previousScrollHeight < 0) {
+      throw new Error("append row anchor requires a non-negative previous scroll height");
+    }
+    pendingAppendRowAnchorScrollRef.current = {
+      sheetName,
+      previousScrollTop,
+      previousScrollHeight,
+      attemptsRemaining: 12,
+      settleFramesRemaining: 3,
+      focusTarget,
+      focusApplied: false,
+    };
+    scheduleAppendRowAnchorScrollFlush();
+  }, [scheduleAppendRowAnchorScrollFlush]);
+
+  useLayoutEffect(() => {
+    if (!applyPendingAppendRowAnchorScroll()) return;
+    scheduleGridMetricsSync(gridApiRef.current);
+  }, [rowData.length, applyPendingAppendRowAnchorScroll, scheduleGridMetricsSync]);
+
+  const scheduleAppendColumnAnchorScroll = useCallback((sheetName: string, expectedColumnCount: number) => {
+    if (!sheetName) {
+      throw new Error("append column anchor requires a sheet name");
+    }
+    if (!Number.isInteger(expectedColumnCount) || expectedColumnCount <= 0) {
+      throw new Error("append column anchor requires a positive expected column count");
+    }
+    if (appendColumnAnchorRafRef.current != null) {
+      window.cancelAnimationFrame(appendColumnAnchorRafRef.current);
+    }
+    pendingAppendColumnAnchorScrollRef.current = {
+      sheetName,
+      expectedColumnCount,
+      attemptsRemaining: 30,
+      settleFramesRemaining: 3,
+    };
+    const tick = () => {
+      appendColumnAnchorRafRef.current = null;
+      const pending = pendingAppendColumnAnchorScrollRef.current;
+      if (!pending) return;
+      const applied = applyPendingAppendColumnAnchorScroll();
+      const latestPending = pendingAppendColumnAnchorScrollRef.current;
+      if (!latestPending) return;
+      if (applied) {
+        latestPending.settleFramesRemaining -= 1;
+      } else {
+        latestPending.attemptsRemaining -= 1;
+      }
+      if (
+        (applied && latestPending.settleFramesRemaining <= 0) ||
+        (!applied && latestPending.attemptsRemaining <= 0)
+      ) {
+        pendingAppendColumnAnchorScrollRef.current = null;
+        return;
+      }
+      appendColumnAnchorRafRef.current = window.requestAnimationFrame(tick);
+    };
+    appendColumnAnchorRafRef.current = window.requestAnimationFrame(tick);
+  }, [applyPendingAppendColumnAnchorScroll]);
 
   const stopAxisAutoPan = useCallback(() => {
     if (axisAutoPanRafRef.current != null) {
@@ -3184,7 +3526,7 @@ export default function App() {
     }
 
     const bodyViewport = session.source.area === "body" ? queryGridBodyViewport(root) : null;
-    const currentBodyScrollTop = bodyViewport?.scrollTop ?? bodyScrollTop;
+    const currentBodyScrollTop = bodyViewport?.scrollTop ?? projectedGridScrollSnapshot.top;
     const boundary = session.source.area === "header"
       ? resolveHeaderRowDropBoundary(clientY - gridRect.top, headerIndexMetrics)
       : rowTrackRef.current
@@ -3229,7 +3571,7 @@ export default function App() {
     headerIndexMetrics,
     headerOverlayHeight,
     headerRowCount,
-    bodyScrollTop,
+    projectedGridScrollSnapshot.top,
     pinnedHeaderWidth,
     rowData,
     rowIndexMetrics,
@@ -3900,8 +4242,8 @@ export default function App() {
   const tableStageClassName = [
     "table-stage",
     `index-rails-${chromeVisibilityPhase}`,
-    hasVerticalOverlap ? "has-scroll-y" : "",
-    hasHorizontalOverlap ? "has-scroll-x" : "",
+    projectedGridScrollSnapshot.hasVerticalOverlap ? "has-scroll-y" : "",
+    projectedGridScrollSnapshot.hasHorizontalOverlap ? "has-scroll-x" : "",
   ]
     .join(" ")
     .trim();
@@ -3916,6 +4258,10 @@ export default function App() {
     [headerOverlayHeight],
   );
   const shouldRenderGrid = Boolean(currentSheet && currentSheetState && activeSheet && !isActiveSheetBlocked);
+  const gridInstanceKey = useMemo(
+    () => (currentSheetState ? resolveGridInstanceKey(currentSheetState.sheetId, sheetColCount, headerColCount, headerRowCount) : null),
+    [currentSheetState, sheetColCount, headerColCount, headerRowCount],
+  );
   const animateTableStructure = shouldAnimateTableStructure();
   const showGridHeader = headerRowCount > 0;
   const isFormulaBarInputEditable = Boolean(selectedCell && activeSheet && !isActiveSheetBlocked);
@@ -4321,6 +4667,57 @@ export default function App() {
     });
   }, [activeSheet, currentSheet, currentSheetState, currentSheetRowStructure, defaultBodyRailColIndex, selectedCell, headerRowCount, startRowTransition, insertRow, closeRailMenu, focusHeaderOverlayCell, focusBodyCellAt]);
 
+  const handleAppendBodyRows = useCallback((count: number) => {
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("append body rows requires a positive integer count");
+    }
+    if (!activeSheet) {
+      throw new Error("append body rows requires an active sheet");
+    }
+    if (!currentSheetState) {
+      throw new Error("append body rows requires current sheet state");
+    }
+    if (defaultBodyRailColIndex == null) {
+      throw new Error("append body rows requires at least one selectable column");
+    }
+    const root = gridWrapRef.current;
+    const bodyViewport = root ? queryGridBodyViewport(root) : null;
+    if (!bodyViewport) {
+      throw new Error("append body rows requires a body viewport");
+    }
+    const previousBodyScrollTop = bodyViewport.scrollTop;
+    const previousBodyScrollHeight = bodyViewport.scrollHeight;
+    const rowGapIndex = currentSheetState.rowIds.length;
+    const nextRowNumber = rowGapIndex + count;
+    const nextColId = toColFieldId(defaultBodyRailColIndex);
+    queueAppendRowAnchorScroll(activeSheet, previousBodyScrollTop, previousBodyScrollHeight, {
+      rAbs: nextRowNumber,
+      colId: nextColId,
+    });
+    insertRows(activeSheet, "body", rowGapIndex, count, 0);
+    closeRailMenu();
+    setSelectedColumnIndex(null);
+    setSelectedCell({
+      area: "body",
+      logical: {
+        rAbs: nextRowNumber,
+        cAbs: defaultBodyRailColIndex,
+      },
+      colId: nextColId,
+      rowPath: null,
+    });
+    setFormulaInputMode("read");
+  }, [
+    activeSheet,
+    currentSheetState,
+    defaultBodyRailColIndex,
+    insertRows,
+    queueAppendRowAnchorScroll,
+    closeRailMenu,
+    setSelectedColumnIndex,
+    setSelectedCell,
+  ]);
+
   const handleDuplicateRow = useCallback((rowNumber: number, area: "header" | "body", rowId: number) => {
     if (!activeSheet) {
       throw new Error("row duplication requires an active sheet");
@@ -4384,7 +4781,7 @@ export default function App() {
     });
   }, [activeSheet, currentSheetState, defaultBodyRailColIndex, headerRowCount, currentSheetRowStructure, startRowTransition, duplicateRows, closeRailMenu, selectedCell, focusHeaderOverlayCell, focusBodyCellAt]);
 
-  const handleDeleteRow = useCallback(async (rowNumber: number, area: "header" | "body", rowId: number, mode: "node" | "subtree" = "node") => {
+  const handleDeleteRow = useCallback(async (rowNumber: number, area: "header" | "body", rowId: number, _mode: "node" | "subtree" = "node") => {
     if (!activeSheet) {
       throw new Error("row deletion requires an active sheet");
     }
@@ -4394,15 +4791,22 @@ export default function App() {
     if (area === "body" && defaultBodyRailColIndex == null) {
       throw new Error("row deletion requires at least one selectable column");
     }
-    const preview = previewDeleteRow(activeSheet, rowId, mode);
-    if (preview.affectedFormulaCellCount > 0) {
+    const targets = resolveRowDeleteTargets(rowNumber, area, rowId, selection, currentSheetState, currentSheetRowStructure);
+    const previews = targets.map((target) => previewDeleteRow(activeSheet, target.rowId, target.mode));
+    const deletedRowCount = previews.reduce((sum, preview) => sum + preview.deletedRowCount, 0);
+    const affectedFormulaCellCount = countUniqueAffectedFormulaCells(previews.flatMap((preview) => preview.affectedFormulaCells));
+    if (affectedFormulaCellCount > 0) {
+      const firstTarget = targets[0];
+      if (!firstTarget) {
+        throw new Error("row deletion expected at least one delete target");
+      }
       closeRailMenu();
       const confirmed = await requestConfirmation({
         title: "Delete row?",
         body: (
           <>
-            <p className="app-modal-target">{describeRowDeleteTarget(rowNumber, area, rowId, preview.deletedRowCount)}</p>
-            <p>{preview.affectedFormulaCellCount} formula cell(s) reference the row(s) being deleted.</p>
+            <p className="app-modal-target">{describeRowDeleteTarget(firstTarget.rowNumber, area, firstTarget.rowId, deletedRowCount)}</p>
+            <p>{affectedFormulaCellCount} formula cell(s) reference the row(s) being deleted.</p>
           </>
         ),
         confirmLabel: "Delete",
@@ -4412,8 +4816,12 @@ export default function App() {
       if (!confirmed) return;
     }
     if (area === "header") {
-      const nextHeaderRowNumber = headerRowCount <= 1 ? null : Math.min(rowNumber, headerRowCount - 1);
-      deleteRow(activeSheet, rowId, mode);
+      const firstTarget = targets[0];
+      if (!firstTarget) {
+        throw new Error("header row deletion expected at least one delete target");
+      }
+      const nextHeaderRowNumber = headerRowCount <= deletedRowCount ? null : Math.min(firstTarget.rowNumber, headerRowCount - deletedRowCount);
+      deleteRows(activeSheet, targets.map((target) => ({ rowId: target.rowId, mode: target.mode })));
       closeRailMenu();
       setFormulaInputMode("read");
       setSelectedColumnIndex(null);
@@ -4440,14 +4848,24 @@ export default function App() {
       throw new Error("row deletion requires at least one selectable column");
     }
     const bodyRowCount = currentSheet?.values.length ?? 0;
-    const nextRowNumber = bodyRowCount <= 1 ? null : rowNumber < headerRowCount + bodyRowCount ? rowNumber : rowNumber - 1;
+    const firstTarget = targets[0];
+    if (!firstTarget) {
+      throw new Error("body row deletion expected at least one delete target");
+    }
+    const nextBodyRowCount = bodyRowCount - deletedRowCount;
+    const nextRowNumber =
+      nextBodyRowCount <= 0
+        ? null
+        : firstTarget.rowNumber <= headerRowCount + nextBodyRowCount
+          ? firstTarget.rowNumber
+          : headerRowCount + nextBodyRowCount;
     if (nextRowNumber != null) {
       startRowTransition("delete", nextRowNumber);
     }
-    deleteRow(activeSheet, rowId, mode);
+    deleteRows(activeSheet, targets.map((target) => ({ rowId: target.rowId, mode: target.mode })));
     closeRailMenu();
     setFormulaInputMode("read");
-    if (bodyRowCount <= 1) {
+    if (nextBodyRowCount <= 0) {
       clearActiveSelection();
       return;
     }
@@ -4468,7 +4886,7 @@ export default function App() {
     window.requestAnimationFrame(() => {
       focusBodyCellAt(nextRowNumber, nextColIndex);
     });
-  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, previewDeleteRow, deleteRow, closeRailMenu, requestConfirmation, describeRowDeleteTarget, headerRowCount, clearActiveSelection, focusHeaderOverlayCell, startRowTransition, focusBodyCellAt]);
+  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, selection, currentSheetRowStructure, previewDeleteRow, deleteRows, closeRailMenu, requestConfirmation, describeRowDeleteTarget, headerRowCount, clearActiveSelection, focusHeaderOverlayCell, startRowTransition, focusBodyCellAt]);
 
   const handleConvertRowsToHeader = useCallback((rowId: number) => {
     if (!activeSheet) {
@@ -4541,7 +4959,35 @@ export default function App() {
     setSelectedCell(null);
     setSelectedColumnIndex(nextColIndex);
     setFormulaInputMode("read");
-  }, [activeSheet, startColumnTransition, insertColumn, closeRailMenu]);
+    scheduleColumnIntoView(nextColIndex);
+  }, [activeSheet, startColumnTransition, insertColumn, closeRailMenu, scheduleColumnIntoView]);
+
+  const handleAppendDataColumns = useCallback((count: number) => {
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("append data columns requires a positive integer count");
+    }
+    if (!activeSheet) {
+      throw new Error("append data columns requires an active sheet");
+    }
+    const firstColIndex = sheetColCount;
+    const lastColIndex = firstColIndex + count - 1;
+    startColumnTransition("insert");
+    insertColumns(activeSheet, firstColIndex, count);
+    closeRailMenu();
+    setSelectedCell(null);
+    setSelectedColumnIndex(lastColIndex);
+    setFormulaInputMode("read");
+    scheduleAppendColumnAnchorScroll(activeSheet, sheetColCount + count);
+  }, [
+    activeSheet,
+    sheetColCount,
+    startColumnTransition,
+    insertColumns,
+    closeRailMenu,
+    setSelectedCell,
+    setSelectedColumnIndex,
+    scheduleAppendColumnAnchorScroll,
+  ]);
 
   const handleDuplicateColumn = useCallback((colIndex: number) => {
     if (!activeSheet) {
@@ -4570,15 +5016,26 @@ export default function App() {
     if (!activeSheet) {
       throw new Error("column deletion requires an active sheet");
     }
-    const preview = previewDeleteColumn(activeSheet, colIndex);
-    if (preview.affectedFormulaCellCount > 0) {
+    const colIndices = resolveColumnDeleteTargets(colIndex, selection, headerColCount, sheetColCount);
+    const previews = colIndices.map((targetColIndex) => previewDeleteColumn(activeSheet, targetColIndex));
+    const affectedFormulaCellCount = countUniqueAffectedFormulaCells(previews.flatMap((preview) => preview.affectedFormulaCells));
+    if (affectedFormulaCellCount > 0) {
+      const firstColIndex = colIndices[0];
+      const lastColIndex = colIndices[colIndices.length - 1];
+      if (firstColIndex == null || lastColIndex == null) {
+        throw new Error("column deletion expected at least one delete target");
+      }
+      const targetLabel =
+        firstColIndex === lastColIndex
+          ? describeColumnDeleteTarget(firstColIndex)
+          : `${toColumnLetters(firstColIndex + 1)}:${toColumnLetters(lastColIndex + 1)}`;
       closeRailMenu();
       const confirmed = await requestConfirmation({
         title: "Delete column?",
         body: (
           <>
-            <p className="app-modal-target">{describeColumnDeleteTarget(colIndex)}</p>
-            <p>{preview.affectedFormulaCellCount} formula cell(s) reference this column.</p>
+            <p className="app-modal-target">{targetLabel}</p>
+            <p>{affectedFormulaCellCount} formula cell(s) reference the column(s) being deleted.</p>
           </>
         ),
         confirmLabel: "Delete",
@@ -4588,17 +5045,22 @@ export default function App() {
       if (!confirmed) return;
     }
     startColumnTransition("delete");
-    deleteColumn(activeSheet, colIndex);
+    deleteColumns(activeSheet, colIndices);
     closeRailMenu();
     setSelectedCell(null);
-    const nextColIndex = colIndex < sheetColCount - 1 ? colIndex : colIndex - 1;
+    const firstColIndex = colIndices[0];
+    if (firstColIndex == null) {
+      throw new Error("column deletion expected at least one delete target");
+    }
+    const nextSheetColCount = sheetColCount - colIndices.length;
+    const nextColIndex = firstColIndex < nextSheetColCount ? firstColIndex : firstColIndex - 1;
     if (nextColIndex >= headerColCount) {
       setSelectedColumnIndex(nextColIndex);
     } else {
       setSelectedColumnIndex(null);
     }
     setFormulaInputMode("read");
-  }, [activeSheet, previewDeleteColumn, closeRailMenu, requestConfirmation, describeColumnDeleteTarget, startColumnTransition, deleteColumn, sheetColCount, headerColCount]);
+  }, [activeSheet, selection, headerColCount, sheetColCount, previewDeleteColumn, closeRailMenu, requestConfirmation, describeColumnDeleteTarget, startColumnTransition, deleteColumns]);
 
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -4801,18 +5263,15 @@ export default function App() {
                 showGridHeader={showGridHeader}
                 pinnedHeaderWidth={pinnedHeaderWidth}
                 rowIndexTrackHeight={rowIndexTrackHeight}
-                bodyScrollTop={bodyScrollTop}
-                bodyScrollLeft={bodyScrollLeft}
+                viewportSnapshot={projectedGridScrollSnapshot}
                 indexRailsPhase={chromeVisibilityPhase}
                 handleIndexRailsHoverChange={handleIndexRailsHoverChange}
                 rowIndexMetrics={rowIndexMetrics}
-                columnTrackRef={columnTrackRef}
-                axisColumnSelectionTrackRef={axisColumnSelectionTrackRef}
-                headerCenterTrackRef={headerCenterTrackRef}
                 rowTrackRef={rowTrackRef}
                 gridWrapRef={gridWrapRef}
                 rowData={rowData}
                 columnDefs={columnDefs}
+                gridInstanceKey={gridInstanceKey ?? ""}
                 selectedCell={selectedCell}
                 selectedColumnIndex={selectedColumnIndex}
                 columnHasLocalConfig={columnHasLocalConfig}
@@ -4828,12 +5287,16 @@ export default function App() {
                 handleHeaderOverlaySelect={handleHeaderOverlaySelect}
                 handleHeaderOverlayDoubleClick={handleHeaderOverlayDoubleClick}
                 handleHeaderOverlayKeyDown={handleHeaderOverlayKeyDown}
+                handleHeaderHorizontalWheel={handleHeaderHorizontalWheel}
                 handleColumnRailSelect={handleColumnRailSelect}
                 handleColumnRailPointerDown={handleColumnRailPointerDown}
                 handleColumnRailMenuOpen={handleColumnRailMenuOpen}
                 handleRowRailSelect={handleRowRailSelect}
                 handleRowRailPointerDown={handleRowRailPointerDown}
                 handleRowRailMenuOpen={handleRowRailMenuOpen}
+                quickAddDisabled={mode !== "table" || isActiveSheetBlocked}
+                onQuickAddRows={handleAppendBodyRows}
+                onQuickAddColumns={handleAppendDataColumns}
                 axisDropIndicator={axisDropIndicator}
                 axisDragPreview={axisDragPreview}
                 axisSelection={axisSelectionView}

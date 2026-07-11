@@ -1,14 +1,7 @@
 import type { GridApi } from "ag-grid-community";
 
 import type { ColumnMetric, GridRow, HeaderOverlayHitResult, RowIndexMetric } from "../types/ui";
-import { mergeColumnMetricsWithVisualOverrides } from "../utils/gridGeometry";
-
-export type GridScrollSnapshot = {
-  top: number;
-  left: number;
-  hasVerticalOverlap: boolean;
-  hasHorizontalOverlap: boolean;
-};
+import type { GridScrollSnapshot } from "../utils/gridGeometry";
 
 export type LeafHeaderCellMetric = {
   colId: string;
@@ -41,7 +34,12 @@ export type GridViewportAdapter = {
     colIndexLookup: Map<string, number>,
   ): HeaderOverlayHitResult | null;
   focusLeafHeaderCell(root: HTMLElement, colId: string): void;
-  attachViewportSync(root: HTMLElement, onFrame: (snapshot: GridScrollSnapshot) => void): () => void;
+  scrollHorizontalViewport(root: HTMLElement, deltaLeft: number): boolean;
+  attachViewportSync(
+    root: HTMLElement,
+    onFrame: (snapshot: GridScrollSnapshot) => void,
+    onScroll?: (position: Pick<GridScrollSnapshot, "top" | "left">) => void,
+  ): () => void;
 };
 
 function toColFieldId(colIndex: number): string {
@@ -97,9 +95,10 @@ export function createAgGridAdapter(): GridViewportAdapter {
     collectColumnMetrics(root, api, colIndexLookup, expectedColCount) {
       if (!api) return [];
       const columns = api.getAllDisplayedColumns();
-      if (columns.length === 0) return [];
-      if (columns.length !== expectedColCount) {
-        throw new Error(`displayed column count mismatch: expected ${expectedColCount}, got ${columns.length}`);
+      const metricColumns = columns;
+      if (metricColumns.length === 0) return [];
+      if (metricColumns.length !== expectedColCount) {
+        throw new Error(`displayed column count mismatch: expected ${expectedColCount}, got ${metricColumns.length}`);
       }
 
       const toPinnedZone = (pinned: ReturnType<(typeof columns)[number]["getPinned"]>) => {
@@ -115,8 +114,7 @@ export function createAgGridAdapter(): GridViewportAdapter {
         .filter((column) => toPinnedZone(column.getPinned()) === "center")
         .reduce((sum, column) => sum + column.getActualWidth(), 0);
 
-      const baseByColIndex = new Map<number, { metric: ColumnMetric; zone: "left" | "center" | "right" }>();
-      const baseMetrics = columns.map((column) => {
+      const baseMetrics = metricColumns.map((column) => {
         const colId = column.getColId();
         const colNumber = colIndexLookup.get(colId);
         if (!colNumber) {
@@ -137,48 +135,14 @@ export function createAgGridAdapter(): GridViewportAdapter {
             : zone === "center"
               ? leftPinnedWidth + left
               : leftPinnedWidth + centerWidth + left;
-        const metric = {
+        return {
           colIndex: colNumber - 1,
           left: globalLeft,
           width,
         };
-        baseByColIndex.set(metric.colIndex, { metric, zone });
-        return metric;
       });
 
-      if (!root) {
-        return baseMetrics.sort((a, b) => a.colIndex - b.colIndex);
-      }
-
-      const horizontalViewport = queryHorizontalViewport(root);
-      const scrollLeft = horizontalViewport?.scrollLeft ?? 0;
-      const visualMetrics = this.readLeafHeaderCells(root, colIndexLookup).map((cell) => {
-        const width = cell.right - cell.left;
-        if (!(width > 0)) {
-          throw new Error(`invalid width for column ${cell.colId}: ${width}`);
-        }
-        const base = baseByColIndex.get(cell.colIndex);
-        if (!base) {
-          return {
-            colIndex: cell.colIndex,
-            left: cell.left,
-            width,
-          };
-        }
-        const left =
-          base.zone === "left"
-            ? cell.left
-            : base.zone === "center"
-              ? cell.left + scrollLeft
-              : base.metric.left;
-        return {
-          colIndex: cell.colIndex,
-          left,
-          width,
-        };
-      });
-
-      return mergeColumnMetricsWithVisualOverrides(baseMetrics, visualMetrics).sort((a, b) => a.colIndex - b.colIndex);
+      return baseMetrics.sort((a, b) => a.colIndex - b.colIndex);
     },
 
     readLeafHeaderCells(root, colIndexLookup) {
@@ -292,18 +256,47 @@ export function createAgGridAdapter(): GridViewportAdapter {
       requestAnimationFrame(() => cellToFocus.focus());
     },
 
-    attachViewportSync(root, onFrame) {
-      const verticalViewport = queryVerticalViewport(root);
+    scrollHorizontalViewport(root, deltaLeft) {
+      if (!Number.isFinite(deltaLeft)) {
+        throw new Error("horizontal scroll delta must be finite");
+      }
+      if (Math.abs(deltaLeft) <= 0.5) return false;
+
       const horizontalViewport = queryHorizontalViewport(root);
+      if (!horizontalViewport) {
+        throw new Error("horizontal grid viewport is required");
+      }
+
+      const maxScrollLeft = Math.max(0, horizontalViewport.scrollWidth - horizontalViewport.clientWidth);
+      const nextScrollLeft = Math.min(maxScrollLeft, Math.max(0, horizontalViewport.scrollLeft + deltaLeft));
+      if (Math.abs(nextScrollLeft - horizontalViewport.scrollLeft) <= 0.5) return false;
+      horizontalViewport.scrollLeft = nextScrollLeft;
+      return true;
+    },
+
+    attachViewportSync(root, onFrame, onScroll) {
+      if (typeof ResizeObserver === "undefined") {
+        throw new Error("ResizeObserver is required for grid viewport sync");
+      }
+      if (typeof MutationObserver === "undefined") {
+        throw new Error("MutationObserver is required for grid viewport sync");
+      }
+      let verticalViewport: HTMLElement | null = null;
+      let horizontalViewport: HTMLElement | null = null;
       let rafId: number | null = null;
 
       const apply = () => {
         rafId = null;
+        bindViewports();
         const top = verticalViewport?.scrollTop ?? 0;
         const left = horizontalViewport?.scrollLeft ?? 0;
+        const centerViewportWidth = horizontalViewport?.clientWidth ?? 0;
+        const bodyViewportHeight = verticalViewport?.clientHeight ?? 0;
         onFrame({
           top,
           left,
+          centerViewportWidth,
+          bodyViewportHeight,
           hasVerticalOverlap: top > 0.5,
           hasHorizontalOverlap: left > 0.5,
         });
@@ -314,18 +307,49 @@ export function createAgGridAdapter(): GridViewportAdapter {
         rafId = window.requestAnimationFrame(apply);
       };
 
+      const handleViewportScroll = () => {
+        onScroll?.({
+          top: verticalViewport?.scrollTop ?? 0,
+          left: horizontalViewport?.scrollLeft ?? 0,
+        });
+        schedule();
+      };
+
+      const resizeObserver = new ResizeObserver(schedule);
+      const bindViewports = () => {
+        const nextVerticalViewport = queryVerticalViewport(root);
+        const nextHorizontalViewport = queryHorizontalViewport(root);
+        if (verticalViewport !== nextVerticalViewport) {
+          verticalViewport?.removeEventListener("scroll", handleViewportScroll);
+          if (verticalViewport) resizeObserver.unobserve(verticalViewport);
+          verticalViewport = nextVerticalViewport;
+          verticalViewport?.addEventListener("scroll", handleViewportScroll, { passive: true });
+          if (verticalViewport) resizeObserver.observe(verticalViewport);
+        }
+        if (horizontalViewport !== nextHorizontalViewport) {
+          horizontalViewport?.removeEventListener("scroll", handleViewportScroll);
+          if (horizontalViewport) resizeObserver.unobserve(horizontalViewport);
+          horizontalViewport = nextHorizontalViewport;
+          horizontalViewport?.addEventListener("scroll", handleViewportScroll, { passive: true });
+          if (horizontalViewport) resizeObserver.observe(horizontalViewport);
+        }
+      };
+
       schedule();
-      verticalViewport?.addEventListener("scroll", schedule, { passive: true });
-      horizontalViewport?.addEventListener("scroll", schedule, { passive: true });
       window.addEventListener("resize", schedule, { passive: true });
+      resizeObserver.observe(root);
+      const mutationObserver = new MutationObserver(schedule);
+      mutationObserver.observe(root, { childList: true, subtree: true });
 
       return () => {
         if (rafId != null) {
           window.cancelAnimationFrame(rafId);
         }
-        verticalViewport?.removeEventListener("scroll", schedule);
-        horizontalViewport?.removeEventListener("scroll", schedule);
+        verticalViewport?.removeEventListener("scroll", handleViewportScroll);
+        horizontalViewport?.removeEventListener("scroll", handleViewportScroll);
         window.removeEventListener("resize", schedule);
+        resizeObserver.disconnect();
+        mutationObserver.disconnect();
       };
     },
   };

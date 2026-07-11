@@ -1,4 +1,11 @@
-import { getCellTextView, type CellTextViewSource, type PresentedCell, type RuntimeValue } from "@ordinate/core";
+import {
+  getCellTextView,
+  type CellTextViewSource,
+  type CoreRowDeleteMode,
+  type PresentedCell,
+  type RuntimeValue,
+  type SheetBodyRowStructure,
+} from "@ordinate/core";
 
 import type {
   ColumnMetric,
@@ -7,6 +14,7 @@ import type {
   HeaderOverlayCell,
   RailMenuView,
   RowRailMenuView,
+  SheetSelection,
   SheetHealth,
   SheetIssueViewModel,
   ThemeMode,
@@ -17,8 +25,13 @@ import { runtimeValueToText } from "./sheetView";
 export const LABEL_COLUMN_WIDTH = 280;
 export const HEADER_COLUMN_WIDTH = 168;
 export const DATA_COLUMN_MIN_WIDTH = 132;
+export const DATA_COLUMN_WIDTH = 280;
+export const SINGLE_DATA_COLUMN_WIDTH = 560;
+export const APPEND_AXIS_SLOT_GAP = 8;
+export const APPEND_COLUMN_WIDTH = 32;
 export const GRID_HEADER_HEIGHT = 40;
 export const GRID_ROW_HEIGHT = 38;
+export const APPEND_ROW_SLOT_HEIGHT = 32;
 export const FORMULA_BAR_SAFE_SPACE = 136;
 export const FORMULA_BAR_AUTO_PAN_CLEARANCE = 12;
 export const FORMULA_BAR_AUTO_PAN_DURATION_MS = 280;
@@ -243,6 +256,63 @@ export function formatLocalView(format: PresentedCell["formatLayer"]["local"] | 
   return formatLocalViewFromSpec(format, previewValue);
 }
 
+export type DataColumnSizingPolicy = {
+  minWidth: number;
+  width?: number;
+  flex?: number;
+};
+
+export function resolveDataColumnSizingPolicy(sheetColCount: number, headerColCount: number, headerRowCount: number): DataColumnSizingPolicy {
+  if (!Number.isInteger(sheetColCount) || sheetColCount < 0) {
+    throw new Error("sheetColCount must be a non-negative integer");
+  }
+  if (!Number.isInteger(headerColCount) || headerColCount < 0 || headerColCount > sheetColCount) {
+    throw new Error("headerColCount must be a non-negative integer within sheetColCount");
+  }
+  if (!Number.isInteger(headerRowCount) || headerRowCount < 0) {
+    throw new Error("headerRowCount must be a non-negative integer");
+  }
+  const dataColumnCount = sheetColCount - headerColCount;
+  if (headerColCount === 0 && headerRowCount === 0) {
+    return {
+      minWidth: DATA_COLUMN_MIN_WIDTH,
+      width: DATA_COLUMN_WIDTH,
+    };
+  }
+  if (dataColumnCount === 1) {
+    return {
+      minWidth: DATA_COLUMN_MIN_WIDTH,
+      width: SINGLE_DATA_COLUMN_WIDTH,
+    };
+  }
+  return {
+    minWidth: DATA_COLUMN_MIN_WIDTH,
+    width: DATA_COLUMN_WIDTH,
+  };
+}
+
+export function resolveGridInstanceKey(sheetId: number, sheetColCount: number, headerColCount: number, headerRowCount: number): string {
+  if (!Number.isInteger(sheetId) || sheetId <= 0) {
+    throw new Error("grid instance key requires a positive sheet id");
+  }
+  if (!Number.isInteger(sheetColCount) || sheetColCount < 0) {
+    throw new Error("sheetColCount must be a non-negative integer");
+  }
+  if (!Number.isInteger(headerColCount) || headerColCount < 0 || headerColCount > sheetColCount) {
+    throw new Error("headerColCount must be a non-negative integer within sheetColCount");
+  }
+  if (!Number.isInteger(headerRowCount) || headerRowCount < 0) {
+    throw new Error("headerRowCount must be a non-negative integer");
+  }
+  const dataColumnCount = sheetColCount - headerColCount;
+  const sizingMode = headerColCount === 0 && headerRowCount === 0
+    ? "plain-data-columns"
+    : dataColumnCount === 1
+      ? "single-data-column"
+      : "multi-data-column";
+  return JSON.stringify(["sheet-grid", sheetId, headerColCount, headerRowCount, sizingMode]);
+}
+
 export function trimSheetColCount(currentSheetState: StateSheet | null, currentSheet: RuntimeSheet | null): number {
   if (!currentSheetState) return 0;
 
@@ -447,6 +517,105 @@ export function buildRailMenu(
     currentSheetPresentation,
     headerColCount,
   );
+}
+
+export type RowDeleteTarget = {
+  rowNumber: number;
+  rowId: number;
+  mode: CoreRowDeleteMode;
+  deletedRowCount: number;
+};
+
+export function resolveColumnDeleteTargets(
+  colIndex: number,
+  selection: SheetSelection | null,
+  headerColCount: number,
+  sheetColCount: number,
+): number[] {
+  if (colIndex < headerColCount || colIndex >= sheetColCount) {
+    throw new Error("column delete target must be inside data columns");
+  }
+  if (
+    selection?.kind !== "column" ||
+    colIndex < selection.colStart ||
+    colIndex > selection.colEnd
+  ) {
+    return [colIndex];
+  }
+  if (selection.colStart < headerColCount || selection.colEnd >= sheetColCount) {
+    throw new Error("column selection delete target must be inside data columns");
+  }
+  return Array.from(
+    { length: selection.colEnd - selection.colStart + 1 },
+    (_, offset) => selection.colStart + offset,
+  );
+}
+
+export function resolveRowDeleteTargets(
+  rowNumber: number,
+  area: "header" | "body",
+  rowId: number,
+  selection: SheetSelection | null,
+  currentSheetState: StateSheet,
+  rowStructure: SheetBodyRowStructure[],
+): RowDeleteTarget[] {
+  const selectedRange =
+    selection?.kind === "row" &&
+    selection.area === area &&
+    rowNumber >= selection.rowStart &&
+    rowNumber <= selection.rowEnd
+      ? { start: selection.rowStart, end: selection.rowEnd }
+      : { start: rowNumber, end: rowNumber };
+
+  if (area === "header") {
+    const headerRowCount = currentSheetState.headerRowCount ?? 0;
+    if (selectedRange.start < 1 || selectedRange.end > headerRowCount) {
+      throw new Error("header row delete target must be inside header rows");
+    }
+    return Array.from({ length: selectedRange.end - selectedRange.start + 1 }, (_, offset) => {
+      const targetRowNumber = selectedRange.start + offset;
+      const targetRowId = currentSheetState.rowIds?.[targetRowNumber - 1];
+      if (targetRowId == null) {
+        throw new Error(`missing rowId for header row ${targetRowNumber}`);
+      }
+      return {
+        rowNumber: targetRowNumber,
+        rowId: targetRowId,
+        mode: "node",
+        deletedRowCount: 1,
+      };
+    });
+  }
+
+  const rows = rowStructure.filter((row) => (
+    row.absoluteRowNumber >= selectedRange.start &&
+    row.absoluteRowNumber <= selectedRange.end
+  ));
+  if (rows.length === 0) {
+    throw new Error("body row delete target must resolve to row structure");
+  }
+  if (selectedRange.start === rowNumber && selectedRange.end === rowNumber && rows[0]?.rowId !== rowId) {
+    throw new Error("body row delete target rowId does not match row structure");
+  }
+
+  const targets: RowDeleteTarget[] = [];
+  let coveredThroughRowNumber = 0;
+  for (const row of rows) {
+    if (row.absoluteRowNumber <= coveredThroughRowNumber) continue;
+    const mode: CoreRowDeleteMode = row.hasChildren ? "subtree" : "node";
+    const deletedRowCount = row.hasChildren ? row.subtreeRowCount : 1;
+    coveredThroughRowNumber = row.absoluteRowNumber + deletedRowCount - 1;
+    targets.push({
+      rowNumber: row.absoluteRowNumber,
+      rowId: row.rowId,
+      mode,
+      deletedRowCount,
+    });
+  }
+  if (targets.length === 0) {
+    throw new Error("body row delete target resolved to no delete targets");
+  }
+  return targets;
 }
 
 export function resolveRailMenuWidthPx(kind: RailMenuView["kind"]): number {

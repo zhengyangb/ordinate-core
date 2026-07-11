@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeSheetDropIndicator,
   computeSheetMoveTargetGapIndex,
+  computeSheetTabScrollState,
   computeSheetTabAutoScrollDelta,
   nextSheetName,
   type SheetTabRect,
@@ -64,5 +65,24 @@ describe("sheet tab helpers", () => {
         maxScrollLeft: 200,
       }),
     ).toBe(0);
+  });
+
+  it("reports whether sheet tabs can scroll left or right", () => {
+    expect(computeSheetTabScrollState({ scrollLeft: 0, clientWidth: 300, scrollWidth: 300 })).toEqual({
+      canScrollLeft: false,
+      canScrollRight: false,
+    });
+    expect(computeSheetTabScrollState({ scrollLeft: 0, clientWidth: 300, scrollWidth: 640 })).toEqual({
+      canScrollLeft: false,
+      canScrollRight: true,
+    });
+    expect(computeSheetTabScrollState({ scrollLeft: 120, clientWidth: 300, scrollWidth: 640 })).toEqual({
+      canScrollLeft: true,
+      canScrollRight: true,
+    });
+    expect(computeSheetTabScrollState({ scrollLeft: 340, clientWidth: 300, scrollWidth: 640 })).toEqual({
+      canScrollLeft: true,
+      canScrollRight: false,
+    });
   });
 });
