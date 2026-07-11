@@ -25,10 +25,13 @@ import { runtimeValueToText } from "./sheetView";
 export const LABEL_COLUMN_WIDTH = 280;
 export const HEADER_COLUMN_WIDTH = 168;
 export const DATA_COLUMN_MIN_WIDTH = 132;
-export const APPEND_COLUMN_WIDTH = 46;
+export const DATA_COLUMN_WIDTH = 280;
+export const SINGLE_DATA_COLUMN_WIDTH = 560;
+export const APPEND_AXIS_SLOT_GAP = 8;
+export const APPEND_COLUMN_WIDTH = 32;
 export const GRID_HEADER_HEIGHT = 40;
 export const GRID_ROW_HEIGHT = 38;
-export const APPEND_ROW_SLOT_HEIGHT = GRID_ROW_HEIGHT;
+export const APPEND_ROW_SLOT_HEIGHT = 32;
 export const FORMULA_BAR_SAFE_SPACE = 136;
 export const FORMULA_BAR_AUTO_PAN_CLEARANCE = 12;
 export const FORMULA_BAR_AUTO_PAN_DURATION_MS = 280;
@@ -251,6 +254,63 @@ export function styleLocalView(style: PresentedCell["styleLayer"]["local"] | nul
 
 export function formatLocalView(format: PresentedCell["formatLayer"]["local"] | null | undefined, previewValue?: RuntimeValue | null) {
   return formatLocalViewFromSpec(format, previewValue);
+}
+
+export type DataColumnSizingPolicy = {
+  minWidth: number;
+  width?: number;
+  flex?: number;
+};
+
+export function resolveDataColumnSizingPolicy(sheetColCount: number, headerColCount: number, headerRowCount: number): DataColumnSizingPolicy {
+  if (!Number.isInteger(sheetColCount) || sheetColCount < 0) {
+    throw new Error("sheetColCount must be a non-negative integer");
+  }
+  if (!Number.isInteger(headerColCount) || headerColCount < 0 || headerColCount > sheetColCount) {
+    throw new Error("headerColCount must be a non-negative integer within sheetColCount");
+  }
+  if (!Number.isInteger(headerRowCount) || headerRowCount < 0) {
+    throw new Error("headerRowCount must be a non-negative integer");
+  }
+  const dataColumnCount = sheetColCount - headerColCount;
+  if (headerColCount === 0 && headerRowCount === 0) {
+    return {
+      minWidth: DATA_COLUMN_MIN_WIDTH,
+      width: DATA_COLUMN_WIDTH,
+    };
+  }
+  if (dataColumnCount === 1) {
+    return {
+      minWidth: DATA_COLUMN_MIN_WIDTH,
+      width: SINGLE_DATA_COLUMN_WIDTH,
+    };
+  }
+  return {
+    minWidth: DATA_COLUMN_MIN_WIDTH,
+    width: DATA_COLUMN_WIDTH,
+  };
+}
+
+export function resolveGridInstanceKey(sheetId: number, sheetColCount: number, headerColCount: number, headerRowCount: number): string {
+  if (!Number.isInteger(sheetId) || sheetId <= 0) {
+    throw new Error("grid instance key requires a positive sheet id");
+  }
+  if (!Number.isInteger(sheetColCount) || sheetColCount < 0) {
+    throw new Error("sheetColCount must be a non-negative integer");
+  }
+  if (!Number.isInteger(headerColCount) || headerColCount < 0 || headerColCount > sheetColCount) {
+    throw new Error("headerColCount must be a non-negative integer within sheetColCount");
+  }
+  if (!Number.isInteger(headerRowCount) || headerRowCount < 0) {
+    throw new Error("headerRowCount must be a non-negative integer");
+  }
+  const dataColumnCount = sheetColCount - headerColCount;
+  const sizingMode = headerColCount === 0 && headerRowCount === 0
+    ? "plain-data-columns"
+    : dataColumnCount === 1
+      ? "single-data-column"
+      : "multi-data-column";
+  return JSON.stringify(["sheet-grid", sheetId, headerColCount, headerRowCount, sizingMode]);
 }
 
 export function trimSheetColCount(currentSheetState: StateSheet | null, currentSheet: RuntimeSheet | null): number {

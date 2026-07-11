@@ -1,14 +1,7 @@
 import type { GridApi } from "ag-grid-community";
 
 import type { ColumnMetric, GridRow, HeaderOverlayHitResult, RowIndexMetric } from "../types/ui";
-
-export type GridScrollSnapshot = {
-  top: number;
-  left: number;
-  centerViewportWidth: number;
-  hasVerticalOverlap: boolean;
-  hasHorizontalOverlap: boolean;
-};
+import type { GridScrollSnapshot } from "../utils/gridGeometry";
 
 export type LeafHeaderCellMetric = {
   colId: string;
@@ -42,7 +35,11 @@ export type GridViewportAdapter = {
   ): HeaderOverlayHitResult | null;
   focusLeafHeaderCell(root: HTMLElement, colId: string): void;
   scrollHorizontalViewport(root: HTMLElement, deltaLeft: number): boolean;
-  attachViewportSync(root: HTMLElement, onFrame: (snapshot: GridScrollSnapshot) => void): () => void;
+  attachViewportSync(
+    root: HTMLElement,
+    onFrame: (snapshot: GridScrollSnapshot) => void,
+    onScroll?: (position: Pick<GridScrollSnapshot, "top" | "left">) => void,
+  ): () => void;
 };
 
 function toColFieldId(colIndex: number): string {
@@ -277,20 +274,29 @@ export function createAgGridAdapter(): GridViewportAdapter {
       return true;
     },
 
-    attachViewportSync(root, onFrame) {
-      const verticalViewport = queryVerticalViewport(root);
-      const horizontalViewport = queryHorizontalViewport(root);
+    attachViewportSync(root, onFrame, onScroll) {
+      if (typeof ResizeObserver === "undefined") {
+        throw new Error("ResizeObserver is required for grid viewport sync");
+      }
+      if (typeof MutationObserver === "undefined") {
+        throw new Error("MutationObserver is required for grid viewport sync");
+      }
+      let verticalViewport: HTMLElement | null = null;
+      let horizontalViewport: HTMLElement | null = null;
       let rafId: number | null = null;
 
       const apply = () => {
         rafId = null;
+        bindViewports();
         const top = verticalViewport?.scrollTop ?? 0;
         const left = horizontalViewport?.scrollLeft ?? 0;
         const centerViewportWidth = horizontalViewport?.clientWidth ?? 0;
+        const bodyViewportHeight = verticalViewport?.clientHeight ?? 0;
         onFrame({
           top,
           left,
           centerViewportWidth,
+          bodyViewportHeight,
           hasVerticalOverlap: top > 0.5,
           hasHorizontalOverlap: left > 0.5,
         });
@@ -301,18 +307,49 @@ export function createAgGridAdapter(): GridViewportAdapter {
         rafId = window.requestAnimationFrame(apply);
       };
 
+      const handleViewportScroll = () => {
+        onScroll?.({
+          top: verticalViewport?.scrollTop ?? 0,
+          left: horizontalViewport?.scrollLeft ?? 0,
+        });
+        schedule();
+      };
+
+      const resizeObserver = new ResizeObserver(schedule);
+      const bindViewports = () => {
+        const nextVerticalViewport = queryVerticalViewport(root);
+        const nextHorizontalViewport = queryHorizontalViewport(root);
+        if (verticalViewport !== nextVerticalViewport) {
+          verticalViewport?.removeEventListener("scroll", handleViewportScroll);
+          if (verticalViewport) resizeObserver.unobserve(verticalViewport);
+          verticalViewport = nextVerticalViewport;
+          verticalViewport?.addEventListener("scroll", handleViewportScroll, { passive: true });
+          if (verticalViewport) resizeObserver.observe(verticalViewport);
+        }
+        if (horizontalViewport !== nextHorizontalViewport) {
+          horizontalViewport?.removeEventListener("scroll", handleViewportScroll);
+          if (horizontalViewport) resizeObserver.unobserve(horizontalViewport);
+          horizontalViewport = nextHorizontalViewport;
+          horizontalViewport?.addEventListener("scroll", handleViewportScroll, { passive: true });
+          if (horizontalViewport) resizeObserver.observe(horizontalViewport);
+        }
+      };
+
       schedule();
-      verticalViewport?.addEventListener("scroll", schedule, { passive: true });
-      horizontalViewport?.addEventListener("scroll", schedule, { passive: true });
       window.addEventListener("resize", schedule, { passive: true });
+      resizeObserver.observe(root);
+      const mutationObserver = new MutationObserver(schedule);
+      mutationObserver.observe(root, { childList: true, subtree: true });
 
       return () => {
         if (rafId != null) {
           window.cancelAnimationFrame(rafId);
         }
-        verticalViewport?.removeEventListener("scroll", schedule);
-        horizontalViewport?.removeEventListener("scroll", schedule);
+        verticalViewport?.removeEventListener("scroll", handleViewportScroll);
+        horizontalViewport?.removeEventListener("scroll", handleViewportScroll);
         window.removeEventListener("resize", schedule);
+        resizeObserver.disconnect();
+        mutationObserver.disconnect();
       };
     },
   };

@@ -2,11 +2,61 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRowRailMenu,
+  resolveDataColumnSizingPolicy,
   resolveColumnDeleteTargets,
+  resolveGridInstanceKey,
   resolveRowDeleteTargets,
 } from "./appHelpers";
 
 describe("app rail menu helpers", () => {
+  it("keeps a single data column at natural width instead of flexing to the viewport", () => {
+    expect(resolveDataColumnSizingPolicy(2, 1, 1)).toEqual({
+      minWidth: 132,
+      width: 560,
+    });
+  });
+
+  it("keeps unheaded plain sheets at finite natural column widths", () => {
+    expect(resolveDataColumnSizingPolicy(2, 0, 0)).toEqual({
+      minWidth: 132,
+      width: 280,
+    });
+  });
+
+  it("keeps multi-column data tables on stable finite column widths", () => {
+    expect(resolveDataColumnSizingPolicy(5, 1, 2)).toEqual({
+      minWidth: 132,
+      width: 280,
+    });
+  });
+
+  it("fails early when the header column count cannot fit inside the sheet", () => {
+    expect(() => resolveDataColumnSizingPolicy(1, 2, 1)).toThrow(
+      "headerColCount must be a non-negative integer within sheetColCount",
+    );
+  });
+
+  it("keys grid instances by stable sheet identity and sizing mode", () => {
+    expect(resolveGridInstanceKey(1, 5, 1, 2)).not.toBe(
+      resolveGridInstanceKey(2, 2, 0, 0),
+    );
+    expect(resolveGridInstanceKey(2, 2, 0, 0)).toContain("plain-data-columns");
+    expect(resolveGridInstanceKey(1, 5, 1, 2)).toContain("multi-data-column");
+    expect(resolveGridInstanceKey(1, 5, 1, 2)).toBe(
+      resolveGridInstanceKey(1, 8, 1, 2),
+    );
+    expect(resolveGridInstanceKey(3, 2, 1, 2)).not.toBe(
+      resolveGridInstanceKey(3, 3, 1, 2),
+    );
+  });
+
+  it("fails early when a grid instance key cannot describe a valid sheet layout", () => {
+    expect(() => resolveGridInstanceKey(0, 2, 1, 1)).toThrow("grid instance key requires a positive sheet id");
+    expect(() => resolveGridInstanceKey(1, 1, 2, 1)).toThrow(
+      "headerColCount must be a non-negative integer within sheetColCount",
+    );
+  });
+
   it("builds row display-edit metadata from presentation row defaults", () => {
     const menu = buildRowRailMenu(
       { rowNumber: 2, area: "body", hasChildren: false },

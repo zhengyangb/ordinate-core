@@ -2,6 +2,7 @@ import type { GridApi } from "ag-grid-community";
 import { describe, expect, it } from "vitest";
 
 import type { GridRow } from "../types/ui";
+import type { GridScrollSnapshot } from "../utils/gridGeometry";
 import { createAgGridAdapter } from "./agGridAdapter";
 
 type MockDisplayedColumn = {
@@ -87,13 +88,22 @@ describe("agGridAdapter", () => {
     expect(adapter.scrollHorizontalViewport(root, 500)).toBe(false);
   });
 
-  it("reports center viewport width from the shared horizontal viewport sync", () => {
+  it("reports scroll and viewport size changes from one shared sync", () => {
     const adapter = createAgGridAdapter();
     const originalWindow = (globalThis as unknown as { window?: unknown }).window;
+    const originalResizeObserver = (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+    const originalMutationObserver = (globalThis as unknown as { MutationObserver?: unknown }).MutationObserver;
+    let nextFrameId = 1;
+    let frameCallbacks: FrameRequestCallback[] = [];
+    const flushFrames = () => {
+      const callbacks = frameCallbacks;
+      frameCallbacks = [];
+      callbacks.forEach((callback) => callback(0));
+    };
     const fakeWindow = {
       requestAnimationFrame: (callback: FrameRequestCallback) => {
-        callback(0);
-        return 1;
+        frameCallbacks.push(callback);
+        return nextFrameId++;
       },
       cancelAnimationFrame: () => {},
       addEventListener: () => {},
@@ -103,13 +113,39 @@ describe("agGridAdapter", () => {
       configurable: true,
       value: fakeWindow,
     });
+    const resizeNotifications: Array<() => void> = [];
+    class FakeResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeNotifications.push(() => callback([], this as unknown as ResizeObserver));
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      configurable: true,
+      value: FakeResizeObserver,
+    });
+    const mutationNotifications: Array<() => void> = [];
+    class FakeMutationObserver {
+      constructor(callback: MutationCallback) {
+        mutationNotifications.push(() => callback([], this as unknown as MutationObserver));
+      }
+      observe() {}
+      disconnect() {}
+    }
+    Object.defineProperty(globalThis, "MutationObserver", {
+      configurable: true,
+      value: FakeMutationObserver,
+    });
 
-    const verticalViewport = {
+    let verticalViewport = {
       addEventListener: () => {},
+      clientHeight: 654,
       removeEventListener: () => {},
       scrollTop: 12,
     };
-    const horizontalViewport = {
+    let horizontalViewport = {
       addEventListener: () => {},
       clientWidth: 456,
       removeEventListener: () => {},
@@ -126,20 +162,140 @@ describe("agGridAdapter", () => {
     try {
       const snapshots: Array<Parameters<Parameters<typeof adapter.attachViewportSync>[1]>[0]> = [];
       const cleanup = adapter.attachViewportSync(root, (snapshot) => snapshots.push(snapshot));
+      flushFrames();
 
       expect(snapshots).toEqual([{
+        bodyViewportHeight: 654,
         centerViewportWidth: 456,
         hasHorizontalOverlap: true,
         hasVerticalOverlap: true,
         left: 34,
         top: 12,
       }]);
+      verticalViewport.clientHeight = 612;
+      horizontalViewport.clientWidth = 420;
+      if (resizeNotifications.length !== 1) throw new Error("viewport sync did not create one resize observer");
+      resizeNotifications[0]();
+      flushFrames();
+      expect(snapshots.at(-1)).toMatchObject({
+        bodyViewportHeight: 612,
+        centerViewportWidth: 420,
+      });
+      verticalViewport = {
+        addEventListener: () => {},
+        clientHeight: 500,
+        removeEventListener: () => {},
+        scrollTop: 44,
+      };
+      horizontalViewport = {
+        addEventListener: () => {},
+        clientWidth: 390,
+        removeEventListener: () => {},
+        scrollLeft: 72,
+      };
+      if (mutationNotifications.length !== 1) throw new Error("viewport sync did not create one mutation observer");
+      mutationNotifications[0]();
+      flushFrames();
+      expect(snapshots.at(-1)).toMatchObject({
+        bodyViewportHeight: 500,
+        centerViewportWidth: 390,
+        left: 72,
+        top: 44,
+      });
       cleanup();
     } finally {
       Object.defineProperty(globalThis, "window", {
         configurable: true,
         value: originalWindow,
       });
+      Object.defineProperty(globalThis, "ResizeObserver", {
+        configurable: true,
+        value: originalResizeObserver,
+      });
+      Object.defineProperty(globalThis, "MutationObserver", {
+        configurable: true,
+        value: originalMutationObserver,
+      });
+    }
+  });
+
+  it("synchronizes visual scroll state before the next React frame", () => {
+    const adapter = createAgGridAdapter();
+    const originalWindow = (globalThis as unknown as { window?: unknown }).window;
+    const originalResizeObserver = (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+    const originalMutationObserver = (globalThis as unknown as { MutationObserver?: unknown }).MutationObserver;
+    const horizontalScrollListeners: Array<() => void> = [];
+    const frameCallbacks: FrameRequestCallback[] = [];
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        requestAnimationFrame: (callback: FrameRequestCallback) => {
+          frameCallbacks.push(callback);
+          return 1;
+        },
+        cancelAnimationFrame: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      },
+    });
+    class FakeResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    class FakeMutationObserver {
+      observe() {}
+      disconnect() {}
+    }
+    Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: FakeResizeObserver });
+    Object.defineProperty(globalThis, "MutationObserver", { configurable: true, value: FakeMutationObserver });
+    const verticalViewport = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      clientHeight: 500,
+      scrollTop: 0,
+    };
+    const horizontalViewport = {
+      addEventListener: (type: string, listener: () => void) => {
+        if (type === "scroll") horizontalScrollListeners.push(listener);
+      },
+      removeEventListener: () => {},
+      clientWidth: 420,
+      scrollLeft: 0,
+    };
+    const root = {
+      querySelector: (selector: string) => {
+        if (selector === ".ag-body-viewport.ag-layout-normal") return verticalViewport;
+        if (selector === ".ag-body-horizontal-scroll-viewport") return horizontalViewport;
+        return null;
+      },
+    } as unknown as HTMLElement;
+
+    try {
+      const frames: GridScrollSnapshot[] = [];
+      const immediate: Array<Pick<GridScrollSnapshot, "top" | "left">> = [];
+      const cleanup = adapter.attachViewportSync(
+        root,
+        (snapshot) => frames.push(snapshot),
+        (position) => immediate.push(position),
+      );
+      const initialFrame = frameCallbacks.shift();
+      if (!initialFrame) throw new Error("initial viewport frame was not scheduled");
+      initialFrame(0);
+
+      horizontalViewport.scrollLeft = 180;
+      const horizontalScrollListener = horizontalScrollListeners[0];
+      if (!horizontalScrollListener) throw new Error("horizontal scroll listener was not attached");
+      horizontalScrollListener();
+
+      expect(immediate).toEqual([{ top: 0, left: 180 }]);
+      expect(frames).toHaveLength(1);
+      expect(frameCallbacks).toHaveLength(1);
+      cleanup();
+    } finally {
+      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+      Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: originalResizeObserver });
+      Object.defineProperty(globalThis, "MutationObserver", { configurable: true, value: originalMutationObserver });
     }
   });
 });

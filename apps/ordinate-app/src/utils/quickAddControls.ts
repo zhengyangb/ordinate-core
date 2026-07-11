@@ -51,6 +51,51 @@ export function computeQuickAddDragCount(args: {
   return Math.min(maxCount, Math.max(1, Math.floor(distance / stepPx) + 1));
 }
 
+export function resolveAppendAnchorScrollPosition(args: {
+  scrollPosition: number;
+  insertedExtent: number;
+  scrollSize: number;
+  viewportSize: number;
+}): number {
+  const { scrollPosition, insertedExtent, scrollSize, viewportSize } = args;
+  assertNonNegativeFiniteNumber(scrollPosition, "scrollPosition");
+  assertNonNegativeFiniteNumber(insertedExtent, "insertedExtent");
+  assertNonNegativeFiniteNumber(scrollSize, "scrollSize");
+  assertNonNegativeFiniteNumber(viewportSize, "viewportSize");
+  const maxScrollPosition = Math.max(0, scrollSize - viewportSize);
+  return Math.min(maxScrollPosition, scrollPosition + insertedExtent);
+}
+
+export function resolveAppendAnchorScrollPositionAfterSizeChange(args: {
+  scrollPosition: number;
+  previousScrollSize: number;
+  nextScrollSize: number;
+  viewportSize: number;
+}): number | null {
+  const { scrollPosition, previousScrollSize, nextScrollSize, viewportSize } = args;
+  assertNonNegativeFiniteNumber(scrollPosition, "scrollPosition");
+  assertNonNegativeFiniteNumber(previousScrollSize, "previousScrollSize");
+  assertNonNegativeFiniteNumber(nextScrollSize, "nextScrollSize");
+  assertNonNegativeFiniteNumber(viewportSize, "viewportSize");
+  if (nextScrollSize <= previousScrollSize) return null;
+  return resolveAppendAnchorScrollPosition({
+    scrollPosition,
+    insertedExtent: nextScrollSize - previousScrollSize,
+    scrollSize: nextScrollSize,
+    viewportSize,
+  });
+}
+
+export function resolveAppendEndScrollPosition(args: {
+  scrollSize: number;
+  viewportSize: number;
+}): number {
+  const { scrollSize, viewportSize } = args;
+  assertNonNegativeFiniteNumber(scrollSize, "scrollSize");
+  assertNonNegativeFiniteNumber(viewportSize, "viewportSize");
+  return Math.max(0, scrollSize - viewportSize);
+}
+
 function assertFiniteNumber(value: number, label: string): void {
   if (!Number.isFinite(value)) {
     throw new Error(`${label} must be finite`);
@@ -60,6 +105,12 @@ function assertFiniteNumber(value: number, label: string): void {
 function assertPositiveFiniteNumber(value: number, label: string): void {
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(`${label} must be positive`);
+  }
+}
+
+function assertNonNegativeFiniteNumber(value: number, label: string): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} must be non-negative`);
   }
 }
 
