@@ -1493,13 +1493,21 @@ export default function App() {
   }, [currentSheetRowStructure, currentSheetState, headerRowCount, selection]);
 
   const formulaReferenceContext = useMemo<FormulaReferenceContext>(() => {
+    const sheetNameCounts = new Map<string, number>();
+    docState?.sheets.forEach((sheet) => {
+      sheetNameCounts.set(sheet.name, (sheetNameCounts.get(sheet.name) ?? 0) + 1);
+    });
     const runtimeSheetsByName = new Map<string, SheetEvaluation>();
     evaluation?.sheets.forEach((sheet) => runtimeSheetsByName.set(sheet.name, sheet));
     const presentationSheetsByName = new Map<string, SheetPresentation>();
     presentation?.sheets.forEach((sheet) => presentationSheetsByName.set(sheet.name, sheet));
-    const sheetsByName = new Map<string, FormulaReferenceSheetContext>();
+    const sheetsByName = new Map<string, FormulaReferenceSheetContext | null>();
 
     docState?.sheets.forEach((sheetState) => {
+      if (sheetNameCounts.get(sheetState.name) !== 1) {
+        sheetsByName.set(sheetState.name, null);
+        return;
+      }
       const runtimeSheet = runtimeSheetsByName.get(sheetState.name) ?? null;
       const presentationSheet = presentationSheetsByName.get(sheetState.name) ?? null;
       const targetColCount = trimSheetColCount(sheetState, runtimeSheet);

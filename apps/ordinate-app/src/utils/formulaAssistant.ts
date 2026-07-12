@@ -1,6 +1,9 @@
-import { getStandardFunctionMetadata, type FunctionMetadata } from "@ordinate/core";
-
-import { scanFormulaLexicalState, scanOrdinateReferenceEnd } from "./formulaReferenceScan";
+import {
+  getStandardFunctionMetadata,
+  inspectFormulaInput,
+  type FormulaEditorInspection,
+  type FunctionMetadata,
+} from "@ordinate/core";
 
 export type FormulaAssistantNameContext = {
   kind: "name";
@@ -16,6 +19,10 @@ export type FormulaAssistantCallContext = {
 };
 
 export type FormulaAssistantContext = FormulaAssistantNameContext | FormulaAssistantCallContext | null;
+export type FormulaAssistantContexts = {
+  name: FormulaAssistantNameContext | null;
+  call: FormulaAssistantCallContext | null;
+};
 export type FormulaAssistantParameter = FunctionMetadata["signatures"][number]["parameters"][number];
 
 export type FormulaFunctionSuggestion = {
@@ -47,22 +54,7 @@ export function isFormulaAssistantImeEvent(event: Pick<KeyboardEvent, "isComposi
 }
 
 export function resolveFunctionNameContext(draft: string, caret: number): FormulaAssistantNameContext | null {
-  const formulaStart = draft.search(/\S/);
-  if (formulaStart < 0 || draft[formulaStart] !== "=") return null;
-  const safeCaret = Math.max(0, Math.min(caret, draft.length));
-  const state = scanFormulaLexicalState(draft, safeCaret);
-  if (state.inString || state.referenceDepth > 0) return null;
-
-  let start = safeCaret;
-  while (start > formulaStart + 1 && isFormulaFunctionNameChar(draft[start - 1])) {
-    start -= 1;
-  }
-  const query = draft.slice(start, safeCaret);
-  if (query.length > 0 && !isFormulaFunctionNameStart(query[0])) return null;
-  if (!isFunctionNameBoundary(draft[start - 1])) return null;
-  const after = draft[safeCaret];
-  if (after && isFormulaFunctionNameChar(after)) return null;
-  return { kind: "name", query, start, end: safeCaret };
+  return resolveFormulaAssistantContexts(draft, caret).name;
 }
 
 export function resolveActiveFunctionCallContext(
@@ -70,63 +62,22 @@ export function resolveActiveFunctionCallContext(
   caret: number,
   hasFunction: (name: string) => boolean = (name) => Boolean(getStandardFunctionMetadata(name)),
 ): FormulaAssistantCallContext | null {
-  const formulaStart = draft.search(/\S/);
-  if (formulaStart < 0 || draft[formulaStart] !== "=") return null;
   const safeCaret = Math.max(0, Math.min(caret, draft.length));
-  const stack: FormulaAssistantCallContext[] = [];
-  let inString = false;
-  let referenceDepth = 0;
+  const inspection = inspectFormulaInput(draft, { caret: safeCaret });
+  return resolveCallContextFromInspection(inspection, hasFunction);
+}
 
-  for (let index = formulaStart + 1; index < safeCaret; index += 1) {
-    const char = draft[index];
-    const prev = draft[index - 1];
-    if (inString) {
-      if (char === "\"" && prev !== "\\") inString = false;
-      continue;
-    }
-    if (char === "\"") {
-      inString = true;
-      continue;
-    }
-    if (char === "@" && draft[index + 1] === "[") {
-      const referenceEnd = scanOrdinateReferenceEnd(draft, index);
-      if (referenceEnd === null || referenceEnd > safeCaret) {
-        referenceDepth = 1;
-        break;
-      }
-      index = referenceEnd - 1;
-      continue;
-    }
-    if (referenceDepth > 0) {
-      if (char === "]") referenceDepth -= 1;
-      continue;
-    }
-    if (isFormulaFunctionNameStart(char)) {
-      let end = index + 1;
-      while (end < safeCaret && isFormulaFunctionNameChar(draft[end])) {
-        end += 1;
-      }
-      let next = end;
-      while (next < safeCaret && /\s/.test(draft[next])) next += 1;
-      if (draft[next] === "(" && hasFunction(draft.slice(index, end))) {
-        stack.push({ kind: "call", name: draft.slice(index, end), argumentIndex: 0 });
-        index = next;
-        continue;
-      }
-      index = end - 1;
-      continue;
-    }
-    if (char === "," && stack.length > 0) {
-      const top = stack[stack.length - 1];
-      stack[stack.length - 1] = { ...top, argumentIndex: top.argumentIndex + 1 };
-      continue;
-    }
-    if (char === ")" && stack.length > 0) {
-      stack.pop();
-    }
-  }
-
-  return stack[stack.length - 1] ?? null;
+export function resolveFormulaAssistantContexts(
+  draft: string,
+  caret: number,
+  hasFunction: (name: string) => boolean = (name) => Boolean(getStandardFunctionMetadata(name)),
+): FormulaAssistantContexts {
+  const safeCaret = Math.max(0, Math.min(caret, draft.length));
+  const inspection = inspectFormulaInput(draft, { caret: safeCaret });
+  return {
+    name: resolveNameContextFromInspection(inspection),
+    call: resolveCallContextFromInspection(inspection, hasFunction),
+  };
 }
 
 export function buildFunctionSuggestions(functions: readonly FunctionMetadata[], query: string): FormulaFunctionSuggestion[] {
@@ -200,6 +151,16 @@ export function buildFunctionCallInsertion(args: {
 
   const safeStart = Math.max(0, Math.min(args.replacementStart, args.replacementEnd, args.draft.length));
   const safeEnd = Math.max(0, Math.min(Math.max(args.replacementStart, args.replacementEnd), args.draft.length));
+  let callOpen = safeEnd;
+  while (callOpen < args.draft.length && /\s/.test(args.draft[callOpen])) callOpen += 1;
+  if (args.draft[callOpen] === "(") {
+    const nextInput = `${args.draft.slice(0, safeStart)}${args.suggestion.insertName}${args.draft.slice(safeEnd)}`;
+    const replacedLength = safeEnd - safeStart;
+    const nextCallOpen = callOpen + args.suggestion.insertName.length - replacedLength;
+    const caret = nextCallOpen + 1;
+    const nextGuardedCloseParen = args.draft[callOpen + 1] === ")" ? caret : null;
+    return { nextInput, nextCaret: caret, nextGuardedCloseParen };
+  }
   const nextInput = `${args.draft.slice(0, safeStart)}${callText}${args.draft.slice(safeEnd)}`;
   const caret = safeStart + callText.length - 1;
   return { nextInput, nextCaret: caret, nextGuardedCloseParen: caret };
@@ -317,17 +278,52 @@ export function correctFormulaAssistantInputChange(args: {
   return null;
 }
 
-function isFormulaFunctionNameChar(char: string): boolean {
-  return /[A-Za-z0-9_]/.test(char);
-}
-
-function isFormulaFunctionNameStart(char: string): boolean {
-  return /[A-Za-z_]/.test(char);
-}
-
 function isFunctionNameBoundary(char: string | undefined): boolean {
   if (char == null) return true;
   return /\s|[=+\-*/^(),<>]/.test(char);
+}
+
+function resolveNameContextFromInspection(inspection: FormulaEditorInspection): FormulaAssistantNameContext | null {
+  if (inspection.kind !== "formula" || !inspection.caret) return null;
+  const caret = inspection.caret.offset;
+  const token = inspection.caret.tokenIndex === null ? null : inspection.tokens[inspection.caret.tokenIndex];
+
+  const nameToken = inspection.tokens.find(
+    (candidate) =>
+      candidate.kind === "identifier"
+      && candidate.span.start < caret
+      && candidate.span.end === caret,
+  );
+  if (nameToken) {
+    if (!isFunctionNameBoundary(inspection.source[nameToken.span.start - 1])) return null;
+    return {
+      kind: "name",
+      query: inspection.source.slice(nameToken.span.start, caret),
+      start: nameToken.span.start,
+      end: caret,
+    };
+  }
+
+  if (token && !["identifier", "whitespace", "formula_marker"].includes(token.kind)) return null;
+  if (token && token.kind !== "whitespace" && token.kind !== "formula_marker") return null;
+  if (!isFunctionNameBoundary(inspection.source[caret - 1])) return null;
+  return { kind: "name", query: "", start: caret, end: caret };
+}
+
+function resolveCallContextFromInspection(
+  inspection: FormulaEditorInspection,
+  hasFunction: (name: string) => boolean,
+): FormulaAssistantCallContext | null {
+  if (inspection.kind !== "formula" || !inspection.caret || inspection.caret.callStructureIndex === null) return null;
+  const structure = inspection.structures[inspection.caret.callStructureIndex];
+  if (structure.kind !== "call") {
+    throw new Error("formula inspection call context does not reference a call structure");
+  }
+  if (!hasFunction(structure.name)) return null;
+  if (inspection.caret.argumentIndex === null) {
+    throw new Error("formula inspection call context is missing an argument index");
+  }
+  return { kind: "call", name: structure.name, argumentIndex: inspection.caret.argumentIndex };
 }
 
 function getSingleTextInsertion(previousText: string, nextText: string): { start: number; text: string } | null {

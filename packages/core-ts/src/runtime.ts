@@ -23,8 +23,34 @@ export type {
   ViewSelection,
 } from "./runtime/types";
 
-export { getCellTextView, parseCellInput, parseCellText, resolveCellInputText, splitCellDisplayMetadata, stripCellDisplayMetadata } from "./runtime/parse";
-export type { CellInputTextView, CellTextViewSource } from "./runtime/parse";
+export { getCellTextView, parseCellInput, parseCellText, parseFormulaReferenceSyntax, resolveCellInputText, splitCellDisplayMetadata, stripCellDisplayMetadata } from "./runtime/parse";
+export type {
+  CellInputTextView,
+  CellTextViewSource,
+  FormulaReferenceExpressionSyntax,
+  FormulaReferenceSelectorSyntax,
+  FormulaReferenceSyntax,
+} from "./runtime/parse";
+export { inspectFormulaInput } from "./runtime/formulaInspection";
+export { formatFormulaReferencePathComponent, formatFormulaSheetSelector } from "./runtime/referenceSyntax";
+export type {
+  FormulaEditorArray,
+  FormulaEditorCall,
+  FormulaEditorCaretContext,
+  FormulaEditorCompletableToken,
+  FormulaEditorDiagnostic,
+  FormulaEditorDiagnosticKind,
+  FormulaEditorGroup,
+  FormulaEditorIndex,
+  FormulaEditorInspection,
+  FormulaEditorSimpleToken,
+  FormulaEditorSimpleTokenKind,
+  FormulaEditorStructure,
+  FormulaEditorStructureBase,
+  FormulaEditorToken,
+  FormulaInspectionOptions,
+  FormulaSourceSpan,
+} from "./runtime/formulaInspection";
 export { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
 export { formatTemporalValue, parseTemporalFormatSpec } from "./runtime/temporalFormat";
 export { evaluateDocument } from "./runtime/eval";

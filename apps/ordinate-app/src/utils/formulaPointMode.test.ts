@@ -169,6 +169,15 @@ describe("formula point mode", () => {
     expect(draft.slice(tokens[0].start, tokens[0].end)).toBe(first);
   });
 
+  it("ignores incomplete ordinate references until core reports a complete token", () => {
+    expect(tokenizeFormulaReferences('=@["Inputs"::[Revenue,Amount]')).toEqual([]);
+  });
+
+  it("does not highlight spreadsheet-like identifiers inside arrays or postfix indexes", () => {
+    expect(tokenizeFormulaReferences("=sum([A1,B1])")).toEqual([]);
+    expect(tokenizeFormulaReferences("=@[Rows,Cols][A1]").map((token) => token.text)).toEqual(["@[Rows,Cols]"]);
+  });
+
   it("keeps underscore labels classified as labels instead of relative references", () => {
     const [token] = tokenizeFormulaReferences("=@[\"Input_Sheet\"::[Forecast_Multiplier,Value]]");
 
@@ -205,6 +214,92 @@ describe("formula point mode", () => {
     );
     expect(view.options.find((option) => option.style === "spreadsheet-a1")?.disabledReason).toMatch(/Cross-sheet A1/);
     expect(view.options.find((option) => option.style === "ordinate-relative")?.disabledReason).toMatch(/Cross-sheet/);
+  });
+
+  it("uses core escape semantics for quoted cross-sheet names", () => {
+    const target = sheetContext({
+      rowLabelsByAbsoluteIndex: new Map([[2, ["Revenue"]]]),
+      colLabelPathsByIndex: [["Metric"], ["Amount"]],
+      colCount: 2,
+    });
+    const ctx = context({
+      currentSheetName: "Summary",
+      sheetsByName: new Map([
+        ["Summary", sheetContext()],
+        ["Aq", target],
+      ]),
+    });
+    const [view] = resolveFormulaReferenceViews('=@["A\\q"::[Revenue,Amount]]', ctx);
+
+    expect(view.sheetName).toBe("Aq");
+    expect(view.rect).toEqual({ rowStart: 2, rowEnd: 2, colStart: 1, colEnd: 1 });
+  });
+
+  it("round-trips generated reference options through core escaping", () => {
+    const sheetName = "Input\t\\\"Sheet";
+    const target = sheetContext({
+      rowLabelsByAbsoluteIndex: new Map([[2, ["Revenue\t\\\"Total"]]]),
+      colLabelPathsByIndex: [["Metric"], ["Amount"]],
+      colCount: 2,
+    });
+    const ctx = context({
+      currentSheetName: "Summary",
+      sheetsByName: new Map([
+        ["Summary", sheetContext()],
+        [sheetName, target],
+      ]),
+    });
+    const source = `=@[\"Input\t\\\\\\\"Sheet\"::[\"Revenue\t\\\\\\\"Total\",Amount]]`;
+    const [view] = resolveFormulaReferenceViews(source, ctx);
+    const label = view.options.find((option) => option.style === "ordinate-label");
+
+    expect(view.rect).toEqual({ rowStart: 2, rowEnd: 2, colStart: 1, colEnd: 1 });
+    expect(label?.text).toBe(source.slice(1));
+    expect(tokenizeFormulaReferences(`=${label?.text}`)[0]?.sheetName).toBe(sheetName);
+  });
+
+  it.each([
+    ["=A:A", { rowStart: 1, rowEnd: 8, colStart: 0, colEnd: 0 }],
+    ["=1:1", { rowStart: 1, rowEnd: 1, colStart: 0, colEnd: 4 }],
+    ["=b2:c3", { rowStart: 2, rowEnd: 3, colStart: 1, colEnd: 2 }],
+  ] as const)("resolves full spreadsheet reference overlay for %s", (draft, expected) => {
+    expect(resolveFormulaReferenceViews(draft, context())[0]?.rect).toEqual(expected);
+  });
+
+  it("keeps style options visible but disabled when a target sheet is missing", () => {
+    const [view] = resolveFormulaReferenceViews('=@["Missing"::[Revenue,Amount]]', context({
+      sheetsByName: new Map([["Summary", sheetContext()]]),
+    }));
+
+    expect(view.rect).toBeNull();
+    expect(view.options).toHaveLength(4);
+    expect(view.options.every((option) => option.text === null && option.disabledReason?.includes("unavailable"))).toBe(true);
+  });
+
+  it("keeps style options visible but disabled when a target sheet name is ambiguous", () => {
+    const [view] = resolveFormulaReferenceViews('=@["Inputs"::[Revenue,Amount]]', context({
+      sheetsByName: new Map([
+        ["Summary", sheetContext()],
+        ["Inputs", null],
+      ]),
+    }));
+
+    expect(view.rect).toBeNull();
+    expect(view.options).toHaveLength(4);
+    expect(view.options.every((option) => option.text === null && option.disabledReason?.includes("ambiguous"))).toBe(true);
+  });
+
+  it("keeps style options visible but disabled when labels are ambiguous", () => {
+    const [view] = resolveFormulaReferenceViews("=@[Revenue,2025]", context({
+      rowLabelsByAbsoluteIndex: new Map([
+        [2, ["Revenue"]],
+        [3, ["Revenue"]],
+      ]),
+    }));
+
+    expect(view.rect).toBeNull();
+    expect(view.options).toHaveLength(4);
+    expect(view.options.every((option) => option.text === null && option.disabledReason?.includes("ambiguous"))).toBe(true);
   });
 
   it("arms and replaces a selected cross-sheet token as a single reference", () => {

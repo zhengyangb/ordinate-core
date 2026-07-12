@@ -35,8 +35,7 @@ import {
   nextFormulaAssistantSelectedIndex,
   normalizeFunctionSearchText,
   parameterLabelForFormulaAssistant,
-  resolveActiveFunctionCallContext,
-  resolveFunctionNameContext,
+  resolveFormulaAssistantContexts,
   returnLabelForFormulaAssistant,
   signatureForFormulaAssistant,
   type FormulaAssistantContext,
@@ -199,7 +198,7 @@ function renderFormulaDraftWithTokens(
     return null;
   }
   const viewsById = new Map(referenceViews.map((view) => [view.id, view]));
-  const tokens = tokenizeFormulaReferences(draft);
+  const tokens = referenceViews;
   const nodes: ReactNode[] = [];
   let cursor = 0;
   tokens.forEach((token) => {
@@ -411,8 +410,7 @@ export default function FormulaBarOverlay({
   const functionAssistantContext = useMemo<FormulaAssistantContext>(() => {
     if (!isEditingInput || !isFormulaDraft || activeReferenceView) return null;
     const caret = editorSelection.end;
-    const nameContext = resolveFunctionNameContext(draftInput, caret);
-    const callContext = resolveActiveFunctionCallContext(draftInput, caret);
+    const { name: nameContext, call: callContext } = resolveFormulaAssistantContexts(draftInput, caret);
     if (nameContext && (nameContext.query.length > 0 || !callContext)) return nameContext;
     return callContext ?? nameContext;
   }, [activeReferenceView, draftInput, editorSelection.end, isEditingInput, isFormulaDraft]);
