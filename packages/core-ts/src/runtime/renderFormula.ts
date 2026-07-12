@@ -1,4 +1,5 @@
 import { isError, isValidExternalErrorKind } from "./errors";
+import { formatFormulaReferencePathComponent, formatFormulaSheetSelector } from "./referenceSyntax";
 import { getBoundSheetId, selectorSource } from "./references";
 import type { ArrayExpr, ExprNode, IndexAxisExpr, IndexExpr, ReferenceExpr, RefSelector, RuntimeValue } from "./types";
 
@@ -103,7 +104,7 @@ function renderCrossSheetReference(ref: ReferenceExpr, context: FormulaRenderCon
     targetContext?.colIdToIndex ?? new Map<number, number>(),
     targetContext?.colLabelsByIndex.map((label) => [label]),
   );
-  return `@[${quoteSheetSelector(sheetName)}::[${rowSel},${colSel}]]`;
+  return `@[${formatFormulaSheetSelector(sheetName)}::[${rowSel},${colSel}]]`;
 }
 
 function boundSheetIdOf(ref: ReferenceExpr): number | null {
@@ -182,14 +183,14 @@ function renderScalarSelector(selector: RefSelector, idToIndex: Map<number, numb
       const key = JSON.stringify(label);
       const matchCount = labelsByIndex?.filter((candidate) => JSON.stringify(candidate) === key).length ?? 0;
       if (matchCount === 1) {
-        return label.map((p) => quotePathComponent(p)).join(".");
+        return label.map((p) => formatFormulaReferencePathComponent(p)).join(".");
       }
     }
     return `#${idx + 1}`;
   }
   if (selector.kind === "label") {
     const parts = selector.value as string[];
-    return parts.map((p) => quotePathComponent(p)).join(".");
+    return parts.map((p) => formatFormulaReferencePathComponent(p)).join(".");
   }
   return "?";
 }
@@ -206,20 +207,6 @@ function isStructurallyBoundSelector(selector: RefSelector | null): selector is 
 function selectorIndex(selector: RefSelector, idToIndex: Map<number, number>): number | null {
   if (!isStructurallyBoundSelector(selector)) return null;
   return idToIndex.get(Number(selector.value)) ?? null;
-}
-
-function quotePathComponent(text: string): string {
-  if (/^[A-Za-z0-9_]+$/.test(text)) {
-    return text;
-  }
-  return serializeString(text);
-}
-
-function quoteSheetSelector(text: string): string {
-  if (/^[A-Za-z0-9]+$/.test(text)) {
-    return text;
-  }
-  return serializeString(text);
 }
 
 type SpreadsheetAxis =

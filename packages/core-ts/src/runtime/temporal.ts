@@ -15,6 +15,13 @@ const DATE_WITH_OFFSET_SCAN_RE = /^\d{4}-\d{2}-\d{2}(?:Z|[+-](?:0\d|1\d|2[0-3]):
 const DATE_SCAN_RE = /^\d{4}-\d{2}-\d{2}/;
 const TIME_SCAN_RE = /^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)?/;
 const DURATION_SCAN_RE = /^P(?=.)(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?=.)(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?/;
+const TEMPORAL_SCAN_AT_RES = [
+  new RegExp(DATETIME_SCAN_RE.source.slice(1), "y"),
+  new RegExp(DATE_WITH_OFFSET_SCAN_RE.source.slice(1), "y"),
+  new RegExp(DATE_SCAN_RE.source.slice(1), "y"),
+  new RegExp(TIME_SCAN_RE.source.slice(1), "y"),
+] as const;
+const DURATION_SCAN_AT_RE = new RegExp(DURATION_SCAN_RE.source.slice(1), "y");
 
 const MS_PER_SECOND = 1000;
 const MS_PER_MINUTE = 60 * MS_PER_SECOND;
@@ -119,13 +126,21 @@ export function parseTemporalLiteral(text: string): RuntimeValue | null {
 }
 
 export function scanTemporalLiteralPrefix(text: string): string | null {
-  const match =
-    DATETIME_SCAN_RE.exec(text)
-    ?? DATE_WITH_OFFSET_SCAN_RE.exec(text)
-    ?? DATE_SCAN_RE.exec(text)
-    ?? TIME_SCAN_RE.exec(text)
-    ?? (/^P(?:\d|T)/.test(text) ? DURATION_SCAN_RE.exec(text) : null);
-  return match?.[0] ?? null;
+  return scanTemporalLiteralPrefixAt(text, 0);
+}
+
+export function scanTemporalLiteralPrefixAt(text: string, start: number): string | null {
+  if (!Number.isInteger(start) || start < 0 || start > text.length) {
+    throw new Error("temporal scan start must be an integer inside the source");
+  }
+  for (const pattern of TEMPORAL_SCAN_AT_RES) {
+    pattern.lastIndex = start;
+    const match = pattern.exec(text);
+    if (match) return match[0];
+  }
+  if (text[start] !== "P" || !/[\dT]/.test(text[start + 1] ?? "")) return null;
+  DURATION_SCAN_AT_RE.lastIndex = start;
+  return DURATION_SCAN_AT_RE.exec(text)?.[0] ?? null;
 }
 
 export function decomposeTemporalValue(value: RuntimeValue): TemporalValueParts | null {

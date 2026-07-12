@@ -20,8 +20,9 @@ import {
 } from "./types";
 import { validateFormatSpec } from "./displayMetadata";
 import { diagnosticFromError, makeError, makeInternalError } from "./errors";
-import { parseTemporalLiteral, scanTemporalLiteralPrefix } from "./temporal";
+import { parseTemporalLiteral } from "./temporal";
 import { parseTemporalFormatSpec } from "./temporalFormat";
+import { buildFormulaConcreteSyntax, type FormulaParserToken } from "./formulaInspection";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
@@ -29,6 +30,24 @@ const UNDERSCORE_OFFSET_RE = /^_([+-]?\d+)$/;
 const NUMBER_RE = /^-?\d+(?:\.\d+)?$/;
 const ABSOLUTE_FIXED_RE = /^#([1-9]\d*)!$/;
 const ABSOLUTE_RE = /^#([1-9]\d*)$/;
+const CONCRETE_STRUCTURAL_TOKEN_KINDS = new Set([
+  "GROUP_OPEN",
+  "GROUP_CLOSE",
+  "CALL_OPEN",
+  "CALL_CLOSE",
+  "ARRAY_OPEN",
+  "ARRAY_CLOSE",
+  "INDEX_OPEN",
+  "INDEX_CLOSE",
+  "CALL_SEPARATOR",
+  "ARRAY_SEPARATOR",
+  "INDEX_SEPARATOR",
+  "INDEX_COLON",
+  "UNOWNED_SEPARATOR",
+  "UNOWNED_COLON",
+  "UNEXPECTED_PAREN_CLOSE",
+  "UNEXPECTED_BRACKET_CLOSE",
+]);
 const UNQUOTED_PATH_COMPONENT_RE = /^[A-Za-z0-9_]+$/;
 const ERROR_LITERAL_RE = /^error\[([a-z][a-z0-9_]*)\]$/;
 
@@ -279,7 +298,7 @@ export function stripCellDisplayMetadata(text: string): string {
 
 // Parse a formula expression into an AST node.
 function parseExpression(text: string): ExprNode {
-  const parser = new ExprParser(tokenizeExpr(text));
+  const parser = new ExprParser(buildFormulaConcreteSyntax(text).parserTokens);
   const node = parser.parseExpression();
   if (!parser.atEnd()) {
     const existingError = parseExpressionError(node);
@@ -289,191 +308,12 @@ function parseExpression(text: string): ExprNode {
   return node;
 }
 
-// Tokenize a formula expression string.
-function tokenizeExpr(text: string): [string, string][] {
-  const out: [string, string][] = [];
-  let i = 0;
-  let indexBracketDepth = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (/\s/.test(ch)) {
-      i += 1;
-      continue;
-    }
-    if (ch === "*" && i + 1 < text.length && text[i + 1] === "*") {
-      out.push(["**", "**"]);
-      i += 2;
-      continue;
-    }
-    if ("()+-*/,:".includes(ch)) {
-      out.push([ch, ch]);
-      i += 1;
-      continue;
-    }
-    if (ch === "[") {
-      out.push(["[", "["]);
-      indexBracketDepth += 1;
-      i += 1;
-      continue;
-    }
-    if (ch === "]") {
-      out.push(["]", "]"]);
-      indexBracketDepth = Math.max(0, indexBracketDepth - 1);
-      i += 1;
-      continue;
-    }
-    if (ch === "!" && i + 1 < text.length && text[i + 1] === "=") {
-      out.push(["!=", "!="]);
-      i += 2;
-      continue;
-    }
-    if (ch === "=" && i + 1 < text.length && text[i + 1] === "=") {
-      out.push(["==", "=="]);
-      i += 2;
-      continue;
-    }
-    if (ch === "<" || ch === ">") {
-      if (i + 1 < text.length && text[i + 1] === "=") {
-        out.push([`${ch}=`, `${ch}=`]);
-        i += 2;
-      } else {
-        out.push([ch, ch]);
-        i += 1;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      let j = i + 1;
-      let escaped = false;
-      while (j < text.length) {
-        const c = text[j];
-        if (escaped) {
-          escaped = false;
-          j += 1;
-          continue;
-        }
-        if (c === "\\") {
-          escaped = true;
-          j += 1;
-          continue;
-        }
-        if (c === '"') break;
-        j += 1;
-      }
-      if (j >= text.length) {
-        out.push(["ERR", "unterminated_string"]);
-        return out;
-      }
-      out.push(["STRING", text.slice(i, j + 1)]);
-      i = j + 1;
-      continue;
-    }
-    if (ch === "@" && i + 1 < text.length && text[i + 1] === "[") {
-      const j = scanReferenceEnd(text, i);
-      if (j === -1) {
-        out.push(["ERR", "bad_reference"]);
-        return out;
-      }
-      out.push(["REF", text.slice(i, j + 1)]);
-      i = j + 1;
-      continue;
-    }
-    if (text.startsWith("error[", i)) {
-      const match = /^error\[([a-z][a-z0-9_]*)\]/.exec(text.slice(i));
-      if (!match) {
-        out.push(["ERR", "malformed_error_literal"]);
-        return out;
-      }
-      const token = match[0];
-      const nextIndex = i + token.length;
-      if (!isExprTokenBoundary(text, nextIndex)) {
-        out.push(["ERR", "malformed_error_literal"]);
-        return out;
-      }
-      out.push(["ERROR_LITERAL", match[1]]);
-      i = nextIndex;
-      continue;
-    }
-    const temporalToken = scanTemporalLiteralPrefix(text.slice(i));
-    if (temporalToken && isExprTokenBoundary(text, i + temporalToken.length)) {
-      out.push(["TEMPORAL", temporalToken]);
-      i += temporalToken.length;
-      continue;
-    }
-    const spreadsheetToken = indexBracketDepth === 0 ? scanSpreadsheetToken(text, i) : null;
-    if (spreadsheetToken) {
-      out.push(["SPREF", spreadsheetToken.text]);
-      i = spreadsheetToken.next;
-      continue;
-    }
-    if (/\d/.test(ch)) {
-      let j = i + 1;
-      while (j < text.length && /[\d.]/.test(text[j])) j += 1;
-      out.push(["NUMBER", text.slice(i, j)]);
-      i = j;
-      continue;
-    }
-    if (/[A-Za-z_]/.test(ch)) {
-      let j = i + 1;
-      while (j < text.length && /[A-Za-z0-9_]/.test(text[j])) j += 1;
-      out.push(["IDENT", text.slice(i, j)]);
-      i = j;
-      continue;
-    }
-    out.push(["ERR", ch]);
-    return out;
-  }
-  return out;
-}
-
-function isExprTokenBoundary(text: string, nextIndex: number): boolean {
-  if (nextIndex >= text.length) return true;
-  return !/[A-Za-z0-9_\[]/.test(text[nextIndex]);
-}
-
-// Scan to the end of a reference token, respecting nesting and quotes.
-function scanReferenceEnd(text: string, start: number): number {
-  let i = start + 2;
-  let depth = 1;
-  let inQuote = false;
-  let escaped = false;
-  while (i < text.length) {
-    const ch = text[i];
-    if (escaped) {
-      escaped = false;
-      i += 1;
-      continue;
-    }
-    if (ch === "\\") {
-      escaped = true;
-      i += 1;
-      continue;
-    }
-    if (ch === '"') {
-      inQuote = !inQuote;
-      i += 1;
-      continue;
-    }
-    if (inQuote) {
-      i += 1;
-      continue;
-    }
-    if (ch === "[") depth += 1;
-    if (ch === "]") {
-      depth -= 1;
-      if (depth === 0) return i;
-    }
-    i += 1;
-  }
-  return -1;
-}
-
 // Recursive-descent parser for formula expressions.
 class ExprParser {
-  private tokens: [string, string][];
+  private tokens: FormulaParserToken[];
   private pos = 0;
 
-  constructor(tokens: [string, string][]) {
+  constructor(tokens: FormulaParserToken[]) {
     this.tokens = tokens;
   }
 
@@ -481,11 +321,11 @@ class ExprParser {
     return this.pos >= this.tokens.length;
   }
 
-  private peek(): [string, string] | null {
+  private peek(): FormulaParserToken | null {
     return this.atEnd() ? null : this.tokens[this.pos];
   }
 
-  private match(...kinds: string[]): [string, string] | null {
+  private match(...kinds: string[]): FormulaParserToken | null {
     const tk = this.peek();
     if (!tk) return null;
     if (kinds.includes(tk[0])) {
@@ -560,7 +400,7 @@ class ExprParser {
 
   private parsePostfix(): ExprNode {
     let node = this.parsePrimary();
-    while (this.match("[")) {
+    while (this.match("INDEX_OPEN")) {
       const axes = this.parseIndexAxes();
       node = { kind: "index", value: { target: node, axes } };
     }
@@ -568,7 +408,7 @@ class ExprParser {
   }
 
   private parseIndexAxes(): IndexAxisExpr[] {
-    if (this.match("]")) {
+    if (this.match("INDEX_CLOSE")) {
       return [
         {
           kind: "scalar",
@@ -578,8 +418,8 @@ class ExprParser {
     }
 
     const axes: IndexAxisExpr[] = [this.parseIndexAxis()];
-    while (this.match(",")) {
-      if (this.peek()?.[0] === "]") {
+    while (this.match("INDEX_SEPARATOR")) {
+      if (this.peek()?.[0] === "INDEX_CLOSE") {
         axes.push({
           kind: "scalar",
           value: { kind: "literal", value: makeInternalError("parse_index_missing_axis") },
@@ -589,7 +429,7 @@ class ExprParser {
       axes.push(this.parseIndexAxis());
     }
 
-    if (!this.match("]")) {
+    if (!this.match("INDEX_CLOSE")) {
       axes.push({
         kind: "scalar",
         value: { kind: "literal", value: makeInternalError("parse_index_missing_closing_bracket") },
@@ -599,17 +439,17 @@ class ExprParser {
   }
 
   private parseIndexAxis(): IndexAxisExpr {
-    if (this.match(":")) {
-      const end = this.peek()?.[0] === "," || this.peek()?.[0] === "]" ? null : this.parseExpression();
+    if (this.match("INDEX_COLON")) {
+      const end = this.peek()?.[0] === "INDEX_SEPARATOR" || this.peek()?.[0] === "INDEX_CLOSE" ? null : this.parseExpression();
       return { kind: "slice", start: null, end };
     }
 
     const startOrScalar = this.parseExpression();
-    if (!this.match(":")) {
+    if (!this.match("INDEX_COLON")) {
       return { kind: "scalar", value: startOrScalar };
     }
 
-    const end = this.peek()?.[0] === "," || this.peek()?.[0] === "]" ? null : this.parseExpression();
+    const end = this.peek()?.[0] === "INDEX_SEPARATOR" || this.peek()?.[0] === "INDEX_CLOSE" ? null : this.parseExpression();
     return { kind: "slice", start: startOrScalar, end };
   }
 
@@ -618,14 +458,15 @@ class ExprParser {
     if (!tk) {
       return { kind: "literal", value: makeInternalError("parse_expression_unexpected_eof") };
     }
-    if (this.match("(")) {
+    if (this.match("GROUP_OPEN")) {
       const node = this.parseExpression();
-      if (!this.match(")")) {
+      if (!this.match("GROUP_CLOSE")) {
+        if (parseExpressionError(node) && this.match("UNEXPECTED_PAREN_CLOSE")) return node;
         return { kind: "literal", value: makeInternalError("parse_expression_missing_closing_paren") };
       }
       return node;
     }
-    if (this.match("[")) {
+    if (this.match("ARRAY_OPEN")) {
       return this.parseArrayLiteral();
     }
     const num = this.match("NUMBER");
@@ -652,7 +493,7 @@ class ExprParser {
     const ident = this.match("IDENT");
     if (ident) {
       const next = this.peek();
-      if (next && next[0] === "(") {
+      if (next && next[0] === "CALL_OPEN") {
         return this.parseFunctionCall(ident[1]);
       }
       if (ident[1] === "true") return { kind: "literal", value: { kind: "boolean", value: true } };
@@ -665,19 +506,20 @@ class ExprParser {
       return parseReferenceNode(ref[1]);
     }
     this.pos += 1;
-    return { kind: "literal", value: makeInternalError("parse_expression_unexpected_token", { token: tk[0] }) };
+    const diagnosticToken = CONCRETE_STRUCTURAL_TOKEN_KINDS.has(tk[0]) ? tk[1] : tk[0];
+    return { kind: "literal", value: makeInternalError("parse_expression_unexpected_token", { token: diagnosticToken }) };
   }
 
   private parseArrayLiteral(): ExprNode {
-    if (this.match("]")) {
+    if (this.match("ARRAY_CLOSE")) {
       return { kind: "array", value: { rows: [[]], depth: 1 } as ArrayExpr };
     }
 
     const first = this.parseArrayElement();
-    if (parseExpressionError(first) && this.peek()?.[0] !== "," && this.peek()?.[0] !== "]") {
+    if (parseExpressionError(first) && this.peek()?.[0] !== "ARRAY_SEPARATOR" && this.peek()?.[0] !== "ARRAY_CLOSE") {
       return first;
     }
-    if (this.match("]")) {
+    if (this.match("ARRAY_CLOSE")) {
       if (first.kind === "array") {
         const nested = first.value as ArrayExpr;
         if (nested.depth !== 1) {
@@ -688,27 +530,27 @@ class ExprParser {
       return { kind: "array", value: { rows: [[first]], depth: 1 } as ArrayExpr };
     }
 
-    if (!this.match(",")) {
+    if (!this.match("ARRAY_SEPARATOR")) {
       return { kind: "literal", value: makeInternalError("parse_array_missing_closing_bracket") };
     }
-    if (this.peek()?.[0] === "]") {
+    if (this.peek()?.[0] === "ARRAY_CLOSE") {
       return { kind: "literal", value: makeInternalError("parse_array_trailing_comma") };
     }
-    if (this.peek()?.[0] === ",") {
+    if (this.peek()?.[0] === "ARRAY_SEPARATOR") {
       return { kind: "literal", value: makeInternalError("parse_array_missing_element") };
     }
 
     const elements: ExprNode[] = [first, this.parseArrayElement()];
-    while (this.match(",")) {
-      if (this.peek()?.[0] === "]") {
+    while (this.match("ARRAY_SEPARATOR")) {
+      if (this.peek()?.[0] === "ARRAY_CLOSE") {
         return { kind: "literal", value: makeInternalError("parse_array_trailing_comma") };
       }
-      if (this.peek()?.[0] === ",") {
+      if (this.peek()?.[0] === "ARRAY_SEPARATOR") {
         return { kind: "literal", value: makeInternalError("parse_array_missing_element") };
       }
       elements.push(this.parseArrayElement());
     }
-    if (!this.match("]")) {
+    if (!this.match("ARRAY_CLOSE")) {
       return { kind: "literal", value: makeInternalError("parse_array_missing_closing_bracket") };
     }
 
@@ -730,7 +572,7 @@ class ExprParser {
   }
 
   private parseArrayElement(): ExprNode {
-    if (this.peek()?.[0] === "," || this.peek()?.[0] === "]") {
+    if (this.peek()?.[0] === "ARRAY_SEPARATOR" || this.peek()?.[0] === "ARRAY_CLOSE") {
       return { kind: "literal", value: makeInternalError("parse_array_missing_element") };
     }
     if (this.peek()?.[0] === "IDENT" && isSpreadsheetLikeReferenceText(this.peek()?.[1] ?? "")) {
@@ -741,18 +583,21 @@ class ExprParser {
   }
 
   private parseFunctionCall(name: string): ExprNode {
-    if (!this.match("(")) {
+    if (!this.match("CALL_OPEN")) {
       return { kind: "literal", value: makeInternalError("parse_function_call_missing_open_paren", { name }) };
     }
     const args: ExprNode[] = [];
-    if (this.match(")")) {
+    if (this.match("CALL_CLOSE")) {
       return { kind: "call", value: { name, args } as FunctionCall };
     }
     args.push(this.parseExpression());
-    while (this.match(",")) {
+    while (this.match("CALL_SEPARATOR")) {
       args.push(this.parseExpression());
     }
-    if (!this.match(")")) {
+    if (!this.match("CALL_CLOSE")) {
+      if (args.some((arg) => parseExpressionError(arg)) && this.match("UNEXPECTED_PAREN_CLOSE")) {
+        return { kind: "call", value: { name, args } as FunctionCall };
+      }
       return { kind: "literal", value: makeInternalError("parse_function_call_missing_closing_paren", { name }) };
     }
     return { kind: "call", value: { name, args } as FunctionCall };
@@ -776,6 +621,111 @@ function parseReferenceNode(text: string): ExprNode {
     return { kind: "literal", value: makeInternalError(parsed.internalKind, parsed.context) };
   }
   return { kind: "reference", value: parsed.ref };
+}
+
+export type FormulaReferenceSelectorSyntax =
+  | Readonly<{ kind: "invalid" }>
+  | Readonly<{ kind: "all" }>
+  | Readonly<{ kind: "current" }>
+  | Readonly<{ kind: "offset" | "absolute" | "absolute_fixed"; value: number }>
+  | Readonly<{ kind: "label"; value: readonly string[] }>
+  | Readonly<{
+      kind: "range";
+      value: readonly [FormulaReferenceSelectorSyntax | null, FormulaReferenceSelectorSyntax | null];
+    }>;
+
+export type FormulaReferenceExpressionSyntax = Readonly<{
+  sheetSelector?: Readonly<{ kind: "sheet_name"; value: string }>;
+  rowSelector: FormulaReferenceSelectorSyntax;
+  colSelector: FormulaReferenceSelectorSyntax;
+  style?: "ordinate" | "spreadsheet";
+}>;
+
+export type FormulaReferenceSyntax = Readonly<{
+  style: "ordinate" | "spreadsheet";
+  crossSheet: boolean;
+  sheetName: string | null;
+  reference: FormulaReferenceExpressionSyntax | null;
+}>;
+
+export function parseFormulaReferenceSyntax(text: string): FormulaReferenceSyntax | null {
+  if (text.startsWith("@[") && text.endsWith("]")) {
+    const inner = text.slice(2, -1).trim();
+    const sheetDelimiter = findTopLevelDoubleColon(inner);
+    const crossSheet = sheetDelimiter !== null;
+    const sheetSelector = crossSheet
+      ? parseSheetSelector(inner.slice(0, sheetDelimiter).trim())
+      : null;
+    const parsed = parseReference(text);
+    return {
+      style: "ordinate",
+      crossSheet,
+      sheetName: sheetSelector?.value ?? null,
+      reference: parsed.ok && !referenceHasInvalidSelector(parsed.ref) ? projectReferenceSyntax(parsed.ref) : null,
+    };
+  }
+
+  const spreadsheet = parseSpreadsheetReference(text);
+  if (referenceHasInvalidSelector(spreadsheet)) return null;
+  return {
+    style: "spreadsheet",
+    crossSheet: false,
+    sheetName: null,
+    reference: projectReferenceSyntax(spreadsheet),
+  };
+}
+
+function projectReferenceSyntax(reference: ReferenceExpr): FormulaReferenceExpressionSyntax {
+  return {
+    ...(reference.sheetSelector
+      ? { sheetSelector: { kind: "sheet_name" as const, value: reference.sheetSelector.value } }
+      : {}),
+    rowSelector: projectReferenceSelectorSyntax(reference.rowSelector),
+    colSelector: projectReferenceSelectorSyntax(reference.colSelector),
+    ...(reference.style ? { style: reference.style } : {}),
+  };
+}
+
+function projectReferenceSelectorSyntax(selector: RefSelector): FormulaReferenceSelectorSyntax {
+  if (selector.kind === "invalid" || selector.kind === "all" || selector.kind === "current") {
+    return { kind: selector.kind };
+  }
+  if (selector.kind === "offset" || selector.kind === "absolute" || selector.kind === "absolute_fixed") {
+    if (typeof selector.value !== "number") throw new Error(`Invalid ${selector.kind} selector projection.`);
+    return { kind: selector.kind, value: selector.value };
+  }
+  if (selector.kind === "label") {
+    if (!Array.isArray(selector.value) || !selector.value.every((part) => typeof part === "string")) {
+      throw new Error("Invalid label selector projection.");
+    }
+    return { kind: "label", value: [...selector.value] as string[] };
+  }
+  if (selector.kind === "range") {
+    if (!Array.isArray(selector.value) || selector.value.length !== 2) {
+      throw new Error("Invalid range selector projection.");
+    }
+    const [start, end] = selector.value as [RefSelector | null, RefSelector | null];
+    return {
+      kind: "range",
+      value: [
+        start ? projectReferenceSelectorSyntax(start) : null,
+        end ? projectReferenceSelectorSyntax(end) : null,
+      ],
+    };
+  }
+  throw new Error(`Unknown selector kind in formula reference projection: ${selector.kind}`);
+}
+
+function referenceHasInvalidSelector(reference: ReferenceExpr): boolean {
+  return selectorHasKind(reference.rowSelector, "invalid") || selectorHasKind(reference.colSelector, "invalid");
+}
+
+function selectorHasKind(selector: RefSelector | null, kind: string): boolean {
+  if (!selector) return false;
+  if (selector.kind === kind) return true;
+  if (selector.kind !== "range") return false;
+  const [start, end] = selector.value as [RefSelector | null, RefSelector | null];
+  return selectorHasKind(start, kind) || selectorHasKind(end, kind);
 }
 
 type ParsedReference =
@@ -1424,31 +1374,6 @@ function parseStyleSpec(spec: string): { value: StyleSpec } | { error: string } 
       color,
     },
   };
-}
-
-function scanSpreadsheetToken(text: string, start: number): { text: string; next: number } | null {
-  const source = text.slice(start);
-  const patterns = [
-    /^[A-Za-z]+[1-9]\d*:[A-Za-z]+[1-9]\d*/,
-    /^[A-Za-z]+:[A-Za-z]+/,
-    /^[1-9]\d*:[1-9]\d*/,
-    /^[A-Za-z]+[1-9]\d*/,
-  ];
-  for (const pattern of patterns) {
-    const match = pattern.exec(source);
-    if (!match) continue;
-    const token = match[0];
-    const nextIndex = start + token.length;
-    if (!isSpreadsheetBoundary(text, nextIndex)) continue;
-    return { text: token, next: nextIndex };
-  }
-  return null;
-}
-
-function isSpreadsheetBoundary(text: string, nextIndex: number): boolean {
-  if (nextIndex >= text.length) return true;
-  const next = text[nextIndex];
-  return !/[A-Za-z0-9_]/.test(next);
 }
 
 function parseCellAddress(text: string): { row: number; col: number } | null {
