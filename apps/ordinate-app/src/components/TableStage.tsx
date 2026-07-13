@@ -4,6 +4,7 @@ import { AgGridReact } from "ag-grid-react";
 import {
   type ColDef,
   type ColGroupDef,
+  type CellDoubleClickedEvent,
   type CellMouseDownEvent,
   type FirstDataRenderedEvent,
   type GridSizeChangedEvent,
@@ -92,7 +93,7 @@ type TableStageProps = {
   handleGridSizeChanged: (event: GridSizeChangedEvent<GridRow>) => void;
   handleCellFocused: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
   handleCellMouseDown: (event: CellMouseDownEvent<GridRow>) => void;
-  handleCellDoubleClicked: (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => void;
+  handleCellDoubleClicked: (event: CellDoubleClickedEvent<GridRow>) => void;
   handleCellKeyDown: (event: {
     rowIndex: number | null;
     column?: string | { getColId(): string } | null;

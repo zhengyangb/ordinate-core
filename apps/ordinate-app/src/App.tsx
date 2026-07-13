@@ -3,6 +3,7 @@ import {
   AllCommunityModule,
   ModuleRegistry,
   type ColDef,
+  type CellDoubleClickedEvent,
   type CellMouseDownEvent,
   type FirstDataRenderedEvent,
   type GridApi,
@@ -21,6 +22,7 @@ import {
   type StylePatch,
 } from "@ordinate/core";
 import AppChrome, { type FileStatusTone } from "./components/AppChrome";
+import BooleanCellCapsule from "./components/BooleanCellCapsule";
 import { useConfirmationDialog } from "./components/ConfirmationDialog";
 import ErrorCellChip from "./components/ErrorCellChip";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
@@ -67,6 +69,11 @@ import {
   splitPath,
 } from "./utils/sheetView";
 import { formatSpecFromLocalSelection } from "./utils/formatDisplay";
+import {
+  isBooleanKeyboardActivation,
+  resolveBooleanCellView,
+  toggledBooleanInput,
+} from "./utils/booleanCell";
 import { resolvePostRowStructureColumnIndex, resolveRowInsert } from "./utils/rowStructureEdits";
 import {
   BLANK_RUNTIME_VALUE,
@@ -1386,6 +1393,11 @@ export default function App() {
           } else {
             item[field] = displayText;
             item[`__kind_${colIndex}`] = runtimeValue?.kind ?? "blank";
+            const booleanView = resolveBooleanCellView(runtimeValue, rawCell?.body);
+            if (booleanView) {
+              item[`__boolean_value_${colIndex}`] = booleanView.value;
+              item[`__boolean_interactive_${colIndex}`] = booleanView.interactive;
+            }
             item[`__align_${colIndex}`] = presentedCell?.styleLayer.effective?.align ?? "";
             item[`__weight_${colIndex}`] = presentedCell?.styleLayer.effective?.weight ?? "";
             item[`__color_${colIndex}`] = presentedCell?.styleLayer.effective?.color ?? "";
@@ -1403,6 +1415,37 @@ export default function App() {
       })
       .filter((row) => isVisiblePath(row.__rowPath, collapsedPaths));
   }, [currentSheet, currentSheetState, currentSheetPresentation, currentSheetRowStructure, collapsedPaths, sheetColCount, headerColCount]);
+
+  const evaluationRowIndexByAbsoluteRowNumber = useMemo(
+    () => new Map(currentSheetRowStructure.map((row, index) => [row.absoluteRowNumber, index])),
+    [currentSheetRowStructure],
+  );
+
+  const toggleBooleanLiteralAt = useCallback(
+    (absoluteRowNumber: number, colIndex: number, expectedValue: boolean) => {
+      if (!activeSheet || !currentSheetState) {
+        throw new Error("boolean toggle requires an active sheet state");
+      }
+      const body = currentSheetState.cells[absoluteRowNumber - 1]?.[colIndex]?.body;
+      const evaluationRowIndex = evaluationRowIndexByAbsoluteRowNumber.get(absoluteRowNumber);
+      if (evaluationRowIndex == null) {
+        throw new Error(`boolean toggle cannot resolve absolute row ${absoluteRowNumber}`);
+      }
+      const runtimeValue = currentSheet?.values[evaluationRowIndex]?.[colIndex];
+      const view = resolveBooleanCellView(runtimeValue, body);
+      if (!view?.interactive) {
+        throw new Error("only literal boolean cells can be toggled");
+      }
+      if (view.value !== expectedValue) {
+        throw new Error("boolean toggle rejected a stale rendered value");
+      }
+      setCellInput(
+        { kind: "index", sheet: activeSheet, rowIndex: absoluteRowNumber - 1, colIndex },
+        toggledBooleanInput(view.value),
+      );
+    },
+    [activeSheet, currentSheet, currentSheetState, evaluationRowIndexByAbsoluteRowNumber, setCellInput],
+  );
 
   const absoluteRowPathLookup = useMemo(() => {
     const map = new Map<number, string>();
@@ -1436,6 +1479,47 @@ export default function App() {
 
   const selectedRange = useMemo(() => getSelectionRange(selection), [selection]);
   const isRangeSelection = selection?.kind === "range";
+  const beginSelectionGesture = useCallback(
+    (logical: LogicalCell, extend: boolean, drag: boolean) => {
+      const anchor =
+        extend && selection && (selection.kind === "cell" || selection.kind === "range")
+          ? selection.anchor
+          : logical;
+      const nextSelection = makeRangeSelection(anchor, logical);
+      setSelection(nextSelection);
+      if (drag) {
+        selectionDragRef.current = { anchor, focus: logical };
+        suppressCellFocusSelectionUntilRef.current = performance.now() + 320;
+      }
+      setFormulaInputMode("read");
+      setActiveReferenceTokenId(null);
+      setFormulaBarSnapshot(null);
+      setRailMenuOpen(false);
+      setOpenRailMenuTarget(null);
+      railMenuAnchorRef.current = null;
+    },
+    [selection],
+  );
+
+  const activateBooleanLiteralAt = useCallback(
+    (row: GridRow, colIndex: number, expectedValue: boolean) => {
+      const displayedRowIndex = absoluteRowToDisplayedIndex.get(row.__absoluteRowNumber);
+      if (displayedRowIndex == null) {
+        throw new Error(`boolean activation cannot resolve absolute row ${row.__absoluteRowNumber}`);
+      }
+      const logical = { rAbs: row.__absoluteRowNumber, cAbs: colIndex };
+      const colId = toColFieldId(colIndex);
+      beginSelectionGesture(logical, false, false);
+      toggleBooleanLiteralAt(row.__absoluteRowNumber, colIndex, expectedValue);
+      window.requestAnimationFrame(() => {
+        if (isGridApiAlive(gridApiRef.current)) {
+          gridApiRef.current.setFocusedCell(displayedRowIndex, colId);
+        }
+      });
+    },
+    [absoluteRowToDisplayedIndex, beginSelectionGesture, isGridApiAlive, toggleBooleanLiteralAt],
+  );
+
   const canStartFormulaPointPick = useCallback(() => {
     if (!activeSheet || isActiveSheetBlocked) return false;
     const liveEditor = document.querySelector<HTMLTextAreaElement>(".formula-source-textarea");
@@ -2249,6 +2333,27 @@ export default function App() {
         headerClass: "data-column-header",
         cellRenderer: (params: { data?: GridRow; value?: unknown }) => {
           const kind = params.data?.[`__kind_${colIndex}`];
+          if (kind === "boolean") {
+            if (!params.data) {
+              throw new Error(`missing row data for boolean column ${colIndex}`);
+            }
+            const value = params.data[`__boolean_value_${colIndex}`];
+            const interactive = params.data[`__boolean_interactive_${colIndex}`];
+            if (typeof value !== "boolean" || typeof interactive !== "boolean") {
+              throw new Error(`missing boolean metadata for column ${colIndex}`);
+            }
+            if (!interactive) return params.value;
+            const pointPickOwnsPointer = canStartFormulaPointPick();
+            return pointPickOwnsPointer ? (
+              <BooleanCellCapsule value={value} interactive={false} />
+            ) : (
+              <BooleanCellCapsule
+                value={value}
+                interactive
+                onToggle={() => activateBooleanLiteralAt(params.data!, colIndex, value)}
+              />
+            );
+          }
           if (kind !== "error") {
             return params.value;
           }
@@ -2275,6 +2380,9 @@ export default function App() {
           const kind = params.data?.[`__kind_${colIndex}`];
           const classes = ["data-cell"];
           if (kind === "number") classes.push("is-numeric");
+          if (kind === "boolean" && params.data?.[`__boolean_interactive_${colIndex}`] === true) {
+            classes.push("is-boolean-capsule");
+          }
           if (kind === "error") classes.push("is-error");
           if (kind === "blank") classes.push("is-blank");
           const align = params.data?.[`__align_${colIndex}`];
@@ -2321,6 +2429,9 @@ export default function App() {
     clearTooltip,
     selectedColumnAxisSelection,
     axisColumnDragPreview,
+    activateBooleanLiteralAt,
+    canStartFormulaPointPick,
+    revision,
   ]);
 
   const headerIndexMetrics = useMemo<HeaderIndexMetric[]>(() => {
@@ -2434,28 +2545,6 @@ export default function App() {
       return true;
     },
     [requestFormulaPointReference],
-  );
-
-  const beginSelectionGesture = useCallback(
-    (logical: LogicalCell, extend: boolean, drag: boolean) => {
-      const anchor =
-        extend && selection && (selection.kind === "cell" || selection.kind === "range")
-          ? selection.anchor
-          : logical;
-      const nextSelection = makeRangeSelection(anchor, logical);
-      setSelection(nextSelection);
-      if (drag) {
-        selectionDragRef.current = { anchor, focus: logical };
-        suppressCellFocusSelectionUntilRef.current = performance.now() + 320;
-      }
-      setFormulaInputMode("read");
-      setActiveReferenceTokenId(null);
-      setFormulaBarSnapshot(null);
-      setRailMenuOpen(false);
-      setOpenRailMenuTarget(null);
-      railMenuAnchorRef.current = null;
-    },
-    [selection],
   );
 
   useEffect(() => {
@@ -3034,6 +3123,7 @@ export default function App() {
       if (!colNumber || event.rowIndex == null) return;
       const row = rowData[event.rowIndex];
       if (!row) return;
+
       const logical = {
         rAbs: row.__absoluteRowNumber,
         cAbs: colNumber - 1,
@@ -3135,11 +3225,13 @@ export default function App() {
   );
 
   const handleCellDoubleClicked = useCallback(
-    (event: { rowIndex: number | null; column?: string | { getColId(): string } | null }) => {
+    (event: CellDoubleClickedEvent<GridRow>) => {
       // Editing contract:
       // - double-click body cell => enter formula input edit mode
       // - logical selection stays on the cell during/after edit
       if (mode === "source" || isActiveSheetBlocked) return;
+      const nativeTarget = event.event?.target;
+      if (nativeTarget instanceof Element && nativeTarget.closest(".boolean-cell-capsule")) return;
       if (event.rowIndex == null || !event.column || !activeSheet) return;
 
       const rawColId = typeof event.column === "string" ? event.column : event.column.getColId();
@@ -3187,6 +3279,20 @@ export default function App() {
 
       const row = rowData[event.rowIndex];
       if (!row) return;
+
+      if (
+        isBooleanKeyboardActivation(keyboardEvent) &&
+        row[`__boolean_interactive_${colNumber - 1}`] === true
+      ) {
+        const value = row[`__boolean_value_${colNumber - 1}`];
+        if (typeof value !== "boolean") {
+          throw new Error("interactive boolean cell is missing its value");
+        }
+        keyboardEvent.preventDefault();
+        keyboardEvent.stopPropagation();
+        toggleBooleanLiteralAt(row.__absoluteRowNumber, colNumber - 1, value);
+        return;
+      }
 
       if (
         keyboardEvent.shiftKey &&
@@ -3255,7 +3361,7 @@ export default function App() {
         cAbs: selectedCell?.logical.cAbs ?? colNumber - 1,
       });
     },
-    [mode, isActiveSheetBlocked, activeSheet, colIndexLookup, rowData, headerRowCount, sheetColCount, applyHeaderSelection, focusHeaderOverlayCell, setKeyboardSelection, selectedCell],
+    [mode, isActiveSheetBlocked, activeSheet, colIndexLookup, rowData, headerRowCount, sheetColCount, applyHeaderSelection, focusHeaderOverlayCell, setKeyboardSelection, selectedCell, toggleBooleanLiteralAt],
   );
 
   const formulaBarData = useMemo<FormulaBarData | null>(

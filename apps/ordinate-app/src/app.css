@@ -3427,6 +3427,119 @@ textarea {
     font-variant-numeric: tabular-nums;
 }
 
+.data-cell.is-boolean-capsule,
+.data-cell.is-boolean-capsule .ag-cell-wrapper,
+.data-cell.is-boolean-capsule .ag-cell-value {
+    justify-content: center;
+}
+
+.data-cell.is-boolean-capsule.ag-cell-value,
+.data-cell.is-boolean-capsule .ag-cell-value {
+    display: flex;
+    align-items: center;
+}
+
+.boolean-cell-capsule {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.28rem;
+    min-width: 3.7rem;
+    height: 1.55rem;
+    padding: 0 0.58rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font: inherit;
+    font-size: 0.76rem;
+    font-weight: 620;
+    line-height: 1;
+    letter-spacing: 0;
+    white-space: nowrap;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+button.boolean-cell-capsule {
+    appearance: none;
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.boolean-cell-capsule.is-true {
+    border-color: color-mix(in oklab, var(--accent-strong) 72%, transparent);
+    background: color-mix(in oklab, var(--accent) 88%, oklch(46% 0.16 145));
+    color: oklch(99% 0.01 145);
+    box-shadow:
+        inset 0 1px 0 oklch(100% 0 0 / 0.32),
+        inset 0 -1px 0 oklch(28% 0.08 145 / 0.2),
+        0 1px 2px oklch(35% 0.08 145 / 0.2);
+}
+
+.boolean-cell-capsule.is-false {
+    border-color: color-mix(in oklab, var(--sheet-grid) 78%, transparent);
+    background: color-mix(in oklab, var(--sheet-header) 76%, var(--sheet-surface));
+    color: color-mix(in oklab, var(--sheet-soft) 92%, var(--sheet-ink));
+    box-shadow:
+        inset 0 1px 0 oklch(100% 0 0 / 0.62),
+        0 1px 1px oklch(25% 0.01 245 / 0.06);
+}
+
+.boolean-cell-capsule-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.78rem;
+    height: 0.78rem;
+    flex: 0 0 auto;
+}
+
+.boolean-cell-capsule-icon svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.boolean-cell-capsule-icon path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.85;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.boolean-cell-capsule-label {
+    min-width: 0;
+}
+
+.boolean-cell-capsule.is-passive {
+    cursor: default;
+}
+
+.boolean-cell-capsule.is-interactive {
+    cursor: pointer;
+    transition:
+        transform 120ms var(--ease-out-quart),
+        filter 120ms var(--ease-out-quart),
+        box-shadow 120ms var(--ease-out-quart);
+}
+
+.boolean-cell-capsule.is-interactive:hover {
+    filter: saturate(1.04) brightness(1.025);
+}
+
+.boolean-cell-capsule.is-interactive:active {
+    transform: translateY(1px) scale(0.985);
+    box-shadow:
+        inset 0 1px 2px oklch(20% 0.04 145 / 0.18),
+        0 0 0 transparent;
+}
+
+.boolean-cell-capsule.is-interactive:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--accent-strong) 70%, white);
+    outline-offset: 2px;
+}
+
 .data-cell.is-error {
     color: var(--danger-ink);
 }
@@ -3521,6 +3634,27 @@ textarea {
     justify-content: center;
 }
 
+.data-cell.is-boolean-capsule.align-left,
+.data-cell.is-boolean-capsule.align-left .ag-cell-value {
+    justify-content: flex-start;
+}
+
+.data-cell.is-boolean-capsule.align-right,
+.data-cell.is-boolean-capsule.align-right .ag-cell-value {
+    justify-content: flex-end;
+}
+
+.data-cell.is-boolean-capsule.align-center,
+.data-cell.is-boolean-capsule.align-center .ag-cell-value {
+    justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .boolean-cell-capsule.is-interactive {
+        transition: none;
+    }
+}
+
 .data-cell.is-bold,
 .data-cell.is-bold .ag-cell-wrapper,
 .data-cell.is-bold .ag-cell-value {
@@ -3593,7 +3727,6 @@ textarea {
     border-style: solid !important;
     box-shadow: none !important;
     overflow: hidden !important;
-    position: relative;
     z-index: 4;
 }
 
