@@ -78,6 +78,39 @@ describe("editor store history", () => {
     });
   });
 
+  it("round-trips a literal boolean toggle without dropping display metadata", () => {
+    resetStore(`
+# Sheet
+| Item    || Enabled |
+| ------- || ------- |
+| Product || true {::>,blue} |
+`.trim());
+    const store = useEditorStore.getState();
+    const sheet = store.docState?.sheets[0];
+    if (!sheet) throw new Error("expected boolean test sheet");
+    const target = {
+      kind: "index" as const,
+      sheet: sheet.name,
+      rowIndex: sheet.bodyStart,
+      colIndex: 1,
+    };
+    const before = canonicalStoreDocument();
+
+    store.setCellInput(target, "false");
+    const after = canonicalStoreDocument();
+    expect(after).toContain("false {::>,blue}");
+    expect(useEditorStore.getState()).toMatchObject({
+      historyCursor: 1,
+      canUndo: true,
+      undoLabel: "Set cell input",
+    });
+
+    useEditorStore.getState().undo();
+    expect(canonicalStoreDocument()).toBe(before);
+    useEditorStore.getState().redo();
+    expect(canonicalStoreDocument()).toBe(after);
+  });
+
   it("clears redo history after a new command", () => {
     useEditorStore.getState().setCellInput({ kind: "index", sheet: "Sheet", rowIndex: 2, colIndex: 1 }, "10");
     useEditorStore.getState().setCellInput({ kind: "index", sheet: "Sheet", rowIndex: 3, colIndex: 1 }, "30");
