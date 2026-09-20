@@ -1,51 +1,51 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import {
   AllCommunityModule,
   ModuleRegistry,
-  type ColDef,
   type CellDoubleClickedEvent,
   type CellMouseDownEvent,
   type FirstDataRenderedEvent,
   type GridApi,
   type GridReadyEvent,
   type GridSizeChangedEvent,
-  type ModelUpdatedEvent,
+  type ModelUpdatedEvent
 } from "ag-grid-community";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 
 import {
-  getCellTextView,
-  resolveSheetRowStructure,
-  type CoreAffectedFormulaCell,
   type SheetEvaluation,
-  type SheetPresentation,
-  type RuntimeValue,
-  type StylePatch,
+  type SheetPresentation
 } from "@ordinate/core";
-import AppChrome, { type FileStatusTone } from "./components/AppChrome";
-import BooleanCellCapsule from "./components/BooleanCellCapsule";
+import AppChrome from "./components/AppChrome";
 import { useConfirmationDialog } from "./components/ConfirmationDialog";
-import ErrorCellChip from "./components/ErrorCellChip";
+import FileSessionNotices from "./components/FileSessionNotices";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
 import SheetParseErrorPanel from "./components/SheetParseErrorPanel";
 import TableStage from "./components/TableStage";
 import { shouldAnimateTableStructure } from "./config/motion";
 import { createAgGridAdapter } from "./grid/agGridAdapter";
+import { useAnchoredMenuPosition } from "./hooks/useAnchoredMenuPosition";
+import { useDisplayFormatCommands } from "./hooks/useDisplayFormatCommands";
+import { useFileSessionController } from "./hooks/useFileSessionController";
+import { useGridColumnDefs } from "./hooks/useGridColumnDefs";
+import { useSheetStructureCommands } from "./hooks/useSheetStructureCommands";
+import { useSheetViewModel } from "./hooks/useSheetViewModel";
 import { useStructureTransition } from "./hooks/useStructureTransition";
-import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
+import { useTooltips } from "./hooks/useTooltips";
 import { resolveUiLocale } from "./i18n/messages";
+import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
+import { useWindowAppearance } from "./platform/useWindowAppearance";
 import { useEditorStore } from "./store/editorStore";
-import { getPersistableText, useFileSessionStore, type FileSessionState } from "./store/fileSessionStore";
+import { buildSearchCells } from "./search/searchModel";
+import { SearchPanel, SheetSearchContext } from "./search/SheetSearch";
+import { useSheetSearch } from "./search/useSheetSearch";
 import type {
   AxisDragPreview,
-  AxisSelectionView,
-  ColumnMetric,
   AxisDropIndicator,
+  AxisSelectionView,
   ChromeVisibilityPhase,
+  ColumnMetric,
   FloatingMenuPosition,
-  FloatingTooltip,
-  FormatLocalKey,
-  FormatLocalOptions,
   FormulaBarData,
   GridRow,
   HeaderIndexMetric,
@@ -54,99 +54,36 @@ import type {
   RailMenuView,
   Rect,
   RowIndexMetric,
-  SheetSelection,
-  SheetHealth,
-  SheetIssueViewModel,
   SelectedCell,
+  SheetSelection,
   ThemeMenuPosition,
-  ThemeMode,
+  ThemeMode
 } from "./types/ui";
 import {
-  compactColLabel,
-  isVisiblePath,
-  runtimeKindLabel,
-  runtimeValueToText,
-  splitPath,
-} from "./utils/sheetView";
-import { formatSpecFromLocalSelection } from "./utils/formatDisplay";
-import {
-  isBooleanKeyboardActivation,
-  resolveBooleanCellView,
-  toggledBooleanInput,
-} from "./utils/booleanCell";
-import { resolvePostRowStructureColumnIndex, resolveRowInsert } from "./utils/rowStructureEdits";
-import {
-  BLANK_RUNTIME_VALUE,
   APPEND_AXIS_SLOT_GAP,
   APPEND_COLUMN_WIDTH,
+  buildColumnHasLocalConfig,
+  buildHeaderMatrix,
+  buildRailMenu,
   CHROME_TRANSITION_MS,
-  CONTROL_TOOLTIP_DELAY_MS,
+  columnMetricsEqual,
+  easeOutQuint,
   FLOATING_MENU_GAP,
-  FLOATING_MENU_VIEWPORT_MARGIN,
   FORMULA_BAR_AUTO_PAN_CLEARANCE,
   FORMULA_BAR_AUTO_PAN_DURATION_MS,
   FORMULA_BAR_SAFE_SPACE,
   GRID_HEADER_HEIGHT,
   GRID_ROW_HEIGHT,
   POSITION_EPSILON,
-  TAB_TOOLTIP_DELAY_MS,
-  THEME_STORAGE_KEY,
-  TOOLTIP_ESTIMATED_HEIGHT,
-  TOOLTIP_ESTIMATED_WIDTH,
-  TOOLTIP_GAP,
-  TOOLTIP_VIEWPORT_MARGIN,
-  type FormulaInputMode,
-  buildRailMenu,
-  buildColumnHasLocalConfig,
-  buildHeaderMatrix,
-  buildSheetHealthByName,
-  buildSheetIssueBuckets,
-  columnMetricsEqual,
-  easeOutQuint,
   queryGridBodyViewport,
   queryGridHorizontalViewport,
-  resolveAnchoredMenuPosition,
-  resolveColumnDeleteTargets,
   resolveGridInstanceKey,
-  resolveRowDeleteTargets,
-  resolveRailMenuPosition,
   resolveInitialThemeMode,
+  resolveRailMenuPosition,
   toColFieldId,
-  toColumnLetters,
   trimSheetColCount,
+  type FormulaInputMode
 } from "./utils/appHelpers";
-import {
-  EMPTY_GRID_SCROLL_SNAPSHOT,
-  gridScrollSnapshotEqual,
-  projectActiveSheetGridScrollSnapshot,
-  bodyRowTrackYToViewportY,
-  columnTrackXToViewportX,
-  resolveColumnCenterTrackWidth,
-  resolveHorizontalWheelDelta,
-  resolveFrozenHeaderGeometry,
-  type GridScrollSnapshot,
-  type SheetGridScrollSnapshot,
-} from "./utils/gridGeometry";
-import { selectionDebugLog } from "./utils/selectionDebug";
-import { resolveColumnLayouts } from "./utils/columnLayout";
-import { buildFormulaBarData } from "./utils/formulaBarData";
-import { resolveCoreRegionTarget } from "./utils/coreTargets";
-import {
-  getRectDimensions,
-  getSelectionFocus,
-  getSelectionRange,
-  makeCellSelection,
-  makeRangeSelection,
-  makeRangeSelectionWithFocus,
-} from "./utils/selectionModel";
-import {
-  makeFormulaPointRect,
-  referenceTextForPreferredStyle,
-  resolveFormulaReferenceViews,
-  type FormulaReferenceContext,
-  type FormulaReferenceSheetContext,
-  type FormulaReferenceView,
-} from "./utils/formulaPointMode";
 import {
   canStartColumnRailMoveDrag,
   canStartColumnRailSelectionDrag,
@@ -170,9 +107,48 @@ import {
   type RowDragSource,
 } from "./utils/axisRailDrag";
 import {
+  isBooleanKeyboardActivation,
+  resolveBooleanCellView,
+  toggledBooleanInput,
+} from "./utils/booleanCell";
+import { resolveCoreRegionTarget } from "./utils/coreTargets";
+import { buildFormulaBarData } from "./utils/formulaBarData";
+import {
+  makeFormulaPointRect,
+  referenceTextForPreferredStyle,
+  resolveFormulaReferenceViews,
+  type FormulaReferenceContext,
+  type FormulaReferenceSheetContext,
+  type FormulaReferenceView,
+} from "./utils/formulaPointMode";
+import {
+  bodyRowTrackYToViewportY,
+  columnTrackXToViewportX,
+  EMPTY_GRID_SCROLL_SNAPSHOT,
+  gridScrollSnapshotEqual,
+  projectActiveSheetGridScrollSnapshot,
+  resolveColumnCenterTrackWidth,
+  resolveFrozenHeaderGeometry,
+  resolveHorizontalWheelDelta,
+  type GridScrollSnapshot,
+  type SheetGridScrollSnapshot,
+} from "./utils/gridGeometry";
+import {
   resolveAppendAnchorScrollPositionAfterSizeChange,
   resolveAppendEndScrollPosition,
 } from "./utils/quickAddControls";
+import { selectionDebugLog } from "./utils/selectionDebug";
+import {
+  getRectDimensions,
+  getSelectionFocus,
+  getSelectionRange,
+  makeCellSelection,
+  makeRangeSelection
+} from "./utils/selectionModel";
+import {
+  compactColLabel
+} from "./utils/sheetView";
+import { isNativeTextEditingTarget } from "./utils/textEditingTarget";
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 type AutoPanTarget = {
@@ -236,13 +212,6 @@ type RowAxisSelectionDragSession = {
 
 type AxisSelectionDragSession = ColumnAxisSelectionDragSession | RowAxisSelectionDragSession;
 
-function countUniqueAffectedFormulaCells(cells: CoreAffectedFormulaCell[]): number {
-  const keys = new Set<string>();
-  for (const cell of cells) {
-    keys.add(`${cell.sheet}:${cell.rowId}:${cell.colId}`);
-  }
-  return keys.size;
-}
 
 type FormulaReferenceOverlay = {
   tokenId: string;
@@ -251,34 +220,7 @@ type FormulaReferenceOverlay = {
   active: boolean;
 };
 
-function fileSessionStatus(
-  state: Pick<
-    FileSessionState,
-    "operation" | "conflict" | "recoveryDraft" | "backingFileState" | "documentDirty" | "localDraftState" | "lastError" | "file"
-  >,
-): { label: string; tone: FileStatusTone } {
-  if (state.operation?.kind === "open") return { label: "Opening...", tone: "saving" };
-  if (state.operation) return { label: "Saving...", tone: "saving" };
-  if (state.conflict) return { label: "Conflict", tone: "error" };
-  if (state.recoveryDraft) return { label: "Draft available", tone: "warning" };
-  if (state.backingFileState === "external_changed") return { label: "Changed on disk", tone: "warning" };
-  if (state.lastError) return { label: "Save failed", tone: "error" };
-  if (state.localDraftState === "current" && state.documentDirty === "dirty") return { label: "Draft saved", tone: "warning" };
-  if (!state.file && state.localDraftState === "none") return { label: "Unsaved", tone: "neutral" };
-  if (state.documentDirty === "dirty") return { label: "Edited", tone: "dirty" };
-  if (state.file?.adapterKind === "browser-download") return { label: "Downloaded", tone: "neutral" };
-  if (state.file) return { label: "Saved", tone: "neutral" };
-  return { label: "Unsaved", tone: "neutral" };
-}
 
-function isNativeTextEditingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return Boolean(
-    target.closest(
-      "input, textarea, [contenteditable='true'], .formula-source-editor, .formula-source-textarea, .sheet-tab-rename-input",
-    ),
-  );
-}
 
 const SELECTION_DRAG_SCROLL_EDGE_PX = 48;
 const SELECTION_DRAG_SCROLL_MAX_PX = 24;
@@ -375,30 +317,10 @@ export default function App() {
     renameSheet,
     setCellInput,
     clearCell,
-    setCellLocalFormat,
-    setCellLocalStyle,
-    setColumnDefaultFormat,
-    setColumnDefaultStyle,
-    clearColumnDefaultFormat,
-    setRowDefaultFormat,
-    setRowDefaultStyle,
-    clearRowDefaultFormat,
     setRegion,
     clearRegion,
-    previewDeleteRow,
-    previewDeleteColumn,
-    convertRowsToHeader,
-    convertRowsToBody,
-    insertRow,
-    insertRows,
-    deleteRows,
     moveColumns,
     moveRows,
-    duplicateColumns,
-    duplicateRows,
-    insertColumn,
-    insertColumns,
-    deleteColumns,
     canUndo,
     canRedo,
     undoLabel,
@@ -408,41 +330,6 @@ export default function App() {
     enterSourceMode,
     exitSourceMode,
   } = useEditorStore();
-  const fileSessionFile = useFileSessionStore((state) => state.file);
-  const fileSessionOperation = useFileSessionStore((state) => state.operation);
-  const fileSessionConflict = useFileSessionStore((state) => state.conflict);
-  const fileSessionRecoveryDraft = useFileSessionStore((state) => state.recoveryDraft);
-  const fileSessionExternalSnapshot = useFileSessionStore((state) => state.externalSnapshot);
-  const fileSessionBackingFileState = useFileSessionStore((state) => state.backingFileState);
-  const fileSessionDocumentDirty = useFileSessionStore((state) => state.documentDirty);
-  const fileSessionLocalDraftState = useFileSessionStore((state) => state.localDraftState);
-  const fileSessionLastError = useFileSessionStore((state) => state.lastError);
-  const openFile = useFileSessionStore((state) => state.open);
-  const saveFile = useFileSessionStore((state) => state.save);
-  const saveFileAs = useFileSessionStore((state) => state.saveAs);
-  const autosaveFileNow = useFileSessionStore((state) => state.autosaveNow);
-  const syncFileEditorSnapshot = useFileSessionStore((state) => state.syncEditorSnapshot);
-  const loadUntitledFileDraft = useFileSessionStore((state) => state.loadUntitledDraft);
-  const reloadFileFromDisk = useFileSessionStore((state) => state.reloadFromDisk);
-  const overwriteFileConflict = useFileSessionStore((state) => state.overwriteConflict);
-  const saveFileConflictAsNewFile = useFileSessionStore((state) => state.saveConflictAsNewFile);
-  const cancelFileConflict = useFileSessionStore((state) => state.cancelConflict);
-  const recoverFileDraft = useFileSessionStore((state) => state.recoverDraft);
-  const openSavedFile = useFileSessionStore((state) => state.openSavedFile);
-  const discardFileDraft = useFileSessionStore((state) => state.discardDraft);
-  const fileStatus = fileSessionStatus({
-    operation: fileSessionOperation,
-    conflict: fileSessionConflict,
-    recoveryDraft: fileSessionRecoveryDraft,
-    backingFileState: fileSessionBackingFileState,
-    documentDirty: fileSessionDocumentDirty,
-    localDraftState: fileSessionLocalDraftState,
-    lastError: fileSessionLastError,
-    file: fileSessionFile,
-  });
-  const fileName = fileSessionFile?.displayName ?? "Untitled";
-
-  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<SheetSelection | null>(null);
   const [formulaInputMode, setFormulaInputMode] = useState<FormulaInputMode>("read");
   const [formulaEditSourceCell, setFormulaEditSourceCell] = useState<SelectedCell | null>(null);
@@ -468,7 +355,7 @@ export default function App() {
   >(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [gridViewportWidth, setGridViewportWidth] = useState(0);
-  const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
+  const { tooltip, setTooltip, clearTooltip, showTooltip, handleTabMouseEnter, suppressTooltipForTarget, releaseTooltipForTarget } = useTooltips();
   const [gridScrollSnapshot, setGridScrollSnapshot] = useState<SheetGridScrollSnapshot>(EMPTY_GRID_SCROLL_SNAPSHOT);
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
   const [rowIndexTrackHeight, setRowIndexTrackHeight] = useState(0);
@@ -534,11 +421,6 @@ export default function App() {
   const axisDragPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const axisAutoPanRafRef = useRef<number | null>(null);
   const suppressRailClickUntilRef = useRef(0);
-  const tooltipTimerRef = useRef<number | null>(null);
-  const tooltipAnchorRef = useRef<HTMLElement | null>(null);
-  const suppressedTooltipTargetRef = useRef<HTMLElement | null>(null);
-  const fileSessionEditorSignatureRef = useRef<string | null>(null);
-  const shouldWarnBeforeUnload = fileSessionDocumentDirty === "dirty" && fileSessionLocalDraftState !== "current";
 
   useLayoutEffect(() => {
     activeSheetRef.current = activeSheet;
@@ -565,184 +447,32 @@ export default function App() {
     setSelection(cell ? makeCellSelection(cell.logical) : null);
   }, []);
 
-  useEffect(() => {
-    void loadUntitledFileDraft();
-  }, [loadUntitledFileDraft]);
 
-  useEffect(() => {
-    const editorSignature = `${mode}:${revision}:${sourceText}`;
-    syncFileEditorSnapshot();
-    if (fileSessionEditorSignatureRef.current === null) {
-      fileSessionEditorSignatureRef.current = editorSignature;
-      return;
-    }
-    if (fileSessionEditorSignatureRef.current === editorSignature) {
-      return;
-    }
-    fileSessionEditorSignatureRef.current = editorSignature;
-    const timeout = window.setTimeout(() => {
-      void autosaveFileNow();
-    }, mode === "source" ? 1500 : 750);
-    return () => window.clearTimeout(timeout);
-  }, [mode, revision, sourceText, syncFileEditorSnapshot, autosaveFileNow]);
+  const {
+    currentSheet,
+    currentSheetState,
+    currentSheetPresentation,
+    currentSheetRowStructure,
+    sheetNames,
+    sheetHealthByName,
+    activeSheetBlockingIssues,
+    isActiveSheetBlocked,
+    sheetColCount,
+    sheetRowCount,
+    headerRowCount,
+    headerColCount,
+    headerOverlayRows,
+    headerOverlayHeight,
+    headerMatrix,
+    headerLeafLabels,
+    headerSemanticLabels,
+    headerSemanticLabelPaths,
+    allRowData,
+    rowData,
+    columnLayouts,
+    toggleCollapse, expandRowPath,
+  } = useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName });
 
-  useEffect(() => {
-    if (!shouldWarnBeforeUnload) return undefined;
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [shouldWarnBeforeUnload]);
-
-  const resolveManualSaveOptions = useCallback(async (): Promise<{ allowInvalidSource?: boolean } | null> => {
-    const persistableText = getPersistableText({ mode, sourceText, docState });
-    if (persistableText.validity === "valid_document") return {};
-    const confirmed = await requestConfirmation({
-      title: "Save source anyway?",
-      body: <p>The source text has issues. Save the file exactly as written?</p>,
-      confirmLabel: "Save Anyway",
-      cancelLabel: "Cancel",
-      tone: "warning",
-    });
-    if (!confirmed) return null;
-    return { allowInvalidSource: true };
-  }, [docState, mode, requestConfirmation, sourceText]);
-
-  const handleOpenFile = useCallback(async () => {
-    if (fileSessionDocumentDirty === "dirty") {
-      const confirmed = await requestConfirmation({
-        title: "Open another file?",
-        body: <p>Unsaved changes in this window will be replaced.</p>,
-        confirmLabel: "Open File",
-        cancelLabel: "Cancel",
-        tone: "warning",
-      });
-      if (!confirmed) return;
-    }
-    void openFile();
-  }, [fileSessionDocumentDirty, openFile, requestConfirmation]);
-
-  const handleSaveFile = useCallback(async () => {
-    const options = await resolveManualSaveOptions();
-    if (!options) return;
-    void saveFile(options);
-  }, [resolveManualSaveOptions, saveFile]);
-
-  const handleSaveFileAs = useCallback(async () => {
-    const options = await resolveManualSaveOptions();
-    if (!options) return;
-    void saveFileAs(options);
-  }, [resolveManualSaveOptions, saveFileAs]);
-
-  const currentSheet = useMemo(() => {
-    if (!evaluation || !activeSheet) return null;
-    return evaluation.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
-  }, [evaluation, activeSheet]);
-
-  const currentSheetState = useMemo(() => {
-    if (!docState || !activeSheet) return null;
-    return docState.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
-  }, [docState, activeSheet]);
-
-  const currentSheetPresentation = useMemo(() => {
-    if (!presentation || !activeSheet) return null;
-    return presentation.sheets.find((sheet) => sheet.name === activeSheet) ?? null;
-  }, [presentation, activeSheet]);
-
-  const currentSheetRowStructure = useMemo(() => {
-    if (!currentSheetState) return [];
-    return resolveSheetRowStructure(currentSheetState);
-  }, [currentSheetState]);
-
-  const sheetNames = useMemo(() => {
-    if (docState?.sheets?.length) {
-      return docState.sheets.map((sheet) => sheet.name);
-    }
-    return evaluation?.sheets.map((sheet) => sheet.name) ?? [];
-  }, [docState, evaluation]);
-
-  const sheetIssueBuckets = useMemo(() => {
-    return buildSheetIssueBuckets(sheetNames, sheetIssuesByName);
-  }, [sheetNames, sheetIssuesByName]);
-
-  const sheetHealthByName = useMemo<Record<string, SheetHealth>>(() => {
-    return buildSheetHealthByName(sheetNames, sheetIssueBuckets);
-  }, [sheetNames, sheetIssueBuckets]);
-
-  const activeSheetBlockingIssues = useMemo<SheetIssueViewModel[]>(() => {
-    if (!activeSheet) return [];
-    return sheetIssueBuckets[activeSheet]?.blocking ?? [];
-  }, [activeSheet, sheetIssueBuckets]);
-
-  const isActiveSheetBlocked = activeSheetBlockingIssues.length > 0;
-
-  const sheetColCount = useMemo(() => {
-    return trimSheetColCount(currentSheetState, currentSheet);
-  }, [currentSheetState, currentSheet]);
-  const headerRowCount = currentSheetState?.headerRowCount ?? 0;
-  const sheetRowCount = currentSheetState?.cells.length ?? 0;
-  const headerColCount = Math.min(currentSheetState?.headerColCount ?? 0, sheetColCount);
-  const headerOverlayRows = headerRowCount;
-  const headerOverlayHeight = headerOverlayRows * GRID_HEADER_HEIGHT;
-  const headerMatrix = useMemo(() => {
-    return buildHeaderMatrix(
-      currentSheetState,
-      currentSheet,
-      currentSheetPresentation,
-      sheetColCount,
-      headerRowCount,
-    );
-  }, [currentSheetState, currentSheetPresentation, currentSheet, sheetColCount, headerRowCount]);
-
-  const headerLeafLabels = useMemo(() => {
-    if (sheetColCount === 0) return [] as string[];
-    const leafRow = headerMatrix[headerMatrix.length - 1] ?? [];
-    return Array.from({ length: sheetColCount }, (_, colIndex) => {
-      const label = leafRow[colIndex] ?? "";
-      return compactColLabel(label);
-    });
-  }, [headerMatrix, sheetColCount]);
-
-  const headerSemanticLabels = useMemo(() => {
-    if (sheetColCount === 0) return [] as string[];
-    return Array.from({ length: sheetColCount }, (_, colIndex) => {
-      const fromLabels = currentSheetState?.colLabels[colIndex];
-      if (fromLabels && fromLabels.length > 0) return fromLabels;
-      return headerLeafLabels[colIndex] ?? `C${colIndex + 1}`;
-    });
-  }, [currentSheetState, headerLeafLabels, sheetColCount]);
-
-  const headerSemanticLabelPaths = useMemo(() => {
-    if (sheetColCount === 0) return [] as string[][];
-    return Array.from({ length: sheetColCount }, (_, colIndex) => {
-      const path = headerMatrix
-        .map((row) => compactColLabel(row[colIndex] ?? ""))
-        .filter((label) => label.length > 0);
-      if (path.length > 0) return path;
-      const fromLabels = currentSheetState?.colLabels[colIndex];
-      if (fromLabels && fromLabels.length > 0) return [fromLabels];
-      return [headerLeafLabels[colIndex] ?? `C${colIndex + 1}`];
-    });
-  }, [currentSheetState, headerLeafLabels, headerMatrix, sheetColCount]);
-
-  const describeRowDeleteTarget = useCallback((rowNumber: number, area: "header" | "body", rowId: number, deletedRowCount: number) => {
-    const rowRange = deletedRowCount > 1 ? `Rows ${rowNumber}-${rowNumber + deletedRowCount - 1}` : `Row ${rowNumber}`;
-    const headerCell = currentSheetState?.cells[rowNumber - 1]?.[0] ?? null;
-    const label = area === "body"
-      ? currentSheetRowStructure.find((row) => row.rowId === rowId)?.label.trim() ?? ""
-      : headerCell
-        ? getCellTextView(headerCell).inputText.trim()
-        : "";
-    return label.length > 0 ? `${rowRange} · ${label}` : rowRange;
-  }, [currentSheetRowStructure, currentSheetState]);
-
-  const describeColumnDeleteTarget = useCallback((colIndex: number) => {
-    const columnLabel = toColumnLetters(colIndex + 1);
-    const semanticPath = headerSemanticLabelPaths[colIndex]?.filter((label) => label.trim().length > 0) ?? [];
-    return semanticPath.length > 0 ? `${columnLabel} · ${semanticPath.join(" / ")}` : columnLabel;
-  }, [headerSemanticLabelPaths]);
 
   const columnHasLocalConfig = useMemo<boolean[]>(() => {
     return buildColumnHasLocalConfig(currentSheetPresentation, sheetColCount);
@@ -822,9 +552,6 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    setCollapsedPaths(new Set());
-  }, [activeSheet]);
 
   useEffect(() => {
     setSelectedCell(null);
@@ -868,10 +595,7 @@ export default function App() {
     }
   }, [mode]);
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
-    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
-  }, [themeMode]);
+  useWindowAppearance(themeMode);
 
   useEffect(() => {
     const handleResize = () => setViewportWidth(window.innerWidth);
@@ -879,100 +603,11 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  useEffect(() => {
-    if (!themeMenuOpen) return;
+  useAnchoredMenuPosition(themeMenuOpen, themeButtonRef, themeMenuRef, setThemeMenuPosition, "end");
 
-    const updatePosition = () => {
-      const button = themeButtonRef.current;
-      const menu = themeMenuRef.current;
-      if (!button || !menu) return;
-      const rect = button.getBoundingClientRect();
-      const nextPosition = resolveAnchoredMenuPosition(rect, menu.getBoundingClientRect(), {
-        preferredY: "below",
-        align: "end",
-      });
-      setThemeMenuPosition((current) => {
-        if (
-          Math.abs(current.top - nextPosition.top) < POSITION_EPSILON &&
-          Math.abs(current.left - nextPosition.left) < POSITION_EPSILON
-        ) {
-          return current;
-        }
-        return nextPosition;
-      });
-    };
+  useAnchoredMenuPosition(toolMenuOpen, toolButtonRef, toolMenuRef, setToolMenuPosition, "end");
 
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [themeMenuOpen]);
-
-  useEffect(() => {
-    if (!toolMenuOpen) return;
-
-    const updatePosition = () => {
-      const button = toolButtonRef.current;
-      const menu = toolMenuRef.current;
-      if (!button || !menu) return;
-      const rect = button.getBoundingClientRect();
-      const nextPosition = resolveAnchoredMenuPosition(rect, menu.getBoundingClientRect(), {
-        preferredY: "below",
-        align: "end",
-      });
-      setToolMenuPosition((current) => {
-        if (
-          Math.abs(current.top - nextPosition.top) < POSITION_EPSILON &&
-          Math.abs(current.left - nextPosition.left) < POSITION_EPSILON
-        ) {
-          return current;
-        }
-        return nextPosition;
-      });
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [toolMenuOpen]);
-
-  useEffect(() => {
-    if (!sheetSetupOpen) return;
-
-    const updatePosition = () => {
-      const button = sheetSetupButtonRef.current;
-      const menu = sheetSetupMenuRef.current;
-      if (!button || !menu) return;
-      const nextPosition = resolveAnchoredMenuPosition(button.getBoundingClientRect(), menu.getBoundingClientRect(), {
-        preferredY: "below",
-        align: "start",
-      });
-      setSheetSetupPosition((current) => {
-        if (
-          Math.abs(current.top - nextPosition.top) < POSITION_EPSILON &&
-          Math.abs(current.left - nextPosition.left) < POSITION_EPSILON
-        ) {
-          return current;
-        }
-        return nextPosition;
-      });
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [sheetSetupOpen]);
+  useAnchoredMenuPosition(sheetSetupOpen, sheetSetupButtonRef, sheetSetupMenuRef, setSheetSetupPosition, "start");
 
   useEffect(() => {
     if (!railMenuOpen || !railMenu) return;
@@ -1002,153 +637,6 @@ export default function App() {
     };
   }, [railMenuOpen, railMenu]);
 
-  useEffect(() => {
-    const dismissTooltip = () =>
-      setTooltip((current) => {
-        if (!current) return current;
-        return null;
-      });
-    window.addEventListener("resize", dismissTooltip);
-    window.addEventListener("scroll", dismissTooltip, true);
-    return () => {
-      window.removeEventListener("resize", dismissTooltip);
-      window.removeEventListener("scroll", dismissTooltip, true);
-    };
-  }, []);
-
-  const clearTooltip = useCallback(() => {
-    if (tooltipTimerRef.current != null) {
-      window.clearTimeout(tooltipTimerRef.current);
-      tooltipTimerRef.current = null;
-    }
-    tooltipAnchorRef.current = null;
-    setTooltip((current) => {
-      if (!current) return current;
-      return null;
-    });
-  }, []);
-
-  const suppressTooltipForTarget = useCallback((target: HTMLElement) => {
-    suppressedTooltipTargetRef.current = target;
-    clearTooltip();
-  }, [clearTooltip]);
-
-  const releaseTooltipForTarget = useCallback((target: HTMLElement) => {
-    if (suppressedTooltipTargetRef.current === target) {
-      suppressedTooltipTargetRef.current = null;
-    }
-    clearTooltip();
-  }, [clearTooltip]);
-
-  useEffect(() => {
-    return () => {
-      if (tooltipTimerRef.current != null) {
-        window.clearTimeout(tooltipTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!tooltip) return;
-    let rafId: number | null = null;
-
-    const validateAnchor = () => {
-      const anchor = tooltipAnchorRef.current;
-      if (!anchor || !anchor.isConnected || anchor.getClientRects().length === 0) {
-        clearTooltip();
-        return;
-      }
-      rafId = window.requestAnimationFrame(validateAnchor);
-    };
-
-    rafId = window.requestAnimationFrame(validateAnchor);
-    return () => {
-      if (rafId != null) {
-        window.cancelAnimationFrame(rafId);
-      }
-    };
-  }, [tooltip, clearTooltip]);
-
-  const buildTooltip = useCallback((text: string, target: HTMLElement): FloatingTooltip => {
-    const rect = target.getBoundingClientRect();
-    const belowTop = rect.bottom + TOOLTIP_GAP;
-    const aboveTop = rect.top - TOOLTIP_GAP;
-    const shouldPlaceAbove = belowTop + TOOLTIP_ESTIMATED_HEIGHT > window.innerHeight - TOOLTIP_VIEWPORT_MARGIN;
-    const centerLeft = rect.left + rect.width / 2;
-    const halfWidth = TOOLTIP_ESTIMATED_WIDTH / 2;
-    const shouldAlignLeft = centerLeft - halfWidth < TOOLTIP_VIEWPORT_MARGIN;
-    const shouldAlignRight = centerLeft + halfWidth > window.innerWidth - TOOLTIP_VIEWPORT_MARGIN;
-    const alignment = shouldAlignLeft ? "left" : shouldAlignRight ? "right" : "center";
-    const left = shouldAlignLeft
-      ? TOOLTIP_VIEWPORT_MARGIN
-      : shouldAlignRight
-        ? window.innerWidth - TOOLTIP_VIEWPORT_MARGIN
-        : centerLeft;
-    return {
-      text,
-      top: shouldPlaceAbove ? aboveTop : belowTop,
-      left,
-      placement: shouldPlaceAbove ? "above" : "below",
-      alignment,
-    };
-  }, []);
-
-  const handleTabMouseEnter = useCallback((sheetName: string, target: HTMLButtonElement) => {
-    if (target.scrollWidth <= target.clientWidth + 1) {
-      clearTooltip();
-      return;
-    }
-    if (tooltipTimerRef.current != null) {
-      window.clearTimeout(tooltipTimerRef.current);
-      tooltipTimerRef.current = null;
-    }
-    const next = buildTooltip(sheetName, target);
-    tooltipTimerRef.current = window.setTimeout(() => {
-      tooltipTimerRef.current = null;
-      tooltipAnchorRef.current = target;
-      setTooltip((current) => {
-        if (
-          current &&
-          current.text === next.text &&
-          current.placement === next.placement &&
-          current.alignment === next.alignment &&
-          Math.abs(current.top - next.top) < POSITION_EPSILON &&
-          Math.abs(current.left - next.left) < POSITION_EPSILON
-        ) {
-          return current;
-        }
-        return next;
-      });
-    }, TAB_TOOLTIP_DELAY_MS);
-  }, [buildTooltip, clearTooltip]);
-
-  const showTooltip = useCallback((text: string, target: HTMLElement, delayMs = CONTROL_TOOLTIP_DELAY_MS) => {
-    if (suppressedTooltipTargetRef.current === target) {
-      return;
-    }
-    if (tooltipTimerRef.current != null) {
-      window.clearTimeout(tooltipTimerRef.current);
-      tooltipTimerRef.current = null;
-    }
-    const next = buildTooltip(text, target);
-    tooltipTimerRef.current = window.setTimeout(() => {
-      tooltipTimerRef.current = null;
-      tooltipAnchorRef.current = target;
-      setTooltip((current) => {
-        if (
-          current &&
-          current.text === next.text &&
-          current.placement === next.placement &&
-          current.alignment === next.alignment &&
-          Math.abs(current.top - next.top) < POSITION_EPSILON &&
-          Math.abs(current.left - next.left) < POSITION_EPSILON
-        ) {
-          return current;
-        }
-        return next;
-      });
-    }, delayMs);
-  }, [buildTooltip]);
 
   const syncRowIndexMetrics = useCallback((api: GridApi<GridRow> | null) => {
     const snapshot = gridViewportAdapter.collectRowMetrics(isGridApiAlive(api) ? api : null, GRID_ROW_HEIGHT);
@@ -1294,89 +782,6 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [mode, isActiveSheetBlocked, selection, clearActiveSelection]);
 
-  const toggleCollapse = useCallback((rowPath: string) => {
-    setCollapsedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(rowPath)) {
-        next.delete(rowPath);
-      } else {
-        next.add(rowPath);
-      }
-      return next;
-    });
-  }, []);
-
-  const allRowData: GridRow[] = useMemo(() => {
-    if (!currentSheet || !currentSheetState) return [];
-
-    return currentSheetRowStructure
-      .map((rowInfo, rowIndex) => {
-        const row = currentSheet.values[rowIndex] ?? [];
-
-        const item: GridRow = {
-          __rowKey: `r${rowInfo.absoluteRowNumber}`,
-          __rowId: rowInfo.rowId,
-          __rowPath: rowInfo.rowPath,
-          __absoluteRowNumber: rowInfo.absoluteRowNumber,
-          __depth: rowInfo.depth,
-          __hasChildren: rowInfo.hasChildren,
-          __collapsed: collapsedPaths.has(rowInfo.rowPath),
-          __displayLabel: rowInfo.label,
-        };
-
-        for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
-          const field = toColFieldId(colIndex);
-          const presentedCell = currentSheetPresentation?.cells[rowIndex]?.[colIndex] ?? null;
-          const rawCell = currentSheetState.cells[rowInfo.absoluteRowIndex]?.[colIndex];
-          const runtimeValue = row[colIndex] as RuntimeValue | undefined;
-          const displayText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
-
-          if (colIndex < headerColCount) {
-            if (colIndex === 0) {
-              item[field] = rowInfo.label;
-              item[`__kind_${colIndex}`] = "label";
-            } else {
-              const headerValue = displayText.length > 0
-                ? displayText
-                : rawCell
-                  ? getCellTextView(rawCell).inputText
-                  : "";
-              item[field] = headerValue;
-              item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
-            }
-          } else {
-            item[field] = displayText;
-            item[`__kind_${colIndex}`] = runtimeValue?.kind ?? "blank";
-            const booleanView = resolveBooleanCellView(runtimeValue, rawCell?.body);
-            if (booleanView) {
-              item[`__boolean_value_${colIndex}`] = booleanView.value;
-              item[`__boolean_interactive_${colIndex}`] = booleanView.interactive;
-            }
-            item[`__align_${colIndex}`] = presentedCell?.styleLayer.effective?.align ?? "";
-            item[`__weight_${colIndex}`] = presentedCell?.styleLayer.effective?.weight ?? "";
-            item[`__color_${colIndex}`] = presentedCell?.styleLayer.effective?.color ?? "";
-            item[`__display_has_errors_${colIndex}`] = (presentedCell?.errors.length ?? 0) > 0;
-            item[`__display_source_${colIndex}`] = presentedCell?.source ?? "default";
-            if (runtimeValue?.kind === "error") {
-              item[`__error_external_${colIndex}`] = runtimeValue.errorKind;
-              item[`__error_internal_${colIndex}`] = runtimeValue.internalKind;
-              item[`__error_context_${colIndex}`] = JSON.stringify(runtimeValue.context);
-            }
-          }
-        }
-
-        return item;
-      });
-  }, [currentSheet, currentSheetState, currentSheetPresentation, currentSheetRowStructure, collapsedPaths, sheetColCount, headerColCount]);
-
-  const rowData = useMemo(
-    () => allRowData.filter((row) => isVisiblePath(row.__rowPath, collapsedPaths)),
-    [allRowData, collapsedPaths],
-  );
-  const columnLayouts = useMemo(
-    () => resolveColumnLayouts(allRowData, headerLeafLabels, headerColCount),
-    [allRowData, headerLeafLabels, headerColCount],
-  );
   const { columnCount: frozenColumnCount, width: pinnedHeaderWidth } = useMemo(
     () => resolveFrozenHeaderGeometry(gridViewportWidth, columnLayouts.slice(0, headerColCount).map((column) => column.width)),
     [gridViewportWidth, columnLayouts, headerColCount],
@@ -1748,6 +1153,15 @@ export default function App() {
     return nextCells;
   }, [mode, isActiveSheetBlocked, headerOverlayRows, sheetColCount, columnMetrics, headerMatrix, headerColCount]);
 
+  const searchCells = useMemo(() => currentSheetState && !isActiveSheetBlocked ? buildSearchCells(
+    allRowData, headerOverlayCells, currentSheetState.colIds.slice(0, sheetColCount), currentSheetState.rowIds, uiLocale,
+  ) : [], [allRowData, headerOverlayCells, currentSheetState, sheetColCount, isActiveSheetBlocked, uiLocale]);
+  const sheetSearch = useSheetSearch({
+    cells: searchCells, scope: activeSheet ?? "",
+    enabled: mode === "table",
+    gridApiRef, displayedRows: absoluteRowToDisplayedIndex, expandRowPath,
+  });
+
   useEffect(() => {
     if (formulaInputMode === "edit") return;
     setFormulaPointPick(null);
@@ -1978,192 +1392,12 @@ export default function App() {
 
   const axisColumnDragPreview = axisDragPreview?.axis === "column" ? axisDragPreview : null;
 
-  const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
-    if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
-
-    const realColumnDefs = Array.from({ length: sheetColCount }, (_, colIndex) => {
-      const field = toColFieldId(colIndex);
-      const isHeaderColumn = colIndex < headerColCount;
-      const leafHeader = headerLeafLabels[colIndex] ?? `C${colIndex + 1}`;
-      const semanticLabel = headerSemanticLabels[colIndex] ?? leafHeader;
-
-      const baseDef: ColDef<GridRow> = {
-        ...columnLayouts[colIndex],
-        colId: field,
-        field,
-        headerName: leafHeader,
-        headerTooltip: semanticLabel,
-        suppressMovable: true,
-      };
-
-      if (isHeaderColumn) {
-        const withHeader: ColDef<GridRow> = {
-          ...baseDef,
-          pinned: colIndex < frozenColumnCount ? "left" : null,
-          headerClass: "line-item-header",
-          cellClass: colIndex === 0 ? "line-item-cell" : "header-column-cell",
-        };
-
-        if (colIndex === 0) {
-          withHeader.cellRenderer = (params: { data?: GridRow }) => {
-            const data = params.data;
-            if (!data) return null;
-
-            const showToggle = data.__hasChildren;
-            const showSpacer = !showToggle && data.__depth > 0;
-            const paddingLeft = Math.max(0, data.__depth - 1) * 12;
-            const isCollapsed = data.__collapsed;
-            const leadingSlot = showToggle ? (
-              <button
-                className={isCollapsed ? "tree-toggle is-collapsed" : "tree-toggle"}
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  toggleCollapse(data.__rowPath);
-                }}
-                aria-label={isCollapsed ? "Expand section" : "Collapse section"}
-              >
-                <svg className="tree-toggle-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-                  <path d="M4 2.5 8.5 6 4 9.5Z" fill="currentColor" />
-                </svg>
-              </button>
-            ) : showSpacer ? (
-              <span className="tree-spacer" />
-            ) : (
-              <span className="tree-inline-pad" aria-hidden="true" />
-            );
-
-            return (
-              <div className="tree-cell" style={{ paddingLeft }}>
-                {leadingSlot}
-                <span className={data.__hasChildren ? "tree-label section" : "tree-label"}>
-                  {String(data.__displayLabel ?? data.__rowPath)}
-                </span>
-              </div>
-            );
-          };
-        }
-
-        return withHeader;
-      }
-
-      return {
-        ...baseDef,
-        headerClass: "data-column-header",
-        cellRenderer: (params: { data?: GridRow; value?: unknown }) => {
-          const kind = params.data?.[`__kind_${colIndex}`];
-          if (kind === "boolean") {
-            if (!params.data) {
-              throw new Error(`missing row data for boolean column ${colIndex}`);
-            }
-            const value = params.data[`__boolean_value_${colIndex}`];
-            const interactive = params.data[`__boolean_interactive_${colIndex}`];
-            if (typeof value !== "boolean" || typeof interactive !== "boolean") {
-              throw new Error(`missing boolean metadata for column ${colIndex}`);
-            }
-            if (!interactive) return params.value;
-            const pointPickOwnsPointer = canStartFormulaPointPick();
-            return pointPickOwnsPointer ? (
-              <BooleanCellCapsule value={value} interactive={false} />
-            ) : (
-              <BooleanCellCapsule
-                value={value}
-                interactive
-                onToggle={() => activateBooleanLiteralAt(params.data!, colIndex, value)}
-              />
-            );
-          }
-          if (kind !== "error") {
-            if (kind === "string") return <span className="cell-text">{params.value as string}</span>;
-            if (kind === "number") return <span title={String(params.value)}>{params.value as string}</span>;
-            return params.value;
-          }
-
-          const externalKind = params.data?.[`__error_external_${colIndex}`];
-          const internalKind = params.data?.[`__error_internal_${colIndex}`];
-          const context = params.data?.[`__error_context_${colIndex}`];
-          if (typeof externalKind !== "string" || typeof internalKind !== "string" || typeof context !== "string") {
-            throw new Error(`missing error metadata for column ${colIndex}`);
-          }
-
-          return (
-            <ErrorCellChip
-              locale={uiLocale}
-              externalKind={externalKind}
-              internalKind={internalKind}
-              context={context}
-              onTooltipEnter={showTooltip}
-              onTooltipLeave={clearTooltip}
-            />
-          );
-        },
-        cellClass: (params: { data?: GridRow }) => {
-          const kind = params.data?.[`__kind_${colIndex}`];
-          const classes = ["data-cell"];
-          if (kind === "number") classes.push("is-numeric");
-          if (kind === "boolean" && params.data?.[`__boolean_interactive_${colIndex}`] === true) {
-            classes.push("is-boolean-capsule");
-          }
-          if (kind === "error") classes.push("is-error");
-          if (kind === "blank") classes.push("is-blank");
-          const align = params.data?.[`__align_${colIndex}`];
-          if (align === "left" || align === "right" || align === "center") {
-            classes.push(`align-${align}`);
-          }
-          if (params.data?.[`__weight_${colIndex}`] === "bold") {
-            classes.push("is-bold");
-          }
-          const color = params.data?.[`__color_${colIndex}`];
-          if (color === "red" || color === "green" || color === "blue") {
-            classes.push(`is-color-${color}`);
-          }
-          if (params.data?.[`__display_has_errors_${colIndex}`] === true) {
-            classes.push("has-display-errors");
-          }
-          return classes.join(" ");
-        },
-        cellClassRules: {
-          "is-axis-selected": () =>
-            selectedColumnAxisSelection != null &&
-            colIndex >= selectedColumnAxisSelection.colStart &&
-            colIndex <= selectedColumnAxisSelection.colEnd,
-          "is-axis-drag-source": () =>
-            axisColumnDragPreview != null &&
-            colIndex >= axisColumnDragPreview.colStart &&
-            colIndex <= axisColumnDragPreview.colEnd,
-        },
-      } satisfies ColDef<GridRow>;
-    });
-
-    return realColumnDefs;
-  }, [
-    currentSheet,
-    currentSheetState,
-    sheetColCount,
-    headerColCount,
-    headerRowCount,
-    frozenColumnCount,
-    columnLayouts,
-    headerLeafLabels,
-    headerSemanticLabels,
-    toggleCollapse,
-    uiLocale,
-    showTooltip,
-    clearTooltip,
-    selectedColumnAxisSelection,
-    axisColumnDragPreview,
-    activateBooleanLiteralAt,
-    canStartFormulaPointPick,
-    revision,
-  ]);
+  const columnDefs = useGridColumnDefs({
+    currentSheet, currentSheetState, sheetColCount, headerColCount, headerRowCount,
+    frozenColumnCount, columnLayouts, headerLeafLabels, headerSemanticLabels, toggleCollapse,
+    uiLocale, showTooltip, clearTooltip, selectedColumnAxisSelection, axisColumnDragPreview,
+    activateBooleanLiteralAt, canStartFormulaPointPick, revision,
+  });
 
   const headerIndexMetrics = useMemo<HeaderIndexMetric[]>(() => {
     return Array.from({ length: headerRowCount }, (_, index) => ({
@@ -4237,6 +3471,14 @@ export default function App() {
     });
   }, [formulaEditSourceCell, activeSheet, headerColCount, currentSheetRowStructure, clearCell, setCellInput, focusHeaderOverlayCell, focusBodyCellAt]);
 
+  const prepareForPersistence = useCallback(() => {
+    if (formulaInputMode === "edit") handleCommitFormulaInput(formulaDraftInput);
+  }, [formulaInputMode, formulaDraftInput, handleCommitFormulaInput]);
+  const { fileName, fileStatus, handleOpenFile, handleSaveFile, handleSaveFileAs } = useFileSessionController({
+    mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence,
+    hasPendingCellEdit: formulaInputMode === "edit",
+  });
+
   const handleApplyFormulaInputToSelection = useCallback((nextInput: string) => {
     if (!currentSheetState || !selectedRange || !isRangeSelection) {
       throw new Error("apply to selection requires a selected rectangular range");
@@ -4312,572 +3554,23 @@ export default function App() {
     focusSelectedBodyCell,
   ]);
 
-  const handleSetCellLocalFormat = useCallback((key: FormatLocalKey, options: FormatLocalOptions | null | undefined) => {
-    if (!selectedCell || selectedCell.area !== "body" || selectedCell.logical.rAbs <= headerRowCount || selectedCell.logical.cAbs < headerColCount) {
-      throw new Error("format edit requires a selected data cell");
-    }
-    if (!activeSheet) {
-      throw new Error("format edit requires an active sheet");
-    }
-    setCellLocalFormat(
-      {
-        kind: "index",
-        sheet: activeSheet,
-        rowIndex: selectedCell.logical.rAbs - 1,
-        colIndex: selectedCell.logical.cAbs,
-      },
-      formatSpecFromLocalSelection(key, options ?? null),
-    );
-    setFormulaInputMode("read");
-  }, [selectedCell, activeSheet, headerRowCount, headerColCount, setCellLocalFormat]);
+  const {
+    handleSetCellLocalFormat, handleSetCellLocalStyle, handleSetColumnDefaultFormat,
+    handleSetColumnDefaultStyle, handleSetRowDefaultFormat, handleSetRowDefaultStyle,
+  } = useDisplayFormatCommands({ activeSheet, selectedCell, headerRowCount, headerColCount, setFormulaInputMode });
 
-  const handleSetCellLocalStyle = useCallback(<Axis extends "align" | "weight" | "color">(
-    axis: Axis,
-    value: NonNullable<FormulaBarData["styleLocal"]>[Axis],
-  ) => {
-    if (!selectedCell || selectedCell.area !== "body" || selectedCell.logical.rAbs <= headerRowCount || selectedCell.logical.cAbs < headerColCount) {
-      throw new Error("style edit requires a selected data cell");
-    }
-    if (!activeSheet) {
-      throw new Error("style edit requires an active sheet");
-    }
-    const patch: StylePatch = {
-      [axis]: value === "auto" ? null : value,
-    };
-    setCellLocalStyle(
-      {
-        kind: "index",
-        sheet: activeSheet,
-        rowIndex: selectedCell.logical.rAbs - 1,
-        colIndex: selectedCell.logical.cAbs,
-      },
-      patch,
-    );
-    setFormulaInputMode("read");
-  }, [selectedCell, activeSheet, headerRowCount, headerColCount, setCellLocalStyle]);
-
-  const handleSetColumnDefaultFormat = useCallback((colId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => {
-    if (!activeSheet) {
-      throw new Error("column format edit requires an active sheet");
-    }
-    if (key === "auto") {
-      clearColumnDefaultFormat(activeSheet, colId);
-    } else {
-      setColumnDefaultFormat(activeSheet, colId, formatSpecFromLocalSelection(key, options));
-    }
-    setFormulaInputMode("read");
-  }, [activeSheet, clearColumnDefaultFormat, setColumnDefaultFormat]);
-
-  const handleSetColumnDefaultStyle = useCallback(<Axis extends "align" | "weight" | "color">(
-    colId: number,
-    axis: Axis,
-    value: NonNullable<FormulaBarData["styleLocal"]>[Axis],
-  ) => {
-    if (!activeSheet) {
-      throw new Error("column style edit requires an active sheet");
-    }
-    const patch: StylePatch = {
-      [axis]: value === "auto" ? null : value,
-    };
-    setColumnDefaultStyle(activeSheet, colId, patch);
-    setFormulaInputMode("read");
-  }, [activeSheet, setColumnDefaultStyle]);
-
-  const handleSetRowDefaultFormat = useCallback((rowId: number, key: FormatLocalKey, options: FormatLocalOptions | null) => {
-    if (!activeSheet) {
-      throw new Error("row format edit requires an active sheet");
-    }
-    if (key === "auto") {
-      clearRowDefaultFormat(activeSheet, rowId);
-    } else {
-      setRowDefaultFormat(activeSheet, rowId, formatSpecFromLocalSelection(key, options));
-    }
-    setFormulaInputMode("read");
-  }, [activeSheet, clearRowDefaultFormat, setRowDefaultFormat]);
-
-  const handleSetRowDefaultStyle = useCallback(<Axis extends "align" | "weight" | "color">(
-    rowId: number,
-    axis: Axis,
-    value: NonNullable<FormulaBarData["styleLocal"]>[Axis],
-  ) => {
-    if (!activeSheet) {
-      throw new Error("row style edit requires an active sheet");
-    }
-    const patch: StylePatch = {
-      [axis]: value === "auto" ? null : value,
-    };
-    setRowDefaultStyle(activeSheet, rowId, patch);
-    setFormulaInputMode("read");
-  }, [activeSheet, setRowDefaultStyle]);
-
-  const handleInsertRow = useCallback((rowNumber: number, side: "above" | "below", area: "header" | "body") => {
-    if (!activeSheet) {
-      throw new Error("row insertion requires an active sheet");
-    }
-    if (!currentSheetState) {
-      throw new Error("row insertion requires current sheet state");
-    }
-    if (area === "header") {
-      const rowGapIndex = side === "above" ? rowNumber - 1 : rowNumber;
-      const nextRowNumber = side === "above" ? rowNumber : rowNumber + 1;
-      if (rowGapIndex < 0 || rowGapIndex > headerRowCount) {
-        throw new Error("header row insertion gap must be inside the header region");
-      }
-      const nextColIndex = selectedCell?.logical.cAbs ?? defaultBodyRailColIndex ?? 0;
-      startRowTransition("insert", nextRowNumber);
-      insertRow(activeSheet, "header", rowGapIndex, 0);
-      closeRailMenu();
-      setSelectedColumnIndex(null);
-      setSelectedCell({
-        area: "header",
-        logical: {
-          rAbs: nextRowNumber,
-          cAbs: nextColIndex,
-        },
-        colId: toColFieldId(nextColIndex),
-        rowPath: null,
-      });
-      setFormulaInputMode("read");
-      window.requestAnimationFrame(() => {
-        focusHeaderOverlayCell(nextRowNumber, nextColIndex);
-      });
-      return;
-    }
-    if (!currentSheet) {
-      throw new Error("row insertion requires current sheet evaluation");
-    }
-    if (defaultBodyRailColIndex == null) {
-      throw new Error("row insertion requires at least one selectable column");
-    }
-    const { rowGapIndex, depth, nextRowNumber, expandParentRowPath } = resolveRowInsert(
-      currentSheetRowStructure,
-      rowNumber,
-      side,
-    );
-    if (expandParentRowPath) {
-      setCollapsedPaths((prev) => {
-        if (!prev.has(expandParentRowPath)) {
-          return prev;
-        }
-        const next = new Set(prev);
-        next.delete(expandParentRowPath);
-        return next;
-      });
-    }
-    const nextColIndex = resolvePostRowStructureColumnIndex(selectedCell, defaultBodyRailColIndex);
-    startRowTransition("insert", nextRowNumber);
-    insertRow(activeSheet, "body", rowGapIndex, depth);
-    closeRailMenu();
-    setSelectedColumnIndex(null);
-    setSelectedCell({
-      area: "body",
-      logical: {
-        rAbs: nextRowNumber,
-        cAbs: nextColIndex,
-      },
-      colId: toColFieldId(nextColIndex),
-      rowPath: null,
-    });
-    setFormulaInputMode("read");
-    window.requestAnimationFrame(() => {
-      focusBodyCellAt(nextRowNumber, nextColIndex);
-    });
-  }, [activeSheet, currentSheet, currentSheetState, currentSheetRowStructure, defaultBodyRailColIndex, selectedCell, headerRowCount, startRowTransition, insertRow, closeRailMenu, focusHeaderOverlayCell, focusBodyCellAt]);
-
-  const handleAppendBodyRows = useCallback((count: number) => {
-    if (!Number.isInteger(count) || count <= 0) {
-      throw new Error("append body rows requires a positive integer count");
-    }
-    if (!activeSheet) {
-      throw new Error("append body rows requires an active sheet");
-    }
-    if (!currentSheetState) {
-      throw new Error("append body rows requires current sheet state");
-    }
-    if (defaultBodyRailColIndex == null) {
-      throw new Error("append body rows requires at least one selectable column");
-    }
-    const root = gridWrapRef.current;
-    const bodyViewport = root ? queryGridBodyViewport(root) : null;
-    if (!bodyViewport) {
-      throw new Error("append body rows requires a body viewport");
-    }
-    const previousBodyScrollTop = bodyViewport.scrollTop;
-    const previousBodyScrollHeight = bodyViewport.scrollHeight;
-    const rowGapIndex = currentSheetState.rowIds.length;
-    const nextRowNumber = rowGapIndex + count;
-    const nextColId = toColFieldId(defaultBodyRailColIndex);
-    queueAppendRowAnchorScroll(activeSheet, previousBodyScrollTop, previousBodyScrollHeight, {
-      rAbs: nextRowNumber,
-      colId: nextColId,
-    });
-    insertRows(activeSheet, "body", rowGapIndex, count, 0);
-    closeRailMenu();
-    setSelectedColumnIndex(null);
-    setSelectedCell({
-      area: "body",
-      logical: {
-        rAbs: nextRowNumber,
-        cAbs: defaultBodyRailColIndex,
-      },
-      colId: nextColId,
-      rowPath: null,
-    });
-    setFormulaInputMode("read");
-  }, [
-    activeSheet,
-    currentSheetState,
-    defaultBodyRailColIndex,
-    insertRows,
-    queueAppendRowAnchorScroll,
-    closeRailMenu,
-    setSelectedColumnIndex,
-    setSelectedCell,
-  ]);
-
-  const handleDuplicateRow = useCallback((rowNumber: number, area: "header" | "body", rowId: number) => {
-    if (!activeSheet) {
-      throw new Error("row duplication requires an active sheet");
-    }
-    if (!currentSheetState) {
-      throw new Error("row duplication requires current sheet state");
-    }
-    if (area === "body" && defaultBodyRailColIndex == null) {
-      throw new Error("row duplication requires at least one selectable column");
-    }
-
-    const rowIndex = rowNumber - 1;
-    let rowIds: number[];
-    let targetGapIndex: number;
-    if (area === "header") {
-      if (rowIndex < 0 || rowIndex >= headerRowCount) {
-        throw new Error("header row duplication target must be inside the header region");
-      }
-      rowIds = [rowId];
-      targetGapIndex = rowNumber;
-    } else {
-      const row = currentSheetRowStructure.find((candidate) => candidate.rowId === rowId);
-      if (!row) {
-        throw new Error("body row duplication requires a visible body row structure");
-      }
-      const sourceCount = row.hasChildren ? row.subtreeRowCount : 1;
-      rowIds = currentSheetState.rowIds.slice(row.absoluteRowIndex, row.absoluteRowIndex + sourceCount);
-      if (rowIds.length !== sourceCount) {
-        throw new Error("body row duplication source segment is incomplete");
-      }
-      targetGapIndex = row.absoluteRowIndex + sourceCount;
-    }
-
-    const nextRowNumber = targetGapIndex + 1;
-    if (area === "body") {
-      startRowTransition("insert", nextRowNumber);
-    }
-    duplicateRows(activeSheet, rowIds, targetGapIndex);
-    closeRailMenu();
-    setSelectedColumnIndex(null);
-    setFormulaInputMode("read");
-    const nextColIndex =
-      area === "header"
-        ? selectedCell?.logical.cAbs ?? defaultBodyRailColIndex ?? 0
-        : resolvePostRowStructureColumnIndex(selectedCell, defaultBodyRailColIndex ?? 0);
-    setSelectedCell({
-      area,
-      logical: {
-        rAbs: nextRowNumber,
-        cAbs: nextColIndex,
-      },
-      colId: toColFieldId(nextColIndex),
-      rowPath: null,
-    });
-    window.requestAnimationFrame(() => {
-      if (area === "header") {
-        focusHeaderOverlayCell(nextRowNumber, nextColIndex);
-      } else {
-        focusBodyCellAt(nextRowNumber, nextColIndex);
-      }
-    });
-  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, headerRowCount, currentSheetRowStructure, startRowTransition, duplicateRows, closeRailMenu, selectedCell, focusHeaderOverlayCell, focusBodyCellAt]);
-
-  const handleDeleteRow = useCallback(async (rowNumber: number, area: "header" | "body", rowId: number, _mode: "node" | "subtree" = "node") => {
-    if (!activeSheet) {
-      throw new Error("row deletion requires an active sheet");
-    }
-    if (!currentSheetState) {
-      throw new Error("row deletion requires current sheet state");
-    }
-    if (area === "body" && defaultBodyRailColIndex == null) {
-      throw new Error("row deletion requires at least one selectable column");
-    }
-    const targets = resolveRowDeleteTargets(rowNumber, area, rowId, selection, currentSheetState, currentSheetRowStructure);
-    const previews = targets.map((target) => previewDeleteRow(activeSheet, target.rowId, target.mode));
-    const deletedRowCount = previews.reduce((sum, preview) => sum + preview.deletedRowCount, 0);
-    const affectedFormulaCellCount = countUniqueAffectedFormulaCells(previews.flatMap((preview) => preview.affectedFormulaCells));
-    if (affectedFormulaCellCount > 0) {
-      const firstTarget = targets[0];
-      if (!firstTarget) {
-        throw new Error("row deletion expected at least one delete target");
-      }
-      closeRailMenu();
-      const confirmed = await requestConfirmation({
-        title: "Delete row?",
-        body: (
-          <>
-            <p className="app-modal-target">{describeRowDeleteTarget(firstTarget.rowNumber, area, firstTarget.rowId, deletedRowCount)}</p>
-            <p>{affectedFormulaCellCount} formula cell(s) reference the row(s) being deleted.</p>
-          </>
-        ),
-        confirmLabel: "Delete",
-        cancelLabel: "Cancel",
-        tone: "danger",
-      });
-      if (!confirmed) return;
-    }
-    if (area === "header") {
-      const firstTarget = targets[0];
-      if (!firstTarget) {
-        throw new Error("header row deletion expected at least one delete target");
-      }
-      const nextHeaderRowNumber = headerRowCount <= deletedRowCount ? null : Math.min(firstTarget.rowNumber, headerRowCount - deletedRowCount);
-      deleteRows(activeSheet, targets.map((target) => ({ rowId: target.rowId, mode: target.mode })));
-      closeRailMenu();
-      setFormulaInputMode("read");
-      setSelectedColumnIndex(null);
-      if (nextHeaderRowNumber == null) {
-        clearActiveSelection();
-        return;
-      }
-      const nextColIndex = selectedCell?.logical.cAbs ?? defaultBodyRailColIndex ?? 0;
-      setSelectedCell({
-        area: "header",
-        logical: {
-          rAbs: nextHeaderRowNumber,
-          cAbs: nextColIndex,
-        },
-        colId: toColFieldId(nextColIndex),
-        rowPath: null,
-      });
-      window.requestAnimationFrame(() => {
-        focusHeaderOverlayCell(nextHeaderRowNumber, nextColIndex);
-      });
-      return;
-    }
-    if (defaultBodyRailColIndex == null) {
-      throw new Error("row deletion requires at least one selectable column");
-    }
-    const bodyRowCount = currentSheet?.values.length ?? 0;
-    const firstTarget = targets[0];
-    if (!firstTarget) {
-      throw new Error("body row deletion expected at least one delete target");
-    }
-    const nextBodyRowCount = bodyRowCount - deletedRowCount;
-    const nextRowNumber =
-      nextBodyRowCount <= 0
-        ? null
-        : firstTarget.rowNumber <= headerRowCount + nextBodyRowCount
-          ? firstTarget.rowNumber
-          : headerRowCount + nextBodyRowCount;
-    if (nextRowNumber != null) {
-      startRowTransition("delete", nextRowNumber);
-    }
-    deleteRows(activeSheet, targets.map((target) => ({ rowId: target.rowId, mode: target.mode })));
-    closeRailMenu();
-    setFormulaInputMode("read");
-    if (nextBodyRowCount <= 0) {
-      clearActiveSelection();
-      return;
-    }
-    if (nextRowNumber == null) {
-      throw new Error("row deletion expected a next row number");
-    }
-    const nextColIndex = resolvePostRowStructureColumnIndex(selectedCell, defaultBodyRailColIndex);
-    setSelectedColumnIndex(null);
-    setSelectedCell({
-      area: "body",
-      logical: {
-        rAbs: nextRowNumber,
-        cAbs: nextColIndex,
-      },
-      colId: toColFieldId(nextColIndex),
-      rowPath: null,
-    });
-    window.requestAnimationFrame(() => {
-      focusBodyCellAt(nextRowNumber, nextColIndex);
-    });
-  }, [activeSheet, currentSheetState, defaultBodyRailColIndex, currentSheet, selectedCell, selection, currentSheetRowStructure, previewDeleteRow, deleteRows, closeRailMenu, requestConfirmation, describeRowDeleteTarget, headerRowCount, clearActiveSelection, focusHeaderOverlayCell, startRowTransition, focusBodyCellAt]);
-
-  const handleConvertRowsToHeader = useCallback((rowId: number) => {
-    if (!activeSheet) {
-      throw new Error("row conversion requires an active sheet");
-    }
-    convertRowsToHeader(activeSheet, [rowId]);
-    closeRailMenu();
-    clearActiveSelection();
-    setFormulaInputMode("read");
-  }, [activeSheet, convertRowsToHeader, closeRailMenu, clearActiveSelection]);
-
-  const handleConvertRowsToBody = useCallback((rowId: number) => {
-    if (!activeSheet) {
-      throw new Error("row conversion requires an active sheet");
-    }
-    convertRowsToBody(activeSheet, [rowId], 0);
-    closeRailMenu();
-    clearActiveSelection();
-    setFormulaInputMode("read");
-  }, [activeSheet, convertRowsToBody, closeRailMenu, clearActiveSelection]);
-
-  const maxHeaderRowCount = useMemo(() => {
-    const rowCount = currentSheetState?.rowIds.length ?? 0;
-    return Math.max(0, rowCount - 1);
-  }, [currentSheetState]);
-
-  const handleSetHeaderRowCount = useCallback((nextCount: number) => {
-    if (!activeSheet) {
-      throw new Error("header row conversion requires an active sheet");
-    }
-    if (!currentSheetState) {
-      throw new Error("header row conversion requires current sheet state");
-    }
-    const targetCount = Math.max(0, Math.min(maxHeaderRowCount, nextCount));
-    if (targetCount === headerRowCount) return;
-    const rowIds = currentSheetState.rowIds;
-    if (targetCount > headerRowCount) {
-      const rowIdsToPromote = rowIds.slice(headerRowCount, targetCount);
-      if (rowIdsToPromote.length !== targetCount - headerRowCount) {
-        throw new Error("header row conversion target exceeds available body rows");
-      }
-      convertRowsToHeader(activeSheet, rowIdsToPromote);
-    } else {
-      const rowIdsToDemote = rowIds.slice(targetCount, headerRowCount);
-      if (rowIdsToDemote.length !== headerRowCount - targetCount) {
-        throw new Error("header row conversion target exceeds available header rows");
-      }
-      convertRowsToBody(activeSheet, rowIdsToDemote, 0);
-    }
-    clearActiveSelection();
-    setFormulaInputMode("read");
-  }, [
-    activeSheet,
-    currentSheetState,
-    maxHeaderRowCount,
-    headerRowCount,
-    convertRowsToHeader,
-    convertRowsToBody,
-    clearActiveSelection,
-  ]);
-
-  const handleInsertColumn = useCallback((colIndex: number, side: "left" | "right") => {
-    if (!activeSheet) {
-      throw new Error("column insertion requires an active sheet");
-    }
-    const nextColIndex = side === "left" ? colIndex : colIndex + 1;
-    startColumnTransition("insert");
-    insertColumn(activeSheet, nextColIndex);
-    closeRailMenu();
-    setSelectedCell(null);
-    setSelectedColumnIndex(nextColIndex);
-    setFormulaInputMode("read");
-    scheduleColumnIntoView(nextColIndex);
-  }, [activeSheet, startColumnTransition, insertColumn, closeRailMenu, scheduleColumnIntoView]);
-
-  const handleAppendDataColumns = useCallback((count: number) => {
-    if (!Number.isInteger(count) || count <= 0) {
-      throw new Error("append data columns requires a positive integer count");
-    }
-    if (!activeSheet) {
-      throw new Error("append data columns requires an active sheet");
-    }
-    const firstColIndex = sheetColCount;
-    const lastColIndex = firstColIndex + count - 1;
-    startColumnTransition("insert");
-    insertColumns(activeSheet, firstColIndex, count);
-    closeRailMenu();
-    setSelectedCell(null);
-    setSelectedColumnIndex(lastColIndex);
-    setFormulaInputMode("read");
-    scheduleAppendColumnAnchorScroll(activeSheet, sheetColCount + count);
-  }, [
-    activeSheet,
-    sheetColCount,
-    startColumnTransition,
-    insertColumns,
-    closeRailMenu,
-    setSelectedCell,
-    setSelectedColumnIndex,
-    scheduleAppendColumnAnchorScroll,
-  ]);
-
-  const handleDuplicateColumn = useCallback((colIndex: number) => {
-    if (!activeSheet) {
-      throw new Error("column duplication requires an active sheet");
-    }
-    if (!currentSheetState) {
-      throw new Error("column duplication requires current sheet state");
-    }
-    if (colIndex < headerColCount || colIndex >= sheetColCount) {
-      throw new Error("column duplication target must be inside data columns");
-    }
-    const colId = currentSheetState.colIds[colIndex];
-    if (colId == null) {
-      throw new Error("column duplication requires a valid source column id");
-    }
-    const nextColIndex = colIndex + 1;
-    startColumnTransition("insert");
-    duplicateColumns(activeSheet, [colId], nextColIndex);
-    closeRailMenu();
-    setSelectedCell(null);
-    setSelectedColumnIndex(nextColIndex);
-    setFormulaInputMode("read");
-  }, [activeSheet, currentSheetState, headerColCount, sheetColCount, startColumnTransition, duplicateColumns, closeRailMenu]);
-
-  const handleDeleteColumn = useCallback(async (colIndex: number) => {
-    if (!activeSheet) {
-      throw new Error("column deletion requires an active sheet");
-    }
-    const colIndices = resolveColumnDeleteTargets(colIndex, selection, headerColCount, sheetColCount);
-    const previews = colIndices.map((targetColIndex) => previewDeleteColumn(activeSheet, targetColIndex));
-    const affectedFormulaCellCount = countUniqueAffectedFormulaCells(previews.flatMap((preview) => preview.affectedFormulaCells));
-    if (affectedFormulaCellCount > 0) {
-      const firstColIndex = colIndices[0];
-      const lastColIndex = colIndices[colIndices.length - 1];
-      if (firstColIndex == null || lastColIndex == null) {
-        throw new Error("column deletion expected at least one delete target");
-      }
-      const targetLabel =
-        firstColIndex === lastColIndex
-          ? describeColumnDeleteTarget(firstColIndex)
-          : `${toColumnLetters(firstColIndex + 1)}:${toColumnLetters(lastColIndex + 1)}`;
-      closeRailMenu();
-      const confirmed = await requestConfirmation({
-        title: "Delete column?",
-        body: (
-          <>
-            <p className="app-modal-target">{targetLabel}</p>
-            <p>{affectedFormulaCellCount} formula cell(s) reference the column(s) being deleted.</p>
-          </>
-        ),
-        confirmLabel: "Delete",
-        cancelLabel: "Cancel",
-        tone: "danger",
-      });
-      if (!confirmed) return;
-    }
-    startColumnTransition("delete");
-    deleteColumns(activeSheet, colIndices);
-    closeRailMenu();
-    setSelectedCell(null);
-    const firstColIndex = colIndices[0];
-    if (firstColIndex == null) {
-      throw new Error("column deletion expected at least one delete target");
-    }
-    const nextSheetColCount = sheetColCount - colIndices.length;
-    const nextColIndex = firstColIndex < nextSheetColCount ? firstColIndex : firstColIndex - 1;
-    if (nextColIndex >= headerColCount) {
-      setSelectedColumnIndex(nextColIndex);
-    } else {
-      setSelectedColumnIndex(null);
-    }
-    setFormulaInputMode("read");
-  }, [activeSheet, selection, headerColCount, sheetColCount, previewDeleteColumn, closeRailMenu, requestConfirmation, describeColumnDeleteTarget, startColumnTransition, deleteColumns]);
+  const {
+    handleInsertRow, handleAppendBodyRows, handleDuplicateRow, handleDeleteRow,
+    handleConvertRowsToHeader, handleConvertRowsToBody, maxHeaderRowCount, handleSetHeaderRowCount,
+    handleInsertColumn, handleAppendDataColumns, handleDuplicateColumn, handleDeleteColumn,
+  } = useSheetStructureCommands({
+    currentSheet, currentSheetState, currentSheetRowStructure, sheetColCount, headerRowCount,
+    headerColCount, headerSemanticLabelPaths, expandRowPath, activeSheet, selectedCell, selection,
+    defaultBodyRailColIndex, startRowTransition, startColumnTransition, closeRailMenu,
+    setSelectedColumnIndex, setSelectedCell, setFormulaInputMode, focusHeaderOverlayCell,
+    focusBodyCellAt, gridWrapRef, queueAppendRowAnchorScroll, requestConfirmation,
+    clearActiveSelection, scheduleColumnIntoView, scheduleAppendColumnAnchorScroll,
+  });
 
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -4928,9 +3621,11 @@ export default function App() {
   }, []);
 
   return (
+    <SheetSearchContext.Provider value={sheetSearch}>
     <div className="page">
       <div className={mode === "source" ? "app-window source-mode" : "app-window"}>
         <AppChrome
+          titlePlacement={window.ordinateDesktop ? "native" : "toolbar"}
           mode={mode}
           fileName={fileName}
           fileStatus={fileStatus.label}
@@ -4980,71 +3675,8 @@ export default function App() {
           onTabMouseLeave={clearTooltip}
         />
 
-        {fileSessionRecoveryDraft ? (
-          <div className="file-session-modal-backdrop" role="presentation">
-            <section className="file-session-modal" role="dialog" aria-modal="true" aria-labelledby="file-recovery-title">
-              <div className="file-session-modal-copy">
-                <h2 id="file-recovery-title">Recover local draft?</h2>
-                <p>A newer local draft exists for this file. Choose which version to keep in the editor.</p>
-              </div>
-              <div className="file-session-modal-actions">
-                <button className="file-session-action primary" type="button" onClick={recoverFileDraft}>
-                  Recover Draft
-                </button>
-                <button className="file-session-action" type="button" onClick={() => void openSavedFile()}>
-                  Open Saved File
-                </button>
-                <button className="file-session-action danger" type="button" onClick={() => void discardFileDraft()}>
-                  Discard Draft
-                </button>
-              </div>
-            </section>
-          </div>
-        ) : null}
-
-        {fileSessionConflict ? (
-          <div className="file-session-modal-backdrop" role="presentation">
-            <section className="file-session-modal" role="dialog" aria-modal="true" aria-labelledby="file-conflict-title">
-              <div className="file-session-modal-copy">
-                <h2 id="file-conflict-title">File changed on disk</h2>
-                <p>The saved file changed while this window has local edits. Pick how to resolve the conflict.</p>
-              </div>
-              <div className="file-session-modal-actions">
-                <button className="file-session-action primary" type="button" onClick={() => void reloadFileFromDisk()}>
-                  Reload from Disk
-                </button>
-                <button className="file-session-action" type="button" onClick={() => void overwriteFileConflict()}>
-                  Overwrite Disk
-                </button>
-                <button className="file-session-action" type="button" onClick={() => void saveFileConflictAsNewFile()}>
-                  Save as New File
-                </button>
-                <button className="file-session-action" type="button" onClick={cancelFileConflict}>
-                  Cancel
-                </button>
-              </div>
-            </section>
-          </div>
-        ) : null}
-
-        {!fileSessionConflict && fileSessionExternalSnapshot ? (
-          <div className="file-session-modal-backdrop" role="presentation">
-            <section className="file-session-modal" role="dialog" aria-modal="true" aria-labelledby="file-external-title">
-              <div className="file-session-modal-copy">
-                <h2 id="file-external-title">Saved file changed</h2>
-                <p>The file on disk has a newer version. Your editor is currently clean.</p>
-              </div>
-              <div className="file-session-modal-actions">
-                <button className="file-session-action primary" type="button" onClick={() => void reloadFileFromDisk()}>
-                  Reload from Disk
-                </button>
-                <button className="file-session-action" type="button" onClick={cancelFileConflict}>
-                  Keep Current
-                </button>
-              </div>
-            </section>
-          </div>
-        ) : null}
+        <SearchPanel />
+        <FileSessionNotices />
 
         {error ? (
           <div className="error" role="alert">
@@ -5209,5 +3841,6 @@ export default function App() {
       />
       {confirmationDialog}
     </div>
+    </SheetSearchContext.Provider>
   );
 }

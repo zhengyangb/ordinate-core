@@ -7,13 +7,11 @@ import {
   createMemoryStorageAdapter,
   getPersistableText,
   hashText,
-  type FileSnapshot,
   type LocalDraftStore,
   type MemoryStorageAdapter,
   type PersistableText,
-  type SaveOptions,
-  type StorageResult,
 } from "./fileSessionStore";
+import type { FileSnapshot, SaveOptions, StorageResult } from "../platform/storage";
 import { useEditorStore } from "./editorStore";
 
 const DOC_A = `
@@ -115,6 +113,94 @@ async function openHarness() {
   await harness.store.getState().open();
   return harness;
 }
+
+describe("external file refresh", () => {
+  it("reloads a clean document without presenting a conflict", async () => {
+    const { store, editor, adapter } = await openHarness();
+    await adapter.setDiskText("file-a", DOC_B);
+    await store.getState().refreshFromDisk(() => true);
+    expect(editor.getText()).toBe(DOC_B);
+    expect(store.getState()).toMatchObject({ backingFileState: "clean", documentDirty: "clean", conflict: null, externalSnapshot: null });
+  });
+
+  it("does not overwrite either side when local edits have not been saved", async () => {
+    const { store, editor, adapter } = await openHarness();
+    editor.setText(DOC_B);
+    await adapter.setDiskText("file-a", DOC_C);
+    await store.getState().refreshFromDisk(() => true);
+    expect(editor.getText()).toBe(DOC_B);
+    expect(adapter.getDiskText("file-a")).toBe(DOC_C);
+    expect(store.getState().conflict).toMatchObject({ editorText: DOC_B, diskText: DOC_C, baselineText: DOC_A });
+    await adapter.setDiskText("file-a", DOC_D);
+    await store.getState().refreshFromDisk(() => true);
+    expect(store.getState().conflict?.diskText).toBe(DOC_D);
+  });
+
+  it("acknowledges identical disk/local contents without replacing the editor", async () => {
+    const { store, editor, adapter } = await openHarness();
+    editor.setText(DOC_B);
+    await adapter.setDiskText("file-a", DOC_B);
+    await store.getState().refreshFromDisk(() => true);
+    expect(store.getState()).toMatchObject({ backingText: DOC_B, documentDirty: "clean", conflict: null });
+    expect(editor.getText()).toBe(DOC_B);
+  });
+
+  it("defers refresh while a cell edit is uncommitted", async () => {
+    const { store, editor, adapter } = await openHarness();
+    await adapter.setDiskText("file-a", DOC_B);
+    await store.getState().refreshFromDisk(() => false);
+    expect(editor.getText()).toBe(DOC_A);
+    expect(store.getState().conflict).toBeNull();
+    await store.getState().refreshFromDisk(() => true);
+    expect(editor.getText()).toBe(DOC_B);
+  });
+
+  it("rechecks cell editing and dirty contents after an asynchronous read", async () => {
+    const { store, editor, adapter } = await openHarness();
+    await adapter.setDiskText("file-a", DOC_C);
+    let editing = false;
+    const refresh = store.getState().refreshFromDisk(() => !editing);
+    editing = true;
+    await refresh;
+    expect(editor.getText()).toBe(DOC_A);
+    editing = false;
+    const second = store.getState().refreshFromDisk(() => !editing);
+    editor.setText(DOC_B);
+    await second;
+    expect(editor.getText()).toBe(DOC_B);
+    expect(store.getState().conflict?.diskText).toBe(DOC_C);
+  });
+
+  it("clears a conflict if the external editor reverts its changes", async () => {
+    const { store, editor, adapter } = await openHarness();
+    editor.setText(DOC_B);
+    await adapter.setDiskText("file-a", DOC_C);
+    await store.getState().refreshFromDisk(() => true);
+    await adapter.setDiskText("file-a", DOC_A);
+    await store.getState().refreshFromDisk(() => true);
+    expect(store.getState()).toMatchObject({ conflict: null, documentDirty: "dirty", backingText: DOC_A });
+    expect(editor.getText()).toBe(DOC_B);
+  });
+
+  it("does not treat edits during draft cleanup as already saved", async () => {
+    let duringRemove = () => {};
+    const drafts = createMemoryLocalDraftStore();
+    const { store, editor, adapter } = createHarness({ localDraftStore: {
+      ...drafts, remove: async (key) => { duringRemove(); await drafts.remove(key); },
+    } });
+    await store.getState().open();
+    editor.setText(DOC_B, "invalid_source");
+    await store.getState().autosaveNow();
+    editor.setText(DOC_A);
+    await adapter.setDiskText("file-a", DOC_B);
+    duringRemove = () => editor.setText(DOC_C);
+    await store.getState().refreshFromDisk(() => true);
+    // The later edit must be persisted by a follow-up, never falsely marked saved against B.
+    expect(editor.getText()).toBe(DOC_C);
+    expect(adapter.getDiskText("file-a")).toBe(DOC_C);
+    expect(store.getState().backingText).toBe(DOC_C);
+  });
+});
 
 async function currentSnapshot(adapter: MemoryStorageAdapter, fileId = "file-a"): Promise<FileSnapshot> {
   const text = adapter.getDiskText(fileId);

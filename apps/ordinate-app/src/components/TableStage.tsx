@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 
 import { AgGridReact } from "ag-grid-react";
+import { SearchText } from "../search/SheetSearch";
 import {
   type ColDef,
   type ColGroupDef,
@@ -736,7 +737,7 @@ export default function TableStage({
           handleHeaderOverlayKeyDown(event.nativeEvent, cell.rowNumber, selectedColIndex);
         }}
       >
-        <span>{cell.label}</span>
+        <span><SearchText row={cell.rowNumber} col={cell.startCol} text={cell.label} /></span>
       </button>
     );
   };
@@ -1203,6 +1204,7 @@ export default function TableStage({
             groupHeaderHeight={0}
             defaultColDef={defaultColDef}
             getRowId={getRowId}
+            suppressScrollOnNewData
             suppressMovableColumns
             suppressDragLeaveHidesColumns
             suppressColumnVirtualisation

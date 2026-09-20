@@ -2,7 +2,12 @@
 
 ## Status
 
-Draft implementation spec.
+Implementation spec. Browser and Electron storage adapters now share this lifecycle.
+The desktop adapter implements native open/save dialogs, content-hash freshness
+checks, and atomic file replacement (not atomic cross-process compare-and-write).
+Desktop-only event-driven file watching and clean external reload are implemented.
+The browser does not start a watcher. See [app setup](../../README.md) for
+development, packaging, verification, and current desktop limitations.
 
 This is an app/editor feature spec. It intentionally stays outside the core RFC set because file handles, autosave, local recovery, permissions, host dialogs, and conflict UI are host/editor concerns. Core remains responsible for parse, serialize, evaluate, and edit semantics.
 
@@ -130,7 +135,7 @@ type StorageAdapter = {
   save(file: FileReference, text: string, options: SaveOptions): Promise<StorageResult<FileSnapshot>>;
   saveAs(text: string): Promise<StorageResult<FileSnapshot>>;
   readCurrent(file: FileReference): Promise<StorageResult<FileSnapshot>>;
-  watch?(file: FileReference, callback: (snapshot: FileSnapshot) => void): () => void;
+  watch?(file: FileReference, callback: (error: StorageFailure | null) => void): () => void;
 };
 ```
 
@@ -243,7 +248,7 @@ This prevents data loss when the user intentionally edits source text that is te
 
 ## Backing Save Policy
 
-Backing file saves use these rules:
+The browser/default host uses these rules:
 
 - Valid table or valid source text may be saved manually or by autosave.
 - Invalid source text may be saved to local draft by autosave.
@@ -252,6 +257,45 @@ Backing file saves use these rules:
 - A conflict may be overwritten only by an explicit overwrite action, never by normal autosave.
 
 Manual Save of invalid source text should make the UI explicit: the saved file contains source text that currently cannot be shown as a valid table.
+
+### Desktop document-host policy
+
+The desktop host explicitly enables `autosaveInvalidSource`: like a native text
+editor it preserves source exactly as typed, including incomplete expressions.
+Browser defaults and their tests remain unchanged. This exception never bypasses
+disk version checks, permission checks, or conflict handling.
+
+Desktop uses the same debounce and file-session writer, not a second autosave
+loop. AppKit `NSDocument` handles macOS title/name/location UI and delegates file
+operations through single-use main-process capabilities. Windows/Linux do not
+load AppKit. The renderer never receives filesystem paths from this bridge.
+
+Close/quit commits an active formula editor, waits for in-flight operations, then
+flushes the latest snapshot. A current local draft suffices only for an untitled
+document; a named document must be current on disk. Failure or conflict prevents
+closing. Untitled drafts restore automatically; the last named file reopens on
+launch. Native moves update the session's backing capability and recovery key
+before subsequent edits can autosave. Native versions/duplication are not enabled.
+
+macOS Resume is routed by an `OrdinateDocumentController` installed before AppKit
+finishes launching. Both `reopenDocumentForURL` and native document opens send a
+single-use read request to the existing file session and complete with its attached
+`NSDocument`; they never instantiate a second synchronous document model. Finder
+open-file events use this same serialized main-process entry point. A duplicate
+request for the current file does not replace editor contents, recovery drafts, or
+undo history. Switching files first flushes the current session, with conflicts
+still preventing the switch. All opening paths share one last-document bookmark
+writer. Alternate AppKit recovery-file URLs are explicitly unsupported; untitled
+draft recovery remains owned by the shared session.
+
+Regression checks include the real AppKit reopen API, repeated opens, a missing
+restored file, and successful reopening after an error. Release verification must
+also exercise actual Quit and Quit and Keep Windows followed by relaunch; a web
+test or a successful package build alone does not validate macOS restoration.
+
+The remaining invalid-source assertions below describe the default/browser
+policy; desktop-specific persistence and close rules are covered separately in
+`documentSession.test.ts` and the macOS `desktop:test-native` smoke test.
 
 ## Local Draft Lifecycle
 
@@ -357,24 +401,32 @@ When File System Access is unavailable:
 
 This mode is still valuable because it prevents reload data loss.
 
-## Electron Adapter Plan
+## Electron Adapter
 
-Electron should implement the same `StorageAdapter` contract:
+Electron implements the same `StorageAdapter` contract:
 
 - `open` uses native file dialogs.
 - `save` writes to the selected file.
 - `readCurrent` reads from disk before save.
-- `watch` reports backing file changes.
-- `version` should be host-generated and stable enough for expected-version checks.
+- `watch` reports invalidations, not snapshots. The renderer reads after in-flight
+  file operations finish so its own writes do not look like external edits.
+- `version` is a host-generated SHA-256 content hash.
 
-Recommended Electron version strategy:
+Electron version strategy:
 
-- Use file path or host file identity as `FileReference.id`.
-- Use `{mtimeMs, size}` as a cheap watch/change signal.
+- Use an opaque per-window capability as `FileReference.id`; paths stay in main.
+- Watch the parent directory, filter the granted filename, and debounce events
+  by 100 ms. Directory watching survives replacement of the target inode. Read
+  and hash on notification; no polling and no parsing for unchanged content.
+- Watch capabilities remain in the main process. Preload exposes a scoped
+  subscription, not paths or filesystem access. Save As/native moves switch the
+  subscription; navigation, crashes and window close release it.
+- Defer reads/reloads during uncommitted cell editing and unresolved recovery.
+  On commit/cancel, re-read disk before deciding whether to reload or conflict.
 - Use SHA-256 content hash for conflict-sensitive save validation.
 - If an atomic compare-and-write strategy is available, expose `canAtomicCompareAndWrite: true`.
 
-The file session state machine should not change when Electron arrives. Electron only upgrades capabilities:
+Desktop uses the shared file-session state machine and upgrades its capabilities:
 
 - browser save-time conflict detection becomes real-time external-change detection
 - best-effort write freshness can become adapter-enforced compare-and-write
@@ -393,9 +445,10 @@ The decision is based on a three-snapshot model:
 - **local**: current editor persistable text.
 - **remote**: current backing file text/version observed from disk or host storage.
 
-Recommended behavior:
+Desktop behavior:
 
 - `remote == base`: no external change.
+- `remote == local`: advance the baseline without replacing the editor or history.
 - `remote != base && local == base`: automatically reload `remote`, update the backing baseline, and do not show a modal. The UI may briefly show a lightweight status such as `Reloaded from disk`.
 - `remote != base && local != base`: enter `conflict` and show explicit conflict resolution.
 
@@ -412,7 +465,11 @@ This mirrors common single-file editor behavior: when the editor has no local un
 
 V1 does not attempt merge. The conflict surface may show concise metadata and a source-text preview, but merge UI is deferred.
 
-Browser V1 caveat: browser-only builds may not have a real file watcher, and File System Access writes are not atomic. Clean external auto-reload can be implemented when an external snapshot is observed through a host watcher or save-time freshness check. If no watcher exists, this behavior remains future work for Electron or a stronger browser host integration.
+Browser V1 has no file watcher and retains save-time conflict checks and explicit
+reload. File System Access writes are not atomic. Desktop atomic rename also is
+not cross-process compare-and-swap; this is single-file live reload with conflict
+protection, not collaborative CRDT/OT editing. Missing/unreadable files retain the
+local editor and surface an error; recreating the file resumes synchronization.
 
 ## Source Mode Behavior
 

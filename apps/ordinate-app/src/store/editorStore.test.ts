@@ -36,6 +36,23 @@ function canonicalStoreDocument(): string {
   return serializeDocumentState(docState);
 }
 
+describe("external document replacement", () => {
+  it("keeps the active sheet and drops obsolete undo entries", () => {
+    const source = `${TEST_DOC}\n\n# Second\n| Item || Value |\n| B || 9 |\n`;
+    useEditorStore.getState().replaceDocumentText(source);
+    useEditorStore.getState().setActiveSheet("Second");
+    useEditorStore.getState().setCellInput({ kind: "index", sheet: "Second", rowIndex: 1, colIndex: 1 }, "10");
+    useEditorStore.getState().replaceDocumentText(source.replace("9", "11"), { preserveView: true });
+    expect(useEditorStore.getState()).toMatchObject({ activeSheet: "Second", mode: "table", canUndo: false, canRedo: false });
+  });
+  it("preserves source mode and selects an existing sheet when the active sheet was removed", () => {
+    useEditorStore.getState().replaceDocumentText(TEST_DOC);
+    useEditorStore.getState().enterSourceMode();
+    useEditorStore.getState().replaceDocumentText(TEST_DOC.replace("# Sheet", "# Renamed"), { preserveView: true });
+    expect(useEditorStore.getState()).toMatchObject({ activeSheet: "Renamed", mode: "source" });
+  });
+});
+
 describe("editor store history", () => {
   beforeEach(() => {
     resetStore();

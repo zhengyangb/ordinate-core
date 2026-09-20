@@ -1,0 +1,75 @@
+import { createRef, type ComponentProps } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import AppChrome from "./AppChrome";
+
+// Floating menus are outside this title-layout test; do not mount their portals.
+vi.mock("react-dom", async (importOriginal) => ({
+  ...await importOriginal<typeof import("react-dom")>(), createPortal: () => null,
+}));
+beforeEach(() => vi.stubGlobal("document", { body: {} }));
+afterEach(() => vi.unstubAllGlobals());
+
+const noop = () => {};
+const props: ComponentProps<typeof AppChrome> = {
+  mode: "table", fileName: "Quarterly Report.ord", fileStatus: "Saved", fileStatusTone: "neutral",
+  activeSheet: "Sheet", sheetNames: ["Sheet"], sheetHealthByName: {},
+  setActiveSheet: noop, onInsertSheet: noop, onDeleteSheet: noop, onMoveSheet: noop, onRenameSheet: () => null,
+  visibleTools: [], overflowTools: [], toolMenuOpen: false, setToolMenuOpen: noop,
+  themeMenuOpen: false, setThemeMenuOpen: noop, themeButtonLabel: "Appearance", themeButtonIcon: null,
+  themeControlRef: createRef(), themeButtonRef: createRef(), toolButtonRef: createRef(),
+  sheetSetupOpen: false, sheetSetupButtonRef: createRef(), onToggleSheetSetup: noop,
+  canUndo: false, canRedo: false, undoLabel: null, redoLabel: null, onUndo: noop, onRedo: noop,
+  onOpenFile: noop, onSaveFile: noop, onSaveFileAs: noop, onEnterSourceMode: noop, onExitSourceMode: noop,
+  onTooltipEnter: noop, onTooltipLeave: noop, onTooltipSuppress: noop, onTooltipRelease: noop,
+  onTabMouseEnter: noop, onTabMouseLeave: noop,
+};
+
+describe("host-specific document title placement", () => {
+  it("keeps the browser title and branding in their original toolbar position", () => {
+    const markup = renderToStaticMarkup(<AppChrome {...props} />);
+    expect(markup).not.toContain('class="desktop-titlebar"');
+    expect(markup).not.toContain('class="app-title-icon"');
+    expect(markup.indexOf('class="brand-lockup"')).toBeGreaterThan(markup.indexOf('class="topbar"'));
+    expect(markup.indexOf('aria-label="Current file"')).toBeGreaterThan(markup.indexOf('class="topbar"'));
+    expect(markup.indexOf('aria-label="Current file"')).toBeLessThan(markup.indexOf('aria-label="Toolbar"'));
+    expect(markup).toContain('aria-label="Save file"');
+    expect(markup).toContain('aria-label="Save as"');
+  });
+
+  it.each(["table", "source"] as const)("leaves the title to macOS and keeps only branding in %s mode", (mode) => {
+    const markup = renderToStaticMarkup(<AppChrome {...props} titlePlacement="native" mode={mode} />);
+    expect(markup).not.toContain('class="desktop-titlebar"');
+    expect(markup).not.toContain('class="app-title-icon"');
+    expect(markup).toContain('class="brand-lockup"');
+    expect(markup).toContain('>ordinate</span>');
+    expect(markup).not.toContain('Quarterly Report.ord');
+    expect(markup).not.toContain('aria-label="File status"');
+    expect(markup).not.toContain('Saved');
+    expect(markup).toContain('aria-label="Open file"');
+    expect(markup).not.toContain('aria-label="Save file"');
+    expect(markup).not.toContain('aria-label="Save as"');
+  });
+
+  it("keeps error status visible without duplicating a native filename", () => {
+    const name = "Very long report name with <special> characters.ord";
+    const markup = renderToStaticMarkup(<AppChrome {...props} titlePlacement="native" fileName={name} fileStatus="Conflict" fileStatusTone="error" />);
+    expect(markup).not.toContain('Very long report name');
+    expect(markup).toContain('title="Conflict"');
+    expect(markup).toContain('file-error-indicator');
+    expect(markup).toContain('aria-describedby="file-error-status"');
+  });
+
+  it.each(["Saved", "Saving...", "Draft saved", "Local draft", "Edited"])("keeps native toolbar markup identical for routine status: %s", (fileStatus) => {
+    const baseline = renderToStaticMarkup(<AppChrome {...props} titlePlacement="native" />);
+    const markup = renderToStaticMarkup(<AppChrome {...props} titlePlacement="native" fileStatus={fileStatus} fileStatusTone="warning" />);
+    expect(markup).toBe(baseline);
+  });
+
+  it("keeps web filename but removes routine status text from the layout", () => {
+    const markup = renderToStaticMarkup(<AppChrome {...props} fileStatus="Draft saved" />);
+    expect(markup).toContain('>Quarterly Report.ord</span>');
+    expect(markup).not.toContain('>Draft saved<');
+    expect(markup).not.toContain('app-title-status');
+  });
+});

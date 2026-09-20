@@ -1,4 +1,11 @@
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap");
+/* Bundled DM Sans Latin: identical offline, on the web and under desktop CSP. */
+@font-face {
+    font-family: "Ordinate Wordmark";
+    src: url("@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: block;
+}
 
 :root {
     --font-body:
@@ -7,8 +14,7 @@
     --font-mono:
         "SF Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo,
         monospace;
-    --font-display:
-        "Instrument Serif", "Iowan Old Style", "Times New Roman", serif;
+    --font-brand: "Ordinate Wordmark", sans-serif;
     --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
     --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -533,13 +539,15 @@ textarea {
 }
 
 .brand-name {
-    font-family: var(--font-display);
-    font-size: 0.98rem;
+    font-family: var(--font-brand);
+    font-size: 1rem;
+    font-synthesis: none;
+    display: inline-block;
+    inline-size: 4.3em;
     line-height: 1;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    color: color-mix(in oklab, var(--chrome-soft) 82%, transparent);
-    opacity: 0.62;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+    color: var(--chrome-ink);
 }
 
 .app-title {
@@ -566,36 +574,20 @@ textarea {
     white-space: nowrap;
 }
 
-.app-title-status {
-    flex: 0 0 auto;
-    padding: 0.1rem 0.34rem 0.11rem;
-    border-radius: 999px;
-    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
-    color: color-mix(in oklab, var(--chrome-soft) 88%, var(--chrome-ink));
-    font-size: 0.66rem;
-    font-weight: 680;
-    letter-spacing: 0.02em;
-    line-height: 1;
+.file-command-button {
+    position: relative;
 }
 
-.app-title-status--dirty {
-    color: color-mix(in oklab, var(--warning-ink) 82%, var(--chrome-ink));
-    background: color-mix(in oklab, var(--warning-bg) 58%, transparent);
-}
-
-.app-title-status--saving {
-    color: color-mix(in oklab, var(--accent-strong) 78%, var(--chrome-ink));
-    background: color-mix(in oklab, var(--accent-soft) 52%, transparent);
-}
-
-.app-title-status--warning {
-    color: color-mix(in oklab, var(--warning-ink) 88%, var(--chrome-ink));
-    background: color-mix(in oklab, var(--warning-bg) 62%, transparent);
-}
-
-.app-title-status--error {
-    color: color-mix(in oklab, var(--danger-ink) 92%, var(--chrome-ink));
-    background: color-mix(in oklab, var(--danger-bg) 68%, transparent);
+/* Exceptional state only; it never changes the toolbar's measured width. */
+.file-error-indicator {
+    position: absolute;
+    inset-block-start: 0.22rem;
+    inset-inline-end: 0.22rem;
+    width: 0.35rem;
+    height: 0.35rem;
+    border-radius: 50%;
+    background: var(--danger-ink);
+    pointer-events: none;
 }
 
 .toolbar-tools {

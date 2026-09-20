@@ -57,7 +57,7 @@ export interface EditorState {
   redoLabel: string | null;
   isDirty: boolean;
   setSourceText: (text: string) => void;
-  replaceDocumentText: (text: string) => void;
+  replaceDocumentText: (text: string, options?: { preserveView: boolean }) => void;
   setActiveSheet: (sheetName: string) => void;
   applyCoreEdits: (label: string, edits: CoreEdit[], nextActiveSheetHint?: string | null) => void;
   undo: () => void;
@@ -338,8 +338,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   ...initialState,
   ...emptyHistoryState(),
   setSourceText: (text) => set({ sourceText: text, presentation: null, validation: null, sheetIssuesByName: {}, error: null }),
-  replaceDocumentText: (text) => {
+  replaceDocumentText: (text, options) => {
     const nextState = bootstrapFromSource(text);
+    const previous = get();
+    if (options?.preserveView) {
+      if (nextState.docState?.sheets.some((sheet) => sheet.name === previous.activeSheet)) {
+        nextState.activeSheet = previous.activeSheet;
+      }
+      if (previous.mode === "source") nextState.mode = "source";
+    }
     set({
       ...nextState,
       ...emptyHistoryState(get().revision + 1),
