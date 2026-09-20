@@ -88,8 +88,6 @@ import {
   FORMULA_BAR_SAFE_SPACE,
   GRID_HEADER_HEIGHT,
   GRID_ROW_HEIGHT,
-  HEADER_COLUMN_WIDTH,
-  LABEL_COLUMN_WIDTH,
   POSITION_EPSILON,
   TAB_TOOLTIP_DELAY_MS,
   THEME_STORAGE_KEY,
@@ -109,7 +107,6 @@ import {
   queryGridHorizontalViewport,
   resolveAnchoredMenuPosition,
   resolveColumnDeleteTargets,
-  resolveDataColumnSizingPolicy,
   resolveGridInstanceKey,
   resolveRowDeleteTargets,
   resolveRailMenuPosition,
@@ -126,10 +123,12 @@ import {
   columnTrackXToViewportX,
   resolveColumnCenterTrackWidth,
   resolveHorizontalWheelDelta,
+  resolveFrozenHeaderGeometry,
   type GridScrollSnapshot,
   type SheetGridScrollSnapshot,
 } from "./utils/gridGeometry";
 import { selectionDebugLog } from "./utils/selectionDebug";
+import { resolveColumnLayouts } from "./utils/columnLayout";
 import { buildFormulaBarData } from "./utils/formulaBarData";
 import { resolveCoreRegionTarget } from "./utils/coreTargets";
 import {
@@ -468,6 +467,7 @@ export default function App() {
     { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number; area: "header" | "body"; hasChildren: boolean } | null
   >(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
+  const [gridViewportWidth, setGridViewportWidth] = useState(0);
   const [tooltip, setTooltip] = useState<FloatingTooltip | null>(null);
   const [gridScrollSnapshot, setGridScrollSnapshot] = useState<SheetGridScrollSnapshot>(EMPTY_GRID_SCROLL_SNAPSHOT);
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
@@ -686,23 +686,6 @@ export default function App() {
   const headerColCount = Math.min(currentSheetState?.headerColCount ?? 0, sheetColCount);
   const headerOverlayRows = headerRowCount;
   const headerOverlayHeight = headerOverlayRows * GRID_HEADER_HEIGHT;
-  const pinnedHeaderWidth = useMemo(() => {
-    return Array.from({ length: headerColCount }, (_, colIndex) => (colIndex === 0 ? LABEL_COLUMN_WIDTH : HEADER_COLUMN_WIDTH)).reduce(
-      (sum, width) => sum + width,
-      0,
-    );
-  }, [headerColCount]);
-  const projectedGridScrollSnapshot = useMemo<GridScrollSnapshot>(() => {
-    const centerTrackWidth = resolveColumnCenterTrackWidth(columnMetrics, pinnedHeaderWidth);
-    return projectActiveSheetGridScrollSnapshot({
-      activeSheet,
-      snapshot: gridScrollSnapshot,
-      centerTrackWidth,
-      appendSlotSize: APPEND_COLUMN_WIDTH,
-      appendGap: APPEND_AXIS_SLOT_GAP,
-    });
-  }, [activeSheet, gridScrollSnapshot, columnMetrics, pinnedHeaderWidth]);
-
   const headerMatrix = useMemo(() => {
     return buildHeaderMatrix(
       currentSheetState,
@@ -1323,7 +1306,7 @@ export default function App() {
     });
   }, []);
 
-  const rowData: GridRow[] = useMemo(() => {
+  const allRowData: GridRow[] = useMemo(() => {
     if (!currentSheet || !currentSheetState) return [];
 
     return currentSheetRowStructure
@@ -1383,9 +1366,31 @@ export default function App() {
         }
 
         return item;
-      })
-      .filter((row) => isVisiblePath(row.__rowPath, collapsedPaths));
+      });
   }, [currentSheet, currentSheetState, currentSheetPresentation, currentSheetRowStructure, collapsedPaths, sheetColCount, headerColCount]);
+
+  const rowData = useMemo(
+    () => allRowData.filter((row) => isVisiblePath(row.__rowPath, collapsedPaths)),
+    [allRowData, collapsedPaths],
+  );
+  const columnLayouts = useMemo(
+    () => resolveColumnLayouts(allRowData, headerLeafLabels, headerColCount),
+    [allRowData, headerLeafLabels, headerColCount],
+  );
+  const { columnCount: frozenColumnCount, width: pinnedHeaderWidth } = useMemo(
+    () => resolveFrozenHeaderGeometry(gridViewportWidth, columnLayouts.slice(0, headerColCount).map((column) => column.width)),
+    [gridViewportWidth, columnLayouts, headerColCount],
+  );
+  const projectedGridScrollSnapshot = useMemo<GridScrollSnapshot>(() => {
+    const centerTrackWidth = resolveColumnCenterTrackWidth(columnMetrics, pinnedHeaderWidth);
+    return projectActiveSheetGridScrollSnapshot({
+      activeSheet,
+      snapshot: gridScrollSnapshot,
+      centerTrackWidth,
+      appendSlotSize: APPEND_COLUMN_WIDTH,
+      appendGap: APPEND_AXIS_SLOT_GAP,
+    });
+  }, [activeSheet, gridScrollSnapshot, columnMetrics, pinnedHeaderWidth]);
 
   const evaluationRowIndexByAbsoluteRowNumber = useMemo(
     () => new Map(currentSheetRowStructure.map((row, index) => [row.absoluteRowNumber, index])),
@@ -1941,6 +1946,7 @@ export default function App() {
 
   const handleGridSizeChanged = useCallback(
     (event: GridSizeChangedEvent<GridRow>) => {
+      setGridViewportWidth(event.clientWidth);
       scheduleGridMetricsSync(event.api);
     },
     [scheduleGridMetricsSync],
@@ -1975,7 +1981,6 @@ export default function App() {
   const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
     if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
 
-    const dataColumnSizing = resolveDataColumnSizingPolicy(sheetColCount, headerColCount, headerRowCount);
     const realColumnDefs = Array.from({ length: sheetColCount }, (_, colIndex) => {
       const field = toColFieldId(colIndex);
       const isHeaderColumn = colIndex < headerColCount;
@@ -1983,6 +1988,7 @@ export default function App() {
       const semanticLabel = headerSemanticLabels[colIndex] ?? leafHeader;
 
       const baseDef: ColDef<GridRow> = {
+        ...columnLayouts[colIndex],
         colId: field,
         field,
         headerName: leafHeader,
@@ -1993,9 +1999,7 @@ export default function App() {
       if (isHeaderColumn) {
         const withHeader: ColDef<GridRow> = {
           ...baseDef,
-          pinned: "left",
-          width: colIndex === 0 ? LABEL_COLUMN_WIDTH : HEADER_COLUMN_WIDTH,
-          minWidth: colIndex === 0 ? LABEL_COLUMN_WIDTH : HEADER_COLUMN_WIDTH,
+          pinned: colIndex < frozenColumnCount ? "left" : null,
           headerClass: "line-item-header",
           cellClass: colIndex === 0 ? "line-item-cell" : "header-column-cell",
         };
@@ -2053,7 +2057,6 @@ export default function App() {
 
       return {
         ...baseDef,
-        ...dataColumnSizing,
         headerClass: "data-column-header",
         cellRenderer: (params: { data?: GridRow; value?: unknown }) => {
           const kind = params.data?.[`__kind_${colIndex}`];
@@ -2079,6 +2082,8 @@ export default function App() {
             );
           }
           if (kind !== "error") {
+            if (kind === "string") return <span className="cell-text">{params.value as string}</span>;
+            if (kind === "number") return <span title={String(params.value)}>{params.value as string}</span>;
             return params.value;
           }
 
@@ -2145,6 +2150,8 @@ export default function App() {
     sheetColCount,
     headerColCount,
     headerRowCount,
+    frozenColumnCount,
+    columnLayouts,
     headerLeafLabels,
     headerSemanticLabels,
     toggleCollapse,
@@ -2805,16 +2812,14 @@ export default function App() {
     const root = gridWrapRef.current;
     if (!root) return;
 
+    const tableStage = root.closest<HTMLElement>(".table-stage");
+    if (!tableStage) throw new Error("grid viewport sync requires a table stage");
     return gridViewportAdapter.attachViewportSync(root, (snapshot) => {
       setGridScrollSnapshot((current) => {
         const next = { ...snapshot, sheetName: activeSheet };
         return gridScrollSnapshotEqual(current, next) ? current : next;
       });
     }, ({ top, left }) => {
-      const tableStage = root.closest<HTMLElement>(".table-stage");
-      if (!tableStage) {
-        throw new Error("grid viewport sync requires a table stage");
-      }
       tableStage.classList.toggle("has-scroll-y", top > 0.5);
       tableStage.classList.toggle("has-scroll-x", left > 0.5);
       tableStage.style.setProperty("--grid-center-track-offset-x", `${-left}px`);
@@ -5071,7 +5076,7 @@ export default function App() {
                 headerIndexTrackHeight={headerIndexTrackHeight}
                 headerOverlayHeight={headerOverlayHeight}
                 headerOverlayCells={headerOverlayCells}
-                headerColCount={headerColCount}
+                frozenColumnCount={frozenColumnCount}
                 showGridHeader={showGridHeader}
                 pinnedHeaderWidth={pinnedHeaderWidth}
                 rowIndexTrackHeight={rowIndexTrackHeight}

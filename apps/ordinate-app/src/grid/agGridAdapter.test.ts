@@ -154,7 +154,7 @@ describe("agGridAdapter", () => {
     const root = {
       querySelector: (selector: string) => {
         if (selector === ".ag-body-viewport.ag-layout-normal") return verticalViewport;
-        if (selector === ".ag-body-horizontal-scroll-viewport") return horizontalViewport;
+        if (selector === ".ag-center-cols-viewport") return horizontalViewport;
         return null;
       },
     } as unknown as HTMLElement;
@@ -219,12 +219,14 @@ describe("agGridAdapter", () => {
     }
   });
 
-  it("synchronizes visual scroll state before the next React frame", () => {
+  it("follows the body immediately even while its proxy scrollbar lags, coalescing React frames", () => {
     const adapter = createAgGridAdapter();
     const originalWindow = (globalThis as unknown as { window?: unknown }).window;
     const originalResizeObserver = (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
     const originalMutationObserver = (globalThis as unknown as { MutationObserver?: unknown }).MutationObserver;
     const horizontalScrollListeners: Array<() => void> = [];
+    const proxyScrollListeners: Array<() => void> = [];
+    let queries = 0;
     const frameCallbacks: FrameRequestCallback[] = [];
     Object.defineProperty(globalThis, "window", {
       configurable: true,
@@ -263,10 +265,17 @@ describe("agGridAdapter", () => {
       clientWidth: 420,
       scrollLeft: 0,
     };
+    const proxyScrollbar = {
+      scrollLeft: 0,
+      addEventListener: (_type: string, listener: () => void) => proxyScrollListeners.push(listener),
+      removeEventListener: () => {},
+    };
     const root = {
       querySelector: (selector: string) => {
+        queries += 1;
         if (selector === ".ag-body-viewport.ag-layout-normal") return verticalViewport;
-        if (selector === ".ag-body-horizontal-scroll-viewport") return horizontalViewport;
+        if (selector === ".ag-center-cols-viewport") return horizontalViewport;
+        if (selector === ".ag-body-horizontal-scroll-viewport") return proxyScrollbar;
         return null;
       },
     } as unknown as HTMLElement;
@@ -279,18 +288,26 @@ describe("agGridAdapter", () => {
         (snapshot) => frames.push(snapshot),
         (position) => immediate.push(position),
       );
-      const initialFrame = frameCallbacks.shift();
-      if (!initialFrame) throw new Error("initial viewport frame was not scheduled");
-      initialFrame(0);
+      expect(immediate).toEqual([{ top: 0, left: 0 }]);
+      const initialQueryCount = queries;
 
       horizontalViewport.scrollLeft = 180;
       const horizontalScrollListener = horizontalScrollListeners[0];
       if (!horizontalScrollListener) throw new Error("horizontal scroll listener was not attached");
       horizontalScrollListener();
 
-      expect(immediate).toEqual([{ top: 0, left: 180 }]);
+      expect(immediate.at(-1)).toEqual({ top: 0, left: 180 });
+      expect(proxyScrollbar.scrollLeft).toBe(0);
+      proxyScrollListeners[0]();
+      expect(immediate).toHaveLength(2);
+      horizontalViewport.scrollLeft = 200;
+      horizontalScrollListener();
+      expect(immediate.at(-1)).toEqual({ top: 0, left: 200 });
       expect(frames).toHaveLength(1);
       expect(frameCallbacks).toHaveLength(1);
+      frameCallbacks.shift()!(0);
+      expect(frames.at(-1)?.left).toBe(200);
+      expect(queries).toBe(initialQueryCount);
       cleanup();
     } finally {
       Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });

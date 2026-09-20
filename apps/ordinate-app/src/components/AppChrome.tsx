@@ -249,13 +249,25 @@ export default function AppChrome({
     if (!viewport) return undefined;
     refreshSheetTabScrollState();
     const handleScroll = () => refreshSheetTabScrollState();
+    const handleWheel = (event: WheelEvent) => {
+      // Preserve browser zoom gestures and native scrolling when all tabs fit.
+      if (event.ctrlKey || event.metaKey || viewport.scrollWidth <= viewport.clientWidth) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (delta === 0) return;
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientWidth : 1;
+      event.preventDefault();
+      viewport.scrollLeft += delta * unit;
+    };
     viewport.addEventListener("scroll", handleScroll, { passive: true });
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
     const observer = new ResizeObserver(() => refreshSheetTabScrollState());
     observer.observe(viewport);
     const tabs = viewport.firstElementChild;
     if (tabs) observer.observe(tabs);
     return () => {
       viewport.removeEventListener("scroll", handleScroll);
+      viewport.removeEventListener("wheel", handleWheel);
       observer.disconnect();
     };
   }, [refreshSheetTabScrollState, sheetNames]);

@@ -2128,6 +2128,9 @@ textarea {
 }
 
 .table-stage {
+    /* Live offsets are owned by viewport sync, never by a delayed React snapshot. */
+    --grid-center-track-offset-x: 0px;
+    --grid-body-track-offset-y: 0px;
     --sticky-row-shadow: none;
     --sticky-col-shadow: none;
     --sticky-edge-color: transparent;
@@ -3435,6 +3438,32 @@ textarea {
 
 .data-cell.is-numeric {
     font-variant-numeric: tabular-nums;
+}
+
+.grid-wrap .ag-cell-auto-height {
+    line-height: 20px;
+    padding-block: 8px;
+}
+
+.grid-wrap .cell-text,
+.grid-wrap .header-column-cell.ag-cell-wrap-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.line-item-cell.ag-cell-auto-height .ag-cell-wrapper,
+.line-item-cell.ag-cell-auto-height .ag-cell-value,
+.line-item-cell.ag-cell-auto-height .tree-cell {
+    height: auto;
+}
+
+.line-item-cell.ag-cell-auto-height .tree-label {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.line-item-cell.ag-cell-auto-height .tree-cell {
+    display: flex;
 }
 
 .data-cell.is-boolean-capsule,

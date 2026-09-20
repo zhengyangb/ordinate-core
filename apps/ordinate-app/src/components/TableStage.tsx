@@ -38,6 +38,8 @@ type FormulaReferenceOverlay = {
   active: boolean;
 };
 
+const keepConfiguredPinning = () => [];
+
 type TableStageProps = {
   tableStageClassName: string;
   tableStageStyle: CSSProperties;
@@ -46,7 +48,7 @@ type TableStageProps = {
   headerIndexTrackHeight: number;
   headerOverlayHeight: number;
   headerOverlayCells: HeaderOverlayCell[];
-  headerColCount: number;
+  frozenColumnCount: number;
   showGridHeader: boolean;
   pinnedHeaderWidth: number;
   rowIndexTrackHeight: number;
@@ -147,7 +149,7 @@ export default function TableStage({
   headerIndexTrackHeight,
   headerOverlayHeight,
   headerOverlayCells,
-  headerColCount,
+  frozenColumnCount,
   showGridHeader,
   pinnedHeaderWidth,
   rowIndexTrackHeight,
@@ -211,10 +213,8 @@ export default function TableStage({
       ({
         ...tableStageStyle,
         "--axis-append-column-scroll-extent": `${APPEND_AXIS_SLOT_GAP + APPEND_COLUMN_WIDTH}px`,
-        "--grid-center-track-offset-x": `${-bodyScrollLeft}px`,
-        "--grid-body-track-offset-y": `${-bodyScrollTop}px`,
       }) as CSSProperties,
-    [bodyScrollLeft, bodyScrollTop, tableStageStyle],
+    [tableStageStyle],
   );
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
   const defaultColDef = useMemo<ColDef<GridRow>>(() => ({
@@ -230,8 +230,8 @@ export default function TableStage({
   }), []);
   const selectedRowNumber = selectedCell?.logical.rAbs ?? null;
   const activeColumnIndex = selectedColumnIndex ?? selectedCell?.logical.cAbs ?? null;
-  const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < headerColCount);
-  const centerOverlayCells = headerOverlayCells.filter((cell) => cell.startCol >= headerColCount);
+  const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < frozenColumnCount);
+  const centerOverlayCells = headerOverlayCells.filter((cell) => cell.startCol >= frozenColumnCount);
   const appendRowSlot = resolveAppendRowSlot(rowIndexTrackHeight, APPEND_ROW_SLOT_HEIGHT, APPEND_AXIS_SLOT_GAP);
   const centerTrackWidth = resolveColumnCenterTrackWidth(columnMetrics, pinnedHeaderWidth);
   const appendColumnGeometry = {
@@ -264,15 +264,15 @@ export default function TableStage({
     height: `${appendRowSlot.bottom}px`,
     transform: "translate3d(0, var(--grid-body-track-offset-y), 0)",
   };
-  const overlayProjectionBase = {
+  const overlayProjectionBase = useMemo(() => ({
     headerRowCount: headerIndexMetrics.length,
-    headerColCount,
+    headerColCount: frozenColumnCount,
     pinnedWidth: pinnedHeaderWidth,
     columnMetrics,
     headerIndexMetrics,
     rowIndexMetrics,
-  };
-  const selectionRingFragments = selectedCell?.area === "body"
+  }), [headerIndexMetrics, frozenColumnCount, pinnedHeaderWidth, columnMetrics, rowIndexMetrics]);
+  const selectionRingFragments = useMemo(() => selectedCell?.area === "body"
     ? projectSelectionOverlayFragments({
         ...overlayProjectionBase,
         range: {
@@ -282,11 +282,11 @@ export default function TableStage({
           colEnd: selectedCell.logical.cAbs,
         },
       })
-    : [];
-  const rangeSelectionFragments = selectedRange && isRangeSelection
+    : [], [overlayProjectionBase, selectedCell]);
+  const rangeSelectionFragments = useMemo(() => selectedRange && isRangeSelection
     ? projectSelectionOverlayFragments({ ...overlayProjectionBase, range: selectedRange })
-    : [];
-  const referenceFragments = formulaReferenceOverlays.flatMap((reference) =>
+    : [], [overlayProjectionBase, selectedRange, isRangeSelection]);
+  const referenceFragments = useMemo(() => formulaReferenceOverlays.flatMap((reference) =>
     projectSelectionOverlayFragments({ ...overlayProjectionBase, range: reference.rect }).map((fragment, index) => ({
       ...fragment,
       fragmentKey: `${reference.tokenId}:${index}`,
@@ -294,7 +294,7 @@ export default function TableStage({
       colorIndex: reference.colorIndex,
       active: reference.active,
     })),
-  );
+  ), [overlayProjectionBase, formulaReferenceOverlays]);
   const overlayPlaneStyles: Record<SelectionOverlayPlane, CSSProperties> = {
     "header-pinned": { left: 0, top: 0, width: pinnedHeaderWidth, height: headerOverlayHeight },
     "header-center": { left: pinnedHeaderWidth, top: 0, width: centerViewportWidth, height: headerOverlayHeight },
@@ -307,8 +307,8 @@ export default function TableStage({
     "header-center",
     "header-pinned",
   ];
-  const pinnedColumnMetrics = columnMetrics.filter((metric) => metric.colIndex < headerColCount);
-  const centerColumnMetrics = columnMetrics.filter((metric) => metric.colIndex >= headerColCount);
+  const pinnedColumnMetrics = columnMetrics.filter((metric) => metric.colIndex < frozenColumnCount);
+  const centerColumnMetrics = columnMetrics.filter((metric) => metric.colIndex >= frozenColumnCount);
   const isColumnDragPreview = (colIndex: number) =>
     axisDragPreview?.axis === "column" &&
     colIndex >= axisDragPreview.colStart &&
@@ -1201,6 +1201,8 @@ export default function TableStage({
             suppressMovableColumns
             suppressDragLeaveHidesColumns
             suppressColumnVirtualisation
+            // Pinning is owned by our shared viewport geometry, including overlays.
+            processUnpinnedColumns={keepConfiguredPinning}
             suppressContextMenu
             theme={themeQuartz}
             onGridReady={handleGridReady}

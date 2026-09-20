@@ -283,13 +283,30 @@ export function createAgGridAdapter(): GridViewportAdapter {
       }
       let verticalViewport: HTMLElement | null = null;
       let horizontalViewport: HTMLElement | null = null;
+      let horizontalScrollbar: HTMLElement | null = null;
       let rafId: number | null = null;
+      let bindingsDirty = true;
+      let lastTop: number | null = null;
+      let lastLeft: number | null = null;
+
+      const publishPosition = () => {
+        const top = verticalViewport?.scrollTop ?? 0;
+        const left = horizontalViewport?.scrollLeft ?? 0;
+        if (top !== lastTop || left !== lastLeft) {
+          lastTop = top;
+          lastLeft = left;
+          onScroll?.({ top, left });
+        }
+        return { top, left };
+      };
 
       const apply = () => {
         rafId = null;
-        bindViewports();
-        const top = verticalViewport?.scrollTop ?? 0;
-        const left = horizontalViewport?.scrollLeft ?? 0;
+        if (bindingsDirty) {
+          bindViewports();
+          bindingsDirty = false;
+        }
+        const { top, left } = publishPosition();
         const centerViewportWidth = horizontalViewport?.clientWidth ?? 0;
         const bodyViewportHeight = verticalViewport?.clientHeight ?? 0;
         onFrame({
@@ -308,17 +325,21 @@ export function createAgGridAdapter(): GridViewportAdapter {
       };
 
       const handleViewportScroll = () => {
-        onScroll?.({
-          top: verticalViewport?.scrollTop ?? 0,
-          left: horizontalViewport?.scrollLeft ?? 0,
-        });
+        publishPosition();
         schedule();
       };
 
-      const resizeObserver = new ResizeObserver(schedule);
+      const refreshBindings = () => {
+        bindingsDirty = true;
+        schedule();
+      };
+      const resizeObserver = new ResizeObserver(refreshBindings);
       const bindViewports = () => {
         const nextVerticalViewport = queryVerticalViewport(root);
-        const nextHorizontalViewport = queryHorizontalViewport(root);
+        // The body is authoritative. Its proxy scrollbar can receive a scroll
+        // event later, especially for trackpad gestures over the body.
+        const nextHorizontalViewport = root.querySelector<HTMLElement>(".ag-center-cols-viewport");
+        const nextHorizontalScrollbar = root.querySelector<HTMLElement>(".ag-body-horizontal-scroll-viewport");
         if (verticalViewport !== nextVerticalViewport) {
           verticalViewport?.removeEventListener("scroll", handleViewportScroll);
           if (verticalViewport) resizeObserver.unobserve(verticalViewport);
@@ -333,12 +354,19 @@ export function createAgGridAdapter(): GridViewportAdapter {
           horizontalViewport?.addEventListener("scroll", handleViewportScroll, { passive: true });
           if (horizontalViewport) resizeObserver.observe(horizontalViewport);
         }
+        if (horizontalScrollbar !== nextHorizontalScrollbar) {
+          horizontalScrollbar?.removeEventListener("scroll", handleViewportScroll);
+          horizontalScrollbar = nextHorizontalScrollbar;
+          // AG Grid synchronizes the body in its earlier scrollbar listener.
+          // Reading the body here also covers dragging the scrollbar thumb.
+          horizontalScrollbar?.addEventListener("scroll", handleViewportScroll, { passive: true });
+        }
       };
 
-      schedule();
-      window.addEventListener("resize", schedule, { passive: true });
+      apply();
+      window.addEventListener("resize", refreshBindings, { passive: true });
       resizeObserver.observe(root);
-      const mutationObserver = new MutationObserver(schedule);
+      const mutationObserver = new MutationObserver(refreshBindings);
       mutationObserver.observe(root, { childList: true, subtree: true });
 
       return () => {
@@ -347,7 +375,8 @@ export function createAgGridAdapter(): GridViewportAdapter {
         }
         verticalViewport?.removeEventListener("scroll", handleViewportScroll);
         horizontalViewport?.removeEventListener("scroll", handleViewportScroll);
-        window.removeEventListener("resize", schedule);
+        horizontalScrollbar?.removeEventListener("scroll", handleViewportScroll);
+        window.removeEventListener("resize", refreshBindings);
         resizeObserver.disconnect();
         mutationObserver.disconnect();
       };

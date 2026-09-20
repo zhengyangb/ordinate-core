@@ -2,40 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRowRailMenu,
-  resolveDataColumnSizingPolicy,
   resolveColumnDeleteTargets,
   resolveGridInstanceKey,
   resolveRowDeleteTargets,
 } from "./appHelpers";
 
 describe("app rail menu helpers", () => {
-  it("keeps a single data column at natural width instead of flexing to the viewport", () => {
-    expect(resolveDataColumnSizingPolicy(2, 1, 1)).toEqual({
-      minWidth: 132,
-      width: 560,
-    });
-  });
-
-  it("keeps unheaded plain sheets at finite natural column widths", () => {
-    expect(resolveDataColumnSizingPolicy(2, 0, 0)).toEqual({
-      minWidth: 132,
-      width: 280,
-    });
-  });
-
-  it("keeps multi-column data tables on stable finite column widths", () => {
-    expect(resolveDataColumnSizingPolicy(5, 1, 2)).toEqual({
-      minWidth: 132,
-      width: 280,
-    });
-  });
-
-  it("fails early when the header column count cannot fit inside the sheet", () => {
-    expect(() => resolveDataColumnSizingPolicy(1, 2, 1)).toThrow(
-      "headerColCount must be a non-negative integer within sheetColCount",
-    );
-  });
-
   it("keys grid instances by stable sheet identity and sizing mode", () => {
     expect(resolveGridInstanceKey(1, 5, 1, 2)).not.toBe(
       resolveGridInstanceKey(2, 2, 0, 0),

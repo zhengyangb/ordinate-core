@@ -77,6 +77,20 @@ describe("selection overlay projection", () => {
     })).toEqual([]);
   });
 
+  it("preserves two frozen columns and two header rows when a selection crosses both boundaries", () => {
+    expect(projectSelectionOverlayFragments({
+      ...base,
+      headerColCount: 2,
+      pinnedWidth: 200,
+      range: { rowStart: 1, rowEnd: 4, colStart: 0, colEnd: 2 },
+    })).toEqual([
+      { plane: "header-pinned", left: 0, top: 0, width: 200, height: 60 },
+      { plane: "header-center", left: 0, top: 0, width: 100, height: 60 },
+      { plane: "body-pinned", left: 0, top: 0, width: 200, height: 56 },
+      { plane: "body-center", left: 0, top: 0, width: 100, height: 56 },
+    ]);
+  });
+
   it("fails early for malformed geometry instead of guessing", () => {
     expect(() => projectSelectionOverlayFragments({
       ...base,

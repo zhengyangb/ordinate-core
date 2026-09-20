@@ -2,6 +2,20 @@ import type { ColumnMetric } from "../types/ui";
 
 const COLUMN_EDGE_EPSILON_PX = 1;
 
+// Keep useful space for data; narrow tables scroll their headers with the body.
+const MIN_SCROLLABLE_BODY_WIDTH = 120;
+
+export function resolveFrozenHeaderGeometry(viewportWidth: number, headerWidths: number[]) {
+  if (!Number.isFinite(viewportWidth) || viewportWidth < 0 ||
+      headerWidths.some((width) => !Number.isFinite(width) || width <= 0)) {
+    throw new Error("invalid frozen header geometry");
+  }
+  const width = headerWidths.reduce((sum, value) => sum + value, 0);
+  return viewportWidth >= width + MIN_SCROLLABLE_BODY_WIDTH
+    ? { columnCount: headerWidths.length, width }
+    : { columnCount: 0, width: 0 };
+}
+
 export type ColumnAxisViewport = {
   pinnedWidth: number;
   scrollLeft: number;

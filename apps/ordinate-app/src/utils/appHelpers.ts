@@ -22,11 +22,6 @@ import type {
 import { firstColumnFormatPreviewValue, formatLocalViewFromSpec } from "./formatDisplay";
 import { runtimeValueToText } from "./sheetView";
 
-export const LABEL_COLUMN_WIDTH = 280;
-export const HEADER_COLUMN_WIDTH = 168;
-export const DATA_COLUMN_MIN_WIDTH = 132;
-export const DATA_COLUMN_WIDTH = 280;
-export const SINGLE_DATA_COLUMN_WIDTH = 560;
 export const APPEND_AXIS_SLOT_GAP = 8;
 export const APPEND_COLUMN_WIDTH = 32;
 export const GRID_HEADER_HEIGHT = 40;
@@ -254,41 +249,6 @@ export function styleLocalView(style: PresentedCell["styleLayer"]["local"] | nul
 
 export function formatLocalView(format: PresentedCell["formatLayer"]["local"] | null | undefined, previewValue?: RuntimeValue | null) {
   return formatLocalViewFromSpec(format, previewValue);
-}
-
-export type DataColumnSizingPolicy = {
-  minWidth: number;
-  width?: number;
-  flex?: number;
-};
-
-export function resolveDataColumnSizingPolicy(sheetColCount: number, headerColCount: number, headerRowCount: number): DataColumnSizingPolicy {
-  if (!Number.isInteger(sheetColCount) || sheetColCount < 0) {
-    throw new Error("sheetColCount must be a non-negative integer");
-  }
-  if (!Number.isInteger(headerColCount) || headerColCount < 0 || headerColCount > sheetColCount) {
-    throw new Error("headerColCount must be a non-negative integer within sheetColCount");
-  }
-  if (!Number.isInteger(headerRowCount) || headerRowCount < 0) {
-    throw new Error("headerRowCount must be a non-negative integer");
-  }
-  const dataColumnCount = sheetColCount - headerColCount;
-  if (headerColCount === 0 && headerRowCount === 0) {
-    return {
-      minWidth: DATA_COLUMN_MIN_WIDTH,
-      width: DATA_COLUMN_WIDTH,
-    };
-  }
-  if (dataColumnCount === 1) {
-    return {
-      minWidth: DATA_COLUMN_MIN_WIDTH,
-      width: SINGLE_DATA_COLUMN_WIDTH,
-    };
-  }
-  return {
-    minWidth: DATA_COLUMN_MIN_WIDTH,
-    width: DATA_COLUMN_WIDTH,
-  };
 }
 
 export function resolveGridInstanceKey(sheetId: number, sheetColCount: number, headerColCount: number, headerRowCount: number): string {
