@@ -1122,6 +1122,11 @@ export default function TableStage({
         {headerOverlayHeight > 0 ? (
           <>
             <div
+              className="table-frozen-row-shadow"
+              style={{ height: `${headerOverlayHeight}px`, width: `${tableFootprint.width}px` }}
+              aria-hidden="true"
+            />
+            <div
               className="header-matrix-base header-matrix-base--center"
               style={
                 {

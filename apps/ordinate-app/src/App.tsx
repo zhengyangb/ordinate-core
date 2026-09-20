@@ -1259,7 +1259,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (
         target?.closest(
-          "input, textarea, [contenteditable='true'], .formula-format-menu, .formula-format-detail-flyout, .formula-style-menu, .rail-menu, .theme-menu, .tool-menu, .sheet-setup-menu, .selection-menu",
+          "input, textarea, [contenteditable='true'], .formula-format-menu, .formula-style-menu, .rail-menu, .theme-menu, .tool-menu, .sheet-setup-menu, .selection-menu",
         )
       ) {
         return;
@@ -1284,7 +1284,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (!selection) return;
       const interactiveRoot = target?.closest(
-        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-format-detail-flyout, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-setup-button, .sheet-setup-menu, .selection-menu, .sheet-tab, .column-index-cell, .column-index-main, .row-index-cell, .row-index-main, .rail-menu, textarea",
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-setup-button, .sheet-setup-menu, .selection-menu, .sheet-tab, .column-index-cell, .column-index-main, .row-index-cell, .row-index-main, .rail-menu, textarea",
       );
       if (interactiveRoot) return;
       clearActiveSelection();
