@@ -1,128 +1,139 @@
-import type { GridApi } from "ag-grid-community";
+import type { ColumnMetric, HeaderIndexMetric, Rect, RowIndexMetric } from "../types/ui";
 
-import type { GridRow } from "../types/ui";
-import type { RingRect } from "./appHelpers";
+export type SelectionOverlayPlane =
+  | "header-pinned"
+  | "header-center"
+  | "body-pinned"
+  | "body-center";
 
-type SelectionRingCellLookup = {
-  root: HTMLElement;
-  displayedRowIndex: number;
-  colId: string;
-  rowKey: string;
-  cachedCell: HTMLElement | null;
-  cachedKey: string | null;
+export type SelectionOverlayFragment = {
+  plane: SelectionOverlayPlane;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
 };
 
-type SelectionRingRectParams = {
-  root: HTMLElement;
-  gridShell: HTMLElement;
-  targetCell: HTMLElement;
-  displayedRowIndex: number;
-  gridApi: GridApi<GridRow> | null;
-  gridRowHeight: number;
+type SelectionOverlayProjectionInput = {
+  range: Rect;
+  headerRowCount: number;
+  headerColCount: number;
+  pinnedWidth: number;
+  columnMetrics: ColumnMetric[];
+  headerIndexMetrics: HeaderIndexMetric[];
+  rowIndexMetrics: RowIndexMetric[];
 };
 
-export type SelectionOverlayPlane = "header-native" | "body-center" | "body-pinned";
-
-type ReferenceOverlayRange = {
-  rowStart: number;
-  rowEnd: number;
-  colStart: number;
-  colEnd: number;
+type AxisSegment = {
+  start: number;
+  end: number;
+  pinned: boolean;
 };
+
+function assertNonNegativeInteger(value: number, name: string): void {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+}
+
+function assertNormalizedRange(range: Rect): void {
+  for (const [name, value] of Object.entries(range)) {
+    assertNonNegativeInteger(value, `selection overlay ${name}`);
+  }
+  if (range.rowStart > range.rowEnd || range.colStart > range.colEnd) {
+    throw new Error("selection overlay range must be normalized");
+  }
+}
+
+function splitAxis(start: number, end: number, boundary: number): AxisSegment[] {
+  const segments: AxisSegment[] = [];
+  if (start < boundary) {
+    segments.push({ start, end: Math.min(end, boundary - 1), pinned: true });
+  }
+  if (end >= boundary) {
+    segments.push({ start: Math.max(start, boundary), end, pinned: false });
+  }
+  return segments;
+}
+
+function resolveColumnRect(
+  segment: AxisSegment,
+  metricsByIndex: Map<number, ColumnMetric>,
+  pinnedWidth: number,
+): { left: number; width: number } | null {
+  const first = metricsByIndex.get(segment.start);
+  const last = metricsByIndex.get(segment.end);
+  if (!first || !last) return null;
+  const right = last.left + last.width;
+  return {
+    left: first.left - (segment.pinned ? 0 : pinnedWidth),
+    width: right - first.left,
+  };
+}
+
+function resolveRowRect(
+  segment: AxisSegment,
+  headerMetricsByNumber: Map<number, HeaderIndexMetric>,
+  bodyMetricsByNumber: Map<number, RowIndexMetric>,
+): { top: number; height: number } | null {
+  const metrics = segment.pinned ? headerMetricsByNumber : bodyMetricsByNumber;
+  const first = metrics.get(segment.start);
+  const last = metrics.get(segment.end);
+  if (!first || !last) return null;
+  const bottom = last.top + last.height;
+  return {
+    top: first.top,
+    height: bottom - first.top,
+  };
+}
 
 export function resolveSelectionOverlayPlane(
   area: "header" | "body",
   colIndex: number,
   headerColCount: number,
 ): SelectionOverlayPlane {
-  if (!Number.isInteger(colIndex) || colIndex < 0) {
-    throw new Error("selection overlay column index must be a non-negative integer");
-  }
-  if (!Number.isInteger(headerColCount) || headerColCount < 0) {
-    throw new Error("selection overlay header column count must be a non-negative integer");
-  }
-  if (area === "header") return "header-native";
-  return colIndex < headerColCount ? "body-pinned" : "body-center";
+  assertNonNegativeInteger(colIndex, "selection overlay column index");
+  assertNonNegativeInteger(headerColCount, "selection overlay header column count");
+  const columnPlane = colIndex < headerColCount ? "pinned" : "center";
+  return `${area}-${columnPlane}`;
 }
 
-export function resolveReferenceOverlayPlane(
-  range: ReferenceOverlayRange,
-  headerRowCount: number,
-  headerColCount: number,
-): SelectionOverlayPlane {
-  for (const [name, value] of Object.entries(range)) {
-    if (!Number.isInteger(value) || value < 0) {
-      throw new Error(`formula reference overlay ${name} must be a non-negative integer`);
+export function projectSelectionOverlayFragments(
+  input: SelectionOverlayProjectionInput,
+): SelectionOverlayFragment[] {
+  assertNormalizedRange(input.range);
+  assertNonNegativeInteger(input.headerRowCount, "selection overlay header row count");
+  assertNonNegativeInteger(input.headerColCount, "selection overlay header column count");
+  if (!Number.isFinite(input.pinnedWidth) || input.pinnedWidth < 0) {
+    throw new Error("selection overlay pinned width must be a non-negative finite number");
+  }
+
+  const columnsByIndex = new Map<number, ColumnMetric>();
+  for (const metric of input.columnMetrics) {
+    if (columnsByIndex.has(metric.colIndex)) {
+      throw new Error(`duplicate selection overlay column metric: ${metric.colIndex}`);
+    }
+    columnsByIndex.set(metric.colIndex, metric);
+  }
+  const headerRowsByNumber = new Map(input.headerIndexMetrics.map((metric) => [metric.number, metric]));
+  const bodyRowsByNumber = new Map(input.rowIndexMetrics.map((metric) => [metric.number, metric]));
+  const rowSegments = splitAxis(input.range.rowStart, input.range.rowEnd, input.headerRowCount + 1);
+  const columnSegments = splitAxis(input.range.colStart, input.range.colEnd, input.headerColCount);
+  const fragments: SelectionOverlayFragment[] = [];
+
+  for (const rowSegment of rowSegments) {
+    const rowRect = resolveRowRect(rowSegment, headerRowsByNumber, bodyRowsByNumber);
+    if (!rowRect) continue;
+    for (const columnSegment of columnSegments) {
+      const columnRect = resolveColumnRect(columnSegment, columnsByIndex, input.pinnedWidth);
+      if (!columnRect) continue;
+      fragments.push({
+        plane: `${rowSegment.pinned ? "header" : "body"}-${columnSegment.pinned ? "pinned" : "center"}`,
+        ...columnRect,
+        ...rowRect,
+      });
     }
   }
-  if (!Number.isInteger(headerRowCount) || headerRowCount < 0) {
-    throw new Error("formula reference overlay header row count must be a non-negative integer");
-  }
-  if (!Number.isInteger(headerColCount) || headerColCount < 0) {
-    throw new Error("formula reference overlay header column count must be a non-negative integer");
-  }
-  if (range.rowStart > range.rowEnd || range.colStart > range.colEnd) {
-    throw new Error("formula reference overlay range must be normalized");
-  }
-  if (range.rowEnd <= headerRowCount) return "header-native";
-  return range.colEnd < headerColCount ? "body-pinned" : "body-center";
-}
 
-export function buildSelectionRingTargetKey(displayedRowIndex: number, colId: string, rowKey: string): string {
-  return `${displayedRowIndex}:${colId}:${rowKey}`;
-}
-
-export function resolveSelectionRingCell({
-  root,
-  displayedRowIndex,
-  colId,
-  rowKey,
-  cachedCell,
-  cachedKey,
-}: SelectionRingCellLookup): { cell: HTMLElement | null; key: string | null } {
-  const nextKey = buildSelectionRingTargetKey(displayedRowIndex, colId, rowKey);
-
-  if (cachedCell && cachedKey === nextKey && cachedCell.isConnected) {
-    return { cell: cachedCell, key: nextKey };
-  }
-
-  const byRowIndexSelector = `.ag-row[row-index="${displayedRowIndex}"] .ag-cell[col-id="${colId}"]`;
-  const targetCellFromRowIndex = root.querySelector<HTMLElement>(byRowIndexSelector);
-  const byRowKeySelector = `.ag-row[row-id="${CSS.escape(rowKey)}"] .ag-cell[col-id="${colId}"]`;
-  const targetCellFromRowKey = root.querySelector<HTMLElement>(byRowKeySelector);
-  const cell = targetCellFromRowIndex ?? targetCellFromRowKey;
-
-  return {
-    cell,
-    key: cell ? nextKey : null,
-  };
-}
-
-export function resolveSelectionRingRect({
-  root,
-  gridShell,
-  targetCell,
-  displayedRowIndex,
-  gridApi,
-  gridRowHeight,
-}: SelectionRingRectParams): RingRect {
-  const cellRect = targetCell.getBoundingClientRect();
-  const shellRect = gridShell.getBoundingClientRect();
-  const verticalViewport = root.querySelector<HTMLElement>(".ag-body-viewport");
-  const rowNode = gridApi?.getDisplayedRowAtIndex(displayedRowIndex) ?? null;
-
-  let top = cellRect.top - shellRect.top;
-  let height = cellRect.height;
-  if (verticalViewport && rowNode?.rowTop != null) {
-    const viewportRect = verticalViewport.getBoundingClientRect();
-    top = viewportRect.top - shellRect.top + rowNode.rowTop - verticalViewport.scrollTop;
-    height = rowNode.rowHeight ?? gridRowHeight;
-  }
-
-  return {
-    left: Math.round((cellRect.left - shellRect.left) * 10) / 10,
-    top: Math.round(top * 10) / 10,
-    width: Math.round(cellRect.width * 10) / 10,
-    height: Math.round(height * 10) / 10,
-  };
+  return fragments;
 }

@@ -5,7 +5,6 @@ type MenuSurfaceProps = {
   className?: string;
   innerRef?: RefObject<HTMLDivElement>;
   role?: HTMLAttributes<HTMLDivElement>["role"];
-  ariaHidden?: boolean;
   style?: CSSProperties;
   children: ReactNode;
 };
@@ -15,16 +14,16 @@ export function MenuSurface({
   className = "",
   innerRef,
   role = "menu",
-  ariaHidden,
   style,
   children,
 }: MenuSurfaceProps) {
+  if (!open) return null;
+
   return (
     <div
       ref={innerRef}
-      className={["menu-surface", className, open ? "open" : ""].join(" ").trim()}
+      className={["menu-surface", className, "open"].join(" ").trim()}
       role={role}
-      aria-hidden={ariaHidden}
       style={style}
     >
       {children}

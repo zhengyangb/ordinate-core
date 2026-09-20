@@ -249,13 +249,25 @@ export default function AppChrome({
     if (!viewport) return undefined;
     refreshSheetTabScrollState();
     const handleScroll = () => refreshSheetTabScrollState();
+    const handleWheel = (event: WheelEvent) => {
+      // Preserve browser zoom gestures and native scrolling when all tabs fit.
+      if (event.ctrlKey || event.metaKey || viewport.scrollWidth <= viewport.clientWidth) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (delta === 0) return;
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientWidth : 1;
+      event.preventDefault();
+      viewport.scrollLeft += delta * unit;
+    };
     viewport.addEventListener("scroll", handleScroll, { passive: true });
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
     const observer = new ResizeObserver(() => refreshSheetTabScrollState());
     observer.observe(viewport);
     const tabs = viewport.firstElementChild;
     if (tabs) observer.observe(tabs);
     return () => {
       viewport.removeEventListener("scroll", handleScroll);
+      viewport.removeEventListener("wheel", handleWheel);
       observer.disconnect();
     };
   }, [refreshSheetTabScrollState, sheetNames]);
@@ -503,6 +515,7 @@ export default function AppChrome({
         </div>
 
         <nav className="toolbar-tools" aria-label="Toolbar">
+          <div className="toolbar-group toolbar-group--file" role="group" aria-label="File">
           <button
             className="tool-button file-command-button"
             type="button"
@@ -550,7 +563,9 @@ export default function AppChrome({
               <SaveAsIcon />
             </span>
           </button>
+          </div>
 
+          <div className="toolbar-group toolbar-group--document" role="group" aria-label="Document">
           <button
             ref={sheetSetupButtonRef}
             className={sheetSetupOpen ? "tool-button sheet-setup-button active" : "tool-button sheet-setup-button"}
@@ -572,7 +587,9 @@ export default function AppChrome({
               <PageSetupIcon />
             </span>
           </button>
+          </div>
 
+          <div className="toolbar-group toolbar-group--history" role="group" aria-label="History">
           <button
             className="tool-button history-button"
             type="button"
@@ -608,47 +625,50 @@ export default function AppChrome({
               <RedoIcon />
             </span>
           </button>
+          </div>
 
-          {visibleTools.map((item) => (
-            <button
-              key={item.label}
-              className="tool-button"
-              type="button"
-              tabIndex={-1}
-              aria-label={item.label}
-              onMouseEnter={(event) => onTooltipEnter(item.label, event.currentTarget)}
-              onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-              onFocus={(event) => onTooltipEnter(item.label, event.currentTarget)}
-              onBlur={(event) => onTooltipRelease(event.currentTarget)}
-              onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
-            >
-              <span className="tool-icon">{item.icon}</span>
-            </button>
-          ))}
-          {overflowTools.length > 0 ? (
-            <div className="tool-overflow-control">
+          <div className="toolbar-group toolbar-group--tools" role="group" aria-label="Tools">
+            {visibleTools.map((item) => (
               <button
-                ref={toolButtonRef}
-                className={toolMenuOpen ? "tool-button tool-more-button active" : "tool-button tool-more-button"}
+                key={item.label}
+                className="tool-button"
                 type="button"
-                onClick={() => setToolMenuOpen((open) => !open)}
-                aria-label="More tools"
-                aria-haspopup="menu"
-                aria-expanded={toolMenuOpen}
-                onMouseEnter={(event) => onTooltipEnter("More tools", event.currentTarget)}
+                tabIndex={-1}
+                aria-label={item.label}
+                onMouseEnter={(event) => onTooltipEnter(item.label, event.currentTarget)}
                 onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-                onFocus={(event) => {
-                  if (!toolMenuOpen) onTooltipEnter("More tools", event.currentTarget);
-                }}
+                onFocus={(event) => onTooltipEnter(item.label, event.currentTarget)}
                 onBlur={(event) => onTooltipRelease(event.currentTarget)}
                 onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
               >
-                <span className="tool-icon">
-                  <MoreIcon />
-                </span>
+                <span className="tool-icon">{item.icon}</span>
               </button>
-            </div>
-          ) : null}
+            ))}
+            {overflowTools.length > 0 ? (
+              <div className="tool-overflow-control">
+                <button
+                  ref={toolButtonRef}
+                  className={toolMenuOpen ? "tool-button tool-more-button active" : "tool-button tool-more-button"}
+                  type="button"
+                  onClick={() => setToolMenuOpen((open) => !open)}
+                  aria-label="More tools"
+                  aria-haspopup="menu"
+                  aria-expanded={toolMenuOpen}
+                  onMouseEnter={(event) => onTooltipEnter("More tools", event.currentTarget)}
+                  onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+                  onFocus={(event) => {
+                    if (!toolMenuOpen) onTooltipEnter("More tools", event.currentTarget);
+                  }}
+                  onBlur={(event) => onTooltipRelease(event.currentTarget)}
+                  onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+                >
+                  <span className="tool-icon">
+                    <MoreIcon />
+                  </span>
+                </button>
+              </div>
+            ) : null}
+          </div>
         </nav>
 
         <div className="toolbar-actions">

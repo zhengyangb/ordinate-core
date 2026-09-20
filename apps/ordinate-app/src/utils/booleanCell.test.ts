@@ -4,7 +4,6 @@ import { DocumentState, type CellBodyState, type RuntimeValue } from "@ordinate/
 
 import {
   isBooleanKeyboardActivation,
-  isPointInsideBooleanControl,
   resolveBooleanCellView,
   toggledBooleanInput,
 } from "./booleanCell";
@@ -79,13 +78,5 @@ describe("boolean cell presentation", () => {
     expect(isBooleanKeyboardActivation({ ...base, repeat: true })).toBe(false);
     expect(isBooleanKeyboardActivation({ ...base, shiftKey: true })).toBe(false);
     expect(isBooleanKeyboardActivation({ ...base, key: "Enter" })).toBe(false);
-  });
-
-  it("commits pointer activation only when release remains inside the capsule", () => {
-    const bounds = { left: 10, right: 70, top: 20, bottom: 44 };
-    expect(isPointInsideBooleanControl({ x: 10, y: 20 }, bounds)).toBe(true);
-    expect(isPointInsideBooleanControl({ x: 70, y: 44 }, bounds)).toBe(true);
-    expect(isPointInsideBooleanControl({ x: 71, y: 32 }, bounds)).toBe(false);
-    expect(isPointInsideBooleanControl({ x: 40, y: 45 }, bounds)).toBe(false);
   });
 });

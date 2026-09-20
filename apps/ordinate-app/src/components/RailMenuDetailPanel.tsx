@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
-import { MenuSurface } from "./MenuSurface";
+import { EditorPopover } from "./EditorPopover";
 import { POSITION_EPSILON, resolveFlyoutMenuPosition } from "../utils/appHelpers";
 import type { ColumnRailMenuView, FloatingMenuPosition, FormatLocalKey, FormatLocalOptions, RowRailMenuView, StyleLocalView } from "../types/ui";
 
@@ -36,7 +36,6 @@ export default function RailMenuDetailPanel({
 }: RailMenuDetailPanelProps) {
   const detailRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
-  const formatShowsDetail = railMenu.formatLocalKey !== "auto" && inspectedKey !== "auto";
 
   useLayoutEffect(() => {
     if (!open || panel == null) return;
@@ -51,7 +50,7 @@ export default function RailMenuDetailPanel({
         container.getBoundingClientRect(),
         menu.getBoundingClientRect(),
         {
-        preferredSide: "right",
+          preferredSide: "right",
         },
       );
       setPosition((current) => {
@@ -72,27 +71,18 @@ export default function RailMenuDetailPanel({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [open, panel, anchorRef, inspectedKey]);
+  }, [open, panel, anchorRef, containerRef]);
 
   if (!open || panel == null) {
     return null;
   }
 
   return (
-    <MenuSurface
-      innerRef={detailRef}
-      className={[
-        "rail-menu",
-        "rail-menu-detail",
-        panel === "format"
-          ? formatShowsDetail
-            ? "rail-menu-detail--format-detail"
-            : "rail-menu-detail--format-list"
-          : "rail-menu-detail--style",
-      ].join(" ")}
-      open={open}
-      ariaHidden={!open}
-      style={{ top: `${position.top}px`, left: `${position.left}px` }}
+    <EditorPopover
+      ref={detailRef}
+      role="menu"
+      className="rail-menu rail-menu-detail open"
+      style={{ top: `${position.top}px`, left: `${position.left}px`, maxHeight: `calc(100dvh - ${position.top}px - 24px)` }}
     >
       <div className={[
         "rail-menu-detail-body",
@@ -100,6 +90,7 @@ export default function RailMenuDetailPanel({
       ].join(" ")}>
         {panel === "format" ? (
           <FormatPreviewPanel
+            scope={railMenu.kind}
             localFormatKey={railMenu.formatLocalKey}
             localFormatOptions={railMenu.formatLocalOptions}
             inspectedKey={inspectedKey}
@@ -115,6 +106,7 @@ export default function RailMenuDetailPanel({
           />
         ) : (
           <StylePreviewPanel
+            scope={railMenu.kind}
             styleLocal={railMenu.styleLocal}
             onChange={(axis, value) => {
               if (railMenu.kind === "column") {
@@ -126,6 +118,6 @@ export default function RailMenuDetailPanel({
           />
         )}
       </div>
-    </MenuSurface>
+    </EditorPopover>
   );
 }

@@ -20,9 +20,20 @@ import {
   resolveColumnTrackSpan,
   resolveHorizontalWheelDelta,
   resolveRailTrackEdgeState,
+  resolveFrozenHeaderGeometry,
 } from "./gridGeometry";
 
 describe("grid geometry helpers", () => {
+  it("unfreezes the entire header block when the data viewport would be too narrow", () => {
+    expect(resolveFrozenHeaderGeometry(322, [280])).toEqual({ columnCount: 0, width: 0 });
+    expect(resolveFrozenHeaderGeometry(399, [280])).toEqual({ columnCount: 0, width: 0 });
+    expect(resolveFrozenHeaderGeometry(400, [280])).toEqual({ columnCount: 1, width: 280 });
+    expect(resolveFrozenHeaderGeometry(600, [280, 280])).toEqual({ columnCount: 0, width: 0 });
+    expect(resolveFrozenHeaderGeometry(680, [280, 280])).toEqual({ columnCount: 2, width: 560 });
+    expect(resolveFrozenHeaderGeometry(0, [280])).toEqual({ columnCount: 0, width: 0 });
+    expect(resolveFrozenHeaderGeometry(390, [])).toEqual({ columnCount: 0, width: 0 });
+    expect(() => resolveFrozenHeaderGeometry(-1, [280])).toThrow("invalid frozen header geometry");
+  });
   it("assigns both rail edge roles from one ordered-track model", () => {
     expect(resolveRailTrackEdgeState(0, 5)).toEqual({ isOrigin: true, isTerminal: false });
     expect(resolveRailTrackEdgeState(2, 5)).toEqual({ isOrigin: false, isTerminal: false });

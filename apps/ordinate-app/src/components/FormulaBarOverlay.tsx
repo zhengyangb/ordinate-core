@@ -9,7 +9,8 @@ import {
   formatDisplayMetadataErrorMessage,
   getDisplayMetadataErrorLabel,
 } from "../i18n/displayMetadata";
-import { FormatDetailPanel, FormatMenuList, StylePreviewPanel } from "./DisplayMetadataPreview";
+import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
+import { EditorPopover } from "./EditorPopover";
 import type { ChromeVisibilityPhase, FormatLocalKey, FormulaBarData, StyleLocalView } from "../types/ui";
 import { selectionDebugLog } from "../utils/selectionDebug";
 import {
@@ -291,15 +292,9 @@ export default function FormulaBarOverlay({
 }: FormulaBarOverlayProps) {
   const [formatMenuOpen, setFormatMenuOpen] = useState(false);
   const [menuPanelKey, setMenuPanelKey] = useState<FormatLocalKey>("auto");
-  const [formatMenuPosition, setFormatMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-  const [formatDetailPosition, setFormatDetailPosition] = useState<{ top: number; left: number; maxHeight: number }>({
-    top: 0,
-    left: 0,
-    maxHeight: 0,
-  });
+  const [formatMenuPosition, setFormatMenuPosition] = useState({ bottom: 0, left: 0, maxHeight: 0 });
   const formatButtonRef = useRef<HTMLButtonElement | null>(null);
   const formatMenuRef = useRef<HTMLDivElement | null>(null);
-  const formatDetailRef = useRef<HTMLDivElement | null>(null);
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
   const [styleMenuPosition, setStyleMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const styleButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -517,8 +512,6 @@ export default function FormulaBarOverlay({
   const localFormatOptions = formulaBarSnapshot?.formatLocalOptions ?? null;
   const effectiveFormatKey = formulaBarSnapshot?.formatEffectiveKey ?? "auto";
   const effectiveFormatOptions = formulaBarSnapshot?.formatEffectiveOptions ?? null;
-  const inheritedFormatKey = formulaBarSnapshot?.formatInheritedKey ?? "auto";
-  const inheritedFormatOptions = formulaBarSnapshot?.formatInheritedOptions ?? null;
   const formatSource = formulaBarSnapshot?.formatSource ?? "default";
   const chipText = formulaBarSnapshot?.chip ?? "";
   const localStyle: StyleLocalView = formulaBarSnapshot?.styleLocal ?? {
@@ -537,11 +530,6 @@ export default function FormulaBarOverlay({
   const primaryFormatErrorMessage = hasFormatDisplayError
     ? formatErrorMessageForFormulaBar(locale, formatErrors[0], formulaBarSnapshot)
     : "";
-  const shouldShowFormatDetail = formatMenuOpen && (
-    menuPanelKey !== "auto" ||
-    effectiveFormatKey !== "auto" ||
-    hasFormatDisplayError
-  );
 
   useEffect(() => {
     if (!formulaBarSnapshot) {
@@ -837,7 +825,7 @@ export default function FormulaBarOverlay({
     };
   }, [activeReferenceView, isEditingInput, isFormulaDraft]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!formatMenuOpen) return;
     let rafId: number | null = null;
     const updatePosition = () => {
@@ -847,17 +835,16 @@ export default function FormulaBarOverlay({
       const buttonRect = button.getBoundingClientRect();
       const menuRect = menu.getBoundingClientRect();
       const margin = 12;
-      const preferredTop = buttonRect.top - menuRect.height - 8;
-      const fallbackTop = buttonRect.bottom + 8;
-      const unclampedTop = preferredTop >= margin ? preferredTop : fallbackTop;
-      const top = Math.max(margin, Math.min(unclampedTop, window.innerHeight - menuRect.height - margin));
+      // Anchor the bottom edge; changing detail height must not move the type picker.
+      const bottom = window.innerHeight - buttonRect.top + 8;
+      const maxHeight = Math.max(0, buttonRect.top - 8 - margin);
       const preferredLeft = buttonRect.right - menuRect.width;
       const left = Math.max(margin, Math.min(preferredLeft, window.innerWidth - menuRect.width - margin));
       setFormatMenuPosition((current) => {
-        if (Math.abs(current.top - top) < 0.5 && Math.abs(current.left - left) < 0.5) {
+        if (Math.abs(current.bottom - bottom) < 0.5 && Math.abs(current.left - left) < 0.5 && Math.abs(current.maxHeight - maxHeight) < 0.5) {
           return current;
         }
-        return { top, left };
+        return { bottom, left, maxHeight };
       });
     };
     const schedule = () => {
@@ -869,7 +856,7 @@ export default function FormulaBarOverlay({
         updatePosition();
       });
     };
-    schedule();
+    updatePosition();
     window.addEventListener("resize", schedule);
     window.addEventListener("scroll", schedule, true);
     return () => {
@@ -880,77 +867,6 @@ export default function FormulaBarOverlay({
       window.removeEventListener("scroll", schedule, true);
     };
   }, [formatMenuOpen]);
-
-  useLayoutEffect(() => {
-    if (!shouldShowFormatDetail) return;
-    let rafId: number | null = null;
-    const updatePosition = () => {
-      const menu = formatMenuRef.current;
-      const detail = formatDetailRef.current;
-      if (!menu || !detail) return;
-      const menuRect = menu.getBoundingClientRect();
-      const detailRect = detail.getBoundingClientRect();
-      const panel = detail.querySelector<HTMLElement>(".formula-format-menu-panel");
-      if (!panel) return;
-      const error = detail.querySelector<HTMLElement>(".formula-format-error-popover");
-      const margin = 12;
-      const bottomMargin = 34;
-      const gap = 8;
-      const preferredRight = menuRect.right + gap;
-      const preferredLeft = menuRect.left - detailRect.width - gap;
-      const canOpenRight = preferredRight + detailRect.width <= window.innerWidth - margin;
-      const unclampedLeft = canOpenRight ? preferredRight : preferredLeft;
-      const left = Math.max(margin, Math.min(unclampedLeft, window.innerWidth - detailRect.width - margin));
-      const errorHeight = error?.getBoundingClientRect().height ?? 0;
-      const minTop = margin + (errorHeight > 0 ? errorHeight + gap : 0);
-      const panelHeight = Math.max(panel.scrollHeight, Math.ceil(panel.getBoundingClientRect().height)) + 3;
-      const maxTopForFullPanel = window.innerHeight - bottomMargin - panelHeight;
-      const canShowFullPanel = maxTopForFullPanel >= minTop;
-      const top = canShowFullPanel
-        ? Math.max(minTop, Math.min(menuRect.top, maxTopForFullPanel))
-        : minTop;
-      const maxHeight = canShowFullPanel ? panelHeight : Math.max(160, window.innerHeight - top - bottomMargin);
-      setFormatDetailPosition((current) => {
-        if (
-          Math.abs(current.top - top) < 0.5 &&
-          Math.abs(current.left - left) < 0.5 &&
-          Math.abs(current.maxHeight - maxHeight) < 0.5
-        ) {
-          return current;
-        }
-        return { top, left, maxHeight };
-      });
-    };
-    const schedule = () => {
-      if (rafId != null) {
-        window.cancelAnimationFrame(rafId);
-      }
-      rafId = window.requestAnimationFrame(() => {
-        rafId = null;
-        updatePosition();
-      });
-    };
-    schedule();
-    const resizeObserver = new ResizeObserver(schedule);
-    if (formatMenuRef.current) resizeObserver.observe(formatMenuRef.current);
-    if (formatDetailRef.current) {
-      resizeObserver.observe(formatDetailRef.current);
-      const panel = formatDetailRef.current.querySelector<HTMLElement>(".formula-format-menu-panel");
-      const error = formatDetailRef.current.querySelector<HTMLElement>(".formula-format-error-popover");
-      if (panel) resizeObserver.observe(panel);
-      if (error) resizeObserver.observe(error);
-    }
-    window.addEventListener("resize", schedule);
-    window.addEventListener("scroll", schedule, true);
-    return () => {
-      if (rafId != null) {
-        window.cancelAnimationFrame(rafId);
-      }
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", schedule);
-      window.removeEventListener("scroll", schedule, true);
-    };
-  }, [shouldShowFormatDetail, menuPanelKey, hasFormatDisplayError, effectiveFormatKey, inheritedFormatKey, formatSource, primaryFormatErrorMessage]);
 
   useEffect(() => {
     if (!styleMenuOpen) return;
@@ -1003,7 +919,6 @@ export default function FormulaBarOverlay({
       if (
         target?.closest(".formula-format-control") ||
         target?.closest(".formula-format-menu") ||
-        target?.closest(".formula-format-detail-flyout") ||
         target?.closest(".formula-style-control") ||
         target?.closest(".formula-style-menu")
       ) {
@@ -1759,7 +1674,8 @@ export default function FormulaBarOverlay({
               </button>
             )}
             {shouldShowFunctionAssistant && selectedFunctionMetadata ? (
-              <div
+              <EditorPopover
+                grow="up"
                 className="formula-assistant-popover"
                 data-mode={functionAssistantMode}
                 role="dialog"
@@ -1903,7 +1819,7 @@ export default function FormulaBarOverlay({
                     </div>
                   </div>
                 )}
-              </div>
+              </EditorPopover>
             ) : null}
             <button
               className="formula-dismiss-button"
@@ -1952,47 +1868,20 @@ export default function FormulaBarOverlay({
           </div>
         </div>
       </aside>
-      {createPortal(
-        <div
+      {formatMenuOpen ? createPortal(
+        <EditorPopover
+          grow="up"
           ref={formatMenuRef}
-          className={[
-            "formula-format-menu",
-            formatMenuOpen ? "open" : "",
-          ].join(" ").trim()}
+          className="formula-format-menu open"
           role="menu"
-          aria-hidden={!formatMenuOpen}
           style={{
-            top: `${formatMenuPosition.top}px`,
+            bottom: `${formatMenuPosition.bottom}px`,
+            maxHeight: `${formatMenuPosition.maxHeight}px`,
             left: `${formatMenuPosition.left}px`,
           }}
         >
-          <FormatMenuList
-            localFormatKey={localFormatKey}
-            localFormatOptions={localFormatOptions}
-            inspectedKey={menuPanelKey}
-            onInspectKey={setMenuPanelKey}
-            onChange={areDisplayControlsEditable ? (key, options) => onSetLocalFormat(key, options) : undefined}
-          />
-        </div>,
-        document.body,
-      )}
-      {createPortal(
-        <div
-          ref={formatDetailRef}
-          className={[
-            "formula-format-detail-flyout",
-            shouldShowFormatDetail ? "open" : "",
-          ].join(" ").trim()}
-          aria-hidden={!shouldShowFormatDetail}
-          onMouseDown={(event) => event.stopPropagation()}
-          style={{
-            top: `${formatDetailPosition.top}px`,
-            left: `${formatDetailPosition.left}px`,
-            "--formula-format-detail-panel-max-height": `${formatDetailPosition.maxHeight}px`,
-          } as CSSProperties}
-        >
           {hasFormatDisplayError ? (
-            <div className="formula-format-error-popover" role="status" aria-live="polite">
+            <div className="formula-menu-error-banner" role="status" aria-live="polite">
               <span className="formula-menu-error-icon"><BannerWarningGlyph /></span>
               <span className="formula-format-error-message">
                 {primaryFormatErrorMessage}
@@ -2000,13 +1889,12 @@ export default function FormulaBarOverlay({
               </span>
             </div>
           ) : null}
-          <FormatDetailPanel
+          <FormatPreviewPanel
+            grow="up"
             localFormatKey={localFormatKey}
             localFormatOptions={localFormatOptions}
             effectiveFormatKey={effectiveFormatKey}
             effectiveFormatOptions={effectiveFormatOptions}
-            inheritedFormatKey={inheritedFormatKey}
-            inheritedFormatOptions={inheritedFormatOptions}
             formatSource={formatSource}
             inspectedKey={menuPanelKey}
             previewContext={formulaBarSnapshot?.formatPreviewContext ?? null}
@@ -2017,15 +1905,15 @@ export default function FormulaBarOverlay({
               setStyleMenuOpen(false);
             }}
           />
-        </div>,
+        </EditorPopover>,
         document.body,
-      )}
-      {createPortal(
-        <div
+      ) : null}
+      {styleMenuOpen ? createPortal(
+        <EditorPopover
+          grow="up"
           ref={styleMenuRef}
-          className={styleMenuOpen ? "formula-style-menu open" : "formula-style-menu"}
+          className="formula-style-menu open"
           role="menu"
-          aria-hidden={!styleMenuOpen}
           style={{
             top: `${styleMenuPosition.top}px`,
             left: `${styleMenuPosition.left}px`,
@@ -2049,9 +1937,9 @@ export default function FormulaBarOverlay({
               onChange={areDisplayControlsEditable ? onSetLocalStyle : undefined}
             />
           </>
-        </div>,
+        </EditorPopover>,
         document.body,
-      )}
+      ) : null}
     </>
   );
 }

@@ -192,7 +192,6 @@ export default function RailMenu({
           railMenu?.kind === "column" ? "rail-menu--column" : "rail-menu--row",
         ].join(" ")}
         open={open}
-        ariaHidden={!open}
         style={{ top: `${position.top}px`, left: `${position.left}px` }}
       >
         {railMenu ? (
