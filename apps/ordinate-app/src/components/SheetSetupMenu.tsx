@@ -55,7 +55,6 @@ export default function SheetSetupMenu({
       innerRef={menuRef}
       className="sheet-setup-menu"
       open={open}
-      ariaHidden={!open}
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
     >
       <MenuHead className="sheet-setup-head">

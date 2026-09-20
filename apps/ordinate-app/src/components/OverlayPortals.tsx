@@ -112,7 +112,6 @@ export default function OverlayPortals({
           innerRef={themeMenuRef}
           className="theme-menu"
           open={themeMenuOpen}
-          ariaHidden={!themeMenuOpen}
           style={{ top: `${themeMenuPosition.top}px`, left: `${themeMenuPosition.left}px` }}
         >
           {(
@@ -145,7 +144,6 @@ export default function OverlayPortals({
           innerRef={toolMenuRef}
           className="tool-menu"
           open={toolMenuOpen}
-          ariaHidden={!toolMenuOpen}
           style={{ top: `${toolMenuPosition.top}px`, left: `${toolMenuPosition.left}px` }}
         >
           {overflowTools.map((item) => (
@@ -199,7 +197,6 @@ export default function OverlayPortals({
           innerRef={selectionMenuRef}
           className="selection-menu"
           open={selectionMenuOpen}
-          ariaHidden={!selectionMenuOpen}
           style={{ top: `${selectionMenuPosition.top}px`, left: `${selectionMenuPosition.left}px` }}
         >
           <MenuOption role="menuitem" tone="danger" disabled={!canClearSelection} onClick={onClearSelection}>

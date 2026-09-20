@@ -51,22 +51,3 @@ export function isBooleanKeyboardActivation(event: BooleanKeyboardActivation): b
     !event.metaKey
   );
 }
-
-type BooleanControlBounds = {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-};
-
-export function isPointInsideBooleanControl(
-  point: { x: number; y: number },
-  bounds: BooleanControlBounds,
-): boolean {
-  return (
-    point.x >= bounds.left &&
-    point.x <= bounds.right &&
-    point.y >= bounds.top &&
-    point.y <= bounds.bottom
-  );
-}

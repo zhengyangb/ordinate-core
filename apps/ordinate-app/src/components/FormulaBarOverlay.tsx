@@ -1952,15 +1952,11 @@ export default function FormulaBarOverlay({
           </div>
         </div>
       </aside>
-      {createPortal(
+      {formatMenuOpen ? createPortal(
         <div
           ref={formatMenuRef}
-          className={[
-            "formula-format-menu",
-            formatMenuOpen ? "open" : "",
-          ].join(" ").trim()}
+          className="formula-format-menu open"
           role="menu"
-          aria-hidden={!formatMenuOpen}
           style={{
             top: `${formatMenuPosition.top}px`,
             left: `${formatMenuPosition.left}px`,
@@ -1975,15 +1971,11 @@ export default function FormulaBarOverlay({
           />
         </div>,
         document.body,
-      )}
-      {createPortal(
+      ) : null}
+      {shouldShowFormatDetail ? createPortal(
         <div
           ref={formatDetailRef}
-          className={[
-            "formula-format-detail-flyout",
-            shouldShowFormatDetail ? "open" : "",
-          ].join(" ").trim()}
-          aria-hidden={!shouldShowFormatDetail}
+          className="formula-format-detail-flyout open"
           onMouseDown={(event) => event.stopPropagation()}
           style={{
             top: `${formatDetailPosition.top}px`,
@@ -2019,13 +2011,12 @@ export default function FormulaBarOverlay({
           />
         </div>,
         document.body,
-      )}
-      {createPortal(
+      ) : null}
+      {styleMenuOpen ? createPortal(
         <div
           ref={styleMenuRef}
-          className={styleMenuOpen ? "formula-style-menu open" : "formula-style-menu"}
+          className="formula-style-menu open"
           role="menu"
-          aria-hidden={!styleMenuOpen}
           style={{
             top: `${styleMenuPosition.top}px`,
             left: `${styleMenuPosition.left}px`,
@@ -2051,7 +2042,7 @@ export default function FormulaBarOverlay({
           </>
         </div>,
         document.body,
-      )}
+      ) : null}
     </>
   );
 }

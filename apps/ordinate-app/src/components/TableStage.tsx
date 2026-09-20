@@ -14,7 +14,7 @@ import {
 } from "ag-grid-community";
 
 import { shouldAnimateTableStructure } from "../config/motion";
-import type { AxisDragPreview, AxisDropIndicator, AxisSelectionView, ChromeVisibilityPhase, ColumnMetric, GridRow, HeaderIndexMetric, HeaderOverlayCell, RowIndexMetric, SelectedCell } from "../types/ui";
+import type { AxisDragPreview, AxisDropIndicator, AxisSelectionView, ChromeVisibilityPhase, ColumnMetric, GridRow, HeaderIndexMetric, HeaderOverlayCell, Rect, RowIndexMetric, SelectedCell } from "../types/ui";
 import {
   bodyRowTrackYToViewportY,
   clipColumnTrackSpanToCenterLayer,
@@ -29,13 +29,13 @@ import {
 } from "../utils/gridGeometry";
 import { computeQuickAddDragCount, hasQuickAddDragThreshold, type QuickAddAxis } from "../utils/quickAddControls";
 import { APPEND_AXIS_SLOT_GAP, APPEND_COLUMN_WIDTH, APPEND_ROW_SLOT_HEIGHT } from "../utils/appHelpers";
-import { resolveSelectionOverlayPlane, type SelectionOverlayPlane } from "../utils/selectionRing";
+import { projectSelectionOverlayFragments, type SelectionOverlayFragment, type SelectionOverlayPlane } from "../utils/selectionRing";
 
 type FormulaReferenceOverlay = {
   tokenId: string;
+  rect: Rect;
   colorIndex: number;
   active: boolean;
-  plane: SelectionOverlayPlane;
 };
 
 type TableStageProps = {
@@ -60,12 +60,11 @@ type TableStageProps = {
   columnDefs: Array<ColDef<GridRow> | ColGroupDef<GridRow>>;
   gridInstanceKey: string;
   selectedCell: SelectedCell | null;
+  selectedRange: Rect | null;
+  isRangeSelection: boolean;
   selectedColumnIndex: number | null;
   columnHasLocalConfig: boolean[];
   showSelectionRing: boolean;
-  selectionRingRef: MutableRefObject<HTMLDivElement | null>;
-  selectionRangeRef: MutableRefObject<HTMLDivElement | null>;
-  formulaReferenceOverlayLayerRef: MutableRefObject<HTMLDivElement | null>;
   formulaReferenceOverlays: FormulaReferenceOverlay[];
   onFormulaReferenceOverlaySelect: (tokenId: string) => void;
   isSelectionRingTransitioning: boolean;
@@ -108,6 +107,15 @@ type QuickAddDragSession = {
   startY: number;
   active: boolean;
 };
+
+function overlayFragmentStyle(fragment: SelectionOverlayFragment): CSSProperties {
+  return {
+    left: `${fragment.left}px`,
+    top: `${fragment.top}px`,
+    width: `${fragment.width}px`,
+    height: `${fragment.height}px`,
+  };
+}
 
 function toColumnLetters(colNumber: number): string {
   let n = Math.max(1, Math.trunc(colNumber));
@@ -153,12 +161,11 @@ export default function TableStage({
   columnDefs,
   gridInstanceKey,
   selectedCell,
+  selectedRange,
+  isRangeSelection,
   selectedColumnIndex,
   columnHasLocalConfig,
   showSelectionRing,
-  selectionRingRef,
-  selectionRangeRef,
-  formulaReferenceOverlayLayerRef,
   formulaReferenceOverlays,
   onFormulaReferenceOverlaySelect,
   isSelectionRingTransitioning,
@@ -204,8 +211,10 @@ export default function TableStage({
       ({
         ...tableStageStyle,
         "--axis-append-column-scroll-extent": `${APPEND_AXIS_SLOT_GAP + APPEND_COLUMN_WIDTH}px`,
+        "--grid-center-track-offset-x": `${-bodyScrollLeft}px`,
+        "--grid-body-track-offset-y": `${-bodyScrollTop}px`,
       }) as CSSProperties,
-    [tableStageStyle],
+    [bodyScrollLeft, bodyScrollTop, tableStageStyle],
   );
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
   const defaultColDef = useMemo<ColDef<GridRow>>(() => ({
@@ -221,9 +230,6 @@ export default function TableStage({
   }), []);
   const selectedRowNumber = selectedCell?.logical.rAbs ?? null;
   const activeColumnIndex = selectedColumnIndex ?? selectedCell?.logical.cAbs ?? null;
-  const selectionOverlayPlane = selectedCell
-    ? resolveSelectionOverlayPlane(selectedCell.area, selectedCell.logical.cAbs, headerColCount)
-    : null;
   const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < headerColCount);
   const centerOverlayCells = headerOverlayCells.filter((cell) => cell.startCol >= headerColCount);
   const appendRowSlot = resolveAppendRowSlot(rowIndexTrackHeight, APPEND_ROW_SLOT_HEIGHT, APPEND_AXIS_SLOT_GAP);
@@ -252,12 +258,55 @@ export default function TableStage({
   const tableFootprint = tableGeometry.footprint;
   const centerTrackStyle = {
     width: `${centerTrackWidth}px`,
-    transform: `translateX(${tableGeometry.centerTrackOffsetX}px)`,
+    transform: "translate3d(var(--grid-center-track-offset-x), 0, 0)",
   };
   const bodyTrackStyle = {
     height: `${appendRowSlot.bottom}px`,
-    transform: `translateY(${tableGeometry.bodyTrackOffsetY}px)`,
+    transform: "translate3d(0, var(--grid-body-track-offset-y), 0)",
   };
+  const overlayProjectionBase = {
+    headerRowCount: headerIndexMetrics.length,
+    headerColCount,
+    pinnedWidth: pinnedHeaderWidth,
+    columnMetrics,
+    headerIndexMetrics,
+    rowIndexMetrics,
+  };
+  const selectionRingFragments = selectedCell?.area === "body"
+    ? projectSelectionOverlayFragments({
+        ...overlayProjectionBase,
+        range: {
+          rowStart: selectedCell.logical.rAbs,
+          rowEnd: selectedCell.logical.rAbs,
+          colStart: selectedCell.logical.cAbs,
+          colEnd: selectedCell.logical.cAbs,
+        },
+      })
+    : [];
+  const rangeSelectionFragments = selectedRange && isRangeSelection
+    ? projectSelectionOverlayFragments({ ...overlayProjectionBase, range: selectedRange })
+    : [];
+  const referenceFragments = formulaReferenceOverlays.flatMap((reference) =>
+    projectSelectionOverlayFragments({ ...overlayProjectionBase, range: reference.rect }).map((fragment, index) => ({
+      ...fragment,
+      fragmentKey: `${reference.tokenId}:${index}`,
+      tokenId: reference.tokenId,
+      colorIndex: reference.colorIndex,
+      active: reference.active,
+    })),
+  );
+  const overlayPlaneStyles: Record<SelectionOverlayPlane, CSSProperties> = {
+    "header-pinned": { left: 0, top: 0, width: pinnedHeaderWidth, height: headerOverlayHeight },
+    "header-center": { left: pinnedHeaderWidth, top: 0, width: centerViewportWidth, height: headerOverlayHeight },
+    "body-pinned": { left: 0, top: headerOverlayHeight, width: pinnedHeaderWidth, height: bodyViewportHeight },
+    "body-center": { left: pinnedHeaderWidth, top: headerOverlayHeight, width: centerViewportWidth, height: bodyViewportHeight },
+  };
+  const overlayPlanes: SelectionOverlayPlane[] = [
+    "body-center",
+    "body-pinned",
+    "header-center",
+    "header-pinned",
+  ];
   const pinnedColumnMetrics = columnMetrics.filter((metric) => metric.colIndex < headerColCount);
   const centerColumnMetrics = columnMetrics.filter((metric) => metric.colIndex >= headerColCount);
   const isColumnDragPreview = (colIndex: number) =>
@@ -711,14 +760,20 @@ export default function TableStage({
           aria-hidden="true"
         >
           {tableFootprint.width > 0 ? (
-            <div
-              className={
-                tableFootprint.columnEndVisible
-                  ? "column-index-pill"
-                  : "column-index-pill is-open-end"
-              }
-              style={{ width: `${tableFootprint.width}px` }}
-            />
+            <>
+              <div
+                className="column-index-pill"
+                style={{ width: `${tableFootprint.width}px` }}
+              />
+              <div
+                className={
+                  tableFootprint.columnEndVisible
+                    ? "index-rail-outline index-rail-outline--column"
+                    : "index-rail-outline index-rail-outline--column is-open-end"
+                }
+                style={{ width: `${tableFootprint.width}px` }}
+              />
+            </>
           ) : null}
           {pinnedHeaderWidth > 0 ? (
             <div
@@ -760,14 +815,20 @@ export default function TableStage({
       >
         <div className="row-index-shell">
           {tableFootprint.height > 0 ? (
-            <div
-              className={
-                tableFootprint.rowEndVisible
-                  ? "row-index-pill"
-                  : "row-index-pill is-open-end"
-              }
-              style={{ height: `${tableFootprint.height}px` }}
-            />
+            <>
+              <div
+                className="row-index-pill"
+                style={{ height: `${tableFootprint.height}px` }}
+              />
+              <div
+                className={
+                  tableFootprint.rowEndVisible
+                    ? "index-rail-outline index-rail-outline--row"
+                    : "index-rail-outline index-rail-outline--row is-open-end"
+                }
+                style={{ height: `${tableFootprint.height}px` }}
+              />
+            </>
           ) : null}
           <div
             className={headerIndexMetrics.length > 0 ? "row-index-header-track" : "row-index-header-track is-empty"}
@@ -988,44 +1049,75 @@ export default function TableStage({
             aria-hidden="true"
           />
         ) : null}
-        {showSelectionRing ? (
-          <>
-            <div ref={selectionRangeRef} className="persistent-range-selection is-hidden" aria-hidden="true" />
-            <div ref={formulaReferenceOverlayLayerRef} className="formula-reference-overlay-layer">
-              {formulaReferenceOverlays.map((overlay) => (
-                <button
-                  key={overlay.tokenId}
-                  className={[
-                    "formula-reference-range",
-                    `formula-plane--${overlay.plane}`,
-                    "is-hidden",
-                    overlay.active ? "is-active" : "",
-                  ].filter(Boolean).join(" ")}
-                  data-token-id={overlay.tokenId}
-                  data-color-index={overlay.colorIndex}
-                  type="button"
-                  aria-label="Select formula reference"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onFormulaReferenceOverlaySelect(overlay.tokenId);
-                  }}
-                />
-              ))}
-            </div>
-            <div
-              ref={selectionRingRef}
-              className={
-                [
-                  "persistent-selection-ring",
-                  "is-hidden",
-                  selectionOverlayPlane ? `selection-plane--${selectionOverlayPlane}` : "",
-                  isSelectionRingTransitioning && animateTableStructure ? "is-structural-transition" : "",
-                ].filter(Boolean).join(" ")
+        {showSelectionRing || referenceFragments.length > 0 ? (
+          <div className="table-overlay-geometry">
+            {overlayPlanes.map((plane) => {
+              const planeSelectionFragments = selectionRingFragments.filter((fragment) => fragment.plane === plane);
+              const planeRangeFragments = rangeSelectionFragments.filter((fragment) => fragment.plane === plane);
+              const planeReferenceFragments = referenceFragments.filter((fragment) => fragment.plane === plane);
+              if (
+                planeSelectionFragments.length === 0 &&
+                planeRangeFragments.length === 0 &&
+                planeReferenceFragments.length === 0
+              ) {
+                return null;
               }
-              aria-hidden="true"
-            />
-          </>
+              return (
+                <div
+                  key={plane}
+                  className={`table-overlay-plane table-overlay-plane--${plane}`}
+                  style={overlayPlaneStyles[plane]}
+                >
+                  <div
+                    className={[
+                      "table-overlay-track",
+                      plane.endsWith("center") ? "is-center-track" : "",
+                      plane.startsWith("body") ? "is-body-track" : "",
+                    ].filter(Boolean).join(" ")}
+                  >
+                    {planeRangeFragments.map((fragment, index) => (
+                      <div
+                        key={`range:${plane}:${index}`}
+                        className="persistent-range-selection"
+                        style={overlayFragmentStyle(fragment)}
+                        aria-hidden="true"
+                      />
+                    ))}
+                    {planeReferenceFragments.map((fragment) => (
+                      <button
+                        key={fragment.fragmentKey}
+                        className={[
+                          "formula-reference-range",
+                          fragment.active ? "is-active" : "",
+                        ].filter(Boolean).join(" ")}
+                        style={overlayFragmentStyle(fragment)}
+                        data-token-id={fragment.tokenId}
+                        data-color-index={fragment.colorIndex}
+                        type="button"
+                        aria-label="Select formula reference"
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onFormulaReferenceOverlaySelect(fragment.tokenId);
+                        }}
+                      />
+                    ))}
+                    {planeSelectionFragments.map((fragment, index) => (
+                      <div
+                        key={`focus:${plane}:${index}`}
+                        className={[
+                          "persistent-selection-ring",
+                          isSelectionRingTransitioning && animateTableStructure ? "is-structural-transition" : "",
+                        ].filter(Boolean).join(" ")}
+                        style={overlayFragmentStyle(fragment)}
+                        aria-hidden="true"
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : null}
         {headerOverlayHeight > 0 ? (
           <>

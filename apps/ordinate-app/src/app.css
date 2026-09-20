@@ -602,12 +602,35 @@ textarea {
 
 .toolbar-tools {
     display: flex;
-    align-items: stretch;
-    gap: 0.25rem;
+    align-items: center;
+    gap: 0.12rem;
     min-width: 0;
     flex: 1 1 auto;
     overflow-x: auto;
     scrollbar-width: none;
+}
+
+.toolbar-group {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.06rem;
+    flex: 0 0 auto;
+    padding-inline: 0.18rem;
+}
+
+.toolbar-group + .toolbar-group {
+    margin-inline-start: 0.28rem;
+}
+
+.toolbar-group + .toolbar-group::before {
+    content: "";
+    position: absolute;
+    left: -0.16rem;
+    top: 0.46rem;
+    bottom: 0.46rem;
+    width: 1px;
+    background: color-mix(in oklab, var(--chrome-border) 68%, transparent);
 }
 
 .toolbar-tools::-webkit-scrollbar {
@@ -2230,19 +2253,12 @@ textarea {
     position: absolute;
     inset: 0 auto 0 0;
     z-index: 0;
-    border: 1px solid var(--index-rail-border);
     border-radius: 0.78rem;
     background: var(--index-rail-surface);
     box-shadow:
         inset 0 1px 0 var(--index-rail-highlight),
         var(--sticky-row-shadow);
     pointer-events: none;
-}
-
-.column-index-pill.is-open-end {
-    border-start-end-radius: 0;
-    border-end-end-radius: 0;
-    border-inline-end-color: transparent;
 }
 
 .column-index-center-track {
@@ -2564,8 +2580,6 @@ textarea {
     position: absolute;
     inset: 0 0 auto 0;
     z-index: 0;
-    border: 1px solid var(--index-rail-border);
-    border-bottom-color: transparent;
     border-radius: 0.78rem;
     background: var(--index-rail-surface);
     box-shadow:
@@ -2574,7 +2588,29 @@ textarea {
     pointer-events: none;
 }
 
-.row-index-pill.is-open-end {
+.index-rail-outline {
+    position: absolute;
+    z-index: 6;
+    border: 1px solid var(--index-rail-border);
+    border-radius: 0.78rem;
+    pointer-events: none;
+}
+
+.index-rail-outline--column {
+    inset: 0 auto 0 0;
+}
+
+.index-rail-outline--column.is-open-end {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+    border-inline-end-color: transparent;
+}
+
+.index-rail-outline--row {
+    inset: 0 0 auto 0;
+}
+
+.index-rail-outline--row.is-open-end {
     border-end-start-radius: 0;
     border-end-end-radius: 0;
     border-bottom-color: transparent;
@@ -2914,59 +2950,74 @@ textarea {
     bottom: calc(var(--formula-bar-safe-space) + 0.66rem);
 }
 
+.table-overlay-geometry {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.table-overlay-plane {
+    position: absolute;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.table-overlay-plane--body-center {
+    z-index: 5;
+}
+
+.table-overlay-plane--body-pinned {
+    z-index: 7;
+}
+
+.table-overlay-plane--header-center {
+    z-index: 10;
+}
+
+.table-overlay-plane--header-pinned {
+    z-index: 11;
+}
+
+.table-overlay-track {
+    --table-overlay-offset-x: 0px;
+    --table-overlay-offset-y: 0px;
+    position: absolute;
+    inset: 0;
+    transform: translate3d(var(--table-overlay-offset-x), var(--table-overlay-offset-y), 0);
+    will-change: transform;
+    pointer-events: none;
+}
+
+.table-overlay-track.is-center-track {
+    --table-overlay-offset-x: var(--grid-center-track-offset-x);
+}
+
+.table-overlay-track.is-body-track {
+    --table-overlay-offset-y: var(--grid-body-track-offset-y);
+}
+
 .persistent-selection-ring {
     position: absolute;
-    left: 0;
-    top: 0;
-    width: 0;
-    height: 0;
-    transform: translate3d(-9999px, -9999px, 0);
-    will-change: transform, width, height;
     border: var(--selection-ring-width) solid var(--selection-ring-color);
     border-radius: var(--selection-ring-radius);
     box-shadow:
         0 0 0 1px color-mix(in oklab, var(--workspace-frame) 54%, transparent),
         0 0 0 0.5px color-mix(in oklab, var(--accent-strong) 28%, transparent);
     pointer-events: none;
-    z-index: 5;
     opacity: 1;
-}
-
-.persistent-selection-ring.selection-plane--body-center {
-    z-index: 5;
-}
-
-.persistent-selection-ring.selection-plane--body-pinned {
-    z-index: 7;
-}
-
-.persistent-selection-ring.selection-plane--header-native {
-    display: none;
 }
 
 .persistent-selection-ring.is-structural-transition {
     transition:
-        transform 220ms var(--ease-out-quint),
+        left 220ms var(--ease-out-quint),
+        top 220ms var(--ease-out-quint),
         width 220ms var(--ease-out-quint),
         height 220ms var(--ease-out-quint),
         opacity 140ms linear;
 }
 
-.persistent-selection-ring.is-hidden {
-    transform: translate3d(-9999px, -9999px, 0) !important;
-    width: 0 !important;
-    height: 0 !important;
-    opacity: 0;
-}
-
 .persistent-range-selection {
     position: absolute;
-    left: 0;
-    top: 0;
-    width: 0;
-    height: 0;
-    transform: translate3d(-9999px, -9999px, 0);
-    will-change: transform, width, height;
     border: 1.5px solid color-mix(in oklab, var(--accent-strong) 78%, transparent);
     border-radius: var(--selection-ring-radius);
     background: color-mix(in oklab, var(--accent) 14%, transparent);
@@ -2974,25 +3025,11 @@ textarea {
         inset 0 0 0 1px color-mix(in oklab, var(--accent-strong) 26%, transparent),
         0 0 0 1px color-mix(in oklab, var(--workspace-frame) 58%, transparent);
     pointer-events: none;
-    z-index: 10;
     opacity: 1;
-}
-
-.formula-reference-overlay-layer {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: auto;
 }
 
 .formula-reference-range {
     position: absolute;
-    left: 0;
-    top: 0;
-    width: 0;
-    height: 0;
-    transform: translate3d(-9999px, -9999px, 0);
-    will-change: transform, width, height;
     margin: 0;
     padding: 0;
     border: 2px solid var(--reference-color, var(--accent-strong));
@@ -3006,39 +3043,12 @@ textarea {
     cursor: pointer;
 }
 
-.formula-reference-range.formula-plane--body-center {
-    z-index: 5;
-}
-
-.formula-reference-range.formula-plane--body-pinned {
-    z-index: 7;
-}
-
-.formula-reference-range.formula-plane--header-native {
-    z-index: 10;
-}
-
-.persistent-range-selection.is-hidden {
-    transform: translate3d(-9999px, -9999px, 0) !important;
-    width: 0 !important;
-    height: 0 !important;
-    opacity: 0;
-}
-
 .formula-reference-range.is-active {
     border-width: 2.5px;
     background: color-mix(in oklab, var(--reference-color, var(--accent-strong)) 24%, transparent);
     box-shadow:
         inset 0 0 0 1px color-mix(in oklab, var(--reference-color, var(--accent-strong)) 36%, transparent),
         0 0 0 2px color-mix(in oklab, var(--sheet-surface) 72%, transparent);
-}
-
-.formula-reference-range.is-hidden {
-    transform: translate3d(-9999px, -9999px, 0) !important;
-    width: 0 !important;
-    height: 0 !important;
-    opacity: 0;
-    pointer-events: none;
 }
 
 [data-color-index="0"] { --reference-color: oklch(61% 0.18 32); }
@@ -3460,12 +3470,6 @@ textarea {
     -webkit-user-select: none;
 }
 
-button.boolean-cell-capsule {
-    appearance: none;
-    -webkit-appearance: none;
-    margin: 0;
-}
-
 .boolean-cell-capsule.is-true {
     border-color: color-mix(in oklab, var(--accent-strong) 72%, transparent);
     background: color-mix(in oklab, var(--accent) 88%, oklch(46% 0.16 145));
@@ -3494,6 +3498,32 @@ button.boolean-cell-capsule {
     flex: 0 0 auto;
 }
 
+.boolean-cell-control {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-grid;
+    place-items: center;
+    width: 1.08rem;
+    height: 1.08rem;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: color-mix(in oklab, currentColor 14%, transparent);
+    color: inherit;
+    cursor: pointer;
+    transition:
+        transform 120ms var(--ease-out-quart),
+        background-color 120ms var(--ease-out-quart),
+        box-shadow 120ms var(--ease-out-quart);
+}
+
+.boolean-cell-capsule.is-false .boolean-cell-control {
+    background: color-mix(in oklab, var(--sheet-soft) 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--sheet-soft) 22%, transparent);
+}
+
 .boolean-cell-capsule-icon svg {
     width: 100%;
     height: 100%;
@@ -3517,25 +3547,18 @@ button.boolean-cell-capsule {
 }
 
 .boolean-cell-capsule.is-interactive {
-    cursor: pointer;
-    transition:
-        transform 120ms var(--ease-out-quart),
-        filter 120ms var(--ease-out-quart),
-        box-shadow 120ms var(--ease-out-quart);
+    cursor: default;
 }
 
-.boolean-cell-capsule.is-interactive:hover {
+.boolean-cell-capsule.is-interactive:has(.boolean-cell-control:hover) {
     filter: saturate(1.04) brightness(1.025);
 }
 
-.boolean-cell-capsule.is-interactive:active {
-    transform: translateY(1px) scale(0.985);
-    box-shadow:
-        inset 0 1px 2px oklch(20% 0.04 145 / 0.18),
-        0 0 0 transparent;
+.boolean-cell-control:active {
+    transform: scale(0.9);
 }
 
-.boolean-cell-capsule.is-interactive:focus-visible {
+.boolean-cell-control:focus-visible {
     outline: 2px solid color-mix(in oklab, var(--accent-strong) 70%, white);
     outline-offset: 2px;
 }
@@ -3650,7 +3673,7 @@ button.boolean-cell-capsule {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .boolean-cell-capsule.is-interactive {
+    .boolean-cell-control {
         transition: none;
     }
 }
@@ -6281,6 +6304,21 @@ textarea:focus-visible,
     .topbar {
         padding-inline: 0.5rem;
         padding-inline-start: 0.7rem;
+    }
+
+    .formula-bar {
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.3rem;
+    }
+
+    .formula-bar-meta,
+    .formula-chip-slot {
+        display: none;
+    }
+
+    .formula-meta-stack,
+    .formula-meta-lower {
+        display: block;
     }
 
     .sheet-tab {

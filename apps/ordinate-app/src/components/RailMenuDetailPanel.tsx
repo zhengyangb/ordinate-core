@@ -91,7 +91,6 @@ export default function RailMenuDetailPanel({
           : "rail-menu-detail--style",
       ].join(" ")}
       open={open}
-      ariaHidden={!open}
       style={{ top: `${position.top}px`, left: `${position.left}px` }}
     >
       <div className={[
