@@ -6,6 +6,78 @@ import { BLANK_RUNTIME_VALUE, GRID_HEADER_HEIGHT, buildHeaderMatrix, buildSheetH
 import { resolveBooleanCellView } from "../utils/booleanCell";
 import { resolveColumnLayouts } from "../utils/columnLayout";
 import { compactColLabel, isVisiblePath, runtimeValueToText } from "../utils/sheetView";
+import { autoNumberDisplay } from "../utils/autoNumberDisplay";
+
+export function projectSheetRows(
+  currentSheet: NonNullable<EditorState["evaluation"]>["sheets"][number] | null,
+  currentSheetState: NonNullable<EditorState["docState"]>["sheets"][number] | null,
+  currentSheetPresentation: NonNullable<EditorState["presentation"]>["sheets"][number] | null,
+  sheetColCount: number, headerColCount: number, collapsedPaths: ReadonlySet<string>,
+): GridRow[] {
+  const currentSheetRowStructure = currentSheetState ? resolveSheetRowStructure(currentSheetState) : [];
+    if (!currentSheet || !currentSheetState) return [];
+
+    return currentSheetRowStructure
+      .map((rowInfo, rowIndex) => {
+        const row = currentSheet.values[rowIndex] ?? [];
+
+        const item: GridRow = {
+          __rowKey: `r${rowInfo.absoluteRowNumber}`,
+          __rowId: rowInfo.rowId,
+          __rowPath: rowInfo.rowPath,
+          __absoluteRowNumber: rowInfo.absoluteRowNumber,
+          __depth: rowInfo.depth,
+          __hasChildren: rowInfo.hasChildren,
+          __collapsed: collapsedPaths.has(rowInfo.rowPath),
+          __displayLabel: rowInfo.label,
+        };
+
+        for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
+          const field = toColFieldId(colIndex);
+          const presentedCell = currentSheetPresentation?.cells[rowIndex]?.[colIndex] ?? null;
+          const rawCell = currentSheetState.cells[rowInfo.absoluteRowIndex]?.[colIndex];
+          const runtimeValue = row[colIndex] as RuntimeValue | undefined;
+          const displayText = runtimeValue?.kind === "number" && !presentedCell?.formatLayer.effective && !presentedCell?.errors.length
+            ? autoNumberDisplay(Number(runtimeValue.value))
+            : presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+
+          if (colIndex < headerColCount) {
+            if (colIndex === 0) {
+              item[field] = rowInfo.label;
+              item[`__kind_${colIndex}`] = "label";
+            } else {
+              const headerValue = displayText.length > 0
+                ? displayText
+                : rawCell
+                  ? getCellTextView(rawCell).inputText
+                  : "";
+              item[field] = headerValue;
+              item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
+            }
+          } else {
+            item[field] = displayText;
+            item[`__kind_${colIndex}`] = runtimeValue?.kind ?? "blank";
+            const booleanView = resolveBooleanCellView(runtimeValue, rawCell?.body);
+            if (booleanView) {
+              item[`__boolean_value_${colIndex}`] = booleanView.value;
+              item[`__boolean_interactive_${colIndex}`] = booleanView.interactive;
+            }
+            item[`__align_${colIndex}`] = presentedCell?.styleLayer.effective?.align ?? "";
+            item[`__weight_${colIndex}`] = presentedCell?.styleLayer.effective?.weight ?? "";
+            item[`__color_${colIndex}`] = presentedCell?.styleLayer.effective?.color ?? "";
+            item[`__display_has_errors_${colIndex}`] = (presentedCell?.errors.length ?? 0) > 0;
+            item[`__display_source_${colIndex}`] = presentedCell?.source ?? "default";
+            if (runtimeValue?.kind === "error") {
+              item[`__error_external_${colIndex}`] = runtimeValue.errorKind;
+              item[`__error_internal_${colIndex}`] = runtimeValue.internalKind;
+              item[`__error_context_${colIndex}`] = JSON.stringify(runtimeValue.context);
+            }
+          }
+        }
+
+        return item;
+      });
+}
 
 type Options = Pick<EditorState, "docState" | "evaluation" | "presentation" | "activeSheet" | "sheetIssuesByName">;
 export function useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName }: Options) {
@@ -125,68 +197,9 @@ export function useSheetViewModel({ docState, evaluation, presentation, activeSh
     });
   }, []);
 
-  const allRowData: GridRow[] = useMemo(() => {
-    if (!currentSheet || !currentSheetState) return [];
-
-    return currentSheetRowStructure
-      .map((rowInfo, rowIndex) => {
-        const row = currentSheet.values[rowIndex] ?? [];
-
-        const item: GridRow = {
-          __rowKey: `r${rowInfo.absoluteRowNumber}`,
-          __rowId: rowInfo.rowId,
-          __rowPath: rowInfo.rowPath,
-          __absoluteRowNumber: rowInfo.absoluteRowNumber,
-          __depth: rowInfo.depth,
-          __hasChildren: rowInfo.hasChildren,
-          __collapsed: collapsedPaths.has(rowInfo.rowPath),
-          __displayLabel: rowInfo.label,
-        };
-
-        for (let colIndex = 0; colIndex < sheetColCount; colIndex += 1) {
-          const field = toColFieldId(colIndex);
-          const presentedCell = currentSheetPresentation?.cells[rowIndex]?.[colIndex] ?? null;
-          const rawCell = currentSheetState.cells[rowInfo.absoluteRowIndex]?.[colIndex];
-          const runtimeValue = row[colIndex] as RuntimeValue | undefined;
-          const displayText = presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
-
-          if (colIndex < headerColCount) {
-            if (colIndex === 0) {
-              item[field] = rowInfo.label;
-              item[`__kind_${colIndex}`] = "label";
-            } else {
-              const headerValue = displayText.length > 0
-                ? displayText
-                : rawCell
-                  ? getCellTextView(rawCell).inputText
-                  : "";
-              item[field] = headerValue;
-              item[`__kind_${colIndex}`] = headerValue.length > 0 ? "string" : "blank";
-            }
-          } else {
-            item[field] = displayText;
-            item[`__kind_${colIndex}`] = runtimeValue?.kind ?? "blank";
-            const booleanView = resolveBooleanCellView(runtimeValue, rawCell?.body);
-            if (booleanView) {
-              item[`__boolean_value_${colIndex}`] = booleanView.value;
-              item[`__boolean_interactive_${colIndex}`] = booleanView.interactive;
-            }
-            item[`__align_${colIndex}`] = presentedCell?.styleLayer.effective?.align ?? "";
-            item[`__weight_${colIndex}`] = presentedCell?.styleLayer.effective?.weight ?? "";
-            item[`__color_${colIndex}`] = presentedCell?.styleLayer.effective?.color ?? "";
-            item[`__display_has_errors_${colIndex}`] = (presentedCell?.errors.length ?? 0) > 0;
-            item[`__display_source_${colIndex}`] = presentedCell?.source ?? "default";
-            if (runtimeValue?.kind === "error") {
-              item[`__error_external_${colIndex}`] = runtimeValue.errorKind;
-              item[`__error_internal_${colIndex}`] = runtimeValue.internalKind;
-              item[`__error_context_${colIndex}`] = JSON.stringify(runtimeValue.context);
-            }
-          }
-        }
-
-        return item;
-      });
-  }, [currentSheet, currentSheetState, currentSheetPresentation, currentSheetRowStructure, collapsedPaths, sheetColCount, headerColCount]);
+  const allRowData = useMemo(() => projectSheetRows(
+    currentSheet, currentSheetState, currentSheetPresentation, sheetColCount, headerColCount, collapsedPaths,
+  ), [currentSheet, currentSheetState, currentSheetPresentation, sheetColCount, headerColCount, collapsedPaths]);
 
   const rowData = useMemo(
     () => allRowData.filter((row) => isVisiblePath(row.__rowPath, collapsedPaths)),

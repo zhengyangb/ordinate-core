@@ -29,8 +29,11 @@ import {
   type GridScrollSnapshot,
 } from "../utils/gridGeometry";
 import { computeQuickAddDragCount, hasQuickAddDragThreshold, type QuickAddAxis } from "../utils/quickAddControls";
-import { APPEND_AXIS_SLOT_GAP, APPEND_COLUMN_WIDTH, APPEND_ROW_SLOT_HEIGHT } from "../utils/appHelpers";
+import { APPEND_AXIS_SLOT_GAP, APPEND_COLUMN_WIDTH, APPEND_ROW_SLOT_HEIGHT, GRID_ROW_HEIGHT } from "../utils/appHelpers";
 import { projectSelectionOverlayFragments, type SelectionOverlayFragment, type SelectionOverlayPlane } from "../utils/selectionRing";
+import { FillHandle, FillOptions } from "../fill/FillHandle";
+import { QuickAddButton } from "./QuickAddButton";
+import type { FillHandleController } from "../fill/useFillHandle";
 
 type FormulaReferenceOverlay = {
   tokenId: string;
@@ -64,6 +67,7 @@ type TableStageProps = {
   gridInstanceKey: string;
   selectedCell: SelectedCell | null;
   selectedRange: Rect | null;
+  fill: FillHandleController;
   isRangeSelection: boolean;
   selectedColumnIndex: number | null;
   columnHasLocalConfig: boolean[];
@@ -165,6 +169,7 @@ export default function TableStage({
   gridInstanceKey,
   selectedCell,
   selectedRange,
+  fill,
   isRangeSelection,
   selectedColumnIndex,
   columnHasLocalConfig,
@@ -201,8 +206,9 @@ export default function TableStage({
 }: TableStageProps) {
   const [quickAddPreview, setQuickAddPreview] = useState<{ axis: QuickAddAxis; count: number } | null>(null);
   const quickAddDragSessionRef = useRef<QuickAddDragSession | null>(null);
-  const quickAddPointerCommitRef = useRef<{ axis: QuickAddAxis; committedAt: number } | null>(null);
+  const quickAddPointerCommitRef = useRef<{ axis: QuickAddAxis } | null>(null);
   const animateTableStructure = shouldAnimateTableStructure();
+  const previewColumnWidth = columnMetrics.at(-1)?.width ?? 0;
   const {
     top: bodyScrollTop,
     left: bodyScrollLeft,
@@ -214,8 +220,11 @@ export default function TableStage({
       ({
         ...tableStageStyle,
         "--axis-append-column-scroll-extent": `${APPEND_AXIS_SLOT_GAP + APPEND_COLUMN_WIDTH}px`,
+        "--axis-append-row-scroll-extent": `${APPEND_AXIS_SLOT_GAP + APPEND_ROW_SLOT_HEIGHT}px`,
+        "--quick-add-row-size": `${GRID_ROW_HEIGHT}px`,
+        "--quick-add-column-size": `${previewColumnWidth}px`,
       }) as CSSProperties,
-    [tableStageStyle],
+    [tableStageStyle, previewColumnWidth],
   );
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
   const defaultColDef = useMemo<ColDef<GridRow>>(() => ({
@@ -287,6 +296,11 @@ export default function TableStage({
   const rangeSelectionFragments = useMemo(() => selectedRange && isRangeSelection
     ? projectSelectionOverlayFragments({ ...overlayProjectionBase, range: selectedRange })
     : [], [overlayProjectionBase, selectedRange, isRangeSelection]);
+  const fillFragments = fill.preview ? projectSelectionOverlayFragments({ ...overlayProjectionBase, range: fill.preview }) : [];
+  const fillFeedbackFragments = fill.feedback ? projectSelectionOverlayFragments({ ...overlayProjectionBase, range: fill.feedback.target }) : [];
+  const fillCorner = fill.available && selectedRange ? projectSelectionOverlayFragments({ ...overlayProjectionBase, range: {
+    rowStart: selectedRange.rowEnd, rowEnd: selectedRange.rowEnd, colStart: selectedRange.colEnd, colEnd: selectedRange.colEnd,
+  } })[0] : null;
   const referenceFragments = useMemo(() => formulaReferenceOverlays.flatMap((reference) =>
     projectSelectionOverlayFragments({ ...overlayProjectionBase, range: reference.rect }).map((fragment, index) => ({
       ...fragment,
@@ -473,7 +487,9 @@ export default function TableStage({
         onPointerEnter={() => handleIndexRailsHoverChange(true)}
         onPointerLeave={() => handleIndexRailsHoverChange(false)}
       >
-        <button
+        <QuickAddButton
+          axis="column"
+          count={quickAddPreview?.axis === "column" ? quickAddPreview.count : null}
           className="axis-quick-add axis-quick-add--column"
           type="button"
           aria-label="Add column"
@@ -482,9 +498,7 @@ export default function TableStage({
           onPointerUp={finishQuickAddDrag}
           onPointerCancel={cancelQuickAddDrag}
           onClick={(event) => handleQuickAddClick("column", event)}
-        >
-          +
-        </button>
+        />
       </div>
     );
   };
@@ -492,17 +506,17 @@ export default function TableStage({
   const markQuickAddPointerCommit = useCallback((axis: QuickAddAxis) => {
     quickAddPointerCommitRef.current = {
       axis,
-      committedAt: performance.now(),
     };
   }, []);
 
   const commitQuickAddCount = useCallback((axis: QuickAddAxis, count: number, suppressNativeClick: boolean) => {
-    if (!Number.isInteger(count) || count <= 0) {
-      throw new Error("quick add commit requires a positive integer count");
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error("quick add commit requires a non-negative integer count");
     }
     quickAddDragSessionRef.current = null;
     if (suppressNativeClick) markQuickAddPointerCommit(axis);
     setQuickAddPreview(null);
+    if (count === 0) return;
     if (axis === "row") {
       onQuickAddRows(count);
     } else {
@@ -525,9 +539,11 @@ export default function TableStage({
   }, [commitQuickAddCount]);
 
   const cancelActiveQuickAddDrag = useCallback(() => {
+    const session = quickAddDragSessionRef.current;
+    if (session) markQuickAddPointerCommit(session.axis);
     quickAddDragSessionRef.current = null;
     setQuickAddPreview(null);
-  }, []);
+  }, [markQuickAddPointerCommit]);
 
   const updateActiveQuickAddDrag = useCallback((session: QuickAddDragSession, currentX: number, currentY: number) => {
     const active =
@@ -593,11 +609,19 @@ export default function TableStage({
     window.addEventListener("pointermove", handlePointerMove, true);
     window.addEventListener("pointerup", handlePointerUp, true);
     window.addEventListener("pointercancel", handlePointerCancel, true);
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !quickAddDragSessionRef.current) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      cancelActiveQuickAddDrag();
+    };
+    window.addEventListener("keydown", handleEscape, true);
     window.addEventListener("blur", cancelActiveQuickAddDrag);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove, true);
       window.removeEventListener("pointerup", handlePointerUp, true);
       window.removeEventListener("pointercancel", handlePointerCancel, true);
+      window.removeEventListener("keydown", handleEscape, true);
       window.removeEventListener("blur", cancelActiveQuickAddDrag);
     };
   }, [cancelActiveQuickAddDrag, finishQuickAddDragSession, updateActiveQuickAddDrag]);
@@ -642,8 +666,7 @@ export default function TableStage({
     const recentPointerCommit = quickAddPointerCommitRef.current;
     if (
       event.detail > 0 &&
-      recentPointerCommit?.axis === axis &&
-      performance.now() - recentPointerCommit.committedAt < 1000
+      recentPointerCommit?.axis === axis
     ) {
       return;
     }
@@ -928,7 +951,9 @@ export default function TableStage({
                     height: `${appendRowSlot.height}px`,
                   }}
                 >
-                  <button
+                  <QuickAddButton
+                    axis="row"
+                    count={quickAddPreview?.axis === "row" ? quickAddPreview.count : null}
                     className="axis-quick-add axis-quick-add--row"
                     type="button"
                     aria-label="Add row"
@@ -937,9 +962,7 @@ export default function TableStage({
                     onPointerUp={finishQuickAddDrag}
                     onPointerCancel={cancelQuickAddDrag}
                     onClick={(event) => handleQuickAddClick("row", event)}
-                  >
-                    +
-                  </button>
+                  />
                 </div>
               ) : null}
             </div>
@@ -1026,12 +1049,15 @@ export default function TableStage({
             {axisDragCountBadge.label}
           </div>
         ) : null}
-        {quickAddPreview ? (
-          <div
-            className={`axis-quick-add-preview axis-quick-add-preview--${quickAddPreview.axis}`}
-            aria-hidden="true"
-          >
-            +{quickAddPreview.count} {quickAddPreview.axis === "row" ? (quickAddPreview.count === 1 ? "row" : "rows") : (quickAddPreview.count === 1 ? "column" : "columns")}
+        {quickAddPreview && quickAddPreview.count > 0 ? (
+          <div className="quick-add-ghost-viewport" aria-hidden="true">
+            <div className={`quick-add-ghost quick-add-ghost--${quickAddPreview.axis}`} style={quickAddPreview.axis === "row" ? {
+              top: headerOverlayHeight + rowIndexTrackHeight - bodyScrollTop,
+              left: 0, width: tableFootprint.width, height: quickAddPreview.count * GRID_ROW_HEIGHT,
+            } : {
+              top: 0, left: pinnedHeaderWidth + centerTrackWidth - bodyScrollLeft,
+              width: quickAddPreview.count * previewColumnWidth, height: tableFootprint.height,
+            }} />
           </div>
         ) : null}
         {axisDropIndicator ? (
@@ -1050,16 +1076,18 @@ export default function TableStage({
             aria-hidden="true"
           />
         ) : null}
-        {showSelectionRing || referenceFragments.length > 0 ? (
+        {showSelectionRing || referenceFragments.length > 0 || fillFeedbackFragments.length > 0 ? (
           <div className="table-overlay-geometry">
             {overlayPlanes.map((plane) => {
               const planeSelectionFragments = selectionRingFragments.filter((fragment) => fragment.plane === plane);
               const planeRangeFragments = rangeSelectionFragments.filter((fragment) => fragment.plane === plane);
               const planeReferenceFragments = referenceFragments.filter((fragment) => fragment.plane === plane);
+              const planeFillFragments = fillFragments.filter(fragment => fragment.plane === plane);
+              const planeFeedbackFragments = fillFeedbackFragments.filter(fragment => fragment.plane === plane);
               if (
                 planeSelectionFragments.length === 0 &&
                 planeRangeFragments.length === 0 &&
-                planeReferenceFragments.length === 0
+                planeReferenceFragments.length === 0 && planeFillFragments.length === 0 && planeFeedbackFragments.length === 0 && fillCorner?.plane !== plane
               ) {
                 return null;
               }
@@ -1114,12 +1142,21 @@ export default function TableStage({
                         aria-hidden="true"
                       />
                     ))}
+                    {planeFillFragments.map((fragment, index) => <div key={`fill:${index}`} className="fill-preview" style={overlayFragmentStyle(fragment)} aria-hidden="true" />)}
+                    {fill.feedback && planeFeedbackFragments.map((fragment, index) => <div
+                      key={`fill-feedback:${fill.feedback!.id}:${index}`}
+                      className="fill-feedback" data-direction={fill.feedback!.direction}
+                      style={overlayFragmentStyle(fragment)} aria-hidden="true"
+                      onAnimationEnd={() => fill.finishFeedback(fill.feedback!.id)}
+                    ><span /></div>)}
+                    {fillCorner?.plane === plane ? <FillHandle fill={fill} corner={fillCorner} /> : null}
                   </div>
                 </div>
               );
             })}
           </div>
         ) : null}
+        <FillOptions fill={fill} />
         {headerOverlayHeight > 0 ? (
           <>
             <div

@@ -9,8 +9,8 @@ import {
 } from "./quickAddControls";
 
 describe("quick add controls", () => {
-  it("uses one insert for clicks and short drags", () => {
-    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 0, currentX: 0, currentY: 0 })).toBe(1);
+  it("cancels a drag at the origin and adds one for short forward drags", () => {
+    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 0, currentX: 0, currentY: 0 })).toBe(0);
     expect(computeQuickAddDragCount({ axis: "column", startX: 0, startY: 0, currentX: 7, currentY: 0 })).toBe(1);
   });
 
@@ -26,13 +26,22 @@ describe("quick add controls", () => {
     expect(computeQuickAddDragCount({ axis: "column", startX: 10, startY: 0, currentX: 54, currentY: 0, stepPx: 22 })).toBe(3);
   });
 
-  it("lets edge controls count drags in either axis direction", () => {
-    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 54, currentX: 0, currentY: 10, stepPx: 22 })).toBe(3);
-    expect(computeQuickAddDragCount({ axis: "column", startX: 54, startY: 0, currentX: 10, currentY: 0, stepPx: 22 })).toBe(3);
+  it("does not insert when dragging backwards on either axis", () => {
+    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 54, currentX: 0, currentY: 10, stepPx: 22 })).toBe(0);
+    expect(computeQuickAddDragCount({ axis: "column", startX: 54, startY: 0, currentX: 10, currentY: 0, stepPx: 22 })).toBe(0);
+  });
+
+  it.each(["row", "column"] as const)("shrinks the %s preview back to zero at the origin", axis => {
+    const counts = [88, 44, 1, 0, -44].map(distance => computeQuickAddDragCount({
+      axis, startX: 0, startY: 0,
+      currentX: axis === "column" ? distance : 0,
+      currentY: axis === "row" ? distance : 0,
+    }));
+    expect(counts).toEqual([3, 2, 1, 0, 0]);
   });
 
   it("clamps large drags", () => {
-    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 100, currentX: 0, currentY: -1000, stepPx: 10, maxCount: 5 })).toBe(5);
+    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 100, currentX: 0, currentY: 1000, stepPx: 10, maxCount: 5 })).toBe(5);
     expect(computeQuickAddDragCount({ axis: "column", startX: 0, startY: 0, currentX: 1000, currentY: 0, stepPx: 10, maxCount: 5 })).toBe(5);
   });
 

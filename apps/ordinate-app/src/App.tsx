@@ -36,9 +36,10 @@ import { resolveUiLocale } from "./i18n/messages";
 import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
 import { useWindowAppearance } from "./platform/useWindowAppearance";
 import { useEditorStore } from "./store/editorStore";
-import { buildSearchCells } from "./search/searchModel";
+import { buildDocumentSearchCells } from "./search/searchModel";
 import { SearchPanel, SheetSearchContext } from "./search/SheetSearch";
 import { useSheetSearch } from "./search/useSheetSearch";
+import { useFillHandle } from "./fill/useFillHandle";
 import type {
   AxisDragPreview,
   AxisDropIndicator,
@@ -874,7 +875,6 @@ export default function App() {
       }
       setFormulaInputMode("read");
       setActiveReferenceTokenId(null);
-      setFormulaBarSnapshot(null);
       setRailMenuOpen(false);
       setOpenRailMenuTarget(null);
       railMenuAnchorRef.current = null;
@@ -1153,13 +1153,14 @@ export default function App() {
     return nextCells;
   }, [mode, isActiveSheetBlocked, headerOverlayRows, sheetColCount, columnMetrics, headerMatrix, headerColCount]);
 
-  const searchCells = useMemo(() => currentSheetState && !isActiveSheetBlocked ? buildSearchCells(
-    allRowData, headerOverlayCells, currentSheetState.colIds.slice(0, sheetColCount), currentSheetState.rowIds, uiLocale,
-  ) : [], [allRowData, headerOverlayCells, currentSheetState, sheetColCount, isActiveSheetBlocked, uiLocale]);
+  const searchCells = useMemo(() => buildDocumentSearchCells(
+    { docState, evaluation, presentation, sheetIssuesByName }, uiLocale,
+  ), [docState, evaluation, presentation, sheetIssuesByName, uiLocale]);
   const sheetSearch = useSheetSearch({
     cells: searchCells, scope: activeSheet ?? "",
     enabled: mode === "table",
     gridApiRef, displayedRows: absoluteRowToDisplayedIndex, expandRowPath,
+    activateSheet: setActiveSheet,
   });
 
   useEffect(() => {
@@ -1344,8 +1345,9 @@ export default function App() {
     (event: FirstDataRenderedEvent<GridRow>) => {
       syncRowIndexMetrics(event.api);
       syncColumnMetrics(event.api);
+      sheetSearch.onGridRendered(activeSheet ?? "", event.api);
     },
-    [syncRowIndexMetrics, syncColumnMetrics],
+    [syncRowIndexMetrics, syncColumnMetrics, sheetSearch.onGridRendered, activeSheet],
   );
 
   const handleModelUpdated = useCallback(
@@ -1354,16 +1356,18 @@ export default function App() {
       applyPendingAppendColumnAnchorScroll();
       syncRowIndexMetrics(event.api);
       syncColumnMetrics(event.api);
+      sheetSearch.onGridUpdated(event.api);
     },
-    [applyPendingAppendRowAnchorScroll, applyPendingAppendColumnAnchorScroll, syncRowIndexMetrics, syncColumnMetrics],
+    [applyPendingAppendRowAnchorScroll, applyPendingAppendColumnAnchorScroll, syncRowIndexMetrics, syncColumnMetrics, sheetSearch.onGridUpdated],
   );
 
   const handleGridSizeChanged = useCallback(
     (event: GridSizeChangedEvent<GridRow>) => {
       setGridViewportWidth(event.clientWidth);
       scheduleGridMetricsSync(event.api);
+      sheetSearch.onGridUpdated(event.api);
     },
-    [scheduleGridMetricsSync],
+    [scheduleGridMetricsSync, sheetSearch.onGridUpdated],
   );
 
   const handleHeaderHorizontalWheel = useCallback((event: ReactWheelEvent<HTMLElement>) => {
@@ -1552,7 +1556,6 @@ export default function App() {
           : logical;
       setSelection(extend ? makeRangeSelection(anchor, logical) : makeCellSelection(logical));
       setFormulaInputMode("read");
-      setFormulaBarSnapshot(null);
     },
     [selection],
   );
@@ -1717,6 +1720,13 @@ export default function App() {
     };
 
     const handlePointerMove = (event: PointerEvent) => {
+      // Grid mouse callbacks can arrive after pointerup. A drag never owns an unpressed pointer.
+      if ((event.buttons & 1) === 0) {
+        formulaPointDragRef.current = null;
+        selectionDragRef.current = null;
+        stopSelectionAutoScroll();
+        return;
+      }
       const formulaDrag = formulaPointDragRef.current;
       if (formulaDrag) {
         const logical =
@@ -3620,6 +3630,16 @@ export default function App() {
     setFormulaPointReferenceRequest(null);
   }, []);
 
+  const visibleFillRows = useMemo(() => new Set(rowData.map(row => row.__absoluteRowNumber)), [rowData]);
+  const fill = useFillHandle({
+    enabled: mode === "table" && !isActiveSheetBlocked && formulaInputMode !== "edit",
+    sheet: currentSheetState ?? null, selection: selectedRange, visibleRows: visibleFillRows,
+    gridRef: gridWrapRef, resolvePoint: resolveLogicalCellFromPoint,
+    select: rect => setSelection(makeRangeSelection(
+      { rAbs: rect.rowStart, cAbs: rect.colStart }, { rAbs: rect.rowEnd, cAbs: rect.colEnd },
+    )),
+  });
+
   return (
     <SheetSearchContext.Provider value={sheetSearch}>
     <div className="page">
@@ -3723,6 +3743,7 @@ export default function App() {
                 gridInstanceKey={gridInstanceKey ?? ""}
                 selectedCell={selectedCell}
                 selectedRange={selectedRange}
+                fill={fill}
                 isRangeSelection={isRangeSelection}
                 selectedColumnIndex={selectedColumnIndex}
                 columnHasLocalConfig={columnHasLocalConfig}
@@ -3771,7 +3792,7 @@ export default function App() {
           locale={uiLocale}
           mode={mode}
           phase={cellChromeVisibilityPhase}
-          formulaBarSnapshot={formulaBarSnapshot}
+          formulaBarSnapshot={formulaBarData ?? formulaBarSnapshot}
           inputMode={formulaInputMode}
           isInputEditable={isFormulaBarInputEditable}
           areDisplayControlsEditable={areFormulaBarDisplayControlsEditable}

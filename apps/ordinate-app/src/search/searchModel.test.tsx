@@ -10,6 +10,35 @@ import type { StorageAdapter } from "../platform/storage";
 import { createFileSessionStore, createMemoryLocalDraftStore, getPersistableText } from "../store/fileSessionStore";
 import { useSheetViewModel } from "../hooks/useSheetViewModel";
 import { useEditorStore } from "../store/editorStore";
+import { buildDocumentSearchCells } from "./searchModel";
+
+describe("document-wide search", () => {
+  const document = `# First
+| Item || Value |
+| ---- || ----- |
+| Revenue || 123 |
+
+# Second
+| Item || Value |
+| ---- || ----- |
+| Revenue || 456 |`;
+  beforeEach(() => useEditorStore.getState().replaceDocumentText(document));
+  const search = () => findMatches(buildDocumentSearchCells(useEditorStore.getState(), "en-US"), "Revenue", false);
+  it("indexes every sheet with unique stable IDs and sheet-local coordinates", () => {
+    const matches = search();
+    expect(matches.map(match => match.sheet)).toEqual(["First", "Second"]);
+    expect(new Set(matches.map(match => match.id)).size).toBe(2);
+    expect(matches[0].row).toBe(matches[1].row);
+    useEditorStore.getState().setActiveSheet("Second");
+    expect(search()).toEqual(matches);
+  });
+  it("updates inactive sheet results after edits and undo", () => {
+    useEditorStore.getState().setCellInput({ kind: "index", sheet: "Second", rowIndex: 1, colIndex: 0 }, "Costs");
+    expect(search().map(match => match.sheet)).toEqual(["First"]);
+    useEditorStore.getState().undo();
+    expect(search()).toHaveLength(2);
+  });
+});
 import type { HeaderOverlayCell } from "../types/ui";
 import { buildSearchCells, findMatches, resolveActiveMatch, stepMatch, type SearchCell } from "./searchModel";
 

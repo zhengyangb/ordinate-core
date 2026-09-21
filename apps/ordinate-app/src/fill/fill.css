@@ -1,0 +1,107 @@
+.fill-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+  z-index: 2;
+}
+.fill-handle span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 2px var(--workspace-frame);
+  opacity: 0;
+  transition: opacity 100ms ease-out, transform 100ms ease-out;
+}
+.fill-handle:hover span, .fill-handle:focus-visible span, .fill-handle.is-dragging span { opacity: 1; }
+.fill-handle:hover span { transform: scale(1.15); }
+.fill-handle.is-dragging { pointer-events: none; }
+.fill-handle:focus-visible { outline: 1px solid var(--accent-strong); border-radius: 4px; }
+.fill-preview {
+  position: absolute;
+  border: 1px dashed var(--accent-strong);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  pointer-events: none;
+}
+
+/* A short directional wash over the destination, never the unchanged seed.
+   Only opacity/transform animate; this overlay cannot intercept interaction. */
+.fill-feedback {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+.fill-feedback span {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--accent) 13%, transparent);
+  animation: fill-propagate 500ms var(--ease-out-quart) both;
+}
+.fill-feedback[data-direction="down"] { --fill-from: translateY(-100%); --fill-to: translateY(100%); }
+.fill-feedback[data-direction="up"] { --fill-from: translateY(100%); --fill-to: translateY(-100%); }
+.fill-feedback[data-direction="right"] { --fill-from: translateX(-100%); --fill-to: translateX(100%); }
+.fill-feedback[data-direction="left"] { --fill-from: translateX(100%); --fill-to: translateX(-100%); }
+@keyframes fill-propagate {
+  0% { transform: var(--fill-from); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: var(--fill-to); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fill-feedback span { animation: fill-confirm 120ms linear both; }
+}
+@keyframes fill-confirm {
+  from { opacity: 0.6; }
+  to { opacity: 0; }
+}
+.fill-options {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--menu-item-radius);
+  border: var(--menu-surface-border);
+  background: var(--menu-surface-bg);
+  backdrop-filter: var(--menu-surface-backdrop);
+  color: var(--chrome-ink);
+  box-shadow: 0 3px 12px oklch(15% 0.01 90 / .14);
+  font-size: var(--menu-item-font-size);
+  max-width: min(340px, calc(100vw - 32px));
+}
+.fill-method-trigger, .fill-options-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: calc(var(--menu-item-radius) - 3px);
+  background: transparent;
+  color: var(--chrome-ink);
+  font: inherit;
+  font-weight: var(--menu-item-font-weight);
+  cursor: pointer;
+}
+.fill-method-trigger { width: 112px; }
+.fill-method-trigger svg, .fill-options-dismiss svg { width: 14px; height: 14px; flex: none; opacity: .65; }
+.fill-options-dismiss { width: 26px; justify-content: center; padding: 0; }
+.fill-method-trigger:hover, .fill-method-trigger[aria-expanded="true"], .fill-options-dismiss:hover { background: var(--menu-hover-bg); color: var(--menu-hover-ink); }
+.fill-options button:focus-visible, .fill-method-menu button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
+.fill-method-menu { width: 160px; max-width: calc(100vw - 24px); }
+.fill-method-menu .menu-surface-option { font-family: inherit; }
+.fill-method-check { width: 16px; height: 16px; display: flex; align-items: center; }
+.fill-method-check svg { width: 16px; height: 16px; }
+.fill-options-error { padding: 3px 7px; }
+@media (hover: none) { .fill-handle span { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .fill-handle span { transition: none; } }

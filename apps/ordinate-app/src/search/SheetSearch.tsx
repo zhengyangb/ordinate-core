@@ -14,8 +14,8 @@ export function SearchButton() {
   const search = useContext(SheetSearchContext);
   if (!search) return null;
   return <button type="button" className={`tool-button search-button${search.isOpen ? " active" : ""}`} disabled={!search.enabled}
-    aria-label="Find in sheet" aria-keyshortcuts="Meta+f Control+f" aria-expanded={search.isOpen} aria-controls="sheet-search"
-    title="Find in sheet (⌘F / Ctrl+F)" onMouseDown={event => event.stopPropagation()} onClick={search.show}>
+    aria-label="Find in document" aria-keyshortcuts="Meta+f Control+f" aria-pressed={search.isOpen} aria-expanded={search.isOpen} aria-controls="sheet-search"
+    title="Find in document (⌘F / Ctrl+F)" onMouseDown={event => event.stopPropagation()} onClick={search.isOpen ? search.close : search.show}>
     <span className="tool-icon"><SearchIcon /></span>
   </button>;
 }
@@ -26,7 +26,7 @@ export function SearchPanel() {
   if (!search?.isOpen) return null;
   const count = search.matches.length;
   return <div className="search-anchor">
-    <div id="sheet-search" className="sheet-search" role="search" aria-label="Find in current sheet" ref={search.panelRef}
+    <div id="sheet-search" className="sheet-search" role="search" aria-label="Find in all sheets" ref={search.panelRef}
       onMouseDown={event => event.stopPropagation()} onKeyDown={event => {
         event.stopPropagation();
         if (event.target === search.inputRef.current && event.key === "Enter" && !event.nativeEvent.isComposing) {
@@ -35,14 +35,15 @@ export function SearchPanel() {
       }}>
       <div className="search-input-wrap">
         <SearchIcon />
-        <input ref={search.inputRef} type="text" aria-label="Search this sheet" placeholder="Find in this sheet…" autoComplete="off" spellCheck={false}
+        <input ref={search.inputRef} type="text" aria-label="Search all sheets" placeholder="Find in all sheets…" autoComplete="off" spellCheck={false}
           value={search.query} onChange={event => search.setQuery(event.target.value)} aria-describedby="search-summary" />
         <button type="button" className="search-case" aria-label="Match case" aria-pressed={search.matchCase} title="Match case"
           onClick={() => search.setMatchCase(!search.matchCase)}>Aa</button>
       </div>
       <span className="search-count" id="search-summary" role="status" aria-live="polite" aria-atomic="true"
-        aria-label={search.query ? `${count ? search.activeIndex + 1 : 0} of ${count} matching cells` : "Search displayed values in this sheet"}>
-        {search.query ? count ? `${search.activeIndex + 1} / ${count}` : "No results" : "This sheet"}
+        title={search.matches[search.activeIndex]?.sheet}
+        aria-label={search.query ? `${count ? search.activeIndex + 1 : 0} of ${count} matching cells across all sheets` : "Search displayed values in all sheets"}>
+        {search.query ? count ? `${search.activeIndex + 1} / ${count}` : "No results" : "All sheets"}
       </span>
       <div className="search-navigation">
         <button type="button" aria-label="Previous match" title="Previous (Shift+Enter)" disabled={!count} onClick={() => search.navigate(-1)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 12 5-5 5 5" /></svg></button>

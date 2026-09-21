@@ -81,6 +81,7 @@ export {
 } from "./runtime";
 
 export { ChangeKind, DocumentState, SheetState } from "./incremental";
+export { planFillRegion, type CoreFillMode, type CoreFillRect, type CoreFillPlan } from "./core_fill";
 export { serializeDocumentState } from "./serializer";
 export {
   resolveSheetRowStructure,

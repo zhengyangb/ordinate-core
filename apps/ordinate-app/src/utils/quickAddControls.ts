@@ -46,8 +46,8 @@ export function computeQuickAddDragCount(args: {
   assertFiniteNumber(currentY, "currentY");
   assertPositiveFiniteNumber(stepPx, "stepPx");
   assertPositiveInteger(maxCount, "maxCount");
-  const distance = axis === "row" ? Math.abs(currentY - startY) : Math.abs(currentX - startX);
-  if (distance < QUICK_ADD_DRAG_THRESHOLD_PX) return 1;
+  const distance = axis === "row" ? currentY - startY : currentX - startX;
+  if (distance <= 0) return 0;
   return Math.min(maxCount, Math.max(1, Math.floor(distance / stepPx) + 1));
 }
 
