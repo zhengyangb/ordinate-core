@@ -1,4 +1,5 @@
 import { isError, isValidExternalErrorKind } from "./errors";
+import { encodeStringLiteral } from "../text_encoding";
 import { formatFormulaReferencePathComponent, formatFormulaSheetSelector } from "./referenceSyntax";
 import { getBoundSheetId, selectorSource } from "./references";
 import type { ArrayExpr, ExprNode, IndexAxisExpr, IndexExpr, ReferenceExpr, RefSelector, RuntimeValue } from "./types";
@@ -324,8 +325,7 @@ function serializeNumber(value: number | null): string {
 }
 
 function serializeString(text: string): string {
-  const escaped = text.replace(/\\/g, "\\\\").replace(/\"/g, '\\"');
-  return `"${escaped}"`;
+  return encodeStringLiteral(text);
 }
 
 function serializeErrorValue(value: RuntimeValue): string {

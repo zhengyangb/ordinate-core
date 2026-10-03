@@ -67,6 +67,7 @@ export type HeaderOverlayHitResult = {
 };
 
 export type FormulaBarData = {
+  supportsMultilineText?: boolean;
   primaryAddress: string;
   secondaryAddress: string;
   chip: string;

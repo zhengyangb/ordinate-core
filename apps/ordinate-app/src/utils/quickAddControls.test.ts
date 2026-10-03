@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   computeQuickAddDragCount,
+  QUICK_ADD_DRAG_SCALE_PX,
   hasQuickAddDragThreshold,
   resolveAppendAnchorScrollPosition,
   resolveAppendAnchorScrollPositionAfterSizeChange,
@@ -9,8 +10,8 @@ import {
 } from "./quickAddControls";
 
 describe("quick add controls", () => {
-  it("uses one insert for clicks and short drags", () => {
-    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 0, currentX: 0, currentY: 0 })).toBe(1);
+  it("cancels a drag at the origin and adds one for short forward drags", () => {
+    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 0, currentX: 0, currentY: 0 })).toBe(0);
     expect(computeQuickAddDragCount({ axis: "column", startX: 0, startY: 0, currentX: 7, currentY: 0 })).toBe(1);
   });
 
@@ -21,19 +22,32 @@ describe("quick add controls", () => {
     expect(hasQuickAddDragThreshold({ axis: "column", startX: 0, startY: 0, currentX: -8, currentY: 0 })).toBe(true);
   });
 
-  it("maps row and column drag distance to an insert count", () => {
-    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 10, currentX: 0, currentY: 54, stepPx: 22 })).toBe(3);
-    expect(computeQuickAddDragCount({ axis: "column", startX: 10, startY: 0, currentX: 54, currentY: 0, stepPx: 22 })).toBe(3);
+  it.each(["row", "column"] as const)("gives %s a deliberate first step, then accelerates", axis => {
+    const count = (distance: number) => computeQuickAddDragCount({ axis, startX: 0, startY: 0,
+      currentX: axis === "column" ? distance : 0, currentY: axis === "row" ? distance : 0 });
+    const scale = QUICK_ADD_DRAG_SCALE_PX[axis];
+    expect([1, scale - 1, scale, 2 * scale, 3 * scale, 4 * scale].map(count)).toEqual([1, 1, 2, 4, 7, 11]);
+    for (let distance = 1; distance < 1200; distance++) expect(count(distance)).toBeGreaterThanOrEqual(count(distance - 1));
   });
 
-  it("lets edge controls count drags in either axis direction", () => {
-    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 54, currentX: 0, currentY: 10, stepPx: 22 })).toBe(3);
-    expect(computeQuickAddDragCount({ axis: "column", startX: 54, startY: 0, currentX: 10, currentY: 0, stepPx: 22 })).toBe(3);
+  it("does not insert when dragging backwards on either axis", () => {
+    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 54, currentX: 0, currentY: 10 })).toBe(0);
+    expect(computeQuickAddDragCount({ axis: "column", startX: 54, startY: 0, currentX: 10, currentY: 0 })).toBe(0);
+  });
+
+  it.each(["row", "column"] as const)("shrinks the %s preview back to zero at the origin", axis => {
+    const scale = QUICK_ADD_DRAG_SCALE_PX[axis];
+    const counts = [2 * scale, scale, 1, 0, -scale].map(distance => computeQuickAddDragCount({
+      axis, startX: 0, startY: 0,
+      currentX: axis === "column" ? distance : 0,
+      currentY: axis === "row" ? distance : 0,
+    }));
+    expect(counts).toEqual([4, 2, 1, 0, 0]);
   });
 
   it("clamps large drags", () => {
-    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 100, currentX: 0, currentY: -1000, stepPx: 10, maxCount: 5 })).toBe(5);
-    expect(computeQuickAddDragCount({ axis: "column", startX: 0, startY: 0, currentX: 1000, currentY: 0, stepPx: 10, maxCount: 5 })).toBe(5);
+    expect(computeQuickAddDragCount({ axis: "row", startX: 0, startY: 100, currentX: 0, currentY: 1000, maxCount: 5 })).toBe(5);
+    expect(computeQuickAddDragCount({ axis: "column", startX: 0, startY: 0, currentX: 1000, currentY: 0, maxCount: 5 })).toBe(5);
   });
 
   it("preserves append-control screen position by advancing scroll after row inserts", () => {
@@ -88,8 +102,8 @@ describe("quick add controls", () => {
       computeQuickAddDragCount({ axis: "row", startX: 0, startY: 0, currentX: 0, currentY: Number.NaN }),
     ).toThrow("currentY must be finite");
     expect(() =>
-      computeQuickAddDragCount({ axis: "column", startX: 0, startY: 0, currentX: 0, currentY: 0, stepPx: 0 }),
-    ).toThrow("stepPx must be positive");
+      computeQuickAddDragCount({ axis: "column", startX: 0, startY: 0, currentX: 0, currentY: 0, maxCount: 0 }),
+    ).toThrow("maxCount must be a positive integer");
     expect(() =>
       hasQuickAddDragThreshold({ axis: "row", startX: 0, startY: 0, currentX: 0, currentY: 0, thresholdPx: 0 }),
     ).toThrow("thresholdPx must be positive");

@@ -1,6 +1,8 @@
 import { type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getStandardFunctionMetadata, listStandardFunctionMetadata, type FunctionMetadata } from "@ordinate/core";
+import { useFormulaBarLayout } from "../hooks/useFormulaBarLayout";
+import { canInsertTextLineBreak, plainTextPreview } from "../utils/plainTextEditing";
 
 import type { UiLocale } from "../i18n/messages";
 import { getFormulaFunctionCategoryLabel } from "../i18n/formulaAssistant";
@@ -310,7 +312,8 @@ export default function FormulaBarOverlay({
   const [functionAssistantDismissedKey, setFunctionAssistantDismissedKey] = useState<string | null>(null);
   const [editorSelection, setEditorSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const sourceEditorRef = useRef<HTMLTextAreaElement | null>(null);
-  const sourcePlainInputRef = useRef<HTMLInputElement | null>(null);
+  const sourcePlainInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const shellRef = useRef<HTMLElement | null>(null);
   const tokenBackdropRef = useRef<HTMLDivElement | null>(null);
   const functionAssistantListRef = useRef<HTMLDivElement | null>(null);
   const appliedPointReferenceRequestIdRef = useRef<number | null>(null);
@@ -397,6 +400,14 @@ export default function FormulaBarOverlay({
   };
   const isEditingInput = inputMode === "edit";
   const isFormulaDraft = draftInput.trimStart().startsWith("=");
+  const canInsertLineBreak = Boolean(formulaBarSnapshot?.supportsMultilineText && canInsertTextLineBreak(draftInput));
+  const acceptsLineBreakAtSelection = (editor: HTMLTextAreaElement) => Boolean(
+    formulaBarSnapshot?.supportsMultilineText && canInsertTextLineBreak(editor.value, editor.selectionStart, editor.selectionEnd),
+  );
+  const multilineText = isEditingInput && !isFormulaDraft && draftInput.includes("\n");
+  const inputPreview = plainTextPreview(formulaBarSnapshot?.inputText ?? "");
+  useFormulaBarLayout(shellRef, sourcePlainInputRef, draftInput, isEditingInput, isFormulaDraft,
+    mode === "table" && phase !== "hidden" && Boolean(formulaBarSnapshot));
   const standardFunctions = useMemo(() => listStandardFunctionMetadata(), []);
   const activeReferenceView = useMemo(
     () => referenceViews.find((view) => view.id === activeReferenceTokenId) ?? null,
@@ -1094,6 +1105,10 @@ export default function FormulaBarOverlay({
   const handleEditorBeforeInput = (event: FormEvent<HTMLTextAreaElement>) => {
     const nativeEvent = event.nativeEvent as InputEvent;
     if (isComposingInput || nativeEvent.isComposing) return;
+    if (nativeEvent.inputType === "insertLineBreak" || nativeEvent.inputType === "insertParagraph") {
+      event.preventDefault();
+      return;
+    }
     const editor = sourceEditorRef.current;
     if (!editor) return;
     const selection = getEditableSelectionOffsets(editor);
@@ -1183,7 +1198,7 @@ export default function FormulaBarOverlay({
     onActiveReferenceTokenChange(null);
   };
 
-  const endPlainInputComposition = (input: HTMLInputElement) => {
+  const endPlainInputComposition = (input: HTMLTextAreaElement) => {
     cancelPendingEditorSelectionRestore();
     setIsComposingInput(false);
     setDraftError(null);
@@ -1280,10 +1295,12 @@ export default function FormulaBarOverlay({
   return (
     <>
       <aside
-        className={`formula-bar-shell formula-bar-shell--${phase}`}
+        ref={shellRef}
+        className={`formula-bar-shell formula-bar-shell--${phase}${multilineText ? " is-multiline" : ""}`}
         aria-live="polite"
         aria-hidden={formulaBarSnapshot ? undefined : true}
       >
+        <div className="formula-bar-surface" aria-hidden="true" />
         <div className="formula-bar">
           <div className="formula-meta-stack">
             <div className="formula-bar-meta">
@@ -1473,6 +1490,11 @@ export default function FormulaBarOverlay({
                     cancelPendingEditorSelectionRestore();
                     guardedFunctionCloseParenRef.current = null;
                   }
+                  if (event.key === "Enter" && event.shiftKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                  }
                   if (handleFunctionAssistantKeyDown(event)) {
                     return;
                   }
@@ -1604,9 +1626,18 @@ export default function FormulaBarOverlay({
               ) : null}
             </div>
             ) : isEditingInput ? (
-              <input
+              <div className="formula-editor-wrap">
+              <textarea
                 ref={sourcePlainInputRef}
-                className="formula-source formula-source-input is-editing"
+                className={`formula-source formula-source-input formula-plain-textarea is-editing${multilineText ? " is-multiline" : ""}`}
+                rows={1}
+                wrap={canInsertLineBreak ? "soft" : "off"}
+                aria-multiline={canInsertLineBreak}
+                aria-description={canInsertLineBreak ? "Enter to apply; Shift+Enter for a new line" : "Enter to apply"}
+                onBeforeInput={event => {
+                  const native = event.nativeEvent as InputEvent;
+                  if ((native.inputType === "insertLineBreak" || native.inputType === "insertParagraph") && !acceptsLineBreakAtSelection(event.currentTarget)) event.preventDefault();
+                }}
                 value={draftInput}
                 spellCheck={false}
                 aria-label="Edit selected cell input"
@@ -1628,6 +1659,11 @@ export default function FormulaBarOverlay({
                 }}
                 onKeyDown={(event) => {
                   if (isComposingInput || isImeKeyboardEvent(event)) {
+                    return;
+                  }
+                  if (event.key === "Enter" && event.shiftKey) {
+                    event.stopPropagation();
+                    if (!acceptsLineBreakAtSelection(event.currentTarget) || event.metaKey || event.ctrlKey || event.altKey) event.preventDefault();
                     return;
                   }
                   if (handleFunctionAssistantKeyDown(event)) {
@@ -1654,6 +1690,8 @@ export default function FormulaBarOverlay({
                   }
                 }}
               />
+              {draftError ? <div className="formula-draft-error" role="alert">{draftError}</div> : null}
+              </div>
             ) : (
               <button
                 className={isInputEditable ? "formula-source formula-source-button is-editable is-read" : "formula-source formula-source-button is-read"}
@@ -1670,7 +1708,8 @@ export default function FormulaBarOverlay({
                 onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
                 aria-label={isInputEditable ? "Edit selected cell input" : "Cell input (read-only)"}
               >
-                {formulaBarSnapshot.inputText}
+                <span className="formula-input-preview">{inputPreview.text}</span>
+                {inputPreview.lineCount > 1 ? <span className="formula-input-line-count">{inputPreview.lineCount} lines</span> : null}
               </button>
             )}
             {shouldShowFunctionAssistant && selectedFunctionMetadata ? (
@@ -1821,6 +1860,25 @@ export default function FormulaBarOverlay({
                 )}
               </EditorPopover>
             ) : null}
+            {canApplyToSelection ? (
+              <button
+                className="formula-apply-selection-button"
+                type="button"
+                aria-label="Apply to selection"
+                onMouseEnter={(event) => onTooltipEnter("Apply to selection", event.currentTarget)}
+                onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+                onFocus={(event) => onTooltipEnter("Apply to selection", event.currentTarget)}
+                onBlur={(event) => onTooltipRelease(event.currentTarget)}
+                onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+                onClick={() => {
+                  setFormatMenuOpen(false);
+                  setStyleMenuOpen(false);
+                  applyInputToSelection();
+                }}
+              >
+                Apply to selection
+              </button>
+            ) : null}
             <button
               className="formula-dismiss-button"
               type="button"
@@ -1846,25 +1904,6 @@ export default function FormulaBarOverlay({
                 </svg>
               </span>
             </button>
-            {canApplyToSelection ? (
-              <button
-                className="formula-apply-selection-button"
-                type="button"
-                aria-label="Apply to selection"
-                onMouseEnter={(event) => onTooltipEnter("Apply to selection", event.currentTarget)}
-                onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-                onFocus={(event) => onTooltipEnter("Apply to selection", event.currentTarget)}
-                onBlur={(event) => onTooltipRelease(event.currentTarget)}
-                onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
-                onClick={() => {
-                  setFormatMenuOpen(false);
-                  setStyleMenuOpen(false);
-                  applyInputToSelection();
-                }}
-              >
-                Apply to selection
-              </button>
-            ) : null}
           </div>
         </div>
       </aside>

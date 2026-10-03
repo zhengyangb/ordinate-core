@@ -20,6 +20,8 @@ import {
   type CoreMoveRowsEdit,
 } from "./core_edit_axis";
 import { resolveSheetRowStructure } from "./row_structure";
+import { applyFillRegion, type CoreFillMode } from "./core_fill";
+import { isImplicitTextInput } from "./runtime/parse";
 
 export interface CoreEditError {
   category: CoreEditErrorCategory;
@@ -93,6 +95,7 @@ export type CoreEdit =
   | { op: "set_row_default_style"; sheet: string; rowId: number; style: StylePatch }
   | { op: "clear_row_default_style"; sheet: string; rowId: number }
   | { op: "set_region"; target: CoreRegionTarget; values: string[][] }
+  | { op: "fill_region"; source: CoreRegionTarget; target: CoreRegionTarget; mode: CoreFillMode; excludedRowIds?: number[] }
   | { op: "clear_region"; target: CoreRegionTarget }
   | { op: "convert_rows_to_header"; sheet: string; rowIds: number[] }
   | { op: "convert_rows_to_body"; sheet: string; rowIds: number[]; depth: number }
@@ -554,9 +557,21 @@ function copySheetSnapshotReferenceMetadata(source: SheetHistorySnapshot, target
 }
 
 function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
+  if (edit.op === "fill_region") {
+    if (edit.source.sheet !== edit.target.sheet) fail("invalid_operation", "fill regions must belong to the same sheet");
+    const source = resolveRegionTarget(document, edit.source);
+    const target = resolveRegionTarget(document, edit.target);
+    const excludedRows = (edit.excludedRowIds ?? []).map(id => {
+      const index = source.sheet.rowIds.indexOf(id);
+      if (index < 0) fail("invalid_operation", `unknown excluded fill row ${id}`);
+      return index;
+    });
+    applyFillRegion(source.sheet, source, target, edit.mode, excludedRows);
+    return;
+  }
   if (edit.op === "set_cell_input") {
     const { sheet, rowIndex, colIndex } = resolveCellTarget(document, edit.target);
-    assertSingleLineCellInput(edit.input);
+    assertCellInput(edit.input, sheet, rowIndex, colIndex);
     sheet.setCellByIndex(rowIndex, colIndex, edit.input, ChangeKind.VALUE, false);
     return;
   }
@@ -1062,7 +1077,7 @@ function applySetRegion(region: ResolvedRegionTarget, values: string[][]): void 
     if (typeof input !== "string") {
       throw new CoreEditFailure("invalid_operation", "set_region values must be cell input strings");
     }
-    assertSingleLineCellInput(input);
+    assertCellInput(input, region.sheet, rowIndex, colIndex);
     region.sheet.setCellByIndex(rowIndex, colIndex, input, ChangeKind.VALUE, false);
   });
 }
@@ -1144,11 +1159,11 @@ function assertColumnDeleteIndex(sheet: SheetState, colIndex: number): void {
   }
 }
 
-function assertSingleLineCellInput(input: string): void {
-  if (input.includes("\n") || input.includes("\r")) {
+function assertCellInput(input: string, sheet: SheetState, rowIndex: number, colIndex: number): void {
+  if (/[\r\n]/.test(input) && (!isImplicitTextInput(input) || rowIndex < sheet.bodyStart || colIndex < sheet.headerColCount)) {
     throw new CoreEditFailure(
       "invalid_operation",
-      'cell input must be single-line; use "\\n" for literal text',
+      'Only implicit text in data cells accepts literal line breaks; use \\n inside quoted strings',
     );
   }
   if (splitCellDisplayMetadata(input).displayMetaRaw !== null) {

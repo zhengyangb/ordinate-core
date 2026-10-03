@@ -385,7 +385,8 @@ export function projectTableViewportFootprint(
     Math.min(input.bodyViewportHeight, input.bodyTrackHeight - input.bodyScrollTop),
   );
   const trackHeight = input.headerTrackHeight + visibleBodyTrackHeight;
-  const height = trackHeight > 0 ? trackHeight + 1 : 0;
+  // Row heights already include the bottom rule. No extra border extent.
+  const height = trackHeight;
   const columnEndVisible =
     input.scrollLeft + input.centerViewportWidth >= input.centerTrackWidth - COLUMN_EDGE_EPSILON_PX;
   const rowEndVisible =

@@ -1,0 +1,27 @@
+/* The system owns the window frame and title. Browser layout stays untouched. */
+:root[data-window-chrome="native"] {
+    /* One opaque surface for AppKit and HTML; web chrome may remain translucent. */
+    --native-chrome-bg: oklch(from var(--chrome-bg) l c h / 1);
+}
+
+:root[data-window-chrome="native"] .page {
+    padding: 0;
+}
+
+:root[data-window-chrome="native"] .app-window {
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+:root[data-window-chrome="native"] .app-chrome {
+    border-radius: 0;
+    background: var(--native-chrome-bg);
+    backdrop-filter: none;
+}
+
+:root[data-window-chrome="native"] .topbar {
+    min-height: 48px;
+    padding: 0.4rem 0.9rem;
+}

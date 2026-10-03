@@ -1,4 +1,11 @@
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap");
+/* Bundled DM Sans Latin: identical offline, on the web and under desktop CSP. */
+@font-face {
+    font-family: "Ordinate Wordmark";
+    src: url("@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: block;
+}
 
 :root {
     --font-body:
@@ -7,8 +14,7 @@
     --font-mono:
         "SF Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo,
         monospace;
-    --font-display:
-        "Instrument Serif", "Iowan Old Style", "Times New Roman", serif;
+    --font-brand: "Ordinate Wordmark", sans-serif;
     --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
     --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -533,13 +539,15 @@ textarea {
 }
 
 .brand-name {
-    font-family: var(--font-display);
-    font-size: 0.98rem;
+    font-family: var(--font-brand);
+    font-size: 1rem;
+    font-synthesis: none;
+    display: inline-block;
+    inline-size: 4.3em;
     line-height: 1;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    color: color-mix(in oklab, var(--chrome-soft) 82%, transparent);
-    opacity: 0.62;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+    color: var(--chrome-ink);
 }
 
 .app-title {
@@ -566,36 +574,20 @@ textarea {
     white-space: nowrap;
 }
 
-.app-title-status {
-    flex: 0 0 auto;
-    padding: 0.1rem 0.34rem 0.11rem;
-    border-radius: 999px;
-    background: color-mix(in oklab, var(--toolbar-pill) 72%, transparent);
-    color: color-mix(in oklab, var(--chrome-soft) 88%, var(--chrome-ink));
-    font-size: 0.66rem;
-    font-weight: 680;
-    letter-spacing: 0.02em;
-    line-height: 1;
+.file-command-button {
+    position: relative;
 }
 
-.app-title-status--dirty {
-    color: color-mix(in oklab, var(--warning-ink) 82%, var(--chrome-ink));
-    background: color-mix(in oklab, var(--warning-bg) 58%, transparent);
-}
-
-.app-title-status--saving {
-    color: color-mix(in oklab, var(--accent-strong) 78%, var(--chrome-ink));
-    background: color-mix(in oklab, var(--accent-soft) 52%, transparent);
-}
-
-.app-title-status--warning {
-    color: color-mix(in oklab, var(--warning-ink) 88%, var(--chrome-ink));
-    background: color-mix(in oklab, var(--warning-bg) 62%, transparent);
-}
-
-.app-title-status--error {
-    color: color-mix(in oklab, var(--danger-ink) 92%, var(--chrome-ink));
-    background: color-mix(in oklab, var(--danger-bg) 68%, transparent);
+/* Exceptional state only; it never changes the toolbar's measured width. */
+.file-error-indicator {
+    position: absolute;
+    inset-block-start: 0.22rem;
+    inset-inline-end: 0.22rem;
+    width: 0.35rem;
+    height: 0.35rem;
+    border-radius: 50%;
+    background: var(--danger-ink);
+    pointer-events: none;
 }
 
 .toolbar-tools {
@@ -722,12 +714,14 @@ textarea {
     );
 }
 
-.source-button.active {
+.source-button.active,
+.search-button.active {
     color: var(--accent);
     filter: saturate(1.08);
 }
 
-.source-button.active .tool-icon {
+.source-button.active .tool-icon,
+.search-button.active .tool-icon {
     filter: brightness(1.04)
         drop-shadow(0 0 7px color-mix(in oklab, var(--accent) 52%, transparent))
         drop-shadow(
@@ -1997,6 +1991,9 @@ textarea {
 
 .workspace-shell {
     padding: 0;
+    /* Table overlays stay inside the workspace, below the formula bar.
+       Pointer-following tooltips are portaled outside this stacking context. */
+    isolation: isolate;
 }
 
 .workspace-shell::after {
@@ -2046,13 +2043,13 @@ textarea {
     --grid-body-track-offset-y: 0px;
     --sticky-row-shadow: none;
     --sticky-col-shadow: none;
-    --formula-bar-safe-space: 136px;
+    --formula-bar-safe-space: max(136px, var(--formula-bar-measured-space, 0px));
     --index-rail-gap: 8px;
     --index-rail-width-active: var(--index-rail-width);
     --index-rail-height-active: var(--index-row-height);
     --index-rail-surface: color-mix(
         in oklab,
-        oklch(100% 0 0) 90%,
+        var(--sheet-surface) 90%,
         var(--sheet-header-col)
     );
     --index-rail-border: color-mix(
@@ -2084,6 +2081,10 @@ textarea {
 
 .table-stage.has-scroll-y {
     --sticky-row-shadow: 0 5px 8px -5px color-mix(in oklab, var(--sheet-ink) 24%, transparent);
+}
+
+.table-stage[data-layout-ready="false"] {
+    visibility: hidden;
 }
 
 .table-stage.has-scroll-x {
@@ -2194,6 +2195,9 @@ textarea {
     inset: 0 auto 0 0;
     z-index: 3;
     background: var(--index-rail-surface);
+    border-start-start-radius: 0.78rem;
+    border-end-start-radius: 0.78rem;
+    overflow: hidden;
     box-shadow: var(--sticky-col-shadow);
 }
 
@@ -2545,6 +2549,8 @@ textarea {
     border-bottom: 1px solid
         color-mix(in oklab, var(--index-rail-border) 82%, transparent);
     background: var(--index-rail-surface);
+    border-start-start-radius: 0.78rem;
+    border-start-end-radius: 0.78rem;
     box-shadow: var(--sticky-row-shadow);
     overflow: hidden;
 }
@@ -2691,7 +2697,6 @@ textarea {
 }
 
 .table-leading-boundary-line,
-.table-footprint-bottom-line,
 .table-trailing-canvas-mask {
     position: absolute;
     pointer-events: none;
@@ -2701,13 +2706,6 @@ textarea {
     top: 0;
     left: 0;
     width: 1px;
-    z-index: 14;
-    background: var(--sheet-grid);
-}
-
-.table-footprint-bottom-line {
-    left: 0;
-    height: 1px;
     z-index: 14;
     background: var(--sheet-grid);
 }
@@ -2838,35 +2836,56 @@ textarea {
     white-space: nowrap;
 }
 
-.axis-quick-add-preview {
+.floating-tooltip.quick-add-hint {
+    z-index: 1500;
+    transform: none;
+}
+
+.quick-add-direction {
     position: absolute;
-    z-index: 26;
-    display: inline-grid;
+    inset: 0;
+    display: grid;
     place-items: center;
-    min-width: 4.6rem;
-    height: 1.5rem;
-    padding-inline: 0.64rem;
-    border: 1px solid color-mix(in oklab, var(--accent-strong) 38%, var(--chrome-border));
-    border-radius: 999px;
-    background: color-mix(in oklab, var(--menu-bg) 86%, var(--accent-soft) 14%);
-    color: color-mix(in oklab, var(--accent-strong) 70%, var(--sheet-ink));
-    box-shadow:
-        inset 0 1px 0 color-mix(in oklab, white 24%, transparent),
-        0 10px 24px -18px color-mix(in oklab, var(--accent-strong) 40%, transparent);
-    font-size: 0.72rem;
-    font-weight: 680;
-    line-height: 1;
+    font-size: 15px;
+    color: var(--accent-strong);
+    opacity: 0;
+}
+
+.axis-quick-add:hover .quick-add-direction,
+.axis-quick-add:focus-visible .quick-add-direction {
+    opacity: 1;
+}
+
+.axis-quick-add:hover .quick-add-plus,
+.axis-quick-add:focus-visible .quick-add-plus {
+    opacity: 0;
+}
+
+.axis-quick-add--row { cursor: ns-resize; }
+.axis-quick-add--column { cursor: ew-resize; }
+
+.quick-add-ghost-viewport {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    z-index: 25;
     pointer-events: none;
 }
 
-.axis-quick-add-preview--column {
-    top: calc(var(--index-rail-height-active) + 0.5rem);
-    right: 1rem;
+.quick-add-ghost {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px dashed color-mix(in oklab, var(--accent-strong) 55%, transparent);
+    background-color: color-mix(in oklab, var(--accent) 7%, var(--sheet-surface));
+    --ghost-line: color-mix(in oklab, var(--accent-strong) 22%, transparent);
 }
 
-.axis-quick-add-preview--row {
-    left: calc(var(--index-rail-width-active) + 0.7rem);
-    bottom: calc(var(--formula-bar-safe-space) + 0.66rem);
+.quick-add-ghost--row {
+    background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--quick-add-row-size) - 1px), var(--ghost-line) calc(var(--quick-add-row-size) - 1px) var(--quick-add-row-size));
+}
+
+.quick-add-ghost--column {
+    background-image: repeating-linear-gradient(to right, transparent 0 calc(var(--quick-add-column-size) - 1px), var(--ghost-line) calc(var(--quick-add-column-size) - 1px) var(--quick-add-column-size));
 }
 
 .table-overlay-geometry {
@@ -2887,6 +2906,12 @@ textarea {
 
 .table-overlay-plane--body-pinned {
     z-index: 7;
+}
+
+.table-overlay-plane.is-native-track {
+    /* The native viewport clips scrolling. Keep the corner handle and ring
+       visible past the final row/column inside the reserved append space. */
+    overflow: visible;
 }
 
 .table-overlay-plane--header-center {
@@ -2911,8 +2936,9 @@ textarea {
     --table-overlay-offset-x: var(--grid-center-track-offset-x);
 }
 
-.table-overlay-track.is-body-track {
-    --table-overlay-offset-y: var(--grid-body-track-offset-y);
+.table-overlay-plane.is-native-track .table-overlay-track {
+    transform: none;
+    will-change: auto;
 }
 
 .persistent-selection-ring {
@@ -3176,6 +3202,13 @@ textarea {
     overscroll-behavior-x: contain;
 }
 
+.grid-wrap .ag-center-cols-viewport {
+    /* Append-row space belongs to the native content now that the selection
+       and its corner handle live there, rather than in a sibling overlay. */
+    box-sizing: content-box;
+    padding-bottom: var(--axis-append-row-scroll-extent);
+}
+
 .grid-wrap .ag-body-vertical-scroll,
 .grid-wrap .ag-body-vertical-scroll-viewport,
 .grid-wrap .ag-body-horizontal-scroll,
@@ -3258,6 +3291,12 @@ textarea {
     overflow: hidden !important;
 }
 
+/* Rows own the bottom rules (including the last one). Without a header matrix,
+   the first body cells also own the table's otherwise missing top rule. */
+.grid-wrap[data-has-header="false"] .ag-row-first .ag-cell {
+    border-top: 1px solid var(--sheet-grid);
+}
+
 .line-item-header {
     background: var(--sheet-header-col) !important;
 }
@@ -3313,11 +3352,9 @@ textarea {
         inset 0 1px 0 color-mix(in oklab, white 38%, transparent);
 }
 
-.data-cell {
-    transition:
-        background-color 160ms var(--ease-out-quart),
-        color 160ms var(--ease-out-quart);
-}
+/* Semantic cell styles must appear atomically when a sheet/row mounts.
+   Feedback for edits/fill is animated by its dedicated overlay, not by every
+   background change (AG Grid applies row classes after creating cells). */
 
 @keyframes workspace-structure-flash {
     0% {
@@ -3878,6 +3915,11 @@ textarea {
 }
 
 .formula-bar-shell {
+    --formula-control-height: 2.18rem;
+    --formula-input-radius: calc(var(--formula-control-height) / 2);
+    --formula-shell-radius: 1.75rem;
+    /* Concentric shell corner and action circle, including the shell border. */
+    --formula-control-inset: calc(var(--formula-shell-radius) - var(--formula-input-radius) - 1px);
     position: absolute;
     left: 0;
     right: 0;
@@ -3885,15 +3927,9 @@ textarea {
     margin-inline: auto;
     z-index: 24;
     width: min(52rem, calc(100% - 2rem));
-    border: 1px solid var(--formula-shell-border);
-    border-radius: 999px;
+    border: 1px solid transparent;
+    border-radius: var(--formula-shell-radius);
     overflow: visible;
-    background: var(--formula-shell-bg);
-    box-shadow:
-        var(--glass-shadow),
-        inset 0 1px 0 var(--formula-shell-topline);
-    -webkit-backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
-    backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
     opacity: 0;
     pointer-events: none;
     will-change: opacity, bottom;
@@ -3902,24 +3938,17 @@ textarea {
         opacity 220ms var(--ease-out-quint);
 }
 
-.formula-bar-shell::before {
-    content: "";
+.formula-bar-surface {
     position: absolute;
-    inset: 0;
+    inset: -1px;
+    border: 1px solid var(--formula-shell-border);
     border-radius: inherit;
     pointer-events: none;
-    background:
-        radial-gradient(
-            120% 72% at 50% -14%,
-            var(--formula-glass-gloss-spot),
-            transparent 58%
-        ),
-        linear-gradient(
-            180deg,
-            var(--formula-glass-gloss-top) 0%,
-            transparent 46%
-        );
-    opacity: 0.34;
+    background: var(--formula-shell-bg);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 var(--formula-shell-topline);
+    -webkit-backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
+    backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
+    transform-origin: center bottom;
     z-index: 0;
 }
 
@@ -3934,14 +3963,12 @@ textarea {
 }
 
 .formula-bar {
-    --formula-control-height: 2.18rem;
-    --formula-track-inset-y: 0.42rem;
-    --formula-track-inset-x: 0.78rem;
     display: grid;
     grid-template-columns: minmax(9.4rem, 24%) minmax(0, 1fr);
-    align-items: center;
+    min-height: calc(2 * var(--formula-shell-radius) - 2px);
+    align-items: end;
     gap: 0.4rem;
-    padding: var(--formula-track-inset-y) var(--formula-track-inset-x) var(--formula-track-inset-y) 1.28rem;
+    padding: var(--formula-control-inset) var(--formula-control-inset) var(--formula-control-inset) 1.28rem;
     position: relative;
     border: 0;
     border-radius: inherit;
@@ -3958,6 +3985,10 @@ textarea {
 
 .formula-meta-stack {
     display: grid;
+    /* The two-line label fits into the shell's insets without moving its
+       single-line input or the bottom-anchored controls. */
+    height: var(--formula-control-height);
+    align-content: center;
     gap: 0.14rem;
     min-width: 0;
 }
@@ -4059,7 +4090,7 @@ textarea {
     align-items: center;
     padding: 0 0.9rem;
     border: 1px solid var(--formula-input-border);
-    border-radius: 999px;
+    border-radius: var(--formula-input-radius);
     background: var(--formula-input-bg);
     box-shadow:
         inset 0 1px 0 var(--formula-input-inset-top),
@@ -4115,6 +4146,59 @@ textarea {
     outline: none;
     caret-color: var(--formula-input-caret);
     color: inherit;
+}
+
+.formula-plain-textarea {
+    --formula-scroll-thumb: color-mix(in oklab, var(--formula-input-ink-focus) 28%, transparent);
+    display: block;
+    box-sizing: border-box;
+    resize: none;
+    line-height: 1.28rem;
+    padding-block: calc((var(--formula-control-height) - 1.28rem - 2px) / 2);
+    max-height: min(10rem, 35vh);
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    scrollbar-width: thin;
+    scrollbar-color: var(--formula-scroll-thumb) transparent;
+}
+
+.formula-plain-textarea:hover {
+    --formula-scroll-thumb: color-mix(in oklab, var(--formula-input-ink-focus) 44%, transparent);
+}
+
+.formula-plain-textarea::-webkit-scrollbar,
+.formula-plain-textarea::-webkit-scrollbar-track,
+.formula-plain-textarea::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+.formula-plain-textarea[wrap="off"] { white-space: pre; }
+.formula-plain-textarea.is-multiline { padding-block: 0.6rem; }
+.formula-input-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.formula-input-line-count {
+    flex: 0 0 auto;
+    margin-inline-start: 0.65rem;
+    font-family: var(--font-body);
+    font-size: 0.68rem;
+    opacity: 0.72;
+}
+
+.formula-source-input:focus-visible,
+.formula-source-editor:focus-within {
+    outline: 1px solid color-mix(in oklab, var(--formula-input-ink-focus) 22%, transparent);
+    outline-offset: 2px;
+}
+
+.formula-source-textarea:focus-visible {
+    outline: none; /* The surrounding token editor supplies the focus treatment. */
 }
 
 .formula-editor-wrap {
@@ -4890,7 +4974,7 @@ textarea {
 .formula-source-row {
     position: relative;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 0.34rem;
     min-width: 0;
     width: 100%;
@@ -6046,16 +6130,15 @@ textarea:focus-visible,
     }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 640px) {
     .formula-bar-shell {
         width: calc(100% - 1rem);
-        border-radius: 1.02rem;
     }
 
     .formula-bar {
         grid-template-columns: 1fr;
         gap: 0.42rem;
-        padding: 0.42rem 0.48rem;
+        padding-left: 0.48rem;
     }
 
     .formula-meta-stack {
@@ -6091,7 +6174,6 @@ textarea:focus-visible,
         display: none;
     }
 
-    .formula-meta-stack,
     .formula-meta-lower {
         display: block;
     }
@@ -6115,15 +6197,11 @@ textarea:focus-visible,
     }
 
     .table-stage {
-        --formula-bar-safe-space: 120px;
+        --formula-bar-safe-space: max(120px, var(--formula-bar-measured-space, 0px));
         --index-rail-width-active: 28px;
         --index-rail-height-active: 24px;
         --index-rail-gap: 5px;
         min-height: 22rem;
-    }
-
-    .formula-bar-shell {
-        border-radius: 0.96rem;
     }
 
     .formula-source {

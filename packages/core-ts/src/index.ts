@@ -7,6 +7,7 @@ export {
 } from "./validator";
 
 export { formatDocument } from "./formatter";
+export { isImplicitTextInput } from "./runtime/parse";
 export { evaluateAndFormatDocument } from "./materialize";
 
 export {
@@ -81,6 +82,7 @@ export {
 } from "./runtime";
 
 export { ChangeKind, DocumentState, SheetState } from "./incremental";
+export { planFillRegion, type CoreFillMode, type CoreFillRect, type CoreFillPlan } from "./core_fill";
 export { serializeDocumentState } from "./serializer";
 export {
   resolveSheetRowStructure,

@@ -212,3 +212,7 @@ coverage/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Desktop build artifacts
+apps/ordinate-app/desktop-out/
+apps/ordinate-app/release/

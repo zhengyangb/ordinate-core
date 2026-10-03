@@ -1,3 +1,5 @@
+import { trimCellText } from "./text_encoding";
+
 export interface Table {
   rows: string[];
 }
@@ -147,7 +149,7 @@ export function parseTableRow(row: string): ParsedRow {
       continue;
     }
     rawCells.push(segment);
-    cells.push(segment.trim());
+    cells.push(trimCellText(segment));
   }
 
   return { rawCells, cells, boundary, errors };
@@ -197,7 +199,7 @@ export function stripDisplayControlFrame(rows: ParsedRow[]): DisplayControlFrame
 }
 
 export function escapeCellText(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r/g, "\\r").replace(/\n/g, "\\n");
 }
 
 export function parseHierarchyLabel(labelRaw: string): ParsedHierarchyLabel {
@@ -255,6 +257,11 @@ function splitUnescapedPipes(inner: string): { parts: string[]; errors: string[]
         continue;
       }
       const next = inner[i + 1];
+      if (next === "n" || next === "r") {
+        parts[parts.length - 1] += next === "n" ? "\n" : "\r";
+        i += 2;
+        continue;
+      }
       if (next === "|" || next === "\\") {
         // Table-layer escapes: \| -> | and \\ -> \
         parts[parts.length - 1] += next;

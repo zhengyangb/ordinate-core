@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
+import { SearchButton } from "../search/SheetSearch";
 
 import { ChevronLeftIcon, ChevronRightIcon, CodeIcon, MoreIcon, OpenIcon, PageSetupIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
 import { MenuDivider, MenuGroup, MenuHead, MenuOption, MenuSurface, MenuTitle } from "./MenuSurface";
@@ -17,6 +18,7 @@ import {
 export type FileStatusTone = "neutral" | "dirty" | "saving" | "warning" | "error";
 
 type AppChromeProps = {
+  titlePlacement?: "toolbar" | "native";
   mode: "table" | "source";
   fileName: string;
   fileStatus: string;
@@ -138,6 +140,7 @@ function positionSheetRenameError(target: DOMRect): { top: number; left: number 
 }
 
 export default function AppChrome({
+  titlePlacement = "toolbar",
   mode,
   fileName,
   fileStatus,
@@ -501,18 +504,22 @@ export default function AppChrome({
 
   const sheetMenuIndex = sheetMenu ? sheetNames.indexOf(sheetMenu.sheetName) : -1;
   const showSheetTabScrollControls = sheetTabScrollState.canScrollLeft || sheetTabScrollState.canScrollRight;
+  const hasNativeTitle = titlePlacement === "native";
+  const documentTitle = !hasNativeTitle && (
+    <div className="app-title" aria-label="Current file" title={`${fileName} — ${fileStatus}`}>
+      <span className="app-title-name">{fileName}</span>
+    </div>
+  );
+  const fileError = fileStatusTone === "error" ? fileStatus : null;
+  const openFileTooltip = fileError ? `Open file · ${fileError}` : "Open file";
 
   return (
     <header className={mode === "source" ? "app-chrome source-mode" : "app-chrome"}>
       <div className="topbar">
         <div className="brand-lockup">
-          <span className="brand-name">Ordinate</span>
+          <span className="brand-name">ordinate</span>
         </div>
-
-        <div className="app-title" aria-label="Current file">
-          <span className="app-title-name">{fileName}</span>
-          <span className={`app-title-status app-title-status--${fileStatusTone}`}>{fileStatus}</span>
-        </div>
+        {documentTitle}
 
         <nav className="toolbar-tools" aria-label="Toolbar">
           <div className="toolbar-group toolbar-group--file" role="group" aria-label="File">
@@ -521,17 +528,20 @@ export default function AppChrome({
             type="button"
             onClick={onOpenFile}
             aria-label="Open file"
-            onMouseEnter={(event) => onTooltipEnter("Open file", event.currentTarget)}
+            aria-describedby={fileError ? "file-error-status" : undefined}
+            onMouseEnter={(event) => onTooltipEnter(openFileTooltip, event.currentTarget)}
             onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-            onFocus={(event) => onTooltipEnter("Open file", event.currentTarget)}
+            onFocus={(event) => onTooltipEnter(openFileTooltip, event.currentTarget)}
             onBlur={(event) => onTooltipRelease(event.currentTarget)}
             onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
           >
             <span className="tool-icon">
               <OpenIcon />
             </span>
+            {fileError ? <span className="file-error-indicator" role="status" id="file-error-status" aria-label={fileError} title={fileError} /> : null}
           </button>
 
+          {!hasNativeTitle && <>
           <button
             className="tool-button file-command-button"
             type="button"
@@ -563,6 +573,7 @@ export default function AppChrome({
               <SaveAsIcon />
             </span>
           </button>
+          </>}
           </div>
 
           <div className="toolbar-group toolbar-group--document" role="group" aria-label="Document">
@@ -672,6 +683,7 @@ export default function AppChrome({
         </nav>
 
         <div className="toolbar-actions">
+          <SearchButton />
           <div className="theme-control" ref={themeControlRef}>
             <button
               className={themeMenuOpen ? "tool-button theme-button active" : "tool-button theme-button"}

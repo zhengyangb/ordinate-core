@@ -89,6 +89,7 @@ Current working direction:
 
 - serializer emits `\|` for literal `|` in cell text
 - serializer emits `\\` for literal `\` in cell text
+- RFC-0039 adds `\n` / `\r` for physical line breaks; decoding is single-pass and preserves literal backslash sequences encoded with `\\`
 - parser decodes table-layer escapes before cell semantic parsing
 - this table-layer escaping is independent of formula/literal semantics inside the cell
 

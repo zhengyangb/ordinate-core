@@ -1,4 +1,5 @@
 import { formatDocument } from "./formatter";
+import { encodeStringLiteral } from "./text_encoding";
 import { type DocumentState, type SheetState } from "./incremental";
 import { escapeCellText } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
@@ -217,8 +218,7 @@ function serializeNumber(value: number | null): string {
 }
 
 function serializeString(text: string): string {
-  const escaped = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `"${escaped}"`;
+  return encodeStringLiteral(text);
 }
 
 function serializeErrorValue(value: RuntimeValue): string {

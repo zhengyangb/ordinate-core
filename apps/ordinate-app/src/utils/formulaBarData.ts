@@ -148,6 +148,7 @@ export function buildFormulaBarData({
   const chip = rawCell?.body.valid && rawCell.body.kind === "formula" ? "Formula" : runtimeKindLabel(runtimeValue);
 
   return {
+    supportsMultilineText: true,
     primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
     secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
     chip,

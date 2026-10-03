@@ -3,62 +3,11 @@ import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { type EditorState, useEditorStore } from "./editorStore";
-
-export type FileSessionVersion = string;
-export type FilePermissionState = "granted" | "prompt" | "denied" | "unavailable";
-
-export type FileReference = {
-  id: string;
-  displayName: string;
-  adapterKind: "browser-file-system" | "browser-download" | "electron" | "memory";
-  draftKey?: string;
-};
-
-export type FileSnapshot = {
-  file: FileReference;
-  text: string;
-  version: FileSessionVersion;
-};
-
-export type StorageFailure =
-  | { kind: "cancelled" }
-  | { kind: "permission_denied"; permission: FilePermissionState }
-  | { kind: "not_found" }
-  | { kind: "read_failed"; message: string }
-  | { kind: "write_failed"; message: string }
-  | { kind: "version_mismatch"; current: FileSnapshot };
-
-export type StorageResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: StorageFailure };
-
-export type StorageCapabilities = {
-  canAutosaveToBackingFile: boolean;
-  canReadCurrentBackingFile: boolean;
-  canWatchBackingFile: boolean;
-  canAtomicCompareAndWrite: boolean;
-};
-
-export type StorageAvailability = {
-  readPermission: FilePermissionState;
-  writePermission: FilePermissionState;
-};
-
-export type SaveOptions = {
-  expectedVersion: FileSessionVersion | null;
-  reason: "manual" | "autosave" | "overwrite_conflict";
-};
-
-export type StorageAdapter = {
-  kind: FileReference["adapterKind"];
-  capabilities: () => StorageCapabilities;
-  availability: (file: FileReference | null) => Promise<StorageAvailability>;
-  open: () => Promise<StorageResult<FileSnapshot>>;
-  save: (file: FileReference, text: string, options: SaveOptions) => Promise<StorageResult<FileSnapshot>>;
-  saveAs: (text: string) => Promise<StorageResult<FileSnapshot>>;
-  readCurrent: (file: FileReference) => Promise<StorageResult<FileSnapshot>>;
-  watch?: (file: FileReference, callback: (snapshot: FileSnapshot) => void) => () => void;
-};
+import { createDesktopStorageAdapter } from "../platform/desktopStorage";
+import type {
+  FileSessionVersion, FilePermissionState, FileReference, FileSnapshot,
+  StorageFailure, StorageResult, StorageCapabilities, StorageAvailability, StorageAdapter,
+} from "../platform/storage";
 
 export type PersistableText = {
   text: string;
@@ -119,7 +68,7 @@ export type LocalDraftStore = {
 
 type EditorBridge = {
   getPersistableText: () => PersistableText;
-  replaceDocumentText: (text: string) => void;
+  replaceDocumentText: EditorState["replaceDocumentText"];
 };
 
 export type FileSessionState = {
@@ -139,13 +88,15 @@ export type FileSessionState = {
   pendingAutosave: boolean;
   autosaveEnabled: boolean;
   lastError: StorageFailure | null;
-  open: () => Promise<void>;
+  open: (read?: () => Promise<StorageResult<FileSnapshot>>) => Promise<void>;
   save: (options?: { allowInvalidSource?: boolean }) => Promise<void>;
   saveAs: (options?: { allowInvalidSource?: boolean }) => Promise<void>;
+  persistTo: (write: (text: string) => Promise<StorageResult<FileSnapshot>>, options?: { allowInvalidSource?: boolean }) => Promise<void>;
   autosaveNow: () => Promise<void>;
   syncEditorSnapshot: () => void;
   loadUntitledDraft: () => Promise<void>;
   handleExternalSnapshot: (snapshot: FileSnapshot) => void;
+  refreshFromDisk: (canApply: () => boolean) => Promise<void>;
   reloadFromDisk: () => Promise<void>;
   overwriteConflict: () => Promise<void>;
   saveConflictAsNewFile: () => Promise<void>;
@@ -156,6 +107,7 @@ export type FileSessionState = {
 };
 
 type FileSessionDeps = {
+  autosaveInvalidSource?: boolean;
   adapter: StorageAdapter;
   localDraftStore: LocalDraftStore;
   editor: EditorBridge;
@@ -305,10 +257,12 @@ function createInitialFileSessionState(): Omit<
   | "open"
   | "save"
   | "saveAs"
+  | "persistTo"
   | "autosaveNow"
   | "syncEditorSnapshot"
   | "loadUntitledDraft"
   | "handleExternalSnapshot"
+  | "refreshFromDisk"
   | "reloadFromDisk"
   | "overwriteConflict"
   | "saveConflictAsNewFile"
@@ -460,7 +414,8 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
     if (options?.operation && !operationMatches(get().operation, options.operation)) return { applied: false, needsFollowup: false };
     const latest = get();
     const editorText = deps.editor.getPersistableText().text;
-    const finalBackingText = options?.normalizeToEditorText ? editorText : snapshot.text;
+    // Draft cleanup can await I/O. Edits made during it aren't part of this disk snapshot.
+    const finalBackingText = backingText;
     const clearedDraft = shouldClearDraft && !cleanupError;
     const needsFollowup = latest.pendingAutosave || editorText !== finalBackingText;
     set({
@@ -550,7 +505,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       });
     },
 
-    open: async () => {
+    open: async (read = deps.adapter.open) => {
       const operation: FileOperation = {
         id: createOperationId(),
         kind: "open",
@@ -559,7 +514,9 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
         expectedVersion: null,
       };
       set({ operation, lastError: null });
-      const result = await deps.adapter.open();
+      let result: StorageResult<FileSnapshot>;
+      try { result = await read(); }
+      catch (error) { result = err({ kind: "read_failed", message: formatUnknownError(error) }); }
       if (!operationMatches(get().operation, operation)) return;
       if (!result.ok) {
         set({ operation: null, lastError: result.error, backingFileState: result.error.kind === "not_found" ? "unavailable" : "error" });
@@ -713,7 +670,9 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       if (appliedSave.needsFollowup) await get().autosaveNow();
     },
 
-    saveAs: async (options) => {
+    saveAs: (options) => get().persistTo(deps.adapter.saveAs, options),
+
+    persistTo: async (write, options) => {
       const editorSnapshot = deps.editor.getPersistableText();
       if (editorSnapshot.validity === "invalid_source" && !options?.allowInvalidSource) {
         set({ lastError: { kind: "write_failed", message: "Invalid source must be saved explicitly." } });
@@ -727,7 +686,9 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
         expectedVersion: null,
       };
       set({ operation, lastError: null });
-      const result = await deps.adapter.saveAs(editorSnapshot.text);
+      let result: StorageResult<FileSnapshot>;
+      try { result = await write(editorSnapshot.text); }
+      catch (error) { result = err({ kind: "write_failed", message: formatUnknownError(error) }); }
       if (!operationMatches(get().operation, operation)) return;
       if (!result.ok) {
         if (result.error.kind === "permission_denied" || result.error.kind === "write_failed") {
@@ -750,6 +711,8 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
 
     autosaveNow: async () => {
       if (!get().autosaveEnabled) return;
+      // Never overwrite a recovery draft before the user has chosen its contents.
+      if (get().recoveryDraft) return;
       const editorSnapshot = deps.editor.getPersistableText();
       const dirtyState = recomputeDirtyState(get(), editorSnapshot.text);
       set(dirtyState);
@@ -759,7 +722,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
         set({ pendingAutosave: true });
         return;
       }
-      if (editorSnapshot.validity === "invalid_source") {
+      if (editorSnapshot.validity === "invalid_source" && !deps.autosaveInvalidSource) {
         const draftWrite = await writeLocalDraft(get, set, editorSnapshot.text, "autosave_local_draft");
         if (draftWrite.applied && draftWrite.needsFollowup) await get().autosaveNow();
         return;
@@ -834,11 +797,58 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       if (appliedAutosave.needsFollowup) await get().autosaveNow();
     },
 
+    refreshFromDisk: async (canApply) => {
+      const state = get();
+      if (!state.file || state.operation || state.recoveryDraft || !canApply()) return;
+      const operation: FileOperation = {
+        id: createOperationId(), kind: "reload_from_disk", fileId: state.file.id,
+        text: state.backingText ?? "", expectedVersion: state.backingVersion,
+      };
+      set({ operation });
+      let result: StorageResult<FileSnapshot>;
+      try { result = await deps.adapter.readCurrent(state.file); }
+      catch (error) { result = err({ kind: "read_failed", message: String(error) }); }
+      if (!operationMatches(get().operation, operation)) return;
+      if (!result.ok) {
+        set({ operation: null, lastError: result.error,
+          backingFileState: result.error.kind === "not_found" ? "unavailable" : "error" });
+      } else if (!canApply() || get().recoveryDraft) {
+        set({ operation: null });
+      } else {
+        const snapshot = result.value;
+        const current = get();
+        const editorText = deps.editor.getPersistableText().text;
+        if (snapshot.version === current.backingVersion) {
+          // Also recovers from a deleted/recreated file or an external edit that was reverted.
+          set({ operation: null, conflict: null, externalSnapshot: null, lastError: null,
+            ...recomputeDirtyState({ ...current, conflict: null, externalSnapshot: null }, editorText) });
+        } else if (snapshot.text === editorText || editorText === current.backingText) {
+          const replace = snapshot.text !== editorText;
+          if (replace) deps.editor.replaceDocumentText(snapshot.text, { preserveView: true });
+          const applied = await setBackingSnapshot(get, set, snapshot, { normalizeToEditorText: replace, operation });
+          if (applied.applied && applied.needsFollowup) await get().autosaveNow();
+        } else {
+          set({ operation: null });
+          get().handleExternalSnapshot(snapshot);
+        }
+      }
+      if (get().pendingAutosave) {
+        set({ pendingAutosave: false });
+        await get().autosaveNow();
+      }
+    },
+
     handleExternalSnapshot: (snapshot) => {
       const state = get();
       if (!sameFile(state.file, snapshot.file) || state.backingText == null || state.backingVersion == null) return;
       if (snapshot.version === state.backingVersion) return;
       const editorSnapshot = deps.editor.getPersistableText();
+      if (snapshot.text === editorSnapshot.text) {
+        set({ backingText: snapshot.text, backingVersion: snapshot.version,
+          conflict: null, externalSnapshot: null, lastError: null,
+          ...recomputeDirtyState({ ...state, backingText: snapshot.text, conflict: null, externalSnapshot: null }, editorSnapshot.text) });
+        return;
+      }
       if (editorSnapshot.text === state.backingText) {
         set({
           externalSnapshot: snapshot,
@@ -1379,11 +1389,14 @@ export function createBrowserStorageAdapter(win?: FilePickerWindow): StorageAdap
 }
 
 const defaultFileSessionStore = createFileSessionStore({
-  adapter: createBrowserStorageAdapter(),
+  autosaveInvalidSource: typeof window !== "undefined" && !!window.ordinateDesktop,
+  adapter: typeof window !== "undefined" && window.ordinateDesktop
+    ? createDesktopStorageAdapter(window.ordinateDesktop)
+    : createBrowserStorageAdapter(),
   localDraftStore: createLocalStorageDraftStore(),
   editor: {
     getPersistableText: () => getPersistableText(useEditorStore.getState()),
-    replaceDocumentText: (text) => useEditorStore.getState().replaceDocumentText(text),
+    replaceDocumentText: (text, options) => useEditorStore.getState().replaceDocumentText(text, options),
   },
   createUntitledId: () => "browser-untitled",
 });

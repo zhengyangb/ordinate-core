@@ -57,9 +57,9 @@ export interface EditorState {
   redoLabel: string | null;
   isDirty: boolean;
   setSourceText: (text: string) => void;
-  replaceDocumentText: (text: string) => void;
+  replaceDocumentText: (text: string, options?: { preserveView: boolean }) => void;
   setActiveSheet: (sheetName: string) => void;
-  applyCoreEdits: (label: string, edits: CoreEdit[], nextActiveSheetHint?: string | null) => void;
+  applyCoreEdits: (label: string, edits: CoreEdit[], nextActiveSheetHint?: string | null, replaceHistoryId?: number) => void;
   undo: () => void;
   redo: () => void;
   setCellInput: (target: CoreCellTarget, input: string) => void;
@@ -338,22 +338,39 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   ...initialState,
   ...emptyHistoryState(),
   setSourceText: (text) => set({ sourceText: text, presentation: null, validation: null, sheetIssuesByName: {}, error: null }),
-  replaceDocumentText: (text) => {
+  replaceDocumentText: (text, options) => {
     const nextState = bootstrapFromSource(text);
+    const previous = get();
+    if (options?.preserveView) {
+      if (nextState.docState?.sheets.some((sheet) => sheet.name === previous.activeSheet)) {
+        nextState.activeSheet = previous.activeSheet;
+      }
+      if (previous.mode === "source") nextState.mode = "source";
+    }
     set({
       ...nextState,
       ...emptyHistoryState(get().revision + 1),
     });
   },
   setActiveSheet: (sheetName) => set({ activeSheet: sheetName }),
-  applyCoreEdits: (label, edits, nextActiveSheetHint) => {
+  applyCoreEdits: (label, edits, nextActiveSheetHint, replaceHistoryId) => {
     const state = get();
     const { docState } = state;
     if (!docState) {
       throw new Error("cannot apply core edits without an active document state");
     }
 
-    const result = applyBatchWithUndo(docState, edits, { recalculate: false });
+    const previous = replaceHistoryId === undefined ? undefined : state.history[state.historyCursor - 1];
+    if (replaceHistoryId !== undefined && (previous?.id !== replaceHistoryId || state.historyCursor !== state.history.length)) {
+      throw new Error("cannot replace a stale history entry");
+    }
+    let baseDocument = docState;
+    if (previous) {
+      const restored = applyCoreEditMemento(docState, previous.memento, "undo", { recalculate: false });
+      if (!restored.ok) throw new Error(restored.error.message);
+      baseDocument = restored.nextDocument;
+    }
+    const result = applyBatchWithUndo(baseDocument, edits, { recalculate: false });
     if (!result.ok) {
       throw new Error(`[${result.error.category}] ${result.error.message}`);
     }
@@ -361,7 +378,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const currentMode = state.mode;
     const activeHint = nextActiveSheetHint ?? state.activeSheet;
     const nextDocumentState = deriveStateFromDocument(result.nextDocument, activeHint);
-    if (result.memento.entryCount === 0) {
+    if (result.memento.entryCount === 0 && !previous) {
       set({
         ...nextDocumentState,
         mode: currentMode,
@@ -369,16 +386,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return;
     }
 
-    const retainedHistory = state.history.slice(0, state.historyCursor);
+    const retainedHistory = state.history.slice(0, state.historyCursor - (previous ? 1 : 0));
     const savedHistoryCursor =
-      state.savedHistoryCursor > state.historyCursor ? -1 : state.savedHistoryCursor;
+      state.savedHistoryCursor > retainedHistory.length ? -1 : state.savedHistoryCursor;
     const nextHistory: EditorHistoryEntry[] = [
       ...retainedHistory,
       {
-        id: state.nextHistoryId,
+        id: previous?.id ?? state.nextHistoryId,
         label,
         memento: result.memento,
-        activeSheetBefore: state.activeSheet,
+        activeSheetBefore: previous ? previous.activeSheetBefore : state.activeSheet,
         activeSheetAfter: nextDocumentState.activeSheet,
       },
     ];
@@ -389,7 +406,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       history: nextHistory,
       historyCursor,
       savedHistoryCursor,
-      nextHistoryId: state.nextHistoryId + 1,
+      nextHistoryId: state.nextHistoryId + (previous ? 0 : 1),
       revision: state.revision + 1,
       ...historyStatus(nextHistory, historyCursor, savedHistoryCursor),
     });

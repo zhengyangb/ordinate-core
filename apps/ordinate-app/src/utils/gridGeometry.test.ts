@@ -321,7 +321,7 @@ describe("grid geometry helpers", () => {
     })).toEqual({
       right: 580,
       width: 580,
-      height: 195,
+      height: 194,
       columnEndVisible: true,
       rowEndVisible: true,
       trailingCanvas: { left: 580, width: 220 },
@@ -349,7 +349,7 @@ describe("grid geometry helpers", () => {
       footprint: {
         right: 720,
         width: 720,
-        height: 681,
+        height: 680,
         columnEndVisible: true,
         rowEndVisible: false,
         trailingCanvas: { left: 720, width: 80 },
@@ -464,7 +464,7 @@ describe("grid geometry helpers", () => {
     })).toEqual({
       right: 800,
       width: 800,
-      height: 681,
+      height: 680,
       columnEndVisible: false,
       rowEndVisible: false,
       trailingCanvas: null,
@@ -514,7 +514,7 @@ describe("grid geometry helpers", () => {
     })).toEqual({
       right: 640,
       width: 640,
-      height: 155,
+      height: 154,
       columnEndVisible: true,
       rowEndVisible: true,
       trailingCanvas: { left: 640, width: 40 },
@@ -531,7 +531,7 @@ describe("grid geometry helpers", () => {
       bodyTrackHeight: 900,
       bodyViewportHeight: 600,
       bodyScrollTop: 500,
-    }).height).toBe(441);
+    }).height).toBe(440);
   });
 
   it("fails early for invalid table footprint geometry", () => {
