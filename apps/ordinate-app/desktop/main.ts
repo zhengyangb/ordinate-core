@@ -1,231 +1,185 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, session } from "electron";
+import { app, BrowserWindow, dialog, Menu, net, protocol, session, type MenuItemConstructorOptions } from "electron";
+import { randomUUID } from "node:crypto";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { createNativeStorage } from "./fileStorage.js";
-import { windowPresentation } from "./windowPresentation.js";
-import { appKit, setNativeChrome } from "./nativeChrome.js";
-import { createDocumentHost } from "./documentHost.js";
-import { createRecentDocument } from "./recentDocument.js";
-import { watchDocument } from "./fileWatcher.js";
+import { pathToFileURL } from "node:url";
+import { appKit } from "./nativeChrome.js";
+import { createDocumentWindow, type DocumentWindow } from "./documentWindow.js";
+import { presentDocumentWindow } from "./presentDocumentWindow.js";
+import { createWorkspaceSession, type DocumentSession } from "./workspaceSession.js";
 import type { DesktopCommand } from "../src/platform/storage.js";
 
 const isDev = !app.isPackaged && process.argv.includes("--dev");
 const rendererUrl = isDev ? "http://127.0.0.1:5174/" : "ordinate://app/";
-const desktopDir = path.dirname(fileURLToPath(import.meta.url));
 app.setName("Ordinate");
-// Keep development experiments and browser drafts separate from the packaged app.
 if (isDev) app.setPath("userData", path.join(app.getPath("appData"), "Ordinate Development"));
-protocol.registerSchemesAsPrivileged([{
-  scheme: "ordinate", privileges: { standard: true, secure: true, supportFetchAPI: true },
-}]);
+protocol.registerSchemesAsPrivileged([{ scheme: "ordinate", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-let mainWindow: BrowserWindow | null = null;
-let currentDocumentHost: ReturnType<typeof createDocumentHost> | null = null;
-let windowCreation: Promise<void> | null = null;
-let documentOpenQueue: Promise<unknown> = Promise.resolve();
-const recent = createRecentDocument(app.getPath("userData"));
-let quitting = false;
-app.on("before-quit", () => { quitting = true; });
+const windows = new Map<number, DocumentWindow>();
+const workspace = createWorkspaceSession(app.getPath("userData"));
+let initialized = false;
+let allowQuit = false;
+let flushingQuit = false;
+let openQueue: Promise<unknown> = Promise.resolve();
+let startup: Promise<void>;
+const focused = () => {
+  const win = BrowserWindow.getFocusedWindow();
+  return win ? windows.get(win.id) : undefined;
+};
+const persist = () => {
+  refreshMenu();
+  return workspace.write([...windows.values()].map(entry => entry.record));
+};
+const reportError = (error: unknown) => dialog.showErrorBox("Ordinate", String(error));
+const run = (action: () => Promise<unknown>) => { void action().catch(reportError); };
 
-function ensureWindow(): Promise<void> {
-  if (windowCreation) return windowCreation;
-  if (mainWindow) return Promise.resolve();
-  windowCreation = createWindow().finally(() => { windowCreation = null; });
-  return windowCreation;
+async function createWindow(record: DocumentSession = { id: randomUUID(), filename: null, text: null }, parent?: BrowserWindow) {
+  if (flushingQuit) throw new Error("Wait for Ordinate to finish saving before opening another document.");
+  const entry = createDocumentWindow({
+    record, rendererUrl, persist,
+    open: chooseDocuments,
+    newDocument: async parent => { await createWindow(undefined, parent); },
+    duplicate: async (text, parent) => { await createWindow({ id: randomUUID(), filename: null, text }, parent); },
+    checkDestination: async filename => {
+      let canonical: string;
+      try { canonical = await realpath(filename); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        canonical = path.join(await realpath(path.dirname(filename)), path.basename(filename));
+      }
+      if ([...windows.values()].some(other => other !== entry && other.record.filename === canonical)) {
+        throw new Error("This file is already open in another window. Choose a different name or close that document first.");
+      }
+    },
+    isQuitting: () => allowQuit,
+    closed: () => {
+      windows.delete(entry.win.id);
+      if (!allowQuit) run(persist);
+    },
+  });
+  windows.set(entry.win.id, entry);
+  entry.win.on("new-window-for-tab", () => run(() => createWindow(undefined, entry.win)));
+  entry.win.on("focus", refreshMenu);
+  entry.win.on("blur", refreshMenu);
+  if (initialized) await persist();
+  await entry.load();
+  presentDocumentWindow(entry.win, process.platform === "darwin" ? parent : undefined);
+  return entry;
 }
 
-function openSystemDocument(filename: string): Promise<number | undefined> {
-  const opening = documentOpenQueue.then(async () => {
-    await app.whenReady();
-    await ensureWindow();
-    const host = currentDocumentHost;
-    if (!host) throw new Error("The document window is unavailable");
-    await host.openDocument(filename);
-    await recent.remember(filename);
-    mainWindow?.show();
-    return host.nativeId;
-  });
-  // Serialize system opens; each caller still receives its own failure.
-  documentOpenQueue = opening.catch(() => undefined);
+async function openDocument(filename: string) {
+  const canonical = await realpath(filename);
+  const existing = [...windows.values()].find(entry => entry.record.filename === canonical);
+  if (existing) { existing.win.show(); existing.win.focus(); return existing; }
+  return createWindow({ id: randomUUID(), filename: canonical, text: null }, focused()?.win);
+}
+
+function openSystemDocument(filename: string): Promise<DocumentWindow> {
+  const opening = openQueue.then(async () => { await startup; return openDocument(filename); });
+  openQueue = opening.catch(() => undefined);
   return opening;
+}
+
+async function chooseDocuments(parent?: BrowserWindow) {
+  const options: Electron.OpenDialogOptions = {
+    title: "Open Ordinate document", properties: ["openFile", "multiSelections"],
+    filters: [{ name: "Ordinate documents", extensions: ["ord", "txt"] }],
+  };
+  const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+  if (!result.canceled) for (const filename of result.filePaths) await openSystemDocument(filename);
 }
 
 appKit?.setDocumentOpenHandler((id, _kind, filename) => {
   void openSystemDocument(filename).then(
-    host => appKit!.completeDocumentOpen(id, host!, ""),
+    entry => appKit!.completeDocumentOpen(id, entry.host.nativeId!, ""),
     error => appKit!.completeDocumentOpen(id, 0, String(error)),
   );
 });
-// Finder opens can arrive before ready, just like AppKit's Resume requests.
-app.on("open-file", (event, filename) => {
+app.on("open-file", (event, filename) => { event.preventDefault(); run(() => openSystemDocument(filename)); });
+
+// Flush every document before closing any window. Failed saves leave the whole
+// workspace open, and the persisted identities restore independent drafts.
+app.on("before-quit", event => {
+  if (allowQuit) return;
   event.preventDefault();
-  void openSystemDocument(filename).catch(error => dialog.showErrorBox("Could not open document", String(error)));
+  if (flushingQuit) return;
+  flushingQuit = true;
+  void (async () => {
+    await Promise.all([...windows.values()].map(entry => entry.host.flush()));
+    await persist();
+    session.defaultSession.flushStorageData();
+    allowQuit = true;
+    app.quit();
+  })().catch(error => { flushingQuit = false; reportError(error); });
 });
 
-async function createWindow() {
-  const win = new BrowserWindow({
-    title: "Untitled", width: 1280, height: 860, minWidth: 640, minHeight: 480,
-    backgroundColor: "#f5f5f4", show: false,
-    // The system title bar owns document title, proxy icon and traffic lights.
-    titleBarStyle: "default",
-    webPreferences: {
-      preload: path.join(desktopDir, "preload.cjs"),
-      nodeIntegration: false, contextIsolation: true, sandbox: true,
-    },
-  });
-  mainWindow = win;
-  const storage = createNativeStorage({
-    open: async () => {
-      const result = await dialog.showOpenDialog(win, {
-        title: "Open Ordinate document", properties: ["openFile"],
-        filters: [{ name: "Ordinate documents", extensions: ["ord", "txt"] }],
-      });
-      if (result.canceled) return null;
-      if (!result.filePaths[0]) throw new Error("Open dialog returned no file");
-      return result.filePaths[0];
-    },
-    save: async () => {
-      const result = await dialog.showSaveDialog(win, {
-        title: "Save Ordinate document", defaultPath: "Untitled.ord",
-        filters: [{ name: "Ordinate document", extensions: ["ord"] }],
-      });
-      if (result.canceled) return null;
-      if (!result.filePath) throw new Error("Save dialog returned no destination");
-      return result.filePath;
-    },
-  }, appKit?.copyDocumentMetadata);
-  const documentHost = createDocumentHost(win, storage);
-  currentDocumentHost = documentHost;
-  const validateSender = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => {
-    if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame
-      || event.senderFrame.url !== rendererUrl) throw new Error("Untrusted desktop request");
+function installMenu() {
+  const command = (value: DesktopCommand) => focused()?.win.webContents.send("editor:command", value);
+  const nativeAction = (action: "rename" | "move") => {
+    const entry = focused();
+    if (entry?.host.nativeId !== undefined) appKit!.documentAction(entry.host.nativeId, action);
   };
-  const documentReady = (event: Electron.IpcMainEvent) => { validateSender(event); documentHost.ready(); };
-  let fileWatch: { id: string; stop: () => void } | null = null;
-  const stopFileWatch = () => { fileWatch?.stop(); fileWatch = null; };
-  ipcMain.handle("file:watch", (event, id: unknown, file) => {
-    validateSender(event);
-    if (typeof id !== "string" || id.length > 100) throw new TypeError("Invalid watch subscription");
-    const filename = storage.documentPath(file);
-    stopFileWatch();
-    fileWatch = { id, stop: watchDocument(filename, (error) => {
-      win.webContents.send("file:changed", id, error);
-    }) };
-  });
-  const unwatch = (event: Electron.IpcMainEvent, id: unknown) => {
-    validateSender(event);
-    if (fileWatch?.id === id) stopFileWatch();
-  };
-  ipcMain.on("file:unwatch", unwatch);
-  win.webContents.on("did-start-navigation", (_event, _url, _inPlace, isMainFrame) => {
-    if (isMainFrame) stopFileWatch();
-  });
-  win.webContents.on("render-process-gone", stopFileWatch);
-  ipcMain.on("document:ready", documentReady);
-  ipcMain.handle("document:commit", async (event, id, write) => {
-    validateSender(event);
-    const result = await documentHost.commit(id, write);
-    if (result.ok) await recent.remember(storage.documentPath(result.value.file));
-    return result;
-  });
-  ipcMain.handle("document:read", (event, id) => { validateSender(event); return documentHost.read(id); });
-  ipcMain.handle("document:restore", async (event) => {
-    validateSender(event);
-    const filename = await recent.read();
-    return filename ? storage.readPath(filename) : null;
-  });
-  ipcMain.handle("document:complete", (event, id, error) => { validateSender(event); documentHost.complete(id, error); });
-  const fileMethods = ["open", "save", "saveAs", "readCurrent", "availability"] as const;
-  for (const method of fileMethods) {
-    ipcMain.handle(`file:${method}`, async (event, ...args: unknown[]) => {
-      validateSender(event);
-      // Each operation validates its capability and arguments at the storage boundary.
-      const invoke = storage[method] as (...values: unknown[]) => unknown;
-      const result = await invoke(...args);
-      if (method === "open" || method === "saveAs") {
-        const snapshot = result as Awaited<ReturnType<typeof storage.open>>;
-        if (snapshot.ok) await recent.remember(storage.documentPath(snapshot.value.file));
-      }
-      return result;
-    });
+  const fileMenu: MenuItemConstructorOptions[] = [
+    { label: "New", accelerator: "CmdOrCtrl+N", click: () => run(() => createWindow(undefined, focused()?.win)) },
+    ...(process.platform === "darwin" ? [{
+      label: "New Tab", accelerator: "CmdOrCtrl+Alt+N", click: () => run(() => createWindow(undefined, focused()?.win)),
+    }] : []),
+    { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => run(() => createWindow()) },
+    { label: "Open…", accelerator: "CmdOrCtrl+O", click: () => run(() => chooseDocuments(focused()?.win)) },
+    ...(process.platform === "darwin" ? [{ role: "recentDocuments" as const, submenu: [{ role: "clearRecentDocuments" as const }] }] : []),
+    { type: "separator" },
+    { id: "save", label: "Save", accelerator: "CmdOrCtrl+S", click: () => command("save") },
+    { id: "saveAs", label: "Save As…", accelerator: "CmdOrCtrl+Shift+S", click: () => command("saveAs") },
+    { id: "duplicate", label: "Duplicate", click: () => { const entry = focused(); if (entry) run(() => entry.host.request("duplicate")); } },
+    ...(process.platform === "darwin" ? [
+      { id: "rename", label: "Rename…", click: () => nativeAction("rename") },
+      { id: "move", label: "Move To…", click: () => nativeAction("move") },
+      { id: "revert", label: "Revert To…", click: () => { const entry = focused(); if (entry) run(entry.showVersions); } },
+    ] : []),
+    { type: "separator" }, { role: "close" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    { label: "File", submenu: fileMenu },
+    { label: "Edit", submenu: [
+      { label: "Undo", accelerator: "CmdOrCtrl+Z", click: () => command("undo") },
+      { label: "Redo", accelerator: "CmdOrCtrl+Shift+Z", click: () => command("redo") },
+      { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" },
+    ] },
+    { label: "View", submenu: [{ role: "reload" }, { role: "toggleDevTools" }, { type: "separator" },
+      { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { role: "togglefullscreen" }] },
+    { label: "Window", submenu: [
+      { role: "minimize" }, { role: "zoom" },
+      ...(process.platform === "darwin" ? [
+        { type: "separator" as const },
+        { label: "Show Tab Bar", click: () => focused()?.win.toggleTabBar() },
+        { label: "Show Next Tab", accelerator: "Ctrl+Tab", click: () => focused()?.win.selectNextTab() },
+        { label: "Show Previous Tab", accelerator: "Ctrl+Shift+Tab", click: () => focused()?.win.selectPreviousTab() },
+        { label: "Move Tab to New Window", click: () => focused()?.win.moveTabToNewWindow() },
+        { label: "Merge All Windows", click: () => focused()?.win.mergeAllWindows() },
+        { type: "separator" as const }, { role: "front" as const }, { role: "window" as const },
+      ] : []),
+    ] },
+  ]));
+  refreshMenu();
+}
+
+function refreshMenu() {
+  const entry = focused();
+  const menu = Menu.getApplicationMenu();
+  for (const id of ["save", "saveAs", "duplicate", "rename", "move", "revert"]) {
+    const item = menu?.getMenuItemById(id);
+    if (item) item.enabled = !!entry && (id !== "revert" || !!entry.record.filename);
   }
-  ipcMain.handle("window:update", (event, state) => {
-    validateSender(event);
-    const presentation = windowPresentation(state, storage.documentPath);
-    nativeTheme.themeSource = presentation.themeSource;
-    setNativeChrome(win, presentation.chromeColor);
-    win.setTitle(presentation.title);
-    if (process.platform === "darwin") {
-      documentHost.update(presentation.filename, presentation.edited);
-    }
-  });
-  // HTML page titles must not overwrite the native document title.
-  win.on("page-title-updated", (event) => event.preventDefault());
-  ipcMain.handle("editor:nativeHistory", (event, command: unknown) => {
-    validateSender(event);
-    if (command !== "undo" && command !== "redo") throw new TypeError("Invalid history command");
-    win.webContents[command]();
-  });
-  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  win.webContents.on("will-navigate", (event) => event.preventDefault());
-  win.webContents.on("will-attach-webview", (event) => event.preventDefault());
-  win.webContents.on("did-navigate", () => documentHost.unavailable("The editor reloaded before saving completed."));
-  win.webContents.on("render-process-gone", () => documentHost.unavailable("The editor stopped unexpectedly. The latest save could not be confirmed."));
-  let closing = false;
-  let flushed = false;
-  win.on("close", (event) => {
-    if (flushed) return;
-    event.preventDefault();
-    if (closing) return;
-    closing = true;
-    void documentHost.flush().then(() => {
-      flushed = true;
-      win.webContents.session.flushStorageData();
-      if (quitting) app.quit();
-      else win.close();
-    }).catch(async (error: unknown) => {
-      closing = false;
-      quitting = false;
-      await dialog.showMessageBox(win, { type: "warning", buttons: ["Keep Editing"],
-        message: "Your changes haven't finished saving", detail: String(error) });
-    });
-  });
-  win.webContents.on("will-prevent-unload", (event) => {
-    const choice = dialog.showMessageBoxSync(win, {
-      type: "warning", buttons: ["Keep Editing", "Discard and Close"], defaultId: 0, cancelId: 0,
-      title: "Unsaved changes", message: "Close without saving your latest changes?",
-      detail: "The latest changes have not yet been saved to a file or recovery draft.",
-    });
-    if (choice === 1) event.preventDefault();
-  });
-  win.once("ready-to-show", () => win.show());
-  win.on("closed", () => {
-    stopFileWatch();
-    ipcMain.removeHandler("file:watch");
-    ipcMain.removeListener("file:unwatch", unwatch);
-    documentHost.dispose();
-    ipcMain.removeListener("document:ready", documentReady);
-    ipcMain.removeHandler("document:commit");
-    ipcMain.removeHandler("document:read");
-    ipcMain.removeHandler("document:complete");
-    ipcMain.removeHandler("document:restore");
-    for (const method of fileMethods) ipcMain.removeHandler(`file:${method}`);
-    ipcMain.removeHandler("window:update");
-    ipcMain.removeHandler("editor:nativeHistory");
-    mainWindow = null;
-    currentDocumentHost = null;
-  });
-  await win.loadURL(rendererUrl);
 }
 
 async function start() {
   await app.whenReady();
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
-
   if (!isDev) {
     const assets = path.join(app.getAppPath(), "dist");
-    protocol.handle("ordinate", async (request) => {
+    protocol.handle("ordinate", async request => {
       const url = new URL(request.url);
       if (url.host !== "app" || request.method !== "GET") return new Response("Forbidden", { status: 403 });
       const relative = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
@@ -237,30 +191,16 @@ async function start() {
       return new Response(response.body, { status: response.status, headers });
     });
   }
-
-  function command(value: DesktopCommand) { mainWindow?.webContents.send("editor:command", value); }
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
-    { label: "File", submenu: [
-      { label: "Open…", accelerator: "CmdOrCtrl+O", click: () => command("open") },
-      { label: "Save", accelerator: "CmdOrCtrl+S", click: () => command("save") },
-      { label: "Save As…", accelerator: "CmdOrCtrl+Shift+S", click: () => command("saveAs") },
-      { type: "separator" }, { role: "close" },
-    ] },
-    { label: "Edit", submenu: [
-      { label: "Undo", accelerator: "CmdOrCtrl+Z", click: () => command("undo") },
-      { label: "Redo", accelerator: "CmdOrCtrl+Shift+Z", click: () => command("redo") },
-      { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" },
-    ] },
-    { label: "View", submenu: [{ role: "reload" }, { role: "toggleDevTools" }, { type: "separator" },
-      { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { role: "togglefullscreen" }] },
-    { role: "windowMenu" },
-  ]));
-  app.on("activate", () => { if (!mainWindow) void ensureWindow(); });
+  installMenu();
+  const records = await workspace.read();
+  if (records.length) for (const record of records) await createWindow(record);
+  else await createWindow();
+  initialized = true;
+  await persist();
+  app.on("activate", () => { if (!windows.size) run(() => createWindow()); });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-  await ensureWindow();
 }
 
-// Do not await app readiness at module scope: Electron waits for ESM evaluation
-// before emitting ready, which would otherwise deadlock startup.
-void start().catch((error) => { console.error(error); app.exit(1); });
+// Electron emits ready only after ESM evaluation has completed.
+startup = start();
+void startup.catch(error => { console.error(error); app.exit(1); });

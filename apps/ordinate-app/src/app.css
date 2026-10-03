@@ -125,13 +125,13 @@
     --formula-meta-ink-primary: oklch(43% 0.01 245);
     --formula-meta-ink-secondary: oklch(51% 0.008 242);
     --formula-tool-ink: oklch(46% 0.008 242);
-    --formula-shell-bg: oklch(99.5% 0.002 250 / 0.58);
+    --formula-shell-bg: oklch(99.5% 0.002 250 / 0.62);
     --formula-shell-border: oklch(100% 0 0 / 0.64);
     --formula-shell-topline: oklch(100% 0 0 / 0.34);
     --formula-input-bg: oklch(98.8% 0.002 250 / 0.72);
     --formula-input-border: oklch(100% 0 0 / 0.52);
-    --formula-input-bg-read: oklch(92.8% 0.006 245 / 0.7);
-    --formula-input-bg-focus: oklch(99.35% 0.001 250 / 0.92);
+    --formula-input-bg-read: oklch(92.8% 0.006 245 / 0.94);
+    --formula-input-bg-focus: oklch(99.35% 0.001 250 / 0.98);
     --formula-input-border-read: oklch(83.8% 0.01 242 / 0.66);
     --formula-input-border-focus: oklch(100% 0 0 / 0.64);
     --formula-input-ink-read: oklch(34% 0.012 244);
@@ -253,13 +253,13 @@
     --formula-meta-ink-primary: oklch(94% 0.008 104);
     --formula-meta-ink-secondary: oklch(89% 0.007 104);
     --formula-tool-ink: oklch(88% 0.007 104);
-    --formula-shell-bg: oklch(22% 0.008 100 / 0.64);
+    --formula-shell-bg: oklch(22% 0.008 100 / 0.72);
     --formula-shell-border: oklch(100% 0 0 / 0.3);
     --formula-shell-topline: oklch(100% 0 0 / 0.14);
     --formula-input-bg: oklch(97.2% 0.003 95 / 0.38);
     --formula-input-border: oklch(100% 0 0 / 0.34);
-    --formula-input-bg-read: oklch(44.5% 0.008 102 / 0.9);
-    --formula-input-bg-focus: oklch(90.6% 0.01 96 / 0.88);
+    --formula-input-bg-read: oklch(44.5% 0.008 102 / 0.96);
+    --formula-input-bg-focus: oklch(90.6% 0.01 96 / 0.96);
     --formula-input-border-read: oklch(100% 0 0 / 0.28);
     --formula-input-border-focus: oklch(100% 0 0 / 0.44);
     --formula-input-ink-read: oklch(89% 0.006 104);
@@ -372,13 +372,13 @@
         --formula-meta-ink-primary: oklch(94% 0.008 104);
         --formula-meta-ink-secondary: oklch(89% 0.007 104);
         --formula-tool-ink: oklch(88% 0.007 104);
-        --formula-shell-bg: oklch(22% 0.008 100 / 0.64);
+        --formula-shell-bg: oklch(22% 0.008 100 / 0.72);
         --formula-shell-border: oklch(100% 0 0 / 0.3);
         --formula-shell-topline: oklch(100% 0 0 / 0.14);
         --formula-input-bg: oklch(97.2% 0.003 95 / 0.38);
         --formula-input-border: oklch(100% 0 0 / 0.34);
-        --formula-input-bg-read: oklch(44.5% 0.008 102 / 0.9);
-        --formula-input-bg-focus: oklch(90.6% 0.01 96 / 0.88);
+        --formula-input-bg-read: oklch(44.5% 0.008 102 / 0.96);
+        --formula-input-bg-focus: oklch(90.6% 0.01 96 / 0.96);
         --formula-input-border-read: oklch(100% 0 0 / 0.28);
         --formula-input-border-focus: oklch(100% 0 0 / 0.44);
         --formula-input-ink-read: oklch(89% 0.006 104);
@@ -1284,6 +1284,7 @@ textarea {
 
 .floating-tooltip {
     position: fixed;
+    width: max-content;
     max-width: min(24rem, calc(100vw - 1.25rem));
     padding: 0.42rem 0.62rem;
     border: 1px solid color-mix(in oklab, var(--chrome-border) 82%, transparent);
@@ -1292,7 +1293,8 @@ textarea {
     color: var(--chrome-ink);
     font-size: 0.8rem;
     line-height: 1.25;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
     transform: translate(-50%, -4px) scale(0.98);
     box-shadow: 0 10px 24px oklch(20% 0.01 100 / 0.16);
     backdrop-filter: blur(14px) saturate(1.04);
@@ -1707,11 +1709,9 @@ textarea {
 }
 
 .sheet-tab {
-    --sheet-tab-fade-bg: var(--toolbar-pill);
-
     flex: 0 0 auto;
     min-width: 5.4rem;
-    max-width: 10.5rem;
+    max-width: 8rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1726,13 +1726,13 @@ textarea {
     line-height: 1.1;
     font-weight: 450;
     transition:
+        max-width 240ms var(--ease-out-quart),
         background-color 160ms var(--ease-out-quart),
         border-color 160ms var(--ease-out-quart),
         color 160ms var(--ease-out-quart),
         box-shadow 160ms var(--ease-out-quart),
         opacity 160ms var(--ease-out-quart),
-        transform 160ms var(--ease-out-quart),
-        backdrop-filter 160ms var(--ease-out-quart);
+        transform 160ms var(--ease-out-quart);
     -webkit-user-select: none;
     user-select: none;
     overflow: hidden;
@@ -1770,20 +1770,8 @@ textarea {
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
-    text-overflow: clip;
+    text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.sheet-tab:not(.renaming)::after {
-    content: "";
-    position: absolute;
-    z-index: 1;
-    inset-block: 2px;
-    inset-inline-end: 0.46rem;
-    width: 1.05rem;
-    border-radius: 999px;
-    background: linear-gradient(90deg, transparent, var(--sheet-tab-fade-bg) 82%);
-    pointer-events: none;
 }
 
 .sheet-tab:not(.renaming) .sheet-tab-label,
@@ -1881,12 +1869,6 @@ textarea {
 }
 
 .sheet-tab:hover {
-    --sheet-tab-fade-bg: color-mix(
-        in oklab,
-        var(--toolbar-pill) 70%,
-        oklch(100% 0 0 / 0.18)
-    );
-
     background: color-mix(
         in oklab,
         var(--toolbar-pill) 70%,
@@ -1900,13 +1882,9 @@ textarea {
     box-shadow:
         inset 0 1px 0 oklch(100% 0 0 / 0.22),
         0 10px 22px oklch(30% 0.012 100 / 0.06);
-    backdrop-filter: blur(16px) saturate(1.04);
 }
 
 .sheet-tab.active {
-    --sheet-tab-fade-bg: var(--accent);
-
-    min-width: clamp(5.8rem, 16vw, 8rem);
     max-width: min(14rem, 44vw);
     background: var(--accent);
     border-color: color-mix(in oklab, var(--accent-strong) 75%, transparent);
@@ -3915,7 +3893,8 @@ textarea {
 }
 
 .formula-bar-shell {
-    --formula-control-height: 2.18rem;
+    --formula-control-height: 2.5rem;
+    --formula-meta-inset: 0.75rem;
     --formula-input-radius: calc(var(--formula-control-height) / 2);
     --formula-shell-radius: 1.75rem;
     /* Concentric shell corner and action circle, including the shell border. */
@@ -3930,6 +3909,10 @@ textarea {
     border: 1px solid transparent;
     border-radius: var(--formula-shell-radius);
     overflow: visible;
+    /* Blur at the outer layer: its opacity compositing boundary prevents a
+       child backdrop-filter from sampling the table behind the shell. */
+    -webkit-backdrop-filter: blur(14px) saturate(1.12);
+    backdrop-filter: blur(14px) saturate(1.12);
     opacity: 0;
     pointer-events: none;
     will-change: opacity, bottom;
@@ -3946,8 +3929,6 @@ textarea {
     pointer-events: none;
     background: var(--formula-shell-bg);
     box-shadow: var(--glass-shadow), inset 0 1px 0 var(--formula-shell-topline);
-    -webkit-backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
-    backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
     transform-origin: center bottom;
     z-index: 0;
 }
@@ -3964,11 +3945,11 @@ textarea {
 
 .formula-bar {
     display: grid;
-    grid-template-columns: minmax(9.4rem, 24%) minmax(0, 1fr);
+    grid-template-columns: 8.5rem minmax(0, 1fr);
     min-height: calc(2 * var(--formula-shell-radius) - 2px);
     align-items: end;
     gap: 0.4rem;
-    padding: var(--formula-control-inset) var(--formula-control-inset) var(--formula-control-inset) 1.28rem;
+    padding: var(--formula-control-inset) var(--formula-control-inset) var(--formula-control-inset) var(--formula-meta-inset);
     position: relative;
     border: 0;
     border-radius: inherit;
@@ -3984,13 +3965,23 @@ textarea {
 }
 
 .formula-meta-stack {
-    display: grid;
-    /* The two-line label fits into the shell's insets without moving its
-       single-line input or the bottom-anchored controls. */
-    height: var(--formula-control-height);
-    align-content: center;
-    gap: 0.14rem;
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    justify-content: space-between;
+    /* Match a single-line input; grow with the editor without moving tools. */
+    min-height: var(--formula-control-height);
     min-width: 0;
+}
+
+.formula-meta-lower .formula-display-meta button {
+    height: 1.375rem;
+}
+
+.formula-meta-lower {
+    /* Buttons include their own icon padding; align the hit-area edge with
+       the shell's bottom inset rather than the text row's optical inset. */
+    margin-inline-start: calc(var(--formula-control-inset) - var(--formula-meta-inset));
 }
 
 .formula-bar-meta {
@@ -4004,16 +3995,16 @@ textarea {
     user-select: none;
 }
 
+.formula-meta-top,
 .formula-meta-lower {
     display: flex;
     align-items: center;
-    gap: 0.22rem;
+    gap: 0.5rem;
     min-width: 0;
 }
 
 .formula-chip,
 .formula-address,
-.formula-subaddress,
 .formula-value-preview {
     min-width: 0;
     border-radius: 999px;
@@ -4031,8 +4022,7 @@ textarea {
 }
 
 .formula-chip-slot {
-    width: 4.65rem;
-    min-width: 4.65rem;
+    flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     justify-content: flex-start;
@@ -4051,21 +4041,28 @@ textarea {
     padding: 0.08rem 0.12rem;
     background: transparent;
     color: var(--formula-meta-ink-primary);
-    font-size: 0.67rem;
+    font-size: 0.75rem;
+    line-height: 1;
     font-weight: 600;
     letter-spacing: 0.01em;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.08rem;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
 }
 
-.formula-subaddress {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    padding: 0.08rem 0.12rem;
-    background: transparent;
-    color: var(--formula-meta-ink-secondary);
-    font-size: 0.64rem;
-    font-weight: 540;
-    max-width: min(8.8rem, 16vw);
-}
+.formula-address:hover { background: color-mix(in oklab, var(--formula-meta-ink-primary) 8%, transparent); }
+.formula-address:focus-visible { outline: 1px solid var(--formula-meta-ink-primary); outline-offset: 2px; }
+.formula-column-address sub { font-size: .65em; margin-left: .06rem; color: var(--accent-strong); opacity: .7; }
+.formula-row-address { font-variant-numeric: tabular-nums; }
+.formula-selection-count { color: var(--formula-meta-ink-secondary); font-size: .65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.formula-location { position: relative; }
+.formula-location-popover-wrap { position: absolute; left: 0; bottom: 100%; padding-bottom: 8px; z-index: 40; }
+.formula-location-popover { padding: .65rem .8rem; width: max-content; max-width: min(22rem, calc(100vw - 4rem)); font-size: .75rem; white-space: normal; }
+.formula-location-popover > div:not(.editor-popover-surface) { display: grid; grid-template-columns: 4.2rem minmax(0, 1fr); gap: .5rem; padding-block: .15rem; overflow-wrap: anywhere; }
+.formula-location-label { color: var(--chrome-soft); }
 
 .formula-value-preview {
     overflow: hidden;
@@ -4106,9 +4103,7 @@ textarea {
         color 140ms var(--ease-out-quart),
         background-color 140ms var(--ease-out-quart),
         border-color 140ms var(--ease-out-quart),
-        box-shadow 180ms var(--ease-out-quint),
-        transform 180ms var(--ease-out-quint),
-        filter 180ms var(--ease-out-quint);
+        box-shadow 140ms var(--ease-out-quart);
 }
 
 .formula-source.is-read {
@@ -4127,8 +4122,6 @@ textarea {
         inset 0 -1px 0 var(--formula-input-inset-bottom),
         0 0 0 1px var(--formula-input-focus-ring),
         var(--formula-input-edit-elev-shadow);
-    animation: formula-input-focus-in 210ms var(--ease-out-quint) both;
-    filter: saturate(1.05) brightness(1.02);
 }
 
 .formula-source-button {
@@ -4251,17 +4244,21 @@ textarea {
 .formula-source-textarea {
     min-width: 0;
     width: 100%;
-    min-height: var(--formula-control-height);
-    padding: calc((var(--formula-control-height) - var(--formula-editor-line-height)) / 2) 0.9rem;
+    box-sizing: border-box;
+    min-height: calc(var(--formula-control-height) - 2px);
+    padding: calc((var(--formula-control-height) - 2px - var(--formula-editor-line-height)) / 2) 0.9rem;
     font: inherit;
     line-height: var(--formula-editor-line-height);
-    white-space: pre;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     letter-spacing: 0;
     tab-size: 4;
     font-variant-ligatures: none;
 }
 
 .formula-token-backdrop {
+    position: absolute;
+    inset: 0;
     overflow: hidden;
     color: var(--formula-input-ink-focus);
     pointer-events: none;
@@ -4273,10 +4270,11 @@ textarea {
 }
 
 .formula-source-textarea {
-    position: absolute;
-    inset: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
+    position: relative;
+    display: block;
+    max-height: min(10rem, 35vh);
+    overflow-x: hidden;
+    overflow-y: auto;
     resize: none;
     border: 0;
     outline: none;
@@ -4975,7 +4973,8 @@ textarea {
     position: relative;
     display: flex;
     align-items: flex-end;
-    gap: 0.34rem;
+    /* Same space on both sides of the bottom-anchored confirmation circle. */
+    gap: calc(var(--formula-control-inset) + 1px);
     min-width: 0;
     width: 100%;
 }
@@ -6066,17 +6065,6 @@ textarea:focus-visible,
     }
 }
 
-@keyframes formula-input-focus-in {
-    from {
-        transform: translateY(1.2px) scale(0.992);
-        filter: saturate(0.95) brightness(0.98);
-    }
-    to {
-        transform: translateY(0) scale(1);
-        filter: saturate(1.05) brightness(1.02);
-    }
-}
-
 @keyframes cell-selection-pulse {
     from {
         opacity: 0.72;
@@ -6133,16 +6121,28 @@ textarea:focus-visible,
 @media (max-width: 640px) {
     .formula-bar-shell {
         width: calc(100% - 1rem);
+        --formula-shell-radius: 1.25rem;
+        --formula-control-inset: 0.5rem;
     }
 
     .formula-bar {
         grid-template-columns: 1fr;
-        gap: 0.42rem;
-        padding-left: 0.48rem;
+        gap: 0.5rem;
+        padding: 0.75rem;
     }
 
     .formula-meta-stack {
-        gap: 0.16rem;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        height: auto;
+        min-height: 0;
+        gap: 0.5rem;
+    }
+
+    .formula-meta-lower {
+        margin-inline-start: 0;
     }
 
     .formula-source-row {
@@ -6153,29 +6153,9 @@ textarea:focus-visible,
         max-width: min(11rem, 34vw);
     }
 
-    .formula-subaddress {
-        max-width: 42vw;
-    }
-}
-
-@media (max-width: 640px) {
     .topbar {
         padding-inline: 0.5rem;
         padding-inline-start: 0.7rem;
-    }
-
-    .formula-bar {
-        grid-template-columns: auto minmax(0, 1fr);
-        gap: 0.3rem;
-    }
-
-    .formula-bar-meta,
-    .formula-chip-slot {
-        display: none;
-    }
-
-    .formula-meta-lower {
-        display: block;
     }
 
     .sheet-tab {
@@ -6186,9 +6166,7 @@ textarea:focus-visible,
     }
 
     .sheet-tab.active {
-        min-width: min(5.2rem, 40vw);
         max-width: min(9.2rem, 56vw);
-        padding-inline: 0.72rem;
     }
 
     .sheetbar {
@@ -6209,7 +6187,7 @@ textarea:focus-visible,
     }
 
     .formula-source-row {
-        gap: 0.28rem;
+        gap: 0.75rem;
     }
 
     .reference-options-popover {

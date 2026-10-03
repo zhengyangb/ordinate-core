@@ -10,7 +10,7 @@ import type { StorageAdapter } from "../platform/storage";
 import { createFileSessionStore, createMemoryLocalDraftStore, getPersistableText } from "../store/fileSessionStore";
 import { useSheetViewModel } from "../hooks/useSheetViewModel";
 import { useEditorStore } from "../store/editorStore";
-import { buildDocumentSearchCells } from "./searchModel";
+import { buildDocumentSearchCells, findDocumentMatches } from "./searchModel";
 
 describe("document-wide search", () => {
   const document = `# First
@@ -37,6 +37,24 @@ describe("document-wide search", () => {
     expect(search().map(match => match.sheet)).toEqual(["First"]);
     useEditorStore.getState().undo();
     expect(search()).toHaveLength(2);
+  });
+  it("switches scope without changing the query and follows the current sheet", () => {
+    const cells = buildDocumentSearchCells(useEditorStore.getState(), "en-US");
+    expect(findDocumentMatches(cells, "Revenue", false, "all", "First").map(match => match.sheet)).toEqual(["First", "Second"]);
+    expect(findDocumentMatches(cells, "Revenue", false, "current", "First").map(match => match.sheet)).toEqual(["First"]);
+    expect(findDocumentMatches(cells, "Revenue", false, "current", "Second").map(match => match.sheet)).toEqual(["Second"]);
+    expect(findDocumentMatches(cells, "123", false, "current", "Second")).toEqual([]);
+    expect(findDocumentMatches(cells, "123", false, "all", "Second")).toHaveLength(1);
+    expect(findDocumentMatches(cells, "revenue", true, "current", "Second")).toEqual([]);
+    expect(findDocumentMatches(cells, "", false, "current", "First")).toEqual([]);
+  });
+  it("recalculates current-sheet results after editing and undo", () => {
+    const current = () => findDocumentMatches(buildDocumentSearchCells(useEditorStore.getState(), "en-US"), "Revenue", false, "current", "Second");
+    expect(current()).toHaveLength(1);
+    useEditorStore.getState().setCellInput({ kind: "index", sheet: "Second", rowIndex: 1, colIndex: 0 }, "Costs");
+    expect(current()).toEqual([]);
+    useEditorStore.getState().undo();
+    expect(current()).toHaveLength(1);
   });
 });
 import type { HeaderOverlayCell } from "../types/ui";

@@ -26,11 +26,12 @@ export interface SheetIR {
 }
 
 export interface DocumentIR {
+  frontMatter: string | null;
   sheets: SheetIR[];
 }
 
 export function parseDocumentModel(text: string): DocumentIR {
-  const sheets = parseDocument(text);
+  const { frontMatter, sheets } = parseDocument(text);
   const irSheets: SheetIR[] = [];
 
   for (const sheet of sheets) {
@@ -63,7 +64,7 @@ export function parseDocumentModel(text: string): DocumentIR {
     });
   }
 
-  return { sheets: irSheets };
+  return { frontMatter, sheets: irSheets };
 }
 
 function headerRowCountFrom(rows: ParsedRow[]): number {

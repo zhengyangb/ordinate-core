@@ -4,7 +4,7 @@ import { trimCellText } from "./text_encoding";
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 
 export function formatDocument(text: string): string {
-  const sheets = parseDocument(text);
+  const { frontMatter, sheets } = parseDocument(text);
   const parts: string[] = [];
 
   sheets.forEach((sheet, idx) => {
@@ -26,7 +26,9 @@ export function formatDocument(text: string): string {
     }
   });
 
-  return parts.join("\n").replace(/\s+$/, "") + "\n";
+  const body = parts.join("\n").replace(/\s+$/, "") + "\n";
+  if (frontMatter === null) return body;
+  return parts.length === 0 ? `${frontMatter}\n` : `${frontMatter}\n\n${body}`;
 }
 
 function columnWidths(rows: ParsedRow[]): number[] {

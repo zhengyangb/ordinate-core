@@ -1,9 +1,9 @@
 import { getCellTextView, type CellTextViewSource, type PresentedCell, type RuntimeValue } from "@ordinate/core";
 
 import type { FormulaBarData, SelectedCell } from "../types/ui";
-import { BLANK_RUNTIME_VALUE, formatLocalView, styleLocalView } from "./appHelpers";
+import { BLANK_RUNTIME_VALUE, formatLocalView, styleLocalView, toColumnLetters } from "./appHelpers";
 import { formatLocalViewFromSpec } from "./formatDisplay";
-import { leafLabel, runtimeKindLabel, runtimeValueToText } from "./sheetView";
+import { leafLabel, splitPath, runtimeKindLabel, runtimeValueToText } from "./sheetView";
 
 type RuntimeSheet = {
   rowPaths: string[];
@@ -33,7 +33,7 @@ type BuildFormulaBarDataParams = {
   isActiveSheetBlocked: boolean;
   sheetColCount: number;
   headerColCount: number;
-  headerSemanticLabels: string[];
+  headerSemanticLabelPaths: string[][];
 };
 
 function resolveCellTextView(cell: StateCell | undefined, fallbackCellText: string, mode: "input" | "body") {
@@ -84,7 +84,7 @@ export function buildFormulaBarData({
   isActiveSheetBlocked,
   sheetColCount,
   headerColCount,
-  headerSemanticLabels,
+  headerSemanticLabelPaths,
 }: BuildFormulaBarDataParams): FormulaBarData | null {
   if (!currentSheet || !currentSheetState || !selectedCell || isActiveSheetBlocked) return null;
 
@@ -92,9 +92,13 @@ export function buildFormulaBarData({
   if (colIndex < 0 || colIndex >= sheetColCount) return null;
   const colNumber = colIndex + 1;
 
-  const semanticColLabel = headerSemanticLabels[colIndex] ?? `C${colNumber}`;
   const rowNumber = selectedCell.logical.rAbs;
   const absoluteRowIndex = rowNumber - 1;
+  const address = {
+    primaryAddress: `${toColumnLetters(colNumber)}${rowNumber}`,
+    columnNumber: colNumber, rowNumber,
+    columnPath: headerSemanticLabelPaths[colIndex] ?? [],
+  };
 
   if (selectedCell.area === "header") {
     const maxHeaderRow = currentSheetState.headerRowCount ?? 0;
@@ -104,8 +108,8 @@ export function buildFormulaBarData({
     const displayText = currentSheetPresentation?.headerDisplayRows?.[rowNumber - 1]?.[colIndex] ?? "";
     const textView = resolveCellTextView(rawCell, displayText, "body");
     return {
-      primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
-      secondaryAddress: `${semanticColLabel} / Header Row ${rowNumber}`,
+      ...address,
+      rowPath: [`Header Row ${rowNumber}`],
       chip: "Header Row",
       displayText,
       cellText: textView.cellText,
@@ -129,8 +133,8 @@ export function buildFormulaBarData({
     const displayText = colIndex === 0 ? rowLeaf : (presentedCell?.displayText ?? "");
     const textView = resolveCellTextView(rawCell, displayText, "body");
     return {
-      primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
-      secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
+      ...address,
+      rowPath: splitPath(rowPath),
       chip: colIndex === 0 ? "Label" : "Header Col",
       displayText,
       cellText: textView.cellText,
@@ -149,8 +153,8 @@ export function buildFormulaBarData({
 
   return {
     supportsMultilineText: true,
-    primaryAddress: `Col ${colNumber} · Row ${rowNumber}`,
-    secondaryAddress: `${semanticColLabel} / ${rowLeaf}`,
+    ...address,
+    rowPath: splitPath(rowPath),
     chip,
     displayText: presentedCell?.displayText ?? (runtimeValue ? runtimeValueToText(runtimeValue) : ""),
     cellText: textView.cellText,

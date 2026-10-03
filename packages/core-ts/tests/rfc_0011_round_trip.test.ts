@@ -96,7 +96,7 @@ this line is not parseable as table row
     state.evaluate();
     const output = serializeDocumentState(state);
 
-    const parsed = parseDocument(output);
+    const { sheets: parsed } = parseDocument(output);
     expect(parsed).toHaveLength(2);
     expect(parsed[0].blocks.some((b) => b.kind === "unparsed")).toBe(true);
     expect(parsed[1].name).toBe("Good");

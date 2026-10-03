@@ -17,7 +17,6 @@ import type {
   SheetSelection,
   SheetHealth,
   SheetIssueViewModel,
-  ThemeMode,
 } from "../types/ui";
 import { firstColumnFormatPreviewValue, formatLocalViewFromSpec } from "./formatDisplay";
 import { runtimeValueToText } from "./sheetView";
@@ -36,12 +35,9 @@ export const TAB_TOOLTIP_DELAY_MS = 40;
 export const CONTROL_TOOLTIP_DELAY_MS = 220;
 export const TOOLTIP_GAP = 8;
 export const TOOLTIP_VIEWPORT_MARGIN = 10;
-export const TOOLTIP_ESTIMATED_HEIGHT = 34;
-export const TOOLTIP_ESTIMATED_WIDTH = 240;
 export const FLOATING_MENU_VIEWPORT_MARGIN = 24;
 export const FLOATING_MENU_GAP = 8;
 export const COLUMN_RAIL_MENU_MAX_WIDTH_REM = 27;
-export const THEME_STORAGE_KEY = "ordinate-theme-mode";
 export const BLANK_RUNTIME_VALUE: RuntimeValue = { kind: "blank", value: null };
 
 export type RingRect = {
@@ -105,12 +101,6 @@ const BLOCKING_SHEET_MESSAGE_FRAGMENTS = [
   "row must start and end with '|'",
   "multiple || boundary markers in one row",
 ];
-
-export function resolveInitialThemeMode(): ThemeMode {
-  if (typeof window === "undefined") return "auto";
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return stored === "light" || stored === "dark" || stored === "auto" ? stored : "auto";
-}
 
 export function toColFieldId(colIndex: number): string {
   return `col_${colIndex}`;

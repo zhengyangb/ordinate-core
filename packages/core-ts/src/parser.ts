@@ -23,6 +23,35 @@ export interface Sheet {
   hasMultipleTables: boolean;
 }
 
+export interface ParsedDocument {
+  /** Opaque front-matter block, including delimiters; null when absent. */
+  frontMatter: string | null;
+  sheets: Sheet[];
+}
+
+export class DocumentParseError extends Error {
+  readonly code = "front_matter_unterminated";
+
+  constructor() {
+    super("YAML front matter must end with a standalone '---' or '...' line.");
+    this.name = "DocumentParseError";
+  }
+}
+
+function splitDocumentEnvelope(text: string): { frontMatter: string | null; body: string } {
+  // An optional UTF-8 BOM is a file encoding marker, not front-matter data.
+  const source = text.startsWith("\uFEFF") ? text.slice(1) : text;
+  const opening = /^---[ \t]*(?:\r?\n|$)/.exec(source);
+  if (!opening) return { frontMatter: null, body: source };
+  const closingPattern = /\n(?:---|\.\.\.)[ \t]*(?=\r?\n|$)/g;
+  closingPattern.lastIndex = opening[0].length - 1;
+  const closing = closingPattern.exec(source);
+  if (!closing) throw new DocumentParseError();
+  const end = closing.index + closing[0].length;
+  const newlineLength = source.startsWith("\r\n", end) ? 2 : source[end] === "\n" ? 1 : 0;
+  return { frontMatter: source.slice(0, end), body: source.slice(end + newlineLength) };
+}
+
 export interface ParsedRow {
   rawCells: string[];
   cells: string[];
@@ -51,7 +80,8 @@ export interface DerivedHierarchyRow {
 
 const HIERARCHY_PREFIX_RE = /^(\*+)(?:\s+(.*))?$/;
 
-export function parseDocument(text: string): Sheet[] {
+export function parseDocument(text: string): ParsedDocument {
+  const { frontMatter, body } = splitDocumentEnvelope(text);
   const sheets: Sheet[] = [];
   let currentName: string | null = null;
   let currentRows: string[] = [];
@@ -72,7 +102,7 @@ export function parseDocument(text: string): Sheet[] {
     currentRows = [];
   }
 
-  for (const raw of text.split(/\r?\n/)) {
+  for (const raw of body.split(/\r?\n/)) {
     const line = raw.replace(/\s+$/, "");
     if (line.startsWith("# ")) {
       flushSheet();
@@ -85,7 +115,7 @@ export function parseDocument(text: string): Sheet[] {
   }
 
   flushSheet();
-  return sheets;
+  return { frontMatter, sheets };
 }
 
 function splitBlocks(lines: string[]): SheetBlock[] {

@@ -16,7 +16,7 @@ function rebuildDoc(sheets: SheetRows[]): string {
 }
 
 function updateCellText(doc: string, sheetName: string, rowPath: string, colLabel: string, newText: string): string {
-  const parsed = parseDocument(doc);
+  const { sheets: parsed } = parseDocument(doc);
   const sheets: SheetRows[] = [];
 
   for (const sheet of parsed) {

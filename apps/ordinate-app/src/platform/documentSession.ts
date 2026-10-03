@@ -28,9 +28,32 @@ export async function flushFileSession(store: StoreApi<FileSessionState>): Promi
 }
 
 export async function handleDocumentRequest(
-  store: StoreApi<FileSessionState>, bridge: Pick<DesktopBridge, "readDocumentRequest" | "commitDocumentRequest">, request: DocumentRequest,
+  store: StoreApi<FileSessionState>, bridge: Pick<DesktopBridge, "readDocumentRequest" | "commitDocumentRequest" | "duplicateDocument">, request: DocumentRequest,
 ): Promise<void> {
   if (request.kind === "flush") return flushFileSession(store);
+  if (request.kind === "saveAs") {
+    await waitForFileSession(store);
+    await store.getState().saveAs({ allowInvalidSource: true });
+    if (!store.getState().file || store.getState().lastError) throw new Error("The document was not saved.");
+    return flushFileSession(store);
+  }
+  if (request.kind === "duplicate") {
+    await flushFileSession(store);
+    const state = store.getState();
+    const text = state.file ? state.backingText : state.localDraftText;
+    if (text === null) throw new Error("No document content to duplicate");
+    await bridge.duplicateDocument(request.id, text);
+    return;
+  }
+  if (request.kind === "revert") {
+    // Do not flush: that would overwrite the version the user chose to restore.
+    await waitForFileSession(store);
+    await store.getState().open(() => bridge.readDocumentRequest(request.id));
+    if (store.getState().recoveryDraft) await store.getState().discardDraft();
+    if (store.getState().lastError) throw new Error("The document could not be reverted.");
+    await store.getState().autosaveNow();
+    return;
+  }
   if (request.kind === "open") {
     const snapshot = await bridge.readDocumentRequest(request.id);
     if (!snapshot.ok) throw new Error(`The document could not be opened: ${snapshot.error.kind}`);

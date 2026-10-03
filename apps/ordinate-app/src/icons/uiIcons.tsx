@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import type { ToolSpec } from "../types/ui";
 
 function ToolbarIcon({ children }: { children: ReactNode }) {
   return (
@@ -97,14 +96,20 @@ function OrganizeIcon() {
   );
 }
 
-export function PageSetupIcon() {
+export function SheetSetupIcon() {
   return (
     <ToolbarIcon>
-      <rect x="3.2" y="3.8" width="13.6" height="12.4" rx="2" fill="none" stroke="currentColor" strokeWidth="1.35" />
-      <path d="M3.2 7.4h13.6M7 3.8v12.4" fill="none" stroke="currentColor" strokeWidth="1.15" />
-      <path d="M9.8 10.2h4.2M9.8 12.7h2.8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.25" />
-      <circle cx="14.6" cy="14.5" r="1.9" fill="none" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M14.6 13.5v2M13.6 14.5h2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.05" />
+      <path d="M4.6 3.5h10.8A1.6 1.6 0 0 1 17 5.1v2.4H3V5.1a1.6 1.6 0 0 1 1.6-1.6ZM3 7.5h4v9H4.6A1.6 1.6 0 0 1 3 14.9Z" fill="currentColor" opacity="0.16" />
+      <rect x="3" y="3.5" width="14" height="13" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M3 7.5h14M7 7.5v9" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    </ToolbarIcon>
+  );
+}
+
+export function NewDocumentIcon() {
+  return (
+    <ToolbarIcon>
+      <path d="M11.5 2.5H5a1.5 1.5 0 0 0-1.5 1.5v12A1.5 1.5 0 0 0 5 17.5h10a1.5 1.5 0 0 0 1.5-1.5V7.5ZM11.5 2.5v5h5M10 10v5M7.5 12.5h5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
     </ToolbarIcon>
   );
 }
@@ -282,14 +287,3 @@ export function AutoIcon() {
     </ToolbarIcon>
   );
 }
-
-export const TOOLBAR_ITEMS: ToolSpec[] = [
-  { label: "View", icon: <ViewIcon /> },
-  { label: "Insert", icon: <InsertIcon /> },
-  { label: "Table", icon: <TableGlyph /> },
-  { label: "Chart", icon: <ChartIcon /> },
-  { label: "Text", icon: <TextIcon /> },
-  { label: "Shape", icon: <ShapeIcon /> },
-  { label: "Comment", icon: <CommentIcon /> },
-  { label: "Organize", icon: <OrganizeIcon /> },
-];

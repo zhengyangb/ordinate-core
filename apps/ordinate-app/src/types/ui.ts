@@ -69,7 +69,10 @@ export type HeaderOverlayHitResult = {
 export type FormulaBarData = {
   supportsMultilineText?: boolean;
   primaryAddress: string;
-  secondaryAddress: string;
+  columnNumber: number;
+  rowNumber: number;
+  columnPath: string[];
+  rowPath: string[];
   chip: string;
   displayText: string;
   cellText: string;
@@ -246,15 +249,7 @@ export type RailMenuView = ColumnRailMenuView | RowRailMenuView;
 
 export type FloatingTooltip = {
   text: string;
-  top: number;
-  left: number;
-  placement: "above" | "below";
-  alignment: "center" | "left" | "right";
-};
-
-export type ToolSpec = {
-  label: string;
-  icon: ReactNode;
+  anchor: Pick<DOMRect, "top" | "bottom" | "left" | "width">;
 };
 
 export type SheetHealth = "ok" | "invalid";

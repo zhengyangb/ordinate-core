@@ -25,8 +25,10 @@ export function SearchPanel() {
   useSearchPanelPlacement(search);
   if (!search?.isOpen) return null;
   const count = search.matches.length;
+  const currentOnly = search.searchScope === "current";
+  const scopeDescription = currentOnly ? "current sheet" : "all sheets";
   return <div className="search-anchor">
-    <div id="sheet-search" className="sheet-search" role="search" aria-label="Find in all sheets" ref={search.panelRef}
+    <div id="sheet-search" className="sheet-search" role="search" aria-label={`Find in ${scopeDescription}`} ref={search.panelRef}
       onMouseDown={event => event.stopPropagation()} onKeyDown={event => {
         event.stopPropagation();
         if (event.target === search.inputRef.current && event.key === "Enter" && !event.nativeEvent.isComposing) {
@@ -35,16 +37,19 @@ export function SearchPanel() {
       }}>
       <div className="search-input-wrap">
         <SearchIcon />
-        <input ref={search.inputRef} type="text" aria-label="Search all sheets" placeholder="Find in all sheets…" autoComplete="off" spellCheck={false}
+        <input ref={search.inputRef} type="text" aria-label={`Search ${scopeDescription}`} placeholder={`Find in ${scopeDescription}…`} autoComplete="off" spellCheck={false}
           value={search.query} onChange={event => search.setQuery(event.target.value)} aria-describedby="search-summary" />
         <button type="button" className="search-case" aria-label="Match case" aria-pressed={search.matchCase} title="Match case"
           onClick={() => search.setMatchCase(!search.matchCase)}>Aa</button>
       </div>
-      <span className="search-count" id="search-summary" role="status" aria-live="polite" aria-atomic="true"
-        title={search.matches[search.activeIndex]?.sheet}
-        aria-label={search.query ? `${count ? search.activeIndex + 1 : 0} of ${count} matching cells across all sheets` : "Search displayed values in all sheets"}>
-        {search.query ? count ? `${search.activeIndex + 1} / ${count}` : "No results" : "All sheets"}
-      </span>
+      <button type="button" className="search-scope" aria-label="Search current sheet only" aria-pressed={currentOnly}
+        title={currentOnly ? "Switch to all sheets" : "Switch to current sheet"} onClick={search.toggleScope}>
+        <span>{currentOnly ? "Current sheet" : "All sheets"}</span>
+        <span className="search-count" id="search-summary" role="status" aria-live="polite" aria-atomic="true"
+          aria-label={search.query ? `${count ? search.activeIndex + 1 : 0} of ${count} matching cells in ${scopeDescription}` : `Search displayed values in ${scopeDescription}`}>
+          {search.query ? count ? `${search.activeIndex + 1} / ${count}` : "No results" : null}
+        </span>
+      </button>
       <div className="search-navigation">
         <button type="button" aria-label="Previous match" title="Previous (Shift+Enter)" disabled={!count} onClick={() => search.navigate(-1)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 12 5-5 5 5" /></svg></button>
         <button type="button" aria-label="Next match" title="Next (Enter)" disabled={!count} onClick={() => search.navigate(1)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 8 5 5 5-5" /></svg></button>

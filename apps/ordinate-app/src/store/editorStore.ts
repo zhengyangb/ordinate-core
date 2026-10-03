@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { BLANK_DOCUMENT } from "../platform/blankDocument";
 
 import {
   applyBatchWithUndo,
@@ -332,7 +333,7 @@ function emptyHistoryState(revision = 0): Pick<
   };
 }
 
-const initialState = bootstrapFromSource(sampleDocument);
+const initialState = bootstrapFromSource(typeof window !== "undefined" && window.ordinateDesktop ? BLANK_DOCUMENT : sampleDocument);
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   ...initialState,

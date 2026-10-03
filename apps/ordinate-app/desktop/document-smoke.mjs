@@ -10,6 +10,9 @@ import { createNativeStorage } from '../desktop-out/desktop/fileStorage.js';
 // Must precede even temporary-directory I/O: awaiting it can let AppKit finish
 // launching and install its default controller before this test owns restoration.
 const native = createRequire(import.meta.url)('../desktop-out/native/document-test.node');
+let completed = false;
+app.on('window-all-closed', () => {});
+app.on('will-quit', () => { if (!completed) console.error('Native smoke exited before completion'); });
 let onNativeOpen;
 native.setDocumentOpenHandler((id, kind, filename) => { void onNativeOpen(id, filename); });
 
@@ -22,7 +25,7 @@ async function run() {
   await app.whenReady();
   console.log('Native smoke: app ready');
   const win = new BrowserWindow({ show: false });
-  const storage = createNativeStorage({ open: async () => null, save: async () => null }, native.copyDocumentMetadata);
+  const storage = createNativeStorage({ open: async () => null, save: async () => null }, native.copyDocumentMetadata, native.checkpoint);
   let snapshot = null;
   let text = 'First snapshot';
   let blocked = false;
@@ -41,6 +44,12 @@ async function run() {
     } catch (error) { native.completeDocumentRequest(host, id, String(error)); }
   });
   onNativeOpen = async (id, filename) => {
+    // AppKit can send Resume requests left by other Electron instances. A test
+    // must never read those files or replace its own fixture with their content.
+    if (path.dirname(filename) !== directory) {
+      native.completeDocumentOpen(id, 0, 'This test only opens its temporary fixtures');
+      return;
+    }
     const result = await storage.readPath(filename);
     if (!result.ok) { native.completeDocumentOpen(id, 0, result.error.kind); return; }
     snapshot = result.value;
@@ -68,6 +77,9 @@ async function run() {
     snapshot = saved.value;
     assert.equal(await readFile(renamed, 'utf8'), text);
     assert.equal(execFileSync('/usr/bin/xattr', ['-p', 'dev.ordinate.test', renamed], { encoding: 'utf8' }).trim(), 'metadata-kept');
+    const versions = native.listVersions(renamed);
+    assert.ok(versions.length > 0, 'Version history must survive atomic file replacement');
+    assert.equal(native.readVersion(renamed, versions[0].id), 'First snapshot');
     await assert.rejects(access(original));
     const occupied = path.join(directory, 'Occupied.ord');
     await writeFile(occupied, 'Do not overwrite');
@@ -89,6 +101,7 @@ async function run() {
     win.destroy();
     await rm(directory, { recursive: true, force: true });
   }
+  completed = true;
   app.quit();
 }
 void run().catch(error => { console.error(error); app.exit(1); });

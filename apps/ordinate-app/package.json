@@ -6,6 +6,7 @@
   "main": "desktop-out/desktop/main.js",
   "description": "Ordinate structured document editor",
   "scripts": {
+    "app": "npm run desktop:build",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
@@ -13,9 +14,10 @@
     "test": "vitest run",
     "desktop:compile": "tsc -p tsconfig.desktop.json && node desktop/build-native.mjs",
     "desktop:test-native": "npm run desktop:compile && node desktop/build-native.mjs --test && electron desktop/document-smoke.mjs",
+    "desktop:test-workspace": "npm run build && npm run desktop:compile && electron desktop/workspace-smoke.mjs",
     "desktop:dev": "npm run desktop:compile && node desktop/dev.mjs",
     "desktop:debug": "npm run desktop:compile && node desktop/dev.mjs --inspect",
-    "desktop:build": "npm run build && npm run desktop:compile && electron-builder --dir",
+    "desktop:build": "npm run build && npm run desktop:compile && electron-builder --dir --config.electronDist=node_modules/electron/dist",
     "desktop:start": "electron ."
   },
   "build": {

@@ -17,7 +17,7 @@ export {
   type TableIR,
   type RowIR,
 } from "./ir";
-export { parseHierarchyLabel } from "./parser";
+export { DocumentParseError, parseHierarchyLabel } from "./parser";
 
 export {
   evaluateDocument,

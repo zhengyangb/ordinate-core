@@ -33,8 +33,10 @@ import { useSheetViewModel } from "./hooks/useSheetViewModel";
 import { useStructureTransition } from "./hooks/useStructureTransition";
 import { useTooltips } from "./hooks/useTooltips";
 import { resolveUiLocale } from "./i18n/messages";
-import { AutoIcon, MoonIcon, SunIcon, TOOLBAR_ITEMS } from "./icons/uiIcons";
+import { AutoIcon, MoonIcon, SunIcon } from "./icons/uiIcons";
 import { useWindowAppearance } from "./platform/useWindowAppearance";
+import { resolveInitialThemeMode } from "./platform/themePreference";
+import { finishStartup } from "./platform/startupScreen";
 import { useEditorStore } from "./store/editorStore";
 import { buildDocumentSearchCells } from "./search/searchModel";
 import { SearchPanel, SheetSearchContext } from "./search/SheetSearch";
@@ -79,7 +81,6 @@ import {
   queryGridBodyViewport,
   queryGridHorizontalViewport,
   resolveGridInstanceKey,
-  resolveInitialThemeMode,
   resolveRailMenuPosition,
   toColFieldId,
   trimSheetColCount,
@@ -342,8 +343,6 @@ export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [themeMenuPosition, setThemeMenuPosition] = useState<ThemeMenuPosition>({ top: 0, left: 0 });
-  const [toolMenuOpen, setToolMenuOpen] = useState(false);
-  const [toolMenuPosition, setToolMenuPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
   const [sheetSetupOpen, setSheetSetupOpen] = useState(false);
   const [sheetSetupPosition, setSheetSetupPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
   const [selectionMenuOpen, setSelectionMenuOpen] = useState(false);
@@ -354,7 +353,6 @@ export default function App() {
   const [openRailMenuTarget, setOpenRailMenuTarget] = useState<
     { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number; area: "header" | "body"; hasChildren: boolean } | null
   >(null);
-  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [gridViewportWidth, setGridViewportWidth] = useState(0);
   const { tooltip, setTooltip, clearTooltip, showTooltip, handleTabMouseEnter, suppressTooltipForTarget, releaseTooltipForTarget } = useTooltips();
   const [gridScrollSnapshot, setGridScrollSnapshot] = useState<SheetGridScrollSnapshot>(EMPTY_GRID_SCROLL_SNAPSHOT);
@@ -395,6 +393,8 @@ export default function App() {
     settleFramesRemaining: number;
   } | null>(null);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
+  // A ref alone does not notify effects when startup/source mode mounts the grid.
+  const [gridRoot, setGridRoot] = useState<HTMLDivElement | null>(null);
   const selectionDragRef = useRef<{ anchor: LogicalCell; focus: LogicalCell } | null>(null);
   const formulaPointDragRef = useRef<{ anchor: LogicalCell; focus: LogicalCell; gestureId: number } | null>(null);
   const formulaPointGestureIdRef = useRef(0);
@@ -404,14 +404,21 @@ export default function App() {
   const suppressCellFocusSelectionUntilRef = useRef(0);
   const rowTrackRef = useRef<HTMLDivElement | null>(null);
   const gridApiRef = useRef<GridApi<GridRow> | null>(null);
+  const [readyGridApi, setReadyGridApi] = useState<GridApi<GridRow> | null>(null);
+  const handleGridRootChange = useCallback((root: HTMLDivElement | null) => {
+    gridWrapRef.current = root;
+    setGridRoot(root);
+    if (!root) {
+      gridApiRef.current = null;
+      setReadyGridApi(null);
+    }
+  }, []);
   const pendingHeaderSelectionRef = useRef<{ colId: string; rAbs: number; expiresAt: number } | null>(null);
   const pendingBodyFocusRef = useRef<{ rAbs: number; cAbs: number; expiresAt: number } | null>(null);
   const themeControlRef = useRef<HTMLDivElement | null>(null);
   const themeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const toolButtonRef = useRef<HTMLButtonElement | null>(null);
   const sheetSetupButtonRef = useRef<HTMLButtonElement | null>(null);
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
-  const toolMenuRef = useRef<HTMLDivElement | null>(null);
   const sheetSetupMenuRef = useRef<HTMLDivElement | null>(null);
   const selectionMenuRef = useRef<HTMLDivElement | null>(null);
   const railMenuAnchorRef = useRef<HTMLElement | null>(null);
@@ -598,15 +605,8 @@ export default function App() {
 
   useWindowAppearance(themeMode);
 
-  useEffect(() => {
-    const handleResize = () => setViewportWidth(window.innerWidth);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
   useAnchoredMenuPosition(themeMenuOpen, themeButtonRef, themeMenuRef, setThemeMenuPosition, "end");
 
-  useAnchoredMenuPosition(toolMenuOpen, toolButtonRef, toolMenuRef, setToolMenuPosition, "end");
 
   useAnchoredMenuPosition(sheetSetupOpen, sheetSetupButtonRef, sheetSetupMenuRef, setSheetSetupPosition, "start");
 
@@ -653,7 +653,6 @@ export default function App() {
         setThemeMenuOpen(false);
       }
       if (!target?.closest(".tool-overflow-control") && !target?.closest(".tool-menu")) {
-        setToolMenuOpen(false);
       }
       if (!target?.closest(".sheet-setup-button") && !target?.closest(".sheet-setup-menu")) {
         setSheetSetupOpen(false);
@@ -683,10 +682,6 @@ export default function App() {
         setThemeMenuOpen(false);
         return;
       }
-      if (toolMenuOpen) {
-        setToolMenuOpen(false);
-        return;
-      }
       if (sheetSetupOpen) {
         setSheetSetupOpen(false);
         return;
@@ -708,7 +703,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, isActiveSheetBlocked, selection, clearActiveSelection, themeMenuOpen, toolMenuOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
+  }, [mode, isActiveSheetBlocked, selection, clearActiveSelection, themeMenuOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
 
   useEffect(() => {
     const handleHistoryKeyDown = (event: KeyboardEvent) => {
@@ -744,7 +739,7 @@ export default function App() {
       if (mode === "source" || isActiveSheetBlocked) return;
       const focus = getSelectionFocus(selection);
       if (!focus || formulaInputMode !== "read") return;
-      if (themeMenuOpen || toolMenuOpen || sheetSetupOpen || selectionMenuOpen || railMenuOpen) return;
+      if (themeMenuOpen || sheetSetupOpen || selectionMenuOpen || railMenuOpen) return;
       const target = event.target as HTMLElement | null;
       if (
         target?.closest(
@@ -764,7 +759,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleEnterToEdit);
     return () => window.removeEventListener("keydown", handleEnterToEdit);
-  }, [mode, isActiveSheetBlocked, selection, formulaInputMode, themeMenuOpen, toolMenuOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
+  }, [mode, isActiveSheetBlocked, selection, formulaInputMode, themeMenuOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -1285,8 +1280,8 @@ export default function App() {
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
-    const root = gridWrapRef.current;
-    const api = gridApiRef.current;
+    const root = gridRoot;
+    const api = readyGridApi;
     if (!root || !isGridApiAlive(api)) return;
     if (typeof ResizeObserver === "undefined") {
       throw new Error("ResizeObserver is required for grid metric sync");
@@ -1304,7 +1299,7 @@ export default function App() {
     return () => {
       resizeObserver.disconnect();
     };
-  }, [mode, isActiveSheetBlocked, activeSheet, sheetColCount, rowData.length, isGridApiAlive, scheduleGridMetricsSync]);
+  }, [gridRoot, readyGridApi, mode, isActiveSheetBlocked, activeSheet, sheetColCount, rowData.length, isGridApiAlive, scheduleGridMetricsSync]);
 
   useEffect(() => {
     return () => {
@@ -1326,15 +1321,10 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (mode === "source") {
-      gridApiRef.current = null;
-    }
-  }, [mode]);
-
   const handleGridReady = useCallback(
     (event: GridReadyEvent<GridRow>) => {
       gridApiRef.current = event.api;
+      setReadyGridApi(event.api);
       syncRowIndexMetrics(event.api);
       syncColumnMetrics(event.api);
     },
@@ -1975,7 +1965,7 @@ export default function App() {
   );
 
   useEffect(() => {
-    const root = gridWrapRef.current;
+    const root = gridRoot;
     if (!root || mode === "source" || isActiveSheetBlocked || headerRowCount === 0) return;
 
     const resolveHeaderFocusTarget = (target: HTMLElement | null, clientX?: number) => {
@@ -2049,11 +2039,11 @@ export default function App() {
       root.removeEventListener("mousedown", handlePointerDown);
       root.removeEventListener("focusin", handleFocusIn);
     };
-  }, [mode, isActiveSheetBlocked, headerRowCount, sheetColCount, colIndexLookup, gridViewportAdapter, applyHeaderSelection, focusHeaderOverlayCell]);
+  }, [gridRoot, mode, isActiveSheetBlocked, headerRowCount, sheetColCount, colIndexLookup, gridViewportAdapter, applyHeaderSelection, focusHeaderOverlayCell]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
-    const root = gridWrapRef.current;
+    const root = gridRoot;
     if (!root) return;
 
     const tableStage = root.closest<HTMLElement>(".table-stage");
@@ -2070,6 +2060,7 @@ export default function App() {
       tableStage.style.setProperty("--grid-body-track-offset-y", `${-top}px`);
     });
   }, [
+    gridRoot,
     mode,
     isActiveSheetBlocked,
     activeSheet,
@@ -2339,7 +2330,7 @@ export default function App() {
         isActiveSheetBlocked,
         sheetColCount,
         headerColCount,
-        headerSemanticLabels,
+        headerSemanticLabelPaths,
       }),
     [
       currentSheet,
@@ -2349,7 +2340,7 @@ export default function App() {
       isActiveSheetBlocked,
       sheetColCount,
       headerColCount,
-      headerSemanticLabels,
+      headerSemanticLabelPaths,
     ],
   );
 
@@ -3313,10 +3304,6 @@ export default function App() {
   const themeButtonLabel = themeMode === "auto" ? "Automatic appearance" : themeMode === "light" ? "Light mode" : "Dark mode";
   const themeButtonIcon = themeMode === "auto" ? <AutoIcon /> : themeMode === "light" ? <SunIcon /> : <MoonIcon />;
 
-  const visibleToolCount = viewportWidth < 720 ? 3 : viewportWidth < 860 ? 4 : viewportWidth < 1040 ? 5 : TOOLBAR_ITEMS.length;
-  const placeholderToolCount = Math.max(0, visibleToolCount - 1);
-  const visibleTools = TOOLBAR_ITEMS.slice(1, 1 + placeholderToolCount);
-  const overflowTools = TOOLBAR_ITEMS.slice(1 + placeholderToolCount);
 
   const tableStageClassName = [
     "table-stage",
@@ -3484,10 +3471,16 @@ export default function App() {
   const prepareForPersistence = useCallback(() => {
     if (formulaInputMode === "edit") handleCommitFormulaInput(formulaDraftInput);
   }, [formulaInputMode, formulaDraftInput, handleCommitFormulaInput]);
-  const { fileName, fileStatus, handleOpenFile, handleSaveFile, handleSaveFileAs } = useFileSessionController({
+  const { initializationStatus, fileName, fileStatus, handleNewFile, handleOpenFile, handleSaveFileAs, handleSaveFile } = useFileSessionController({
     mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence,
     hasPendingCellEdit: formulaInputMode === "edit",
   });
+  const [initialGridReady, setInitialGridReady] = useState(false);
+  const handleInitialLayoutReady = useCallback(() => setInitialGridReady(true), []);
+  useEffect(() => {
+    if (initializationStatus === "failed" || (initializationStatus === "ready"
+      && (mode === "source" || !shouldRenderGrid || initialGridReady))) finishStartup();
+  }, [initializationStatus, mode, shouldRenderGrid, initialGridReady]);
 
   const handleApplyFormulaInputToSelection = useCallback((nextInput: string) => {
     if (!currentSheetState || !selectedRange || !isRangeSelection) {
@@ -3658,22 +3651,16 @@ export default function App() {
           onDeleteSheet={handleDeleteSheet}
           onMoveSheet={handleMoveSheet}
           onRenameSheet={handleRenameSheet}
-          visibleTools={visibleTools}
-          overflowTools={overflowTools}
-          toolMenuOpen={toolMenuOpen}
-          setToolMenuOpen={setToolMenuOpen}
           themeMenuOpen={themeMenuOpen}
           setThemeMenuOpen={setThemeMenuOpen}
           themeButtonLabel={themeButtonLabel}
           themeButtonIcon={themeButtonIcon}
           themeControlRef={themeControlRef}
           themeButtonRef={themeButtonRef}
-          toolButtonRef={toolButtonRef}
           sheetSetupOpen={sheetSetupOpen}
           sheetSetupButtonRef={sheetSetupButtonRef}
           onToggleSheetSetup={() => {
             setSheetSetupOpen((open) => !open);
-            setToolMenuOpen(false);
             setThemeMenuOpen(false);
           }}
           canUndo={canUndo}
@@ -3683,6 +3670,7 @@ export default function App() {
           onUndo={undo}
           onRedo={redo}
           onOpenFile={handleOpenFile}
+          onNewFile={handleNewFile}
           onSaveFile={handleSaveFile}
           onSaveFileAs={handleSaveFileAs}
           onEnterSourceMode={enterSourceMode}
@@ -3719,8 +3707,9 @@ export default function App() {
                 : "workspace-shell"
             }
           >
-            {shouldRenderGrid ? (
+            {initializationStatus !== "loading" && shouldRenderGrid ? (
               <TableStage
+                onLayoutReady={handleInitialLayoutReady}
                 tableStageClassName={tableStageClassName}
                 tableStageStyle={tableStageStyle}
                 columnMetrics={columnMetrics}
@@ -3737,7 +3726,7 @@ export default function App() {
                 handleIndexRailsHoverChange={handleIndexRailsHoverChange}
                 rowIndexMetrics={rowIndexMetrics}
                 rowTrackRef={rowTrackRef}
-                gridWrapRef={gridWrapRef}
+                onGridRootChange={handleGridRootChange}
                 rowData={rowData}
                 columnDefs={columnDefs}
                 gridInstanceKey={gridInstanceKey ?? ""}
@@ -3793,6 +3782,7 @@ export default function App() {
           mode={mode}
           phase={cellChromeVisibilityPhase}
           formulaBarSnapshot={formulaBarData ?? formulaBarSnapshot}
+          selectedRange={isRangeSelection ? selectedRange : null}
           inputMode={formulaInputMode}
           isInputEditable={isFormulaBarInputEditable}
           areDisplayControlsEditable={areFormulaBarDisplayControlsEditable}
@@ -3824,10 +3814,6 @@ export default function App() {
         themeMode={themeMode}
         setThemeMode={setThemeMode}
         setThemeMenuOpen={setThemeMenuOpen}
-        toolMenuOpen={toolMenuOpen}
-        toolMenuPosition={toolMenuPosition}
-        toolMenuRef={toolMenuRef}
-        overflowTools={overflowTools}
         railMenuOpen={railMenuOpen}
         railMenuPosition={railMenuPosition}
         railMenu={railMenu}

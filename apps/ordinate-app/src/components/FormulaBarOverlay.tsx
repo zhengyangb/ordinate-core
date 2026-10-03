@@ -2,6 +2,8 @@ import { type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboard
 import { createPortal } from "react-dom";
 import { getStandardFunctionMetadata, listStandardFunctionMetadata, type FunctionMetadata } from "@ordinate/core";
 import { useFormulaBarLayout } from "../hooks/useFormulaBarLayout";
+import { FormulaCellAddress } from "./FormulaCellAddress";
+import { revealFormulaCaret } from "../utils/formulaEditorLayout";
 import { canInsertTextLineBreak, plainTextPreview } from "../utils/plainTextEditing";
 
 import type { UiLocale } from "../i18n/messages";
@@ -13,7 +15,7 @@ import {
 } from "../i18n/displayMetadata";
 import { FormatPreviewPanel, StylePreviewPanel } from "./DisplayMetadataPreview";
 import { EditorPopover } from "./EditorPopover";
-import type { ChromeVisibilityPhase, FormatLocalKey, FormulaBarData, StyleLocalView } from "../types/ui";
+import type { ChromeVisibilityPhase, FormatLocalKey, FormulaBarData, StyleLocalView, Rect } from "../types/ui";
 import { selectionDebugLog } from "../utils/selectionDebug";
 import {
   applyFormulaPointPickToState,
@@ -152,8 +154,7 @@ function resolveEditorNavigationCaret(
   textLength: number,
   key: string,
 ): number | null {
-  if (key === "Home") return 0;
-  if (key === "End") return textLength;
+  // Home/End and vertical arrows belong to the textarea's visual wrapped lines.
   if (key === "ArrowLeft") {
     return selection.start === selection.end ? Math.max(0, selection.start - 1) : selection.start;
   }
@@ -161,34 +162,6 @@ function resolveEditorNavigationCaret(
     return selection.start === selection.end ? Math.min(textLength, selection.end + 1) : selection.end;
   }
   return null;
-}
-
-function measureTextareaTextWidth(editor: HTMLTextAreaElement, text: string): number {
-  const style = window.getComputedStyle(editor);
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Formula editor requires canvas text measurement.");
-  context.font = style.font;
-  return context.measureText(text).width;
-}
-
-function ensureTextareaOffsetVisible(editor: HTMLTextAreaElement, offset: number) {
-  const style = window.getComputedStyle(editor);
-  const paddingLeft = Number.parseFloat(style.paddingLeft) || 0;
-  const paddingRight = Number.parseFloat(style.paddingRight) || 0;
-  const guard = 12;
-  const textWidth = measureTextareaTextWidth(editor, editor.value.slice(0, Math.max(0, Math.min(offset, editor.value.length))));
-  const caretX = paddingLeft + textWidth;
-  const visibleLeft = editor.scrollLeft + paddingLeft + guard;
-  const visibleRight = editor.scrollLeft + editor.clientWidth - paddingRight - guard;
-
-  if (caretX > visibleRight) {
-    editor.scrollLeft = Math.max(0, caretX - editor.clientWidth + paddingRight + guard);
-    return;
-  }
-  if (caretX < visibleLeft) {
-    editor.scrollLeft = Math.max(0, caretX - paddingLeft - guard);
-  }
 }
 
 function renderFormulaDraftWithTokens(
@@ -242,6 +215,7 @@ type FormulaBarOverlayProps = {
   mode: "table" | "source";
   phase: ChromeVisibilityPhase;
   formulaBarSnapshot: FormulaBarData | null;
+  selectedRange: Rect | null;
   inputMode: "read" | "edit";
   isInputEditable: boolean;
   areDisplayControlsEditable: boolean;
@@ -270,6 +244,7 @@ export default function FormulaBarOverlay({
   mode,
   phase,
   formulaBarSnapshot,
+  selectedRange,
   inputMode,
   isInputEditable,
   areDisplayControlsEditable,
@@ -329,6 +304,11 @@ export default function FormulaBarOverlay({
   const pendingEditorSelectionRef = useRef<{ start: number; end: number } | null>(null);
   const pendingEditorSelectionTokenRef = useRef(0);
   const guardedFunctionCloseParenRef = useRef<number | null>(null);
+  const ensureTextareaOffsetVisible = (editor: HTMLTextAreaElement, offset: number) => {
+    const backdrop = tokenBackdropRef.current;
+    if (!backdrop) throw new Error("Formula editor requires its token backdrop");
+    revealFormulaCaret(editor, backdrop, offset);
+  };
   const focusEditorAt = (start: number, end = start) => {
     const editor = sourceEditorRef.current;
     if (!editor) return false;
@@ -397,6 +377,7 @@ export default function FormulaBarOverlay({
     const backdrop = tokenBackdropRef.current;
     if (!editor || !backdrop) return;
     backdrop.scrollLeft = editor.scrollLeft;
+    backdrop.scrollTop = editor.scrollTop;
   };
   const isEditingInput = inputMode === "edit";
   const isFormulaDraft = draftInput.trimStart().startsWith("=");
@@ -406,7 +387,7 @@ export default function FormulaBarOverlay({
   );
   const multilineText = isEditingInput && !isFormulaDraft && draftInput.includes("\n");
   const inputPreview = plainTextPreview(formulaBarSnapshot?.inputText ?? "");
-  useFormulaBarLayout(shellRef, sourcePlainInputRef, draftInput, isEditingInput, isFormulaDraft,
+  useFormulaBarLayout(shellRef, isFormulaDraft ? sourceEditorRef : sourcePlainInputRef, draftInput, isEditingInput, isFormulaDraft,
     mode === "table" && phase !== "hidden" && Boolean(formulaBarSnapshot));
   const standardFunctions = useMemo(() => listStandardFunctionMetadata(), []);
   const activeReferenceView = useMemo(
@@ -1303,14 +1284,13 @@ export default function FormulaBarOverlay({
         <div className="formula-bar-surface" aria-hidden="true" />
         <div className="formula-bar">
           <div className="formula-meta-stack">
-            <div className="formula-bar-meta">
-              <span className="formula-address">{formulaBarSnapshot.primaryAddress}</span>
-              <span className="formula-subaddress">{formulaBarSnapshot.secondaryAddress}</span>
-            </div>
-            <div className="formula-meta-lower">
+            <div className="formula-meta-top">
+              <FormulaCellAddress key={formulaBarSnapshot.primaryAddress} cell={formulaBarSnapshot} selection={selectedRange} />
               <span className="formula-chip-slot">
                 <span className="formula-chip formula-chip--inline" title={chipText}>{chipText}</span>
               </span>
+            </div>
+            <div className="formula-meta-lower">
               <div className="formula-display-meta" aria-label="Display metadata">
                 <div className="formula-format-control">
                   <button
@@ -1452,7 +1432,7 @@ export default function FormulaBarOverlay({
                     className="formula-source-textarea"
                     value={draftInput}
                     rows={1}
-                    wrap="off"
+                    wrap="soft"
                     spellCheck={false}
                     onScroll={syncEditorBackdropScroll}
                     onBeforeInput={handleEditorBeforeInput}

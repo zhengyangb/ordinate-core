@@ -21,7 +21,7 @@ export function serializeDocumentState(state: DocumentState): string {
   });
 
   const intermediate = `${lines.join("\n").replace(/\s+$/, "")}\n`;
-  return formatDocument(intermediate);
+  return formatDocument(state.frontMatter === null ? intermediate : `${state.frontMatter}\n\n${intermediate}`);
 }
 
 function serializeSheetBodyLines(sheet: SheetState, formulaRenderContext: FormulaRenderContext): string[] {

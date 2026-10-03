@@ -1758,10 +1758,12 @@ function validateSheetIdentityState(sheets: SheetState[], nextSheetId: number): 
 }
 
 export class DocumentState {
+  readonly frontMatter: string | null;
   sheets: SheetState[];
   nextSheetId: number;
 
-  constructor(sheets: SheetState[], nextSheetId?: number) {
+  constructor(sheets: SheetState[], nextSheetId?: number, frontMatter: string | null = null) {
+    this.frontMatter = frontMatter;
     this.sheets = sheets;
     if (nextSheetId !== undefined) {
       this.nextSheetId = nextSheetId;
@@ -1773,7 +1775,7 @@ export class DocumentState {
 
   // Build a document state from text.
   static fromText(text: string): DocumentState {
-    const parsed = parseDocument(text);
+    const { frontMatter, sheets: parsed } = parseDocument(text);
     const sheets: SheetState[] = [];
     let nextSheetId = 1;
     for (const sheet of parsed) {
@@ -1799,7 +1801,7 @@ export class DocumentState {
       );
       nextSheetId += 1;
     }
-    const document = new DocumentState(sheets, nextSheetId);
+    const document = new DocumentState(sheets, nextSheetId, frontMatter);
     document.bindCrossSheetFormulas();
     return document;
   }

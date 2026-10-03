@@ -3,8 +3,9 @@ import { createFileSessionStore, createMemoryLocalDraftStore, createMemoryStorag
 import { flushFileSession, handleDocumentRequest } from "./documentSession";
 import type { DesktopBridge } from "./storage";
 
-function requestBridge(methods: Partial<Pick<DesktopBridge, "readDocumentRequest" | "commitDocumentRequest">>) {
+function requestBridge(methods: Partial<Pick<DesktopBridge, "readDocumentRequest" | "commitDocumentRequest" | "duplicateDocument">>) {
   return {
+    duplicateDocument: async () => { throw new Error("Unexpected duplicate"); },
     readDocumentRequest: async () => { throw new Error("Unexpected document read"); },
     commitDocumentRequest: async () => { throw new Error("Unexpected document write"); },
     ...methods,
@@ -23,6 +24,35 @@ function harness(autosaveInvalidSource = false) {
 }
 
 describe("desktop document session", () => {
+  it("duplicates the latest pending text without changing the source document identity", async () => {
+    const { store, edit, adapter } = harness();
+    await store.getState().open();
+    const original = store.getState().file;
+    edit("latest pending cell edit");
+    let copy = "";
+    await handleDocumentRequest(store, requestBridge({ duplicateDocument: async (_id, text) => { copy = text; } }), { id: "copy", kind: "duplicate" });
+    expect(copy).toBe("latest pending cell edit");
+    expect(store.getState().file).toEqual(original);
+    expect(adapter.getDiskText("file")).toBe(copy);
+  });
+
+  it("reverting does not flush pending edits over the chosen version or resurrect an old draft", async () => {
+    const { store, edit, adapter } = harness();
+    await store.getState().open();
+    edit("draft before revert");
+    await store.getState().autosaveNow();
+    edit("uncommitted newer edit");
+    const file = store.getState().file!;
+    await handleDocumentRequest(store, requestBridge({ readDocumentRequest: async () => {
+      await adapter.setDiskText(file.id, "restored history");
+      return adapter.readCurrent(file);
+    } }), { id: "revert", kind: "revert" });
+    expect(store.getState().backingText).toBe("restored history");
+    expect(store.getState().recoveryDraft).toBeNull();
+    await flushFileSession(store);
+    expect(adapter.getDiskText(file.id)).toBe("restored history");
+  });
+
   it("routes a system open through the shared session and flushes the previous document", async () => {
     const { store, edit, adapter } = harness();
     await store.getState().open();

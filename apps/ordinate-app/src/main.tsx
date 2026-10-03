@@ -2,15 +2,16 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App";
-import "./app.css";
-import "./platform/desktopChrome.css";
+import { failStartup } from "./platform/startupScreen";
 
-if (window.ordinateDesktop) {
-  document.documentElement.dataset.windowChrome = window.ordinateDesktop.windowChrome;
+class StartupErrorBoundary extends React.Component<React.PropsWithChildren, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error: Error) { failStartup(error); }
+  render() { return this.state.failed ? null : this.props.children; }
 }
-
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <StartupErrorBoundary><App /></StartupErrorBoundary>
   </React.StrictMode>,
 );
