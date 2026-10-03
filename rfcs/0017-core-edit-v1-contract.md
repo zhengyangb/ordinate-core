@@ -94,7 +94,7 @@ Normative requirements:
 - `setCellInput` accepts semantic cell text; callers do not need to provide table-wire escaping (`\|`, `\\`)
 - table-wire escaping is handled by serialization/parsing layer (RFC-0002 / RFC-0011)
 - empty `input` represents a semantic empty cell; serializer must encode it unambiguously for `.ord` text without requiring edit state to store a placeholder space
-- `setCellInput` must reject real newline characters (`LF` / `CR`) in a single cell input (fail-early)
+- RFC-0039 permits real line breaks in implicit text data cells; formula, explicit quoted, and structural header/label input remain single-line (fail-early)
 - `setCellInput` must reject input containing a trailing `display` segment; callers must use display metadata edit operations instead
 - `setCellInput` must reject cached-formula body text such as `cached value = expr`; callers must pass formula input as `= expr`
 

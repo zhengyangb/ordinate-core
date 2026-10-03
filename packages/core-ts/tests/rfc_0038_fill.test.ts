@@ -10,6 +10,25 @@ const region = (document: DocumentState, area: CoreFillRect): CoreRegionTarget =
 };
 
 describe("RFC-0038: deterministic fill", () => {
+  it("skips explicit rows in seeds and destinations while keeping series contiguous", () => {
+    const sheet = doc([["1"], ["99"], ["2"], ["88"], ["0"], ["0"]]).sheets[0];
+    expect(planFillRegion(sheet, rect(0, 2), rect(3, 5), "auto", [1, 3]).values).toEqual([["88"], ["3"], ["4"]]);
+    expect(planFillRegion(sheet, rect(0, 2), rect(3, 5), "copy", [1, 3]).values).toEqual([["88"], ["1"], ["2"]]);
+    const reverse = doc([["0"], ["99"], ["0"], ["5"], ["7"]]).sheets[0];
+    expect(planFillRegion(reverse, rect(3, 4), rect(0, 2), "auto", [1]).values).toEqual([["1"], ["99"], ["3"]]);
+  });
+  it("uses physical offsets for formulas and excludes horizontal lanes", () => {
+    const sheet = doc([["= A1"], ["99"], ["0"]]).sheets[0];
+    expect(planFillRegion(sheet, rect(0, 0), rect(1, 2), "copy", [1]).values).toEqual([["99"], ["= A3"]]);
+    const horizontal = doc([["1", "0"], ["8", "99"], ["3", "0"]]).sheets[0];
+    expect(planFillRegion(horizontal, rect(0, 2), rect(0, 2, 1), "series", [1]).values).toEqual([["2"], ["99"], ["4"]]);
+  });
+  it("rejects invalid exclusions and empty effective ranges", () => {
+    const sheet = doc([["1"], ["2"], ["3"]]).sheets[0];
+    for (const rows of [[-1], [3], [1, 1], [0], [1, 2]]) {
+      expect(() => planFillRegion(sheet, rect(0, 0), rect(1, 2), "auto", rows)).toThrow();
+    }
+  });
   it("extends stepped numbers down, up, right and left", () => {
     expect(plan([["1"], ["3"], [""], [""]], rect(0, 1), rect(2, 3)).values).toEqual([["5"], ["7"]]);
     expect(plan([[""], [""], ["5"], ["7"]], rect(2, 3), rect(0, 1)).values).toEqual([["1"], ["3"]]);

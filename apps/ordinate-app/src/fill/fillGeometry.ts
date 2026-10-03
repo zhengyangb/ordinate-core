@@ -28,8 +28,7 @@ export function unionFill(source: Rect, target: Rect): Rect {
     colStart: Math.min(source.colStart, target.colStart), colEnd: Math.max(source.colEnd, target.colEnd) };
 }
 
-export function isVisibleFillRange(range: Rect, bodyStart: number, headerCols: number, visibleRows: ReadonlySet<number>): boolean {
-  if (range.rowStart <= bodyStart || range.colStart < headerCols) return false;
-  for (let row = range.rowStart; row <= range.rowEnd; row++) if (!visibleRows.has(row)) return false;
-  return true;
+export function isFillRange(range: Rect, bodyStart: number, headerCols: number, rowCount: number, colCount: number): boolean {
+  return range.rowStart > bodyStart && range.rowEnd <= rowCount && range.rowStart <= range.rowEnd &&
+    range.colStart >= headerCols && range.colEnd < colCount && range.colStart <= range.colEnd;
 }

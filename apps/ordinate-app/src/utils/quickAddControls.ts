@@ -1,5 +1,6 @@
 export const QUICK_ADD_DRAG_THRESHOLD_PX = 8;
-export const QUICK_ADD_CELL_STEP_PX = 44;
+export const QUICK_ADD_DRAG_SCALE_PX = { row: 72, column: 112 } as const;
+const QUICK_ADD_ACCELERATION = 1.7;
 export const QUICK_ADD_MAX_BATCH_COUNT = 50;
 
 export type QuickAddAxis = "row" | "column";
@@ -28,7 +29,6 @@ export function computeQuickAddDragCount(args: {
   startY: number;
   currentX: number;
   currentY: number;
-  stepPx?: number;
   maxCount?: number;
 }): number {
   const {
@@ -37,18 +37,20 @@ export function computeQuickAddDragCount(args: {
     startY,
     currentX,
     currentY,
-    stepPx = QUICK_ADD_CELL_STEP_PX,
     maxCount = QUICK_ADD_MAX_BATCH_COUNT,
   } = args;
   assertFiniteNumber(startX, "startX");
   assertFiniteNumber(startY, "startY");
   assertFiniteNumber(currentX, "currentX");
   assertFiniteNumber(currentY, "currentY");
-  assertPositiveFiniteNumber(stepPx, "stepPx");
   assertPositiveInteger(maxCount, "maxCount");
   const distance = axis === "row" ? currentY - startY : currentX - startX;
   if (distance <= 0) return 0;
-  return Math.min(maxCount, Math.max(1, Math.floor(distance / stepPx) + 1));
+  // A generous first step makes one/two additions deliberate. Further travel
+  // accelerates smoothly; count depends only on displacement, so reversing is
+  // predictable and never keeps adding because of pointer speed or duration.
+  const progress = distance / QUICK_ADD_DRAG_SCALE_PX[axis];
+  return Math.min(maxCount, Math.floor(progress ** QUICK_ADD_ACCELERATION) + 1);
 }
 
 export function resolveAppendAnchorScrollPosition(args: {

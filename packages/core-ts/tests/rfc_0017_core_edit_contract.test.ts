@@ -369,8 +369,8 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
     { name: "invalid display segment", input: "abc {:bad}" },
     { name: "formula with display segment", input: "= B2 + 1 {::green}" },
     { name: "cached formula body", input: "6 = B2 + 1" },
-    { name: "real line feed", input: "abc\nxyz" },
-    { name: "real carriage return", input: "abc\rxyz" },
+    { name: "formula line feed", input: "= 1\n+ 2" },
+    { name: "quoted literal carriage return", input: '"abc\rxyz"' },
   ];
 
   it.each(rejectedCellInputs)("rejects set_cell_input for $name", ({ input }) => {

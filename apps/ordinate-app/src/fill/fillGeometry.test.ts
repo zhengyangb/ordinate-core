@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillDestination, fillDirection, isVisibleFillRange, unionFill } from "./fillGeometry";
+import { fillDestination, fillDirection, isFillRange, unionFill } from "./fillGeometry";
 const source = { rowStart: 3, rowEnd: 4, colStart: 1, colEnd: 2 };
 describe("fill gesture geometry", () => {
   it("propagates feedback from the source edge in all four directions", () => {
@@ -16,11 +16,12 @@ describe("fill gesture geometry", () => {
     expect(fillDestination(source, { rAbs: 1, cAbs: 1 })).toEqual({ ...source, rowStart: 1, rowEnd: 2 });
     expect(fillDestination(source, { rAbs: 3, cAbs: 0 })).toEqual({ ...source, colStart: 0, colEnd: 0 });
   });
-  it("rejects hidden rows and header labels", () => {
-    expect(isVisibleFillRange(source, 2, 1, new Set([3, 4]))).toBe(true);
-    expect(isVisibleFillRange(source, 2, 1, new Set([3, 5]))).toBe(false);
-    expect(isVisibleFillRange(source, 3, 1, new Set([3, 4]))).toBe(false);
-    expect(isVisibleFillRange(source, 2, 2, new Set([3, 4]))).toBe(false);
+  it("uses document bounds regardless of visibility, but rejects headers and overflow", () => {
+    expect(isFillRange(source, 2, 1, 5, 3)).toBe(true);
+    expect(isFillRange(source, 3, 1, 5, 3)).toBe(false);
+    expect(isFillRange(source, 2, 2, 5, 3)).toBe(false);
+    expect(isFillRange(source, 2, 1, 3, 3)).toBe(false);
+    expect(isFillRange(source, 2, 1, 5, 2)).toBe(false);
   });
   it("selects the union after a reverse fill", () => {
     expect(unionFill(source, { ...source, rowStart: 1, rowEnd: 2 })).toEqual({ ...source, rowStart: 1 });

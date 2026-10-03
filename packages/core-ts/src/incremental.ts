@@ -1,4 +1,5 @@
 import { parseDocument, parseHierarchyLabel, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
+import { trimCellText } from "./text_encoding";
 import { getCellTextView, parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
 import { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
 import { parseTemporalFormatSpec } from "./runtime/temporalFormat";
@@ -1062,7 +1063,7 @@ export class SheetState {
       row.cells.push(...Array(c - row.cells.length + 1).fill(""));
     }
     row.rawCells[c] = text;
-    row.cells[c] = text.trim();
+    row.cells[c] = trimCellText(text);
   }
 
   // Rebuild dependency indices for a single formula cell.

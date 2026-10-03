@@ -1,4 +1,5 @@
 import { escapeCellText, parseDocument, parseTableRow, ParsedRow } from "./parser";
+import { trimCellText } from "./text_encoding";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 
@@ -72,10 +73,10 @@ function displayCell(row: ParsedRow, idx: number): string {
   if (idx !== 0) return row.cells[idx];
 
   const raw = idx < row.rawCells.length ? row.rawCells[idx] : row.cells[idx];
-  const stripped = raw.trim();
+  const stripped = trimCellText(raw);
   if (stripped === "") return "";
 
-  const leading = raw.length - raw.trimStart().length;
+  const leading = /^[^\S\r\n]*/.exec(raw)![0].length;
   const semanticIndent = Math.max(0, leading - 1);
   return " ".repeat(semanticIndent) + stripped;
 }

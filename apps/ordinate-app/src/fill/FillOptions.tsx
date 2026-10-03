@@ -4,14 +4,17 @@ import type { CoreFillMode } from "@ordinate/core";
 import { MenuOption, MenuSurface } from "../components/MenuSurface";
 import { useAnchoredMenuPosition } from "../hooks/useAnchoredMenuPosition";
 import type { FillHandleController } from "./useFillHandle";
+import type { FillRowOptions } from "./fillRows";
 
 const labels: Record<CoreFillMode, string> = { auto: "Auto fill", copy: "Copy cells", series: "Fill series" };
 const modes: CoreFillMode[] = ["auto", "copy", "series"];
+const rowLabels: Record<keyof FillRowOptions, string> = { collapsed: "Include collapsed rows", parents: "Include parent rows" };
 const Check = () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg>;
 
-export function FillMethodMenu({ mode, canSeries, onSelect, innerRef, style }: {
+export function FillMethodMenu({ mode, canSeries, onSelect, innerRef, style, rowOptions = [] }: {
   mode: CoreFillMode; canSeries: boolean; onSelect: (mode: CoreFillMode) => void;
   innerRef?: RefObject<HTMLDivElement>; style?: CSSProperties;
+  rowOptions?: { key: keyof FillRowOptions; included: boolean; onChange: (included: boolean) => void }[];
 }) {
   return <MenuSurface open className="fill-method-menu" innerRef={innerRef} style={style}>
     {modes.map(value => <MenuOption key={value} type="button" role="menuitemradio" aria-checked={mode === value}
@@ -19,6 +22,9 @@ export function FillMethodMenu({ mode, canSeries, onSelect, innerRef, style }: {
       trailing={<span className="fill-method-check">{mode === value ? <Check /> : null}</span>}
       title={value === "series" && !canSeries ? "Select numbers, dates or numbered text with a consistent interval" : undefined}
       onClick={() => onSelect(value)}>{labels[value]}</MenuOption>)}
+    {rowOptions.map(option => <MenuOption key={option.key} type="button" role="menuitemcheckbox" aria-checked={option.included}
+      tabIndex={-1} trailing={<span className="fill-method-check">{option.included ? <Check /> : null}</span>}
+      onClick={() => option.onChange(!option.included)}>{rowLabels[option.key]}</MenuOption>)}
   </MenuSurface>;
 }
 
@@ -60,7 +66,8 @@ function FillOptionsPopover({ fill }: { fill: FillHandleController }) {
         : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
       items[next].focus({ preventScroll: true });
     }}>
-    {fill.error ? <span role="alert" className="fill-options-error">{fill.error}</span> : fill.result ? <>
+    {fill.error ? <span role="alert" className="fill-options-error">{fill.error}</span> : null}
+    {fill.result ? <>
       <button ref={triggerRef} type="button" className="fill-method-trigger" aria-label="Fill method" aria-haspopup="menu" aria-expanded={open} aria-controls={menuId}
         onClick={() => setOpen(value => !value)} onKeyDown={event => {
           if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) { event.preventDefault(); event.stopPropagation(); setOpen(true); }
@@ -69,6 +76,8 @@ function FillOptionsPopover({ fill }: { fill: FillHandleController }) {
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
       </button>
       {open ? createPortal(<div id={menuId} data-escape-owner><FillMethodMenu mode={fill.result.mode} canSeries={fill.result.canSeries} innerRef={menuRef} style={menuPosition}
+        rowOptions={(Object.keys(rowLabels) as (keyof FillRowOptions)[]).filter(key => fill.result!.rowGroups[key].length > 0)
+          .map(key => ({ key, included: fill.result!.rowOptions[key], onChange: include => { fill.changeRowOption(key, include); closeMenu(); } }))}
         onSelect={mode => { if (mode !== fill.result!.mode) fill.changeMode(mode); closeMenu(); }} /></div>, document.body) : null}
     </> : null}
     <button type="button" className="fill-options-dismiss" aria-label="Dismiss fill options" onClick={fill.dismiss}>

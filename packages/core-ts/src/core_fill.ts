@@ -104,10 +104,13 @@ function inferSeries(inputs: string[]): Series | null {
 }
 
 /** Pure planning shared by UI and mutation; no inference from formatted display strings or formula results. */
-export function planFillRegion(sheet: SheetState, source: CoreFillRect, target: CoreFillRect, mode: CoreFillMode = "auto"): CoreFillPlan {
+export function planFillRegion(sheet: SheetState, source: CoreFillRect, target: CoreFillRect, mode: CoreFillMode = "auto", excludedRows: readonly number[] = []): CoreFillPlan {
   if (!["auto", "copy", "series"].includes(mode)) fail(`unknown fill mode '${mode}'`);
   validateRect(sheet, source);
   validateRect(sheet, target);
+  const excluded = new Set(excludedRows);
+  if (excluded.size !== excludedRows.length || excludedRows.some(row => !Number.isInteger(row) ||
+    row < Math.min(source.rowStart, target.rowStart) || row > Math.max(source.rowEnd, target.rowEnd))) fail("invalid excluded fill rows");
   const vertical = source.colStart === target.colStart && source.colEnd === target.colEnd &&
     (target.rowStart === source.rowEnd + 1 || target.rowEnd === source.rowStart - 1);
   const horizontal = source.rowStart === target.rowStart && source.rowEnd === target.rowEnd &&
@@ -119,28 +122,37 @@ export function planFillRegion(sheet: SheetState, source: CoreFillRect, target: 
   const targetEnd = vertical ? target.rowEnd : target.colEnd;
   const laneStart = vertical ? source.colStart : source.rowStart;
   const laneEnd = vertical ? source.colEnd : source.rowEnd;
-  const indices = Array.from({ length: targetEnd - targetStart + 1 }, (_, i) => targetStart + i - sourceStart);
-  const values = Array.from({ length: target.rowEnd - target.rowStart + 1 }, () => Array<string>(target.colEnd - target.colStart + 1));
+  const positions = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i).filter(position => !vertical || !excluded.has(position));
+  const seeds = positions(sourceStart, sourceEnd);
+  const destinations = positions(targetStart, targetEnd);
+  if (!seeds.length || !destinations.length || (!vertical && Array.from({ length: laneEnd - laneStart + 1 }, (_, i) => laneStart + i).every(row => excluded.has(row)))) fail("fill requires non-excluded source and target cells");
+  const indices = destinations.map((_, i) => targetStart > sourceEnd ? seeds.length + i : i - destinations.length);
+  const values = Array.from({ length: target.rowEnd - target.rowStart + 1 }, (_, r) =>
+    Array.from({ length: target.colEnd - target.colStart + 1 }, (_, c) => getCellTextView(sheet.cells[target.rowStart + r][target.colStart + c]).inputText));
   let canSeries = true;
   for (let lane = laneStart; lane <= laneEnd; lane++) {
-    const inputs = Array.from({ length: sourceEnd - sourceStart + 1 }, (_, i) =>
-      getCellTextView(sheet.cells[vertical ? sourceStart + i : lane][vertical ? lane : sourceStart + i]).inputText);
+    if (!vertical && excluded.has(lane)) continue;
+    const inputs = seeds.map(position =>
+      getCellTextView(sheet.cells[vertical ? position : lane][vertical ? lane : position]).inputText);
     const series = inferSeries(inputs);
     canSeries &&= series !== null;
     if (mode === "series" && !series) fail("this selection has no consistent series; use Copy cells or Auto");
     const generated = series && (mode === "series" || (mode === "auto" && series.automatic)) ? series.generate(indices) : null;
     indices.forEach((index, i) => {
       const sourceIndex = modulo(index, inputs.length);
-      const delta = index - sourceIndex;
+      const delta = destinations[i] - seeds[sourceIndex];
       const input = generated ? generated[i] : copyInput(inputs[sourceIndex], vertical ? delta : 0, vertical ? 0 : delta);
-      values[vertical ? i : lane - laneStart][vertical ? lane - laneStart : i] = input;
+      values[vertical ? destinations[i] - targetStart : lane - laneStart][vertical ? lane - laneStart : destinations[i] - targetStart] = input;
     });
   }
   return { values, canSeries };
 }
 
-export function applyFillRegion(sheet: SheetState, source: CoreFillRect, target: CoreFillRect, mode: CoreFillMode): void {
-  const plan = planFillRegion(sheet, source, target, mode);
-  plan.values.forEach((row, r) => row.forEach((input, c) =>
-    sheet.setCellByIndex(target.rowStart + r, target.colStart + c, input, ChangeKind.VALUE, false)));
+export function applyFillRegion(sheet: SheetState, source: CoreFillRect, target: CoreFillRect, mode: CoreFillMode, excludedRows: readonly number[] = []): void {
+  const plan = planFillRegion(sheet, source, target, mode, excludedRows);
+  const excluded = new Set(excludedRows);
+  plan.values.forEach((row, r) => {
+    if (excluded.has(target.rowStart + r)) return;
+    row.forEach((input, c) => sheet.setCellByIndex(target.rowStart + r, target.colStart + c, input, ChangeKind.VALUE, false));
+  });
 }

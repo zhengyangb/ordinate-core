@@ -2043,7 +2043,7 @@ textarea {
     --grid-body-track-offset-y: 0px;
     --sticky-row-shadow: none;
     --sticky-col-shadow: none;
-    --formula-bar-safe-space: 136px;
+    --formula-bar-safe-space: max(136px, var(--formula-bar-measured-space, 0px));
     --index-rail-gap: 8px;
     --index-rail-width-active: var(--index-rail-width);
     --index-rail-height-active: var(--index-row-height);
@@ -2081,6 +2081,10 @@ textarea {
 
 .table-stage.has-scroll-y {
     --sticky-row-shadow: 0 5px 8px -5px color-mix(in oklab, var(--sheet-ink) 24%, transparent);
+}
+
+.table-stage[data-layout-ready="false"] {
+    visibility: hidden;
 }
 
 .table-stage.has-scroll-x {
@@ -2693,7 +2697,6 @@ textarea {
 }
 
 .table-leading-boundary-line,
-.table-footprint-bottom-line,
 .table-trailing-canvas-mask {
     position: absolute;
     pointer-events: none;
@@ -2703,13 +2706,6 @@ textarea {
     top: 0;
     left: 0;
     width: 1px;
-    z-index: 14;
-    background: var(--sheet-grid);
-}
-
-.table-footprint-bottom-line {
-    left: 0;
-    height: 1px;
     z-index: 14;
     background: var(--sheet-grid);
 }
@@ -2912,6 +2908,12 @@ textarea {
     z-index: 7;
 }
 
+.table-overlay-plane.is-native-track {
+    /* The native viewport clips scrolling. Keep the corner handle and ring
+       visible past the final row/column inside the reserved append space. */
+    overflow: visible;
+}
+
 .table-overlay-plane--header-center {
     z-index: 10;
 }
@@ -2934,8 +2936,9 @@ textarea {
     --table-overlay-offset-x: var(--grid-center-track-offset-x);
 }
 
-.table-overlay-track.is-body-track {
-    --table-overlay-offset-y: var(--grid-body-track-offset-y);
+.table-overlay-plane.is-native-track .table-overlay-track {
+    transform: none;
+    will-change: auto;
 }
 
 .persistent-selection-ring {
@@ -3188,7 +3191,7 @@ textarea {
 .grid-wrap .ag-body-viewport.ag-layout-normal,
 .grid-wrap .ag-body-viewport {
     border: 0;
-    padding-bottom: calc(var(--formula-bar-safe-space) + var(--axis-append-row-scroll-extent));
+    padding-bottom: var(--formula-bar-safe-space);
     box-sizing: border-box;
     scroll-padding-bottom: calc(var(--formula-bar-safe-space) + 10px);
     overscroll-behavior: contain;
@@ -3197,6 +3200,13 @@ textarea {
 .grid-wrap .ag-body-horizontal-scroll-viewport,
 .grid-wrap .ag-center-cols-viewport {
     overscroll-behavior-x: contain;
+}
+
+.grid-wrap .ag-center-cols-viewport {
+    /* Append-row space belongs to the native content now that the selection
+       and its corner handle live there, rather than in a sibling overlay. */
+    box-sizing: content-box;
+    padding-bottom: var(--axis-append-row-scroll-extent);
 }
 
 .grid-wrap .ag-body-vertical-scroll,
@@ -3281,6 +3291,12 @@ textarea {
     overflow: hidden !important;
 }
 
+/* Rows own the bottom rules (including the last one). Without a header matrix,
+   the first body cells also own the table's otherwise missing top rule. */
+.grid-wrap[data-has-header="false"] .ag-row-first .ag-cell {
+    border-top: 1px solid var(--sheet-grid);
+}
+
 .line-item-header {
     background: var(--sheet-header-col) !important;
 }
@@ -3336,11 +3352,9 @@ textarea {
         inset 0 1px 0 color-mix(in oklab, white 38%, transparent);
 }
 
-.data-cell {
-    transition:
-        background-color 160ms var(--ease-out-quart),
-        color 160ms var(--ease-out-quart);
-}
+/* Semantic cell styles must appear atomically when a sheet/row mounts.
+   Feedback for edits/fill is animated by its dedicated overlay, not by every
+   background change (AG Grid applies row classes after creating cells). */
 
 @keyframes workspace-structure-flash {
     0% {
@@ -3901,6 +3915,11 @@ textarea {
 }
 
 .formula-bar-shell {
+    --formula-control-height: 2.18rem;
+    --formula-input-radius: calc(var(--formula-control-height) / 2);
+    --formula-shell-radius: 1.75rem;
+    /* Concentric shell corner and action circle, including the shell border. */
+    --formula-control-inset: calc(var(--formula-shell-radius) - var(--formula-input-radius) - 1px);
     position: absolute;
     left: 0;
     right: 0;
@@ -3908,15 +3927,9 @@ textarea {
     margin-inline: auto;
     z-index: 24;
     width: min(52rem, calc(100% - 2rem));
-    border: 1px solid var(--formula-shell-border);
-    border-radius: 999px;
+    border: 1px solid transparent;
+    border-radius: var(--formula-shell-radius);
     overflow: visible;
-    background: var(--formula-shell-bg);
-    box-shadow:
-        var(--glass-shadow),
-        inset 0 1px 0 var(--formula-shell-topline);
-    -webkit-backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
-    backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
     opacity: 0;
     pointer-events: none;
     will-change: opacity, bottom;
@@ -3925,24 +3938,17 @@ textarea {
         opacity 220ms var(--ease-out-quint);
 }
 
-.formula-bar-shell::before {
-    content: "";
+.formula-bar-surface {
     position: absolute;
-    inset: 0;
+    inset: -1px;
+    border: 1px solid var(--formula-shell-border);
     border-radius: inherit;
     pointer-events: none;
-    background:
-        radial-gradient(
-            120% 72% at 50% -14%,
-            var(--formula-glass-gloss-spot),
-            transparent 58%
-        ),
-        linear-gradient(
-            180deg,
-            var(--formula-glass-gloss-top) 0%,
-            transparent 46%
-        );
-    opacity: 0.34;
+    background: var(--formula-shell-bg);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 var(--formula-shell-topline);
+    -webkit-backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
+    backdrop-filter: blur(2px) saturate(1.12) contrast(1.03);
+    transform-origin: center bottom;
     z-index: 0;
 }
 
@@ -3957,14 +3963,12 @@ textarea {
 }
 
 .formula-bar {
-    --formula-control-height: 2.18rem;
-    --formula-track-inset-y: 0.42rem;
-    --formula-track-inset-x: 0.78rem;
     display: grid;
     grid-template-columns: minmax(9.4rem, 24%) minmax(0, 1fr);
-    align-items: center;
+    min-height: calc(2 * var(--formula-shell-radius) - 2px);
+    align-items: end;
     gap: 0.4rem;
-    padding: var(--formula-track-inset-y) var(--formula-track-inset-x) var(--formula-track-inset-y) 1.28rem;
+    padding: var(--formula-control-inset) var(--formula-control-inset) var(--formula-control-inset) 1.28rem;
     position: relative;
     border: 0;
     border-radius: inherit;
@@ -3981,6 +3985,10 @@ textarea {
 
 .formula-meta-stack {
     display: grid;
+    /* The two-line label fits into the shell's insets without moving its
+       single-line input or the bottom-anchored controls. */
+    height: var(--formula-control-height);
+    align-content: center;
     gap: 0.14rem;
     min-width: 0;
 }
@@ -4082,7 +4090,7 @@ textarea {
     align-items: center;
     padding: 0 0.9rem;
     border: 1px solid var(--formula-input-border);
-    border-radius: 999px;
+    border-radius: var(--formula-input-radius);
     background: var(--formula-input-bg);
     box-shadow:
         inset 0 1px 0 var(--formula-input-inset-top),
@@ -4138,6 +4146,59 @@ textarea {
     outline: none;
     caret-color: var(--formula-input-caret);
     color: inherit;
+}
+
+.formula-plain-textarea {
+    --formula-scroll-thumb: color-mix(in oklab, var(--formula-input-ink-focus) 28%, transparent);
+    display: block;
+    box-sizing: border-box;
+    resize: none;
+    line-height: 1.28rem;
+    padding-block: calc((var(--formula-control-height) - 1.28rem - 2px) / 2);
+    max-height: min(10rem, 35vh);
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    scrollbar-width: thin;
+    scrollbar-color: var(--formula-scroll-thumb) transparent;
+}
+
+.formula-plain-textarea:hover {
+    --formula-scroll-thumb: color-mix(in oklab, var(--formula-input-ink-focus) 44%, transparent);
+}
+
+.formula-plain-textarea::-webkit-scrollbar,
+.formula-plain-textarea::-webkit-scrollbar-track,
+.formula-plain-textarea::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+.formula-plain-textarea[wrap="off"] { white-space: pre; }
+.formula-plain-textarea.is-multiline { padding-block: 0.6rem; }
+.formula-input-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.formula-input-line-count {
+    flex: 0 0 auto;
+    margin-inline-start: 0.65rem;
+    font-family: var(--font-body);
+    font-size: 0.68rem;
+    opacity: 0.72;
+}
+
+.formula-source-input:focus-visible,
+.formula-source-editor:focus-within {
+    outline: 1px solid color-mix(in oklab, var(--formula-input-ink-focus) 22%, transparent);
+    outline-offset: 2px;
+}
+
+.formula-source-textarea:focus-visible {
+    outline: none; /* The surrounding token editor supplies the focus treatment. */
 }
 
 .formula-editor-wrap {
@@ -4913,7 +4974,7 @@ textarea {
 .formula-source-row {
     position: relative;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 0.34rem;
     min-width: 0;
     width: 100%;
@@ -6072,13 +6133,12 @@ textarea:focus-visible,
 @media (max-width: 640px) {
     .formula-bar-shell {
         width: calc(100% - 1rem);
-        border-radius: 1.02rem;
     }
 
     .formula-bar {
         grid-template-columns: 1fr;
         gap: 0.42rem;
-        padding: 0.42rem 0.48rem;
+        padding-left: 0.48rem;
     }
 
     .formula-meta-stack {
@@ -6114,7 +6174,6 @@ textarea:focus-visible,
         display: none;
     }
 
-    .formula-meta-stack,
     .formula-meta-lower {
         display: block;
     }
@@ -6138,15 +6197,11 @@ textarea:focus-visible,
     }
 
     .table-stage {
-        --formula-bar-safe-space: 120px;
+        --formula-bar-safe-space: max(120px, var(--formula-bar-measured-space, 0px));
         --index-rail-width-active: 28px;
         --index-rail-height-active: 24px;
         --index-rail-gap: 5px;
         min-height: 22rem;
-    }
-
-    .formula-bar-shell {
-        border-radius: 0.96rem;
     }
 
     .formula-source {

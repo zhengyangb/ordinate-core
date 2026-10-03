@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GridRow } from "../types/ui";
-import { resolveColumnLayouts } from "./columnLayout";
+import { EMPTY_COLUMN_WIDTH, resolveColumnLayouts } from "./columnLayout";
 
 function row(cells: Array<[string, string]>, depth = 0): GridRow {
   return Object.assign({ __rowKey: "r1", __rowId: 1, __rowPath: "row", __absoluteRowNumber: 1,
@@ -9,6 +9,14 @@ function row(cells: Array<[string, string]>, depth = 0): GridRow {
 }
 
 describe("content-driven column layout", () => {
+  it("sizes appended empty columns exactly like their preview, independent of preceding content", () => {
+    for (const [text, kind] of [["A long note. ".repeat(20), "string"], ["123456789", "number"], ["true", "boolean"]]) {
+      const columns = resolveColumnLayouts([row([[text, kind], ["", "blank"], ["", "blank"]])], ["B", "C", "D"], 0);
+      expect(columns.slice(1)).toEqual(Array.from({ length: 2 }, () => ({
+        width: EMPTY_COLUMN_WIDTH, wrapText: false, autoHeight: false,
+      })));
+    }
+  });
   it("uses equal compact widths for comparable numeric columns without wrapping numbers", () => {
     const columns = resolveColumnLayouts([row([["Revenue", "label"], ["12", "number"], ["123456.00", "number"]])], ["Line Item", "H1", "H2"], 1);
     expect(columns[0].width).toBeGreaterThan(columns[1].width);

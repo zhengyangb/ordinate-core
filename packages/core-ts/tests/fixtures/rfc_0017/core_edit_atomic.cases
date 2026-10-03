@@ -404,7 +404,7 @@ expect_ok: false
 expect_error_category: invalid_operation
 
 ===
-set_cell_input_rejects_real_newline
+set_cell_input_rejects_formula_newline
 [doc]
 # Sheet
 | Item || Note |
@@ -416,7 +416,7 @@ set_cell_input_rejects_real_newline
   {
     "op": "set_cell_input",
     "target": { "kind": "label", "sheet": "Sheet", "rowPath": ["A"], "colLabel": "Note" },
-    "input": "line1\nline2"
+    "input": "= 1\n+ 2"
   }
 ]
 [/ops]

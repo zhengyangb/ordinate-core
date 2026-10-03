@@ -3,9 +3,10 @@ import { planFillRegion, type CoreFillMode, type SheetState } from "@ordinate/co
 import { useEditorStore } from "../store/editorStore";
 import { resolveCoreRegionTarget } from "../utils/coreTargets";
 import type { LogicalCell, Rect } from "../types/ui";
-import { fillDestination, fillDirection, isVisibleFillRange, unionFill } from "./fillGeometry";
+import { fillDestination, fillDirection, isFillRange, unionFill } from "./fillGeometry";
 import { queryGridBodyViewport, queryGridHorizontalViewport } from "../utils/appHelpers";
 import { isFillSessionCurrent, type FillSessionSnapshot } from "./fillSession";
+import { defaultFillRowOptions, excludedFillRows, resolveFillRowGroups, type FillRowGroups, type FillRowOptions } from "./fillRows";
 
 type Options = {
   enabled: boolean; sheet: SheetState | null; selection: Rect | null; visibleRows: ReadonlySet<number>;
@@ -13,7 +14,7 @@ type Options = {
   select: (rect: Rect) => void;
 };
 type Drag = FillSessionSnapshot & { pointerId: number; source: Rect; target: Rect | null; x: number; y: number; moved: boolean; startX: number; startY: number };
-type Result = FillSessionSnapshot & { source: Rect; target: Rect; mode: CoreFillMode; canSeries: boolean; x: number; y: number };
+type Result = FillSessionSnapshot & { source: Rect; target: Rect; mode: CoreFillMode; canSeries: boolean; x: number; y: number; rowGroups: FillRowGroups; rowOptions: FillRowOptions; historyId?: number };
 type Feedback = FillSessionSnapshot & { id: number; target: Rect; direction: ReturnType<typeof fillDirection> };
 const coreRect = (rect: Rect) => ({ ...rect, rowStart: rect.rowStart - 1, rowEnd: rect.rowEnd - 1 });
 const region = (sheet: SheetState, rect: Rect) => resolveCoreRegionTarget(sheet,
@@ -32,28 +33,38 @@ export function useFillHandle(options: Options) {
   const latest = useRef(options);
   latest.current = options;
   const { enabled, sheet, selection, visibleRows } = options;
-  const available = Boolean(enabled && sheet && selection && isVisibleFillRange(selection, sheet.bodyStart, sheet.headerColCount, visibleRows));
+  const available = Boolean(enabled && sheet && selection && isFillRange(selection, sheet.bodyStart, sheet.headerColCount, sheet.rowCount, sheet.colCount));
   const selectionKey = JSON.stringify(selection);
+  const visibilityKey = JSON.stringify([...visibleRows].sort((a, b) => a - b));
 
   const cancel = () => { drag.current = null; setPreview(null); setDragging(false); };
-  const commit = (snapshot: FillSessionSnapshot, source: Rect, target: Rect, mode: CoreFillMode, x: number, y: number) => {
+  const commit = (snapshot: FillSessionSnapshot, source: Rect, target: Rect, mode: CoreFillMode, x: number, y: number, previous?: Result, rowOptions = defaultFillRowOptions) => {
     const current = latest.current;
     const currentSheet = current.sheet;
-    if (!isFillSessionCurrent(snapshot, useEditorStore.getState()) || !current.enabled || !currentSheet || !isVisibleFillRange(unionFill(source, target), currentSheet.bodyStart, currentSheet.headerColCount, current.visibleRows)) return;
+    if (!isFillSessionCurrent(snapshot, useEditorStore.getState()) || !current.enabled || !currentSheet || !isFillRange(unionFill(source, target), currentSheet.bodyStart, currentSheet.headerColCount, currentSheet.rowCount, currentSheet.colCount)) return;
     try {
-      const plan = planFillRegion(currentSheet, coreRect(source), coreRect(target), mode);
-      useEditorStore.getState().applyCoreEdits("Fill cells", [{ op: "fill_region", source: region(currentSheet, source), target: region(currentSheet, target), mode }]);
+      const union = unionFill(source, target);
+      const rowGroups = previous?.rowGroups ?? resolveFillRowGroups(currentSheet, union, current.visibleRows);
+      const excludedRows = excludedFillRows(rowGroups, rowOptions);
+      const plan = planFillRegion(currentSheet, coreRect(source), coreRect(target), mode, excludedRows);
+      const before = useEditorStore.getState();
+      before.applyCoreEdits("Fill cells", [{ op: "fill_region", source: region(currentSheet, source), target: region(currentSheet, target), mode,
+        excludedRowIds: excludedRows.map(row => currentSheet.rowIds[row]) }], undefined, previous?.historyId);
       const nextDocument = useEditorStore.getState().docState!;
       if (nextDocument !== snapshot.document) {
         setFeedback({ id: ++feedbackId.current, document: nextDocument, sheet: currentSheet.name, target, direction: fillDirection(source, target) });
       }
       current.select(unionFill(source, target));
-      setResult({ document: useEditorStore.getState().docState!, sheet: currentSheet.name, source, target, mode, canSeries: plan.canSeries, x, y });
+      const after = useEditorStore.getState();
+      const historyId = previous?.historyId ?? (after.historyCursor > before.historyCursor ? after.history[after.historyCursor - 1].id : undefined);
+      setResult({ document: nextDocument, sheet: currentSheet.name, source, target, mode, canSeries: plan.canSeries, x, y, rowGroups, rowOptions, historyId });
       setError(null);
     } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
   };
   const commitRef = useRef(commit);
   commitRef.current = commit;
+
+  useEffect(() => { cancel(); setResult(null); }, [visibilityKey]);
 
   useEffect(() => {
     // Includes undo, edits, external reloads, mode changes, and switching sheets.
@@ -85,7 +96,7 @@ export function useFillHandle(options: Options) {
         if (horizontal && center) horizontal.scrollLeft += velocity(session.x, center.left, center.right);
         const point = current.resolvePoint(Math.max(bounds.left + 2, Math.min(bounds.right - 3, session.x)), Math.max(bounds.top + 2, Math.min(bounds.bottom - 3, session.y)));
         const target = point ? fillDestination(session.source, point) : null;
-        session.target = target && isVisibleFillRange(unionFill(session.source, target), current.sheet.bodyStart, current.sheet.headerColCount, current.visibleRows) ? target : null;
+        session.target = target && isFillRange(unionFill(session.source, target), current.sheet.bodyStart, current.sheet.headerColCount, current.sheet.rowCount, current.sheet.colCount) ? target : null;
         setPreview(previous => JSON.stringify(previous) === JSON.stringify(session.target) ? previous : session.target);
       }
       frame = requestAnimationFrame(tick);
@@ -132,7 +143,10 @@ export function useFillHandle(options: Options) {
     available, preview, dragging, handleRef, result: result?.document === documentState && result.sheet === sheet?.name ? result : null, error,
     dismiss: () => { setResult(null); setError(null); },
     changeMode: (mode: CoreFillMode) => {
-      if (result) commit(result, result.source, result.target, mode, result.x, result.y);
+      if (result) commit(result, result.source, result.target, mode, result.x, result.y, result, result.rowOptions);
+    },
+    changeRowOption: (key: keyof FillRowOptions, include: boolean) => {
+      if (result) commit(result, result.source, result.target, result.mode, result.x, result.y, result, { ...result.rowOptions, [key]: include });
     },
     start: (event: PointerEvent<HTMLButtonElement>) => {
       if (event.button !== 0 || !available || !selection || !documentState || !sheet) return;

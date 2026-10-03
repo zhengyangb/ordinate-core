@@ -7,6 +7,7 @@ export {
 } from "./validator";
 
 export { formatDocument } from "./formatter";
+export { isImplicitTextInput } from "./runtime/parse";
 export { evaluateAndFormatDocument } from "./materialize";
 
 export {

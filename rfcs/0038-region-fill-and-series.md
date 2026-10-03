@@ -11,14 +11,14 @@ Web and desktop use the same implementation. No AG Grid Enterprise dependency.
 
 ## Contract
 
-`{ op: "fill_region", source: CoreRegionTarget, target: CoreRegionTarget, mode }`
+`{ op: "fill_region", source: CoreRegionTarget, target: CoreRegionTarget, mode, excludedRowIds? }`
 uses stable row/column IDs (RFC-0017). Both rectangles belong to the same sheet.
 The target excludes the seed, adjoins exactly one of its four sides, and has the
 same width (vertical fill) or height (horizontal fill). It must lie inside existing
 body/data cells. Headers and hierarchy labels are not fillable. Invalid shapes,
 unknown IDs, unsupported modes and out-of-bounds operations fail atomically.
 
-`planFillRegion(sheet, sourceRect, targetRect, mode)` is the shared pure planner.
+`planFillRegion(sheet, sourceRect, targetRect, mode, excludedRows?)` is the shared pure planner.
 Its rectangles use zero-based inclusive semantic indices. It returns a matrix of
 input strings and `canSeries`, without mutating the document or evaluating formulas.
 The edit applies this matrix in one history entry using existing dependency updates.
@@ -69,14 +69,47 @@ Fill is content-only. Preserve destination local format/style and its row/column
 cascade; do not flatten resolved styles or copy seed formatting implicitly. Source cells
 are never changed. Each fill (including choosing a different mode afterward) is one
 atomic, undoable edit. Mode changes reapply from the same original seed, not from the
-generated cells. Each mode change has its own undo step.
+generated cells. The editor replaces the current fill history entry atomically when
+changing mode or inclusion options: restore its original state in memory, apply the
+new fill, then publish once. One undo restores the state before any fill variant;
+redo reproduces the final variant. Stale history IDs fail without changing state.
+Replacing an already saved entry invalidates that savepoint.
+
+## Collapsed rows
+
+Collapse is a view concern. By default, fill covers every physical row between its
+endpoints, including collapsed children and group rows. Ending on a collapsed parent
+does not implicitly extend the endpoint to its descendants. No warning or prompt is
+shown. When the source/target span contains hidden rows, the post-fill menu offers
+`Include collapsed rows`, initially checked. Unchecking restores excluded destination
+cells to their pre-fill inputs and recomputes using only included source/target rows.
+Group rows default to ordinary body rows. Independently, when the span contains rows
+with children, the post-fill menu offers `Include parent rows`, initially checked.
+Parenthood comes from the full semantic hierarchy (including nested parents and
+children outside the span), never visibility. Disabling this option excludes parent
+rows from seeds and destinations, restoring original destination inputs/formulas.
+Both options compose by unioning their exclusions without duplicates; including a
+parent does not override its exclusion as a hidden row, or vice versa. If exclusion
+would leave no seed or destination, fail without changing data or selected options;
+keep the menu available so the user can revise the choice. No new core policy flag
+is needed: both categories use the same explicit row-exclusion contract.
+
+The client snapshots hidden rows for the operation and passes their stable IDs as
+`excludedRowIds` when inclusion is disabled. Core has no dependency on collapse or
+viewport state. The planner accepts the corresponding zero-based row indices; invalid,
+duplicate, out-of-span exclusions or empty effective source/target fail early. Its
+matrix retains original inputs for excluded rows, and mutation does not write them.
+Vertical series/copy patterns advance over included rows only; formula translations
+still use physical destination-minus-source coordinates. Horizontal fills skip excluded
+row lanes. Changing collapse state cancels a drag and dismisses its options. History
+records actual edits, so later visibility changes cannot affect undo/redo.
 
 ## Editor interaction
 
 - Use the existing selection overlay's scroll planes, geometry and frozen boundaries.
 - A small corner dot is hidden until hovered/focused (visible for touch); no permanent toolbar.
 - Drag horizontally or vertically, including backward; a dashed preview shows the destination.
-- Drag near viewport edges to scroll. Never silently fill collapsed/hidden rows.
+- Drag near viewport edges to scroll. Fill collapsed rows by default, with post-fill opt-out.
 - Escape, pointer cancellation, loss of window focus, document revision or sheet/mode change
   cancels an unfinished gesture. Pointer motion never edits data.
 - On release, select the combined region and show a compact Auto / Copy / Series chooser.

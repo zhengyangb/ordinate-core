@@ -23,6 +23,7 @@ import { diagnosticFromError, makeError, makeInternalError } from "./errors";
 import { parseTemporalLiteral } from "./temporal";
 import { parseTemporalFormatSpec } from "./temporalFormat";
 import { buildFormulaConcreteSyntax, type FormulaParserToken } from "./formulaInspection";
+import { normalizeTextLineEndings, trimCellText } from "../text_encoding";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
@@ -68,7 +69,7 @@ export function parseCellInput(text: string): ParsedCell {
 }
 
 function parseCellBody(text: string): { body: CellBodyState; initialCachedValue: RuntimeValue | null } {
-  const raw = text.trim();
+  const raw = trimCellText(normalizeTextLineEndings(text));
   if (raw === "") {
     return {
       body: {
@@ -476,7 +477,7 @@ class ExprParser {
     }
     const str = this.match("STRING");
     if (str) {
-      return { kind: "literal", value: { kind: "string", value: unescapeQuoted(str[1].slice(1, -1)) } };
+      return { kind: "literal", value: parseQuotedString(str[1]) };
     }
     const errLit = this.match("ERROR_LITERAL");
     if (errLit) {
@@ -1421,11 +1422,32 @@ function parseErrorLiteral(text: string, source: "literal" | "cache"): RuntimeVa
 }
 
 // Parse a user-entered literal (string/number/boolean/null/error/blank).
-function parseUserLiteral(text: string): RuntimeValue {
-  const t = text.trim();
-  if (isQuoted(t)) {
-    return { kind: "string", value: unescapeQuoted(t.slice(1, -1)) };
+function parseQuotedString(text: string): RuntimeValue {
+  try {
+    return { kind: "string", value: JSON.parse(text.replace(/\t/g, "\\t")) as string };
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return makeInternalError("parse_string_invalid_escape", { literal: text });
   }
+}
+
+/** Eligibility for literal multiline editing, not a heuristic based on displayed values. */
+export function isImplicitTextInput(text: string): boolean {
+  const start = text.trimStart();
+  if (start.startsWith('"') || start.startsWith("=")) return false;
+  const parsed = parseCellInput(text);
+  return parsed.localDisplay === null && parsed.initialCachedValue === null && parsed.body.valid &&
+    parsed.body.kind === "literal" && ["string", "blank"].includes(parsed.body.literal.kind);
+}
+
+function parseUserLiteral(text: string): RuntimeValue {
+  const t = trimCellText(text);
+  if (isQuoted(t)) {
+    return parseQuotedString(t);
+  }
+  // A physical line break makes an unquoted value text, before single-line
+  // type recognition (some temporal matchers accept a trailing newline).
+  if (!t.startsWith('"') && /[\r\n]/.test(t)) return { kind: "string", value: t };
   if (t.startsWith("error[")) {
     const parsedError = parseErrorLiteral(t, "literal");
     if (parsedError) return parsedError;
@@ -1446,7 +1468,7 @@ function parseUserLiteral(text: string): RuntimeValue {
 function parseCacheLiteral(text: string): RuntimeValue {
   const t = text.trim();
   if (isQuoted(t)) {
-    return { kind: "string", value: unescapeQuoted(t.slice(1, -1)) };
+    return parseQuotedString(t);
   }
   if (t.startsWith("error[")) {
     const parsedError = parseErrorLiteral(t, "cache");

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 
 import { AgGridReact } from "ag-grid-react";
+import { createPortal } from "react-dom";
 import { SearchText } from "../search/SheetSearch";
 import {
   type ColDef,
@@ -33,6 +34,9 @@ import { APPEND_AXIS_SLOT_GAP, APPEND_COLUMN_WIDTH, APPEND_ROW_SLOT_HEIGHT, GRID
 import { projectSelectionOverlayFragments, type SelectionOverlayFragment, type SelectionOverlayPlane } from "../utils/selectionRing";
 import { FillHandle, FillOptions } from "../fill/FillHandle";
 import { QuickAddButton } from "./QuickAddButton";
+import { EMPTY_COLUMN_WIDTH } from "../utils/columnLayout";
+import { readGridBodyOverlayHosts, type GridBodyOverlayHosts } from "../grid/bodyOverlayHosts";
+import { waitForInitialRowLayout } from "../grid/initialRowLayout";
 import type { FillHandleController } from "../fill/useFillHandle";
 
 type FormulaReferenceOverlay = {
@@ -208,7 +212,29 @@ export default function TableStage({
   const quickAddDragSessionRef = useRef<QuickAddDragSession | null>(null);
   const quickAddPointerCommitRef = useRef<{ axis: QuickAddAxis } | null>(null);
   const animateTableStructure = shouldAnimateTableStructure();
-  const previewColumnWidth = columnMetrics.at(-1)?.width ?? 0;
+  const previewColumnWidth = EMPTY_COLUMN_WIDTH;
+  const [readyGridKey, setReadyGridKey] = useState<string | null>(null);
+  const initialLayoutCleanup = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => {
+    setReadyGridKey(null);
+    return () => initialLayoutCleanup.current?.();
+  }, [gridInstanceKey]);
+  const onFirstDataRendered = useCallback((event: FirstDataRenderedEvent<GridRow>) => {
+    handleFirstDataRendered(event);
+    initialLayoutCleanup.current?.();
+    const root = gridWrapRef.current;
+    if (!root) throw new Error("rendered grid requires a root for initial layout");
+    initialLayoutCleanup.current = waitForInitialRowLayout(root, () => setReadyGridKey(gridInstanceKey));
+  }, [gridWrapRef, gridInstanceKey, handleFirstDataRendered]);
+  const [bodyOverlayHosts, setBodyOverlayHosts] = useState<{
+    gridKey: string; hosts: GridBodyOverlayHosts;
+  } | null>(null);
+  const onGridReady = useCallback((event: GridReadyEvent<GridRow>) => {
+    const root = gridWrapRef.current;
+    if (!root) throw new Error("ready grid requires a root for body overlays");
+    setBodyOverlayHosts({ gridKey: gridInstanceKey, hosts: readGridBodyOverlayHosts(root) });
+    handleGridReady(event);
+  }, [gridWrapRef, gridInstanceKey, handleGridReady]);
   const {
     top: bodyScrollTop,
     left: bodyScrollLeft,
@@ -313,8 +339,8 @@ export default function TableStage({
   const overlayPlaneStyles: Record<SelectionOverlayPlane, CSSProperties> = {
     "header-pinned": { left: 0, top: 0, width: pinnedHeaderWidth, height: headerOverlayHeight },
     "header-center": { left: pinnedHeaderWidth, top: 0, width: centerViewportWidth, height: headerOverlayHeight },
-    "body-pinned": { left: 0, top: headerOverlayHeight, width: pinnedHeaderWidth, height: bodyViewportHeight },
-    "body-center": { left: pinnedHeaderWidth, top: headerOverlayHeight, width: centerViewportWidth, height: bodyViewportHeight },
+    "body-pinned": { inset: 0 },
+    "body-center": { inset: 0 },
   };
   const overlayPlanes: SelectionOverlayPlane[] = [
     "body-center",
@@ -766,7 +792,7 @@ export default function TableStage({
   };
 
   return (
-    <div className={tableStageClassName} style={resolvedTableStageStyle}>
+    <div className={tableStageClassName} style={resolvedTableStageStyle} data-layout-ready={rowData.length === 0 || readyGridKey === gridInstanceKey}>
       <div
         className={`table-corner ${railsPhaseClass}`}
         onMouseEnter={() => handleIndexRailsHoverChange(true)}
@@ -972,21 +998,11 @@ export default function TableStage({
 
       <div className="grid-shell">
         {tableFootprint.height > 0 ? (
-          <>
-            <div
-              className="table-leading-boundary-line"
-              style={{ height: `${tableFootprint.height}px` }}
-              aria-hidden="true"
-            />
-            <div
-              className="table-footprint-bottom-line"
-              style={{
-                top: `${tableFootprint.height - 1}px`,
-                width: `${tableFootprint.width}px`,
-              }}
-              aria-hidden="true"
-            />
-          </>
+          <div
+            className="table-leading-boundary-line"
+            style={{ height: `${tableFootprint.height}px` }}
+            aria-hidden="true"
+          />
         ) : null}
         {axisColumnSelectionBand ? (
           <div
@@ -1091,17 +1107,17 @@ export default function TableStage({
               ) {
                 return null;
               }
-              return (
+              const isBody = plane.startsWith("body");
+              const overlay = (
                 <div
                   key={plane}
-                  className={`table-overlay-plane table-overlay-plane--${plane}`}
+                  className={`table-overlay-plane table-overlay-plane--${plane}${isBody ? " is-native-track" : ""}`}
                   style={overlayPlaneStyles[plane]}
                 >
                   <div
                     className={[
                       "table-overlay-track",
-                      plane.endsWith("center") ? "is-center-track" : "",
-                      plane.startsWith("body") ? "is-body-track" : "",
+                      !isBody && plane.endsWith("center") ? "is-center-track" : "",
                     ].filter(Boolean).join(" ")}
                   >
                     {planeRangeFragments.map((fragment, index) => (
@@ -1153,6 +1169,11 @@ export default function TableStage({
                   </div>
                 </div>
               );
+              if (!isBody) return overlay;
+              // The browser moves body overlays with the cells themselves.
+              // No JS scroll transform or React frame is involved in tracking.
+              if (bodyOverlayHosts?.gridKey !== gridInstanceKey) return null;
+              return createPortal(overlay, bodyOverlayHosts.hosts[plane === "body-pinned" ? "pinned" : "center"], plane);
             })}
           </div>
         ) : null}
@@ -1226,6 +1247,7 @@ export default function TableStage({
                 : "grid-wrap suppress-cell-focus-ring"
           }
           ref={gridWrapRef}
+          data-has-header={showGridHeader}
         >
           <AgGridReact<GridRow>
             key={gridInstanceKey}
@@ -1249,8 +1271,8 @@ export default function TableStage({
             processUnpinnedColumns={keepConfiguredPinning}
             suppressContextMenu
             theme={themeQuartz}
-            onGridReady={handleGridReady}
-            onFirstDataRendered={handleFirstDataRendered}
+            onGridReady={onGridReady}
+            onFirstDataRendered={onFirstDataRendered}
             onModelUpdated={handleModelUpdated}
             onGridSizeChanged={handleGridSizeChanged}
             onCellFocused={handleCellFocused}

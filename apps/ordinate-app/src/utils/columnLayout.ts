@@ -2,6 +2,10 @@ import type { GridRow } from "../types/ui";
 
 type ColumnLayout = { width: number; wrapText: boolean; autoHeight: boolean };
 
+// Also used by the append-column preview: an empty column has no text or
+// numeric peers to size from, regardless of the preceding column's content.
+export const EMPTY_COLUMN_WIDTH = 112;
+
 // Approximate the 13px table font, including wide scripts. Actual line wrapping
 // and row height are measured by the grid, not guessed from character counts.
 function textWidth(text: string): number {
@@ -53,10 +57,10 @@ export function resolveColumnLayouts(
     const width = isHeader ? boundedWidth(desired, 176, 256)
       : hasText ? boundedWidth(desired, 144, 320)
       : hasBoolean && !hasNumber ? boundedWidth(desired, 96, 144)
-      : boundedWidth(desired, 112, 176);
+      : boundedWidth(desired, EMPTY_COLUMN_WIDTH, 176);
     return { width, numeric, wrapText: hasText, autoHeight: hasText };
   });
   // Comparable numeric columns share a rhythm rather than varying with each value.
-  const numericWidth = profiles.reduce((max, column) => column.numeric ? Math.max(max, column.width) : max, 112);
+  const numericWidth = profiles.reduce((max, column) => column.numeric ? Math.max(max, column.width) : max, EMPTY_COLUMN_WIDTH);
   return profiles.map(({ numeric, ...column }) => ({ ...column, width: numeric ? numericWidth : column.width }));
 }
