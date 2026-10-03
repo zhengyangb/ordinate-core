@@ -16,12 +16,26 @@ export function renderedRowsFitContent(root: HTMLElement): boolean {
   return true;
 }
 
-export function waitForInitialRowLayout(root: HTMLElement, onReady: () => void): () => void {
+export type InitialViewportGeometry = { centerViewportWidth: number; pinnedWidth: number };
+
+export function renderedViewportMatches(root: HTMLElement, expected: InitialViewportGeometry): boolean {
+  const viewport = root.querySelector<HTMLElement>(".ag-center-cols-viewport");
+  if (!viewport) throw new Error("rendered grid is missing its center viewport");
+  return expected.centerViewportWidth > 0 &&
+    viewport.clientWidth === expected.centerViewportWidth &&
+    Math.abs(viewport.getBoundingClientRect().left - root.getBoundingClientRect().left - expected.pinnedWidth) < 1;
+}
+
+export function waitForInitialGridLayout(
+  root: HTMLElement,
+  readExpectedViewport: () => InitialViewportGeometry,
+  onReady: () => void,
+): () => void {
   let cancelled = false;
   let frame = 0;
   const check = () => {
     if (cancelled || !root.isConnected) return;
-    if (renderedRowsFitContent(root)) {
+    if (renderedViewportMatches(root, readExpectedViewport()) && renderedRowsFitContent(root)) {
       onReady();
       return;
     }

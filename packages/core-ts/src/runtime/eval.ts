@@ -61,7 +61,7 @@ interface EvalSheetContext {
 
 // Evaluate a full document into runtime values.
 export function evaluateDocument(text: string): EvaluationResult {
-  const parsed = parseDocument(text);
+  const { sheets: parsed } = parseDocument(text);
   const contexts = parsed.map((sheet, index) =>
     sheet.table ? buildEvalSheetContext(index + 1, sheet.name, sheet.table.rows) : emptyEvalSheetContext(index + 1, sheet.name));
   return { sheets: evaluateSheetContexts(contexts) };

@@ -40,7 +40,7 @@ export type StorageAdapter = {
 };
 
 export type DesktopCommand = "open" | "save" | "saveAs" | "undo" | "redo";
-export type DocumentRequest = { id: string; kind: "flush" | "save" | "move" | "open" };
+export type DocumentRequest = { id: string; kind: "flush" | "save" | "move" | "open" | "duplicate" | "saveAs" | "revert" };
 export type DocumentWrite = { file: FileReference | null; text: string; version: string | null };
 export type DesktopWindowState = {
   file: FileReference | null;
@@ -51,7 +51,11 @@ export type DesktopWindowState = {
 export type DesktopBridge = Pick<StorageAdapter, "availability" | "open" | "save" | "saveAs" | "readCurrent"> & {
   watch: NonNullable<StorageAdapter["watch"]>;
   readonly windowChrome: "native";
-  restoreDocument: () => Promise<StorageResult<FileSnapshot> | null>;
+  readonly sessionId: string;
+  restoreDocument: () => Promise<{ snapshot: StorageResult<FileSnapshot> | null; text: string | null }>;
+  openDocument: () => Promise<void>;
+  newDocument: () => Promise<void>;
+  duplicateDocument: (id: string, text: string) => Promise<void>;
   updateWindow: (state: DesktopWindowState) => Promise<void>;
   onCommand: (callback: (command: DesktopCommand) => void) => () => void;
   nativeHistory: (command: "undo" | "redo") => Promise<void>;

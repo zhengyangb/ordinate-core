@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ConfirmationDialogConfig } from "../components/ConfirmationDialog";
-import type { EditorState } from "../store/editorStore";
+import { useEditorStore, type EditorState } from "../store/editorStore";
 import { defaultFileSessionStore, getPersistableText, useFileSessionStore } from "../store/fileSessionStore";
-import { flushFileSession, handleDocumentRequest } from "../platform/documentSession";
+import { handleDocumentRequest } from "../platform/documentSession";
 import { fileSessionStatus } from "../utils/fileSessionStatus";
 import { isNativeTextEditingTarget } from "../utils/textEditingTarget";
 import { startFileSync } from "../platform/fileSync";
 import { createDesktopStorageAdapter } from "../platform/desktopStorage";
+import { BLANK_DOCUMENT } from "../platform/blankDocument";
 
 type Options = Pick<EditorState, "mode" | "revision" | "sourceText" | "docState" | "undo" | "redo"> & {
   requestConfirmation: (config: ConfirmationDialogConfig) => Promise<boolean>;
@@ -57,8 +58,7 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
 
   const fileSessionEditorSignatureRef = useRef<string | null>(null);
   const initializationRef = useRef<Promise<void> | null>(null);
-  const initialTextRef = useRef(getPersistableText({ mode, sourceText, docState }).text);
-  const restoredUntitledRef = useRef(false);
+  const [initializationStatus, setInitializationStatus] = useState<"loading" | "ready" | "failed">("loading");
   const shouldWarnBeforeUnload = fileSessionDocumentDirty === "dirty" && fileSessionLocalDraftState !== "current";
 
   useEffect(() => {
@@ -66,16 +66,20 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
     if (initializationRef.current) return;
     initializationRef.current = (async () => {
       const restored = await window.ordinateDesktop?.restoreDocument();
-      if (restored) {
-        await defaultFileSessionStore.getState().open(async () => restored);
+      if (restored?.snapshot) {
+        await defaultFileSessionStore.getState().open(async () => restored.snapshot!);
         return;
       }
+      if (restored) useEditorStore.getState().replaceDocumentText(restored.text ?? BLANK_DOCUMENT);
       await loadUntitledFileDraft();
-      restoredUntitledRef.current = defaultFileSessionStore.getState().localDraftText !== null;
-      if (window.ordinateDesktop) defaultFileSessionStore.getState().recoverDraft();
+      if (window.ordinateDesktop) {
+        defaultFileSessionStore.getState().recoverDraft();
+        await defaultFileSessionStore.getState().autosaveNow();
+      }
     })();
-    void initializationRef.current.catch((error: unknown) => {
+    void initializationRef.current.then(() => setInitializationStatus("ready")).catch((error: unknown) => {
       defaultFileSessionStore.setState({ lastError: { kind: "read_failed", message: String(error) } });
+      setInitializationStatus("failed");
     });
   }, [loadUntitledFileDraft]);
 
@@ -136,19 +140,7 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
 
   const handleOpenFile = useCallback(async () => {
     if (window.ordinateDesktop) {
-      try { prepareRef.current(); await flushFileSession(defaultFileSessionStore); }
-      catch (error) {
-        await requestConfirmation({ title: "Couldn't finish saving", body: <p>{String(error)}</p>, confirmLabel: "Keep Editing", cancelLabel: "Cancel", tone: "warning" });
-        return;
-      }
-      // Preserve the existing single untitled draft before replacing this window.
-      // Naming it once avoids an inaccessible orphan behind a named session.
-      const hasUntitledWork = restoredUntitledRef.current || getPersistableText({ mode, sourceText, docState }).text !== initialTextRef.current;
-      if (!defaultFileSessionStore.getState().file && hasUntitledWork) {
-        await saveFileAs({ allowInvalidSource: true });
-        if (!defaultFileSessionStore.getState().file) return;
-      }
-      await openFile();
+      await window.ordinateDesktop.openDocument();
       return;
     }
     if (fileSessionDocumentDirty === "dirty") {
@@ -163,6 +155,12 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
     }
     void openFile();
   }, [fileSessionDocumentDirty, openFile, requestConfirmation, saveFileAs, mode, sourceText, docState]);
+
+  const handleNewFile = useCallback(async () => {
+    const bridge = window.ordinateDesktop;
+    if (!bridge) throw new Error("New document tabs require the desktop host");
+    await bridge.newDocument();
+  }, []);
 
   const handleSaveFile = useCallback(async () => {
     if (window.ordinateDesktop) prepareRef.current();
@@ -189,5 +187,5 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
   }), [handleOpenFile, handleSaveFile, handleSaveFileAs, mode, undo, redo]);
 
 
-  return { fileName, fileStatus, handleOpenFile, handleSaveFile, handleSaveFileAs };
+  return { initializationStatus, fileName, fileStatus, handleNewFile, handleOpenFile, handleSaveFile, handleSaveFileAs };
 }

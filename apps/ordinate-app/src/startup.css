@@ -1,0 +1,60 @@
+/* Shared shell classes/tokens keep the first paint aligned with the editor. */
+#startup-screen { position: fixed; inset: 0; z-index: 100; }
+:root[data-startup="loading"] #root,
+:root[data-startup="failed"] #root { visibility: hidden; }
+.startup-toolbar { gap: 1.5rem; }
+.startup-placeholder {
+    display: block;
+    height: 10px;
+    border-radius: 5px;
+    background: color-mix(in oklab, var(--chrome-ink) 9%, transparent);
+}
+.startup-title { width: 76px; }
+.startup-tools { width: 148px; margin-left: 12px; }
+.startup-tabs {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    height: var(--sheetbar-height);
+    padding: 0 16px;
+}
+.startup-tabs .startup-placeholder { width: 104px; height: 8px; }
+.startup-tabs .startup-placeholder:nth-child(2) { width: 84px; }
+.startup-canvas { flex: 1; padding: 38px; background: var(--sheet-surface); }
+.startup-table {
+    width: min(660px, 100%);
+    color: var(--sheet-ink);
+    animation: startup-breathe 1.8s ease-in-out infinite alternate;
+}
+.startup-table-heading {
+    height: 38px;
+    background: color-mix(in oklab, var(--sheet-ink) 5%, transparent);
+}
+.startup-table-row {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 20%;
+    border-bottom: 1px solid color-mix(in oklab, var(--sheet-ink) 5%, transparent);
+    padding: 0 16px;
+}
+.startup-table-row::before, .startup-table-row::after {
+    content: "";
+    width: 17%; height: 7px; border-radius: 4px;
+    background: color-mix(in oklab, var(--sheet-ink) 7%, transparent);
+}
+.startup-table-row:nth-child(odd)::before { width: 13%; margin-right: 4%; }
+:root[data-startup="failed"] #startup-screen {
+    background: var(--sheet-surface); color: var(--sheet-ink);
+    padding: 32px; overflow: auto;
+}
+:root[data-startup="failed"] #startup-screen button {
+    border: 1px solid var(--chrome-border); border-radius: 8px;
+    background: var(--chrome-bg); color: var(--chrome-ink); padding: 8px 16px;
+}
+@keyframes startup-breathe { from { opacity: .55; } to { opacity: .95; } }
+@media (prefers-reduced-motion: reduce) { .startup-table { animation: none; } }
+@media (max-width: 540px) {
+    .startup-canvas { padding: 24px 18px; }
+    .startup-tools { width: 68px; margin: 0; }
+}

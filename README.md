@@ -14,6 +14,8 @@ Application-specific editor behavior is specified separately under `apps/ordinat
 Do not fold app feature behavior into core RFCs unless it changes the `.ord` format or the public core library contract.
 
 Current capabilities:
+- accept and preserve opaque YAML front matter before the first sheet (RFC-0040;
+  no fields or YAML semantics are defined yet)
 - parse sheets and pipe tables from text
 - validate RFC-0002 structural rules
 - validate RFC-0003 section hierarchy rules

@@ -5,7 +5,11 @@ type AppKit = {
   setDocumentOpenHandler: (callback: (id: number, kind: "open", filename: string) => void) => void;
   completeDocumentOpen: (request: number, host: number, error: string) => void;
   setChrome: (handle: Buffer, red: number, green: number, blue: number) => void;
-  attachDocument: (handle: Buffer, callback: (id: number, kind: "flush" | "save" | "move", destination: string) => void) => number;
+  attachDocument: (handle: Buffer, callback: (id: number, kind: "flush" | "save" | "move" | "duplicate" | "revert", destination: string) => void) => number;
+  documentAction: (host: number, action: "rename" | "move") => void;
+  checkpoint: (filename: string) => void;
+  listVersions: (filename: string) => Array<{ id: string; date: string }>;
+  readVersion: (filename: string, id: string) => string;
   updateDocument: (host: number, path: string, edited: boolean) => void;
   completeDocumentRequest: (host: number, id: number, error: string) => void;
   detachDocument: (host: number) => void;

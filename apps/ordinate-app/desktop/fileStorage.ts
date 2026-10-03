@@ -30,7 +30,8 @@ function failure(error: unknown, operation: "read_failed" | "write_failed"): Sto
 }
 
 /** Only paths selected by native dialogs are granted to this window. */
-export function createNativeStorage(dialogs: NativeDialogs, preserveMetadata?: (source: string, replacement: string) => void): NativeStorage {
+export function createNativeStorage(dialogs: NativeDialogs, preserveMetadata?: (source: string, replacement: string) => void,
+  beforeReplace?: (filename: string) => void): NativeStorage {
   const grants = new Map<string, GrantedFile>();
   let writes: Promise<unknown> = Promise.resolve();
   function serializeWrite<T>(action: () => Promise<T>): Promise<T> {
@@ -83,14 +84,15 @@ export function createNativeStorage(dialogs: NativeDialogs, preserveMetadata?: (
       created = true;
       try { await handle.writeFile(text, "utf8"); await handle.sync(); }
       finally { await handle.close(); }
-      // macOS Finder tags and other extended attributes must survive replacing
-      // the inode. The platform hook only touches this operation's temporary file.
-      if (exists) preserveMetadata?.(file.path, temporary);
       // Check just before replacement, also for explicit conflict overwrites.
       if (expectedVersion !== null) {
         const current = await snapshot(file);
         if (current.version !== expectedVersion) return { ok: false, error: { kind: "version_mismatch", current } };
+        if (current.text === text) return ok(current);
       }
+      if (exists) beforeReplace?.(file.path);
+      // Include attributes created by version checkpointing, as well as Finder tags.
+      if (exists) preserveMetadata?.(file.path, temporary);
       await rename(temporary, file.path);
       created = false;
       return ok({ file: file.reference, text, version: hash(text) });

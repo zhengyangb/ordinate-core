@@ -4,6 +4,7 @@ import type { ReactNode, RefObject } from "react";
 import { AutoIcon, MoonIcon, SunIcon } from "../icons/uiIcons";
 import RailMenu from "./RailMenu";
 import SheetSetupMenu from "./SheetSetupMenu";
+import FloatingTooltipView from "./FloatingTooltipView";
 import { MenuOption, MenuSurface } from "./MenuSurface";
 import type { CoreRowDeleteMode } from "@ordinate/core";
 import type {
@@ -15,7 +16,6 @@ import type {
   StyleLocalView,
   ThemeMenuPosition,
   ThemeMode,
-  ToolSpec,
 } from "../types/ui";
 
 type OverlayPortalsProps = {
@@ -25,10 +25,6 @@ type OverlayPortalsProps = {
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
   setThemeMenuOpen: (open: boolean) => void;
-  toolMenuOpen: boolean;
-  toolMenuPosition: FloatingMenuPosition;
-  toolMenuRef: RefObject<HTMLDivElement>;
-  overflowTools: ToolSpec[];
   railMenuOpen: boolean;
   railMenuPosition: FloatingMenuPosition;
   railMenu: RailMenuView | null;
@@ -69,10 +65,6 @@ export default function OverlayPortals({
   themeMode,
   setThemeMode,
   setThemeMenuOpen,
-  toolMenuOpen,
-  toolMenuPosition,
-  toolMenuRef,
-  overflowTools,
   railMenuOpen,
   railMenuPosition,
   railMenu,
@@ -140,22 +132,6 @@ export default function OverlayPortals({
       )}
 
       {createPortal(
-        <MenuSurface
-          innerRef={toolMenuRef}
-          className="tool-menu"
-          open={toolMenuOpen}
-          style={{ top: `${toolMenuPosition.top}px`, left: `${toolMenuPosition.left}px` }}
-        >
-          {overflowTools.map((item) => (
-            <MenuOption key={item.label} role="menuitem" tabIndex={toolMenuOpen ? 0 : -1} icon={<span className="tool-icon">{item.icon}</span>}>
-              {item.label}
-            </MenuOption>
-          ))}
-        </MenuSurface>,
-        document.body,
-      )}
-
-      {createPortal(
         <RailMenu
           open={railMenuOpen}
           position={railMenuPosition}
@@ -207,19 +183,7 @@ export default function OverlayPortals({
       )}
 
       {createPortal(
-        <div
-          className={tooltip ? "floating-tooltip visible" : "floating-tooltip"}
-          data-placement={tooltip?.placement ?? "below"}
-          data-alignment={tooltip?.alignment ?? "center"}
-          role="tooltip"
-          aria-hidden={!tooltip}
-          style={{
-            top: `${tooltip?.top ?? 0}px`,
-            left: `${tooltip?.left ?? 0}px`,
-          }}
-        >
-          {tooltip?.text ?? ""}
-        </div>,
+        <FloatingTooltipView tooltip={tooltip} />,
         document.body,
       )}
     </>

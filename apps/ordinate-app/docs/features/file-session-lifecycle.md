@@ -273,19 +273,19 @@ load AppKit. The renderer never receives filesystem paths from this bridge.
 Close/quit commits an active formula editor, waits for in-flight operations, then
 flushes the latest snapshot. A current local draft suffices only for an untitled
 document; a named document must be current on disk. Failure or conflict prevents
-closing. Untitled drafts restore automatically; the last named file reopens on
+closing. Untitled drafts restore automatically; the open workspace reopens on
 launch. Native moves update the session's backing capability and recovery key
-before subsequent edits can autosave. Native versions/duplication are not enabled.
+before subsequent edits can autosave. See [Desktop document workspace](desktop-document-workspace.md)
+for multi-window sessions, native tabs, duplication and macOS version history.
 
 macOS Resume is routed by an `OrdinateDocumentController` installed before AppKit
 finishes launching. Both `reopenDocumentForURL` and native document opens send a
-single-use read request to the existing file session and complete with its attached
+request to the window registry and complete with the matching attached
 `NSDocument`; they never instantiate a second synchronous document model. Finder
 open-file events use this same serialized main-process entry point. A duplicate
 request for the current file does not replace editor contents, recovery drafts, or
-undo history. Switching files first flushes the current session, with conflicts
-still preventing the switch. All opening paths share one last-document bookmark
-writer. Alternate AppKit recovery-file URLs are explicitly unsupported; untitled
+undo history. A different file opens in its own window/session. All opening paths
+share one workspace writer. Alternate AppKit recovery-file URLs are explicitly unsupported; untitled
 draft recovery remains owned by the shared session.
 
 Regression checks include the real AppKit reopen API, repeated opens, a missing

@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { createPortal } from "react-dom";
 import { SearchButton } from "../search/SheetSearch";
 
-import { ChevronLeftIcon, ChevronRightIcon, CodeIcon, MoreIcon, OpenIcon, PageSetupIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
+import { ChevronLeftIcon, ChevronRightIcon, CodeIcon, NewDocumentIcon, OpenIcon, SheetSetupIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
 import { MenuDivider, MenuGroup, MenuHead, MenuOption, MenuSurface, MenuTitle } from "./MenuSurface";
-import type { SheetHealth, ToolSpec } from "../types/ui";
+import type { SheetHealth } from "../types/ui";
 import {
   computeSheetDropIndicator,
   computeSheetMoveTargetGapIndex,
@@ -31,17 +31,12 @@ type AppChromeProps = {
   onDeleteSheet: (sheetName: string) => Promise<void> | void;
   onMoveSheet: (sheetName: string, targetGapIndex: number) => void;
   onRenameSheet: (sheetName: string, nextName: string) => string | null;
-  visibleTools: ToolSpec[];
-  overflowTools: ToolSpec[];
-  toolMenuOpen: boolean;
-  setToolMenuOpen: (value: SetStateAction<boolean>) => void;
   themeMenuOpen: boolean;
   setThemeMenuOpen: (value: SetStateAction<boolean>) => void;
   themeButtonLabel: string;
   themeButtonIcon: ReactNode;
   themeControlRef: RefObject<HTMLDivElement>;
   themeButtonRef: RefObject<HTMLButtonElement>;
-  toolButtonRef: RefObject<HTMLButtonElement>;
   sheetSetupOpen: boolean;
   sheetSetupButtonRef: RefObject<HTMLButtonElement>;
   onToggleSheetSetup: () => void;
@@ -52,6 +47,7 @@ type AppChromeProps = {
   onUndo: () => void;
   onRedo: () => void;
   onOpenFile: () => void;
+  onNewFile: () => void;
   onSaveFile: () => void;
   onSaveFileAs: () => void;
   onEnterSourceMode: () => void;
@@ -153,17 +149,12 @@ export default function AppChrome({
   onDeleteSheet,
   onMoveSheet,
   onRenameSheet,
-  visibleTools,
-  overflowTools,
-  toolMenuOpen,
-  setToolMenuOpen,
   themeMenuOpen,
   setThemeMenuOpen,
   themeButtonLabel,
   themeButtonIcon,
   themeControlRef,
   themeButtonRef,
-  toolButtonRef,
   sheetSetupOpen,
   sheetSetupButtonRef,
   onToggleSheetSetup,
@@ -174,6 +165,7 @@ export default function AppChrome({
   onUndo,
   onRedo,
   onOpenFile,
+  onNewFile,
   onSaveFile,
   onSaveFileAs,
   onEnterSourceMode,
@@ -523,6 +515,19 @@ export default function AppChrome({
 
         <nav className="toolbar-tools" aria-label="Toolbar">
           <div className="toolbar-group toolbar-group--file" role="group" aria-label="File">
+          {hasNativeTitle && <button
+            className="tool-button file-command-button"
+            type="button"
+            onClick={onNewFile}
+            aria-label="New document"
+            onMouseEnter={(event) => onTooltipEnter("New document in tab", event.currentTarget)}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => onTooltipEnter("New document in tab", event.currentTarget)}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+          >
+            <span className="tool-icon"><NewDocumentIcon /></span>
+          </button>}
           <button
             className="tool-button file-command-button"
             type="button"
@@ -595,7 +600,7 @@ export default function AppChrome({
             onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
           >
             <span className="tool-icon">
-              <PageSetupIcon />
+              <SheetSetupIcon />
             </span>
           </button>
           </div>
@@ -638,48 +643,6 @@ export default function AppChrome({
           </button>
           </div>
 
-          <div className="toolbar-group toolbar-group--tools" role="group" aria-label="Tools">
-            {visibleTools.map((item) => (
-              <button
-                key={item.label}
-                className="tool-button"
-                type="button"
-                tabIndex={-1}
-                aria-label={item.label}
-                onMouseEnter={(event) => onTooltipEnter(item.label, event.currentTarget)}
-                onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-                onFocus={(event) => onTooltipEnter(item.label, event.currentTarget)}
-                onBlur={(event) => onTooltipRelease(event.currentTarget)}
-                onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
-              >
-                <span className="tool-icon">{item.icon}</span>
-              </button>
-            ))}
-            {overflowTools.length > 0 ? (
-              <div className="tool-overflow-control">
-                <button
-                  ref={toolButtonRef}
-                  className={toolMenuOpen ? "tool-button tool-more-button active" : "tool-button tool-more-button"}
-                  type="button"
-                  onClick={() => setToolMenuOpen((open) => !open)}
-                  aria-label="More tools"
-                  aria-haspopup="menu"
-                  aria-expanded={toolMenuOpen}
-                  onMouseEnter={(event) => onTooltipEnter("More tools", event.currentTarget)}
-                  onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-                  onFocus={(event) => {
-                    if (!toolMenuOpen) onTooltipEnter("More tools", event.currentTarget);
-                  }}
-                  onBlur={(event) => onTooltipRelease(event.currentTarget)}
-                  onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
-                >
-                  <span className="tool-icon">
-                    <MoreIcon />
-                  </span>
-                </button>
-              </div>
-            ) : null}
-          </div>
         </nav>
 
         <div className="toolbar-actions">
@@ -764,6 +727,7 @@ export default function AppChrome({
                     event.preventDefault();
                     return;
                   }
+                  onTabMouseLeave();
                   setActiveSheet(sheetName);
                 }}
                 onDoubleClick={() => startRename(sheetName)}
@@ -803,7 +767,7 @@ export default function AppChrome({
                   }
                 }}
                 aria-invalid={sheetHealthByName[sheetName] === "invalid"}
-                title={sheetName}
+                aria-label={sheetName}
               >
                 {sheetName === renamingSheet ? (
                   <input

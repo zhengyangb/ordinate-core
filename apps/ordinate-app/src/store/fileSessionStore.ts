@@ -1398,7 +1398,8 @@ const defaultFileSessionStore = createFileSessionStore({
     getPersistableText: () => getPersistableText(useEditorStore.getState()),
     replaceDocumentText: (text, options) => useEditorStore.getState().replaceDocumentText(text, options),
   },
-  createUntitledId: () => "browser-untitled",
+  createUntitledId: () => typeof window !== "undefined" && window.ordinateDesktop
+    ? window.ordinateDesktop.sessionId : "browser-untitled",
 });
 
 export function useFileSessionStore<T>(selector: (state: FileSessionState) => T): T {

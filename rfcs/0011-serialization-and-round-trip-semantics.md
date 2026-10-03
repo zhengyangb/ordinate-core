@@ -70,6 +70,10 @@ Current working direction: implementations should still aim to produce stable ou
 
 ## Canonical Output Direction
 
+RFC-0040 adds a document-level opaque front-matter block. Its original block text
+is preserved during formatting and serialization; canonical table formatting
+applies to the document body only.
+
 Serialization emits a canonical form.
 
 Current working direction:

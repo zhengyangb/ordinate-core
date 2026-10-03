@@ -1,0 +1,7 @@
+{
+  "name": "ordinate",
+  "private": true,
+  "scripts": {
+    "app": "npm --prefix apps/ordinate-app run app"
+  }
+}

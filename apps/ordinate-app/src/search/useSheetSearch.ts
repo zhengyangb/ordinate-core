@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import type { GridRow } from "../types/ui";
 import { revealSearchCell, type SearchGrid } from "./searchNavigation";
 import { splitPath } from "../utils/sheetView";
-import { cellAddress, findMatches, resolveActiveMatch, stepMatch, type DocumentSearchCell } from "./searchModel";
+import { cellAddress, findDocumentMatches, resolveActiveMatch, stepMatch, type DocumentSearchCell, type SearchScope } from "./searchModel";
 
 type Options = {
   cells: DocumentSearchCell[];
@@ -19,6 +19,7 @@ export function useSheetSearch({ cells, scope, enabled, gridApiRef, displayedRow
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [matchCase, setMatchCase] = useState(false);
+  const [searchScope, setSearchScope] = useState<SearchScope>("all");
   const [active, setActive] = useState<{ scope: string; id: string } | null>(null);
   const [navigation, setNavigation] = useState<{ scope: string; id: string } | null>(null);
   const [revealRevision, setRevealRevision] = useState(0);
@@ -34,7 +35,7 @@ export function useSheetSearch({ cells, scope, enabled, gridApiRef, displayedRow
   const panelRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const isOpen = open && enabled;
-  const matches = useMemo(() => findMatches(cells, isOpen ? query : "", matchCase), [cells, query, matchCase, isOpen]);
+  const matches = useMemo(() => findDocumentMatches(cells, isOpen ? query : "", matchCase, searchScope, scope), [cells, query, matchCase, isOpen, searchScope, scope]);
   const activeIndex = resolveActiveMatch(matches, active?.id ?? null);
   const activeMatch = matches[activeIndex];
   const highlights = useMemo(() => new Map(matches.filter(match => match.sheet === scope).map(match => [cellAddress(match.row, match.col), match])), [matches, scope]);
@@ -53,14 +54,14 @@ export function useSheetSearch({ cells, scope, enabled, gridApiRef, displayedRow
     setNavigation(null);
   }, []);
   const navigate = useCallback((direction: number) => {
-    const index = active ? stepMatch(activeIndex, matches.length, direction) : direction < 0 ? matches.length - 1 : activeIndex;
+    const index = active && active.id === activeMatch?.id ? stepMatch(activeIndex, matches.length, direction) : direction < 0 ? matches.length - 1 : activeIndex;
     if (index < 0) return;
     const match = matches[index];
     const target = { scope: match.sheet, id: match.id };
     setActive(target);
     setNavigation(target);
     if (match.sheet !== scope) activateSheet(match.sheet);
-  }, [active, activeIndex, matches, scope, activateSheet]);
+  }, [active, activeIndex, activeMatch, matches, scope, activateSheet]);
 
   useEffect(() => {
     if (!enabled) { setOpen(false); setNavigation(null); }
@@ -110,10 +111,15 @@ export function useSheetSearch({ cells, scope, enabled, gridApiRef, displayedRow
   const updateMatchCase = useCallback((value: boolean) => {
     setMatchCase(value); setActive(null); setNavigation(null);
   }, []);
+  const toggleScope = useCallback(() => {
+    setSearchScope(value => value === "all" ? "current" : "all");
+    setActive(null);
+    setNavigation(null);
+  }, []);
 
   return useMemo(() => ({
-    enabled, isOpen, query, matchCase, matches, activeIndex, activeId: activeMatch?.id, highlights,
+    enabled, isOpen, query, matchCase, searchScope, toggleScope, matches, activeIndex, activeId: activeMatch?.id, highlights,
     inputRef, panelRef, show, close, navigate, revealRevision, onGridRendered, onGridUpdated,
     setQuery: updateQuery, setMatchCase: updateMatchCase,
-  }), [enabled, isOpen, query, matchCase, matches, activeIndex, activeMatch?.id, highlights, show, close, navigate, revealRevision, onGridRendered, onGridUpdated, updateQuery, updateMatchCase]);
+  }), [enabled, isOpen, query, matchCase, searchScope, toggleScope, matches, activeIndex, activeMatch?.id, highlights, show, close, navigate, revealRevision, onGridRendered, onGridUpdated, updateQuery, updateMatchCase]);
 }

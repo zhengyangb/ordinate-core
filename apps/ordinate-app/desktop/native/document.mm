@@ -120,10 +120,18 @@ static OrdinateDocumentController *documentController;
 }
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
   SEL action = item.action;
-  if (action == @selector(duplicateDocument:) || action == @selector(revertDocumentToSaved:) ||
-      action == @selector(browseDocumentVersions:) || action == @selector(moveDocumentToUbiquityContainer:)) return NO;
+  if (action == @selector(duplicateDocument:)) return YES;
+  if (action == @selector(revertDocumentToSaved:) || action == @selector(browseDocumentVersions:)) return self.fileURL != nil;
+  if (action == @selector(moveDocumentToUbiquityContainer:)) return NO;
   return [super validateUserInterfaceItem:item];
 }
+- (void)duplicateDocument:(id)sender {
+  [self request:@"duplicate" URL:nil completion:^(NSError *error) { if (error) [self presentError:error]; }];
+}
+- (void)revertDocumentToSaved:(id)sender {
+  [self request:@"revert" URL:nil completion:^(NSError *error) { if (error) [self presentError:error]; }];
+}
+- (void)browseDocumentVersions:(id)sender { [self revertDocumentToSaved:sender]; }
 @end
 
 struct Host { __strong OrdinateDocument *document; __strong NSWindowController *controller; };
@@ -246,6 +254,68 @@ static napi_value CopyMetadata(napi_env env, napi_value *args) {
     throw std::runtime_error(std::strerror(errno));
   return nullptr;
 }
+static napi_value DocumentAction(napi_env env, napi_value *args) {
+  Host &host = GetHost(env, args[0]);
+  std::string action = String(env, args[1]);
+  if (action == "rename") [host.document renameDocument:nil];
+  else if (action == "move") [host.document moveDocument:nil];
+  else throw std::runtime_error("Unknown document action");
+  return nullptr;
+}
+static napi_value Checkpoint(napi_env env, napi_value *args) {
+  std::string filename = String(env, args[0]);
+  NSURL *url = [NSURL fileURLWithPath:@(filename.c_str())];
+  NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
+  __block NSError *versionError = nil; NSError *coordinationError = nil;
+  [coordinator coordinateWritingItemAtURL:url options:0 error:&coordinationError byAccessor:^(NSURL *location) {
+    [NSFileVersion addVersionOfItemAtURL:location withContentsOfURL:location options:0 error:&versionError];
+  }];
+  NSError *error = coordinationError ?: versionError;
+  if (error) throw std::runtime_error(error.localizedDescription.UTF8String);
+  return nullptr;
+}
+static NSArray<NSFileVersion *> *Versions(NSURL *url) {
+  return [[NSFileVersion otherVersionsOfItemAtURL:url] sortedArrayUsingComparator:^NSComparisonResult(NSFileVersion *a, NSFileVersion *b) {
+    return [b.modificationDate compare:a.modificationDate];
+  }];
+}
+static NSString *VersionIdentifier(NSFileVersion *version) {
+  NSError *error = nil;
+  NSData *data = [NSKeyedArchiver archivedDataWithRootObject:version.persistentIdentifier requiringSecureCoding:NO error:&error];
+  if (!data) throw std::runtime_error(error.localizedDescription.UTF8String);
+  return [data base64EncodedStringWithOptions:0];
+}
+static napi_value ListVersions(napi_env env, napi_value *args) {
+  std::string filename = String(env, args[0]);
+  NSArray<NSFileVersion *> *versions = Versions([NSURL fileURLWithPath:@(filename.c_str())]);
+  napi_value result; Check(napi_create_array_with_length(env, versions.count, &result));
+  NSUInteger index = 0;
+  NSISO8601DateFormatter *formatter = [[NSISO8601DateFormatter alloc] init];
+  for (NSFileVersion *version in versions) {
+    napi_value item; Check(napi_create_object(env, &item));
+    Check(napi_set_named_property(env, item, "id", JSString(env, VersionIdentifier(version).UTF8String)));
+    Check(napi_set_named_property(env, item, "date", JSString(env, [formatter stringFromDate:version.modificationDate].UTF8String)));
+    Check(napi_set_element(env, result, (uint32_t)index++, item));
+  }
+  return result;
+}
+static napi_value ReadVersion(napi_env env, napi_value *args) {
+  std::string filename = String(env, args[0]), identifier = String(env, args[1]);
+  NSFileVersion *selected = nil;
+  for (NSFileVersion *version in Versions([NSURL fileURLWithPath:@(filename.c_str())])) {
+    if ([VersionIdentifier(version) isEqualToString:@(identifier.c_str())]) { selected = version; break; }
+  }
+  if (!selected) throw std::runtime_error("The selected version is no longer available");
+  NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
+  __block NSString *text = nil; __block NSError *readError = nil; NSError *coordinationError = nil;
+  [coordinator coordinateReadingItemAtURL:selected.URL options:0 error:&coordinationError byAccessor:^(NSURL *url) {
+    text = [NSString stringWithContentsOfURL:url encoding:NSUTF8StringEncoding error:&readError];
+  }];
+  NSError *error = coordinationError ?: readError;
+  if (error) throw std::runtime_error(error.localizedDescription.UTF8String);
+  if (!text) throw std::runtime_error("Could not read the selected version");
+  return JSString(env, text.UTF8String);
+}
 static napi_value SetOpenHandler(napi_env env, napi_value *args) {
   if (documentController.openCallback) throw std::runtime_error("Document opening handler is already installed");
   napi_threadsafe_function callback;
@@ -305,6 +375,8 @@ void RegisterDocuments(napi_env env, napi_value exports) {
     {"attachDocument", Attach}, {"updateDocument", Update}, {"completeDocumentRequest", Complete},
     {"detachDocument", Detach}, {"moveDocumentFile", MoveFile},
     {"copyDocumentMetadata", CopyMetadata},
+    {"documentAction", DocumentAction}, {"checkpoint", Checkpoint},
+    {"listVersions", ListVersions}, {"readVersion", ReadVersion},
 #ifdef ORDINATE_NATIVE_TEST
     {"testOperation", TestOperation},
 #endif

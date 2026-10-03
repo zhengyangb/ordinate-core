@@ -1,4 +1,4 @@
-import { deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow, type Table } from "./parser";
+import { DocumentParseError, deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow, type Sheet, type Table } from "./parser";
 import {
   parseCellInput,
   stripCellDisplayMetadata,
@@ -46,7 +46,14 @@ export class ValidationResult {
 
 export function validateDocument(text: string): ValidationResult {
   const result = new ValidationResult();
-  const sheets = parseDocument(text);
+  let sheets: Sheet[];
+  try {
+    ({ sheets } = parseDocument(text));
+  } catch (error) {
+    if (!(error instanceof DocumentParseError)) throw error;
+    result.errors.push({ code: error.code, message: error.message });
+    return result;
+  }
   const sheetSummaries: SheetSummary[] = [];
 
   if (sheets.length === 0) {

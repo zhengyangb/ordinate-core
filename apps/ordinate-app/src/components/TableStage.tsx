@@ -36,7 +36,7 @@ import { FillHandle, FillOptions } from "../fill/FillHandle";
 import { QuickAddButton } from "./QuickAddButton";
 import { EMPTY_COLUMN_WIDTH } from "../utils/columnLayout";
 import { readGridBodyOverlayHosts, type GridBodyOverlayHosts } from "../grid/bodyOverlayHosts";
-import { waitForInitialRowLayout } from "../grid/initialRowLayout";
+import { waitForInitialGridLayout } from "../grid/initialGridLayout";
 import type { FillHandleController } from "../fill/useFillHandle";
 
 type FormulaReferenceOverlay = {
@@ -49,6 +49,7 @@ type FormulaReferenceOverlay = {
 const keepConfiguredPinning = () => [];
 
 type TableStageProps = {
+  onLayoutReady: () => void;
   tableStageClassName: string;
   tableStageStyle: CSSProperties;
   columnMetrics: ColumnMetric[];
@@ -65,7 +66,7 @@ type TableStageProps = {
   handleIndexRailsHoverChange: (hovering: boolean) => void;
   rowIndexMetrics: RowIndexMetric[];
   rowTrackRef: MutableRefObject<HTMLDivElement | null>;
-  gridWrapRef: MutableRefObject<HTMLDivElement | null>;
+  onGridRootChange: (root: HTMLDivElement | null) => void;
   rowData: GridRow[];
   columnDefs: Array<ColDef<GridRow> | ColGroupDef<GridRow>>;
   gridInstanceKey: string;
@@ -151,6 +152,7 @@ function ColumnConfigGlyph() {
 }
 
 export default function TableStage({
+  onLayoutReady,
   tableStageClassName,
   tableStageStyle,
   columnMetrics,
@@ -167,7 +169,7 @@ export default function TableStage({
   handleIndexRailsHoverChange,
   rowIndexMetrics,
   rowTrackRef,
-  gridWrapRef,
+  onGridRootChange,
   rowData,
   columnDefs,
   gridInstanceKey,
@@ -208,24 +210,40 @@ export default function TableStage({
   handleCellDoubleClicked,
   handleCellKeyDown,
 }: TableStageProps) {
+  const gridWrapRef = useRef<HTMLDivElement | null>(null);
+  const mountGridRoot = useCallback((root: HTMLDivElement | null) => {
+    gridWrapRef.current = root;
+    onGridRootChange(root);
+  }, [onGridRootChange]);
   const [quickAddPreview, setQuickAddPreview] = useState<{ axis: QuickAddAxis; count: number } | null>(null);
   const quickAddDragSessionRef = useRef<QuickAddDragSession | null>(null);
   const quickAddPointerCommitRef = useRef<{ axis: QuickAddAxis } | null>(null);
   const animateTableStructure = shouldAnimateTableStructure();
   const previewColumnWidth = EMPTY_COLUMN_WIDTH;
   const [readyGridKey, setReadyGridKey] = useState<string | null>(null);
+  const layoutReady = readyGridKey === gridInstanceKey;
+  useEffect(() => {
+    if (layoutReady) onLayoutReady();
+  }, [layoutReady, onLayoutReady]);
   const initialLayoutCleanup = useRef<(() => void) | null>(null);
+  const expectedViewportRef = useRef({ centerViewportWidth: viewportSnapshot.centerViewportWidth, pinnedWidth: pinnedHeaderWidth });
+  useLayoutEffect(() => {
+    expectedViewportRef.current = { centerViewportWidth: viewportSnapshot.centerViewportWidth, pinnedWidth: pinnedHeaderWidth };
+  }, [viewportSnapshot.centerViewportWidth, pinnedHeaderWidth]);
   useLayoutEffect(() => {
     setReadyGridKey(null);
     return () => initialLayoutCleanup.current?.();
   }, [gridInstanceKey]);
-  const onFirstDataRendered = useCallback((event: FirstDataRenderedEvent<GridRow>) => {
-    handleFirstDataRendered(event);
+  const trackInitialLayout = useCallback(() => {
     initialLayoutCleanup.current?.();
     const root = gridWrapRef.current;
     if (!root) throw new Error("rendered grid requires a root for initial layout");
-    initialLayoutCleanup.current = waitForInitialRowLayout(root, () => setReadyGridKey(gridInstanceKey));
-  }, [gridWrapRef, gridInstanceKey, handleFirstDataRendered]);
+    initialLayoutCleanup.current = waitForInitialGridLayout(root, () => expectedViewportRef.current, () => setReadyGridKey(gridInstanceKey));
+  }, [gridInstanceKey]);
+  const onFirstDataRendered = useCallback((event: FirstDataRenderedEvent<GridRow>) => {
+    handleFirstDataRendered(event);
+    trackInitialLayout();
+  }, [trackInitialLayout, handleFirstDataRendered]);
   const [bodyOverlayHosts, setBodyOverlayHosts] = useState<{
     gridKey: string; hosts: GridBodyOverlayHosts;
   } | null>(null);
@@ -234,7 +252,8 @@ export default function TableStage({
     if (!root) throw new Error("ready grid requires a root for body overlays");
     setBodyOverlayHosts({ gridKey: gridInstanceKey, hosts: readGridBodyOverlayHosts(root) });
     handleGridReady(event);
-  }, [gridWrapRef, gridInstanceKey, handleGridReady]);
+    if (rowData.length === 0) trackInitialLayout();
+  }, [gridInstanceKey, handleGridReady, rowData.length, trackInitialLayout]);
   const {
     top: bodyScrollTop,
     left: bodyScrollLeft,
@@ -792,7 +811,7 @@ export default function TableStage({
   };
 
   return (
-    <div className={tableStageClassName} style={resolvedTableStageStyle} data-layout-ready={rowData.length === 0 || readyGridKey === gridInstanceKey}>
+    <div className={tableStageClassName} style={resolvedTableStageStyle} data-layout-ready={layoutReady}>
       <div
         className={`table-corner ${railsPhaseClass}`}
         onMouseEnter={() => handleIndexRailsHoverChange(true)}
@@ -1246,7 +1265,7 @@ export default function TableStage({
                 ? "grid-wrap suppress-cell-focus-ring overlay-owned-header"
                 : "grid-wrap suppress-cell-focus-ring"
           }
-          ref={gridWrapRef}
+          ref={mountGridRoot}
           data-has-header={showGridHeader}
         >
           <AgGridReact<GridRow>

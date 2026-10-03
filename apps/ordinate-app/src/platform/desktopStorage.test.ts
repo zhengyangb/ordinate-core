@@ -18,8 +18,12 @@ async function session() {
   let text = document(0);
   const adapter = createDesktopStorageAdapter({
     windowChrome: "native",
+    sessionId: "test-session",
+    openDocument: async () => {},
+    newDocument: async () => {},
+    duplicateDocument: async () => {},
     watch: () => () => {},
-    restoreDocument: async () => null,
+    restoreDocument: async () => ({ snapshot: null, text: null }),
     readDocumentRequest: async () => { throw new Error("Not used by storage tests"); },
     updateWindow: async () => {},
     ...createNativeStorage({ open: async () => file, save: async () => path.join(directory, "copy.ord") }),

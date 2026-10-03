@@ -1,9 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopBridge, DesktopCommand, DocumentRequest, StorageFailure } from "../src/platform/storage.js";
 
+const sessionId = process.argv.find(argument => argument.startsWith("--ordinate-session="))?.split("=")[1];
+if (!sessionId) throw new Error("Missing document session identity");
 const bridge: DesktopBridge = {
   windowChrome: "native",
+  sessionId,
   restoreDocument: () => ipcRenderer.invoke("document:restore"),
+  openDocument: () => ipcRenderer.invoke("document:open"),
+  newDocument: () => ipcRenderer.invoke("document:new"),
+  duplicateDocument: (id, text) => ipcRenderer.invoke("document:duplicate", id, text),
   updateWindow: (state) => ipcRenderer.invoke("window:update", state),
   open: () => ipcRenderer.invoke("file:open"),
   save: (file, text, options) => ipcRenderer.invoke("file:save", file, text, options),

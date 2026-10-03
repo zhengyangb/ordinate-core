@@ -37,6 +37,21 @@ function canonicalStoreDocument(): string {
 }
 
 describe("external document replacement", () => {
+  it("opens front matter in table mode and keeps it through edits, history, and source-mode saves", () => {
+    const metadata = "---\n# not a sheet\nfuture:\n  title: unknown field  \n---";
+    useEditorStore.getState().replaceDocumentText(`${metadata}\n\n${TEST_DOC}`);
+    expect(useEditorStore.getState()).toMatchObject({ mode: "table", error: null, activeSheet: "Sheet" });
+    expect(useEditorStore.getState().docState?.frontMatter).toBe(metadata);
+    useEditorStore.getState().setCellInput({ kind: "index", sheet: "Sheet", rowIndex: 2, colIndex: 1 }, "10");
+    expect(canonicalStoreDocument().startsWith(`${metadata}\n\n`)).toBe(true);
+    useEditorStore.getState().undo();
+    expect(canonicalStoreDocument().startsWith(`${metadata}\n\n`)).toBe(true);
+    useEditorStore.getState().redo();
+    useEditorStore.getState().enterSourceMode();
+    expect(useEditorStore.getState().sourceText.startsWith(`${metadata}\n\n`)).toBe(true);
+    useEditorStore.getState().exitSourceMode();
+    expect(useEditorStore.getState().docState?.frontMatter).toBe(metadata);
+  });
   it("keeps the active sheet and drops obsolete undo entries", () => {
     const source = `${TEST_DOC}\n\n# Second\n| Item || Value |\n| B || 9 |\n`;
     useEditorStore.getState().replaceDocumentText(source);

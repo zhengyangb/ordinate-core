@@ -32,12 +32,13 @@ runtime download requires network access.
   imitation. On macOS, an `NSDocument` and `NSWindowController` supply the native
   title dropdown (name, location and tags). macOS owns the
   traffic-light spacing and title layout. Native appearance follows the editor's
-  appearance setting. The toolbar retains Ordinate branding and save status;
+  appearance setting. The toolbar retains Ordinate branding;
   browsers also retain the filename in its original toolbar position.
 - macOS document save/move requests delegate to the shared file session, rather
   than maintaining another mutable document model or a second autosave timer.
-  Version browsing and duplication are intentionally unsupported. The public
-  document-actions button stays enabled for naming/moving without version history.
+  New and Duplicate create independent document sessions. Native Rename and Move
+  actions adopt the new file location before autosave resumes. Revert To lists
+  macOS file versions by timestamp; restoring also checkpoints the current file.
 - The macOS title bar and toolbar share the CSS `--native-chrome-bg` token, an
   opaque version of the existing chrome color. A small Node-API/AppKit bridge
   makes the native title background transparent, removes its separator, and
@@ -50,9 +51,23 @@ runtime download requires network access.
 
 ## Build and run a standalone app
 
+Quit the existing Ordinate app before rebuilding it in place. From either the
+repository root or this directory, the short command is:
+
 ```sh
-npm run desktop:build
+npm run app
 ```
+
+This delegates to `desktop:build` and uses the installed Electron distribution,
+so packaging does not download another Electron runtime. Install this app's npm
+dependencies first on a fresh checkout (`npm ci` in `apps/ordinate-app`).
+
+Startup shows a theme-aware skeleton before the editor bundle loads. It disappears
+when document restoration and initial grid layout complete, with no artificial
+delay. Restore failures reveal the existing file error UI; bundle failures show
+an explicit startup error and Reload button. The `ordinate:bootstrap` and
+`ordinate:interactive` performance marks help measure renderer startup separately
+from launching the native process.
 
 On Apple Silicon macOS this creates `release/mac-arm64/Ordinate.app`; on Intel Macs
 the output is `release/mac/Ordinate.app`. Open it in Finder. The packaged app loads
@@ -89,8 +104,13 @@ Do not bypass Gatekeeper warnings; a distributable build needs proper signing.
   Uncommitted cell edits defer reload until commit/cancel. Active sheet, source
   mode and unchanged grid scroll are preserved; obsolete undo history is cleared.
   Web does not subscribe to file changes and keeps save-time conflict checks.
-- Finder double-click/file associations, drag-to-open, a recent-documents menu,
-  and multiple document windows are not implemented.
+- New (Cmd/Ctrl+N), Open, Save As and Duplicate support multiple document windows.
+  macOS also provides Open Recent, New Tab (Cmd+Option+N), Rename, Move To and
+  Revert To. Window offers native tab switching, detaching and merging. These
+  document tabs are separate from the sheet tabs inside each document.
+- Quit restores the open workspace next launch, including independent untitled
+  drafts. Closing an individual untitled window asks whether to save it first.
+  Dragging a file into the editor is not implemented.
 - Closing/quitting flushes pending edits through the same save pipeline, including
   writes already in flight. Conflicts, failed writes or unresolved recovery keep
   the window open. Reload retains the unload guard. Untitled drafts use Chromium
@@ -127,7 +147,8 @@ boundaries now live in:
 - `desktop/documentHost.ts` / `native/document.mm`: macOS document requests,
   coordinated movement and preservation of extended attributes (including tags).
 - `src/platform/documentSession.ts`: shared flush and file-transition protocol.
-- `desktop/recentDocument.ts`: atomic main-process session bookmark for reopening.
+- `desktop/workspaceSession.ts`: atomic workspace records and independent draft identities.
+- `desktop/documentWindow.ts` / `windowIpc.ts`: isolated document windows and sender routing.
 - `desktop/preload.cts`: narrow, typed bridge; raw IPC and Node are not exposed.
 - `desktop/main.ts`: sandboxed window, native menus/dialogs, sender validation,
   blocked navigation/popups/permissions, and packaged `ordinate://app/` protocol

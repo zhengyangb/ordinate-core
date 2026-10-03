@@ -31,6 +31,9 @@ This RFC does not define:
 
 ## Sheet Structure
 
+RFC-0040 allows an optional opaque YAML front-matter block before the first
+sheet. Its contents are excluded from sheet and table parsing.
+
 A sheet begins with a level-1 heading.
 
 Example:

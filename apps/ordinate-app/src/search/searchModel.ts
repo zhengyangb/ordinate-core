@@ -33,6 +33,11 @@ export function buildSearchCells(
 }
 
 export type DocumentSearchCell = SearchCell & { sheet: string };
+export type SearchScope = "all" | "current";
+
+export function findDocumentMatches(cells: DocumentSearchCell[], query: string, matchCase: boolean, scope: SearchScope, currentSheet: string) {
+  return findMatches(scope === "current" ? cells.filter(cell => cell.sheet === currentSheet) : cells, query, matchCase);
+}
 
 /** Index the same display projection as the grid, without mounting inactive sheets. */
 export function buildDocumentSearchCells(
