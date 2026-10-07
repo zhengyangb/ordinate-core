@@ -102,7 +102,7 @@ export function structurallyBindSelector(
     if (index < 0 || index >= ids.length) {
       return { kind: "invalid" };
     }
-    return withSelectorSource({ kind: "absolute_id", value: ids[index] }, selector);
+    return withSelectorSource({ ...selector, kind: "absolute_id", value: ids[index] }, selector);
   }
   if (selector.kind === "label") {
     const key = axis === "row"

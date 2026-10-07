@@ -30,7 +30,7 @@
 .sheet-search svg { width: 18px; height: 18px; flex-shrink: 0; }
 .sheet-search input { width: 100%; min-width: 0; height: 26px; padding: 0; border: 0; outline: none; background: transparent; color: var(--chrome-ink); font: inherit; font-size: 13px; }
 .sheet-search input::placeholder { color: color-mix(in oklab, var(--chrome-ink) 75%, transparent); }
-.sheet-search button { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--chrome-ink); cursor: pointer; }
+.sheet-search button { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--chrome-ink); }
 .sheet-search button:hover:not(:disabled) { background: color-mix(in oklab, var(--chrome-ink) 9%, transparent); }
 .sheet-search button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 1px; }
 .sheet-search button:disabled { opacity: .32; cursor: default; }

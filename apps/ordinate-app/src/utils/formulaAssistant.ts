@@ -280,7 +280,7 @@ export function correctFormulaAssistantInputChange(args: {
 
 function isFunctionNameBoundary(char: string | undefined): boolean {
   if (char == null) return true;
-  return /\s|[=+\-*/^(),<>]/.test(char);
+  return /\s|[=+\-*/^(),<>{]/.test(char);
 }
 
 function resolveNameContextFromInspection(inspection: FormulaEditorInspection): FormulaAssistantNameContext | null {

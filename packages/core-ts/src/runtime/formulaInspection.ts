@@ -1,4 +1,5 @@
 import { scanTemporalLiteralPrefixAt } from "./temporal";
+import { scanFString, quotedEnd as scanQuotedEnd, spreadsheetToken as scanSpreadsheetToken, type FStringSyntax } from "./fStringSyntax";
 
 export type FormulaSourceSpan = Readonly<{
   start: number;
@@ -60,9 +61,11 @@ export type FormulaEditorCall = FormulaEditorStructureBase & Readonly<{
   separatorSpans: readonly FormulaSourceSpan[];
 }>;
 
-export type FormulaEditorStructure = FormulaEditorGroup | FormulaEditorArray | FormulaEditorIndex | FormulaEditorCall;
+export type FormulaEditorStructure = FormulaEditorGroup | FormulaEditorArray | FormulaEditorIndex | FormulaEditorCall
+  | Readonly<FormulaEditorStructureBase & { kind: "interpolation" }>;
 
 export type FormulaEditorDiagnosticKind =
+  | "invalid_f_string"
   | "unterminated_string"
   | "unterminated_reference"
   | "unterminated_error_literal"
@@ -105,6 +108,7 @@ export type FormulaEditorInspection =
 export type FormulaParserToken = [kind: string, value: string];
 
 type MutableLexToken = {
+  fString?: FStringSyntax;
   publicToken: FormulaEditorToken;
   parserKind: string | null;
   parserValue: string;
@@ -136,12 +140,6 @@ export type FormulaConcreteSyntax = {
 };
 
 const KEYWORDS = new Set(["true", "false", "null"]);
-const SPREADSHEET_REFERENCE_RES = [
-  /[A-Za-z]+[1-9]\d*:[A-Za-z]+[1-9]\d*/y,
-  /[A-Za-z]+:[A-Za-z]+/y,
-  /[1-9]\d*:[1-9]\d*/y,
-  /[A-Za-z]+[1-9]\d*/y,
-] as const;
 export function inspectFormulaInput(input: string, options: FormulaInspectionOptions = {}): FormulaEditorInspection {
   const caret = options.caret;
   if (caret !== undefined && (!Number.isInteger(caret) || caret < 0 || caret > input.length)) {
@@ -189,7 +187,7 @@ export function buildFormulaConcreteSyntax(source: string, baseOffset = 0): Form
   const structures = classifyStructures(source, baseOffset, lexTokens, diagnostics);
   orderDiagnostics(diagnostics, baseOffset, source.length);
   validateConcreteSyntax(source, baseOffset, lexTokens, structures, diagnostics);
-  return {
+  const result: FormulaConcreteSyntax = {
     tokens: lexTokens.map((token) => token.publicToken),
     structures,
     diagnostics,
@@ -197,6 +195,45 @@ export function buildFormulaConcreteSyntax(source: string, baseOffset = 0): Form
       .filter((token) => token.parserKind !== null)
       .map((token) => [token.parserKind as string, token.parserValue]),
   };
+  // Keep parser tokens atomic, but expose field expressions to every editor consumer.
+  const expanded: FormulaEditorToken[] = [];
+  const records = structures.map((structure) => ({ structure, parent: structure.parent === null ? null : structures[structure.parent] }));
+  for (const token of lexTokens) {
+    if (!token.fString) { expanded.push(token.publicToken); continue; }
+    const start = token.publicToken.span.start - baseOffset;
+    const syntax = token.fString;
+    let cursor = start;
+    const opaque = (end: number) => {
+      if (end > cursor) expanded.push({ kind: "string", span: absoluteSpan(cursor, end, baseOffset), complete: true });
+      cursor = end;
+    };
+    for (const part of syntax.parts) {
+      if (part.kind !== "field") continue;
+      opaque(part.span.start);
+      expanded.push({ kind: "punctuation", span: absoluteSpan(part.span.start, part.expression.start, baseOffset) });
+      const inner = buildFormulaConcreteSyntax(source.slice(part.expression.start, part.expression.end), baseOffset + part.expression.start);
+      expanded.push(...inner.tokens);
+      diagnostics.push(...inner.diagnostics);
+      const parent = [...structures].reverse().find(s => s.contentSpan.start <= baseOffset + part.span.start && s.contentSpan.end >= baseOffset + part.span.end) ?? null;
+      const field: FormulaEditorStructure = { kind: "interpolation", open: absoluteSpan(part.span.start, part.expression.start, baseOffset),
+        close: part.incomplete ? null : absoluteSpan(part.span.end - 1, part.span.end, baseOffset),
+        contentSpan: absoluteSpan(part.expression.start, part.incomplete ? part.span.end : part.span.end - 1, baseOffset), parent: null };
+      records.push({ structure: field, parent });
+      for (const structure of inner.structures) records.push({ structure, parent: structure.parent === null ? field : inner.structures[structure.parent] });
+      cursor = part.expression.end;
+      if (!part.incomplete) {
+        opaque(part.span.end - 1);
+        expanded.push({ kind: "punctuation", span: absoluteSpan(part.span.end - 1, part.span.end, baseOffset) });
+        cursor = part.span.end;
+      }
+    }
+    opaque(syntax.end);
+  }
+  records.sort((a, b) => a.structure.open.start - b.structure.open.start);
+  result.structures = records.map(({ structure, parent }) => ({ ...structure, parent: parent === null ? null : records.findIndex(r => r.structure === parent) }));
+  result.tokens = expanded;
+  orderDiagnostics(diagnostics, baseOffset, source.length);
+  return result;
 }
 
 function scanLosslessTokens(
@@ -208,6 +245,14 @@ function scanLosslessTokens(
   let index = 0;
   while (index < source.length) {
     const char = source[index];
+    if (source.startsWith('f"', index)) {
+      const syntax = scanFString(source, index);
+      tokens.push(completableToken("string", index, syntax.end, baseOffset, !syntax.error, syntax.error ? "ERR" : "FSTRING", syntax.error ? syntax.error.code : source.slice(index, syntax.end)));
+      tokens[tokens.length - 1].fString = syntax;
+      if (syntax.error) diagnostics.push({ kind: "invalid_f_string", span: absoluteSpan(syntax.error.span.start, syntax.error.span.end, baseOffset) });
+      index = syntax.end;
+      continue;
+    }
     if (/\s/.test(char)) {
       let end = index + 1;
       while (end < source.length && /\s/.test(source[end])) end += 1;
@@ -278,7 +323,7 @@ function scanLosslessTokens(
       continue;
     }
 
-    if ("()[],:".includes(char)) {
+    if ("()[],:$".includes(char)) {
       tokens.push(simpleToken("punctuation", index, index + 1, baseOffset, char, char));
       index += 1;
       continue;
@@ -330,7 +375,7 @@ function classifyStructures(
   const scopes: StructureScope[] = [];
   const classifiedTokens: MutableLexToken[] = [];
   let rootState: RecoveryState = "expect_operand";
-  let bracketStructureDepth = 0;
+  let indexStructureDepth = 0;
   const pendingCalls = new Map<number, number>();
 
   const currentState = () => scopes.length > 0 ? scopes[scopes.length - 1].state : rootState;
@@ -345,9 +390,15 @@ function classifyStructures(
       classifiedTokens.push(token);
       continue;
     }
+    const next = nextSignificantTokenIndex(tokens, tokenIndex + 1);
+    // Call syntax disambiguates digit-bearing names (log10, atan2, ...)
+    // from A1 coordinates. This is grammar, not a function-name allowlist.
+    const isCallName = token.publicToken.kind === "identifier" && next !== null
+      && sourceSlice(tokens[next].publicToken.span, source, baseOffset) === "(";
     if (
-      bracketStructureDepth === 0
-      && (token.publicToken.kind === "identifier" || token.publicToken.kind === "number")
+      (indexStructureDepth === 0 || ["call", "group"].includes(structures[scopes[scopes.length - 1]?.structureIndex]?.kind))
+      && (token.publicToken.kind === "identifier" || token.publicToken.kind === "number" || token.parserKind === "$")
+      && !isCallName
     ) {
       const localStart = token.publicToken.span.start - baseOffset;
       const spreadsheet = scanSpreadsheetToken(source, localStart);
@@ -435,7 +486,7 @@ function classifyStructures(
       });
       token.parserKind = kind === "array" ? "ARRAY_OPEN" : "INDEX_OPEN";
       scopes.push({ structureIndex, state: "expect_operand" });
-      bracketStructureDepth += 1;
+      if (kind === "index") indexStructureDepth += 1;
       continue;
     }
 
@@ -463,7 +514,7 @@ function classifyStructures(
       structure.close = token.publicToken.span;
       structure.contentSpan = { start: structure.open.end, end: token.publicToken.span.start };
       scopes.pop();
-      if (structure.kind === "array" || structure.kind === "index") bracketStructureDepth -= 1;
+      if (structure.kind === "index") indexStructureDepth -= 1;
       setCurrentState("expect_operator");
       continue;
     }
@@ -651,23 +702,6 @@ function nextSignificantTokenIndex(tokens: readonly MutableLexToken[], start: nu
   return null;
 }
 
-function scanQuotedEnd(source: string, start: number): number | null {
-  let escaped = false;
-  for (let index = start + 1; index < source.length; index += 1) {
-    const char = source[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === "\"") return index + 1;
-  }
-  return null;
-}
-
 function scanOrdinateReferenceEnd(source: string, start: number): number | null {
   let depth = 1;
   let inQuote = false;
@@ -699,19 +733,6 @@ function scanOrdinateReferenceEnd(source: string, start: number): number | null 
 function isExpressionTokenBoundary(source: string, nextIndex: number): boolean {
   if (nextIndex >= source.length) return true;
   return !/[A-Za-z0-9_\[]/.test(source[nextIndex]);
-}
-
-function scanSpreadsheetToken(source: string, start: number): { text: string; next: number } | null {
-  for (const pattern of SPREADSHEET_REFERENCE_RES) {
-    pattern.lastIndex = start;
-    const match = pattern.exec(source);
-    if (!match) continue;
-    const text = match[0];
-    const next = start + text.length;
-    if (next < source.length && /[A-Za-z0-9_]/.test(source[next])) continue;
-    return { text, next };
-  }
-  return null;
 }
 
 function validateConcreteSyntax(

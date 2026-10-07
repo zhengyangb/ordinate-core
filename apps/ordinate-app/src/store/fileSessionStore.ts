@@ -4,6 +4,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { type EditorState, useEditorStore } from "./editorStore";
 import { createDesktopStorageAdapter } from "../platform/desktopStorage";
+import { documentSaveName, validateDocumentName } from "../platform/documentName";
 import type {
   FileSessionVersion, FilePermissionState, FileReference, FileSnapshot,
   StorageFailure, StorageResult, StorageCapabilities, StorageAvailability, StorageAdapter,
@@ -48,6 +49,7 @@ export type FileConflict = {
 };
 
 export type LocalDraftRecord = {
+  draftName?: string;
   key: string;
   text: string;
   version: string;
@@ -72,6 +74,7 @@ type EditorBridge = {
 };
 
 export type FileSessionState = {
+  draftName: string | null;
   file: FileReference | null;
   backingText: string | null;
   backingVersion: FileSessionVersion | null;
@@ -89,6 +92,7 @@ export type FileSessionState = {
   autosaveEnabled: boolean;
   lastError: StorageFailure | null;
   open: (read?: () => Promise<StorageResult<FileSnapshot>>) => Promise<void>;
+  importUntitled: (text: string, name: string) => void;
   save: (options?: { allowInvalidSource?: boolean }) => Promise<void>;
   saveAs: (options?: { allowInvalidSource?: boolean }) => Promise<void>;
   persistTo: (write: (text: string) => Promise<StorageResult<FileSnapshot>>, options?: { allowInvalidSource?: boolean }) => Promise<void>;
@@ -255,6 +259,7 @@ export function getPersistableText(editor: Pick<EditorState, "mode" | "sourceTex
 function createInitialFileSessionState(): Omit<
   FileSessionState,
   | "open"
+  | "importUntitled"
   | "save"
   | "saveAs"
   | "persistTo"
@@ -273,6 +278,7 @@ function createInitialFileSessionState(): Omit<
 > {
   return {
     file: null,
+    draftName: null,
     backingText: null,
     backingVersion: null,
     externalSnapshot: null,
@@ -359,6 +365,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
     };
     set({ operation, pendingAutosave: false, lastError: null });
     const record: LocalDraftRecord = {
+      ...(!state.file && state.draftName ? { draftName: state.draftName } : {}),
       key,
       text,
       version: `${operation.id}:${now()}`,
@@ -420,6 +427,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
     const needsFollowup = latest.pendingAutosave || editorText !== finalBackingText;
     set({
       file: snapshot.file,
+      draftName: null,
       backingText: finalBackingText,
       backingVersion: snapshot.version,
       externalSnapshot: null,
@@ -496,6 +504,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       const next = { ...get(), localDraftText: draft.text, conflict: null, externalSnapshot: null };
       set({
         localDraftText: draft.text,
+        ...(draft.text === currentText && draft.draftName ? { draftName: draft.draftName } : {}),
         localDraftVersion: draft.version,
         recoveryDraft: draft.text !== currentText ? { key, draft, fileText: currentText } : null,
         operation: null,
@@ -503,6 +512,18 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
         ...recomputeDirtyState(next, currentText),
         localDraftState: draft.text === currentText ? "current" : "newer_than_backing",
       });
+    },
+
+    importUntitled: (text, name) => {
+      validateDocumentName(name);
+      const state = get();
+      if (state.operation || state.conflict || state.recoveryDraft || state.externalSnapshot) {
+        throw new Error("Finish saving or resolve the file notice before importing.");
+      }
+      // Detach the original backing file before any subsequent autosave. The
+      // external spreadsheet is input only, never an Ordinate backing file.
+      deps.editor.replaceDocumentText(text);
+      set({ ...createInitialFileSessionState(), draftName: name, autosaveEnabled: state.autosaveEnabled, documentDirty: "dirty" });
     },
 
     open: async (read = deps.adapter.open) => {
@@ -533,6 +554,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       const draft = draftResult.ok ? draftResult.value : null;
       set({
         file: result.value.file,
+        draftName: null,
         backingText: editorText,
         backingVersion: result.value.version,
         externalSnapshot: null,
@@ -670,7 +692,10 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       if (appliedSave.needsFollowup) await get().autosaveNow();
     },
 
-    saveAs: (options) => get().persistTo(deps.adapter.saveAs, options),
+    saveAs: (options) => {
+      const name = documentSaveName(get());
+      return get().persistTo(text => deps.adapter.saveAs(text, name), options);
+    },
 
     persistTo: async (write, options) => {
       const editorSnapshot = deps.editor.getPersistableText();
@@ -944,7 +969,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
         expectedVersion: null,
       };
       set({ operation, lastError: null });
-      const result = await deps.adapter.saveAs(state.conflict.editorText);
+      const result = await deps.adapter.saveAs(state.conflict.editorText, documentSaveName(state));
       if (!operationMatches(get().operation, operation)) return;
       if (!result.ok) {
         if (result.error.kind === "permission_denied" || result.error.kind === "write_failed") {
@@ -1002,6 +1027,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       const editorText = deps.editor.getPersistableText().text;
       set({
         recoveryDraft: null,
+        ...(!get().file && recovery.draft.draftName ? { draftName: recovery.draft.draftName } : {}),
         localDraftText: editorText,
         localDraftVersion: recovery.draft.version,
         ...recomputeDirtyState({ ...get(), localDraftText: editorText }, editorText),
@@ -1208,6 +1234,20 @@ async function fileTextSnapshot(file: FileReference, text: string): Promise<File
   return { file, text, version: await hashText(text) };
 }
 
+// A browser File is a readable snapshot, not permission to overwrite its source.
+export async function readUploadedDocument(selected: File): Promise<StorageResult<FileSnapshot>> {
+  try {
+    const text = await selected.text();
+    const file: FileReference = {
+      id: `upload:${selected.name}:${selected.size}:${selected.lastModified}`,
+      displayName: selected.name,
+      adapterKind: "browser-download",
+      draftKey: `browser-upload:${selected.name}:${selected.size}:${selected.lastModified}`,
+    };
+    return ok(await fileTextSnapshot(file, text));
+  } catch (error) { return err({ kind: "read_failed", message: String(error) }); }
+}
+
 function createUnavailableStorageAdapter(): StorageAdapter {
   const unavailable = err<FileSnapshot>({ kind: "permission_denied", permission: "unavailable" });
   return {
@@ -1278,14 +1318,7 @@ export function createBrowserStorageAdapter(win?: FilePickerWindow): StorageAdap
           finish(err({ kind: "cancelled" }));
           return;
         }
-        const text = await selected.text();
-        const file: FileReference = {
-          id: `upload:${selected.name}:${selected.size}:${selected.lastModified}`,
-          displayName: selected.name,
-          adapterKind: "browser-download",
-          draftKey: `browser-upload:${selected.name}:${selected.size}:${selected.lastModified}`,
-        };
-        finish(ok(await fileTextSnapshot(file, text)));
+        finish(await readUploadedDocument(selected));
       }, { once: true });
       targetWindow.addEventListener("focus", handleFocus);
       targetWindow.document.body.append(input);
@@ -1293,10 +1326,10 @@ export function createBrowserStorageAdapter(win?: FilePickerWindow): StorageAdap
     });
   };
 
-  const downloadText = async (text: string): Promise<StorageResult<FileSnapshot>> => {
+  const downloadText = async (text: string, name: string): Promise<StorageResult<FileSnapshot>> => {
     const file: FileReference = {
       id: `download:${Date.now()}`,
-      displayName: "Untitled.ord",
+      displayName: name,
       adapterKind: "browser-download",
     };
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
@@ -1340,7 +1373,7 @@ export function createBrowserStorageAdapter(win?: FilePickerWindow): StorageAdap
       }
     },
     save: async (file, text) => {
-      if (file.adapterKind !== "browser-file-system") return downloadText(text);
+      if (file.adapterKind !== "browser-file-system") return downloadText(text, file.displayName);
       const handle = handleFor(file);
       if (!handle) return err({ kind: "not_found" });
       const permission = handle.queryPermission ? await handle.queryPermission({ mode: "readwrite" }) : "prompt";
@@ -1357,11 +1390,12 @@ export function createBrowserStorageAdapter(win?: FilePickerWindow): StorageAdap
         return err({ kind: "write_failed", message: String(error) });
       }
     },
-    saveAs: async (text) => {
-      if (!targetWindow.showSaveFilePicker) return downloadText(text);
+    saveAs: async (text, suggestedName = "Untitled.ord") => {
+      validateDocumentName(suggestedName);
+      if (!targetWindow.showSaveFilePicker) return downloadText(text, suggestedName);
       try {
         const handle = await targetWindow.showSaveFilePicker({
-          suggestedName: "Untitled.ord",
+          suggestedName,
           types: [{ description: "Ordinate documents", accept: { "text/plain": [".ord"] } }],
         });
         const writable = await handle.createWritable();

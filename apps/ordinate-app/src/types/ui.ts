@@ -47,7 +47,6 @@ export type SheetSelection =
   | {
       kind: "row";
       rowNumber: number;
-      area: "header" | "body";
       anchorRowNumber: number;
       rowStart: number;
       rowEnd: number;
@@ -163,7 +162,6 @@ export type AxisSelectionView =
     }
   | {
       axis: "row";
-      area: "header" | "body";
       rowStart: number;
       rowEnd: number;
       rowCount: number;
@@ -171,11 +169,6 @@ export type AxisSelectionView =
     };
 
 export type ThemeMode = "auto" | "light" | "dark";
-
-export type ThemeMenuPosition = {
-  top: number;
-  left: number;
-};
 
 export type FloatingMenuPosition = {
   top: number;
@@ -213,6 +206,12 @@ export type StyleLocalView = {
   color: "auto" | "red" | "green" | "blue";
 };
 
+export type ColumnHeaderAction = {
+  count: number;
+  label: string;
+  disabledReason?: string;
+};
+
 export type ColumnRailMenuView = {
   kind: "column";
   colIndex: number;
@@ -221,6 +220,7 @@ export type ColumnRailMenuView = {
   deleteSelectionCount?: number;
   hasLocalConfig: boolean;
   canStructureEdit: boolean;
+  headerAction: ColumnHeaderAction | null;
   formatLocalKey: FormatLocalKey;
   formatLocalOptions: FormatLocalOptions | null;
   formatPreviewContext: FormatPreviewContext;
@@ -235,6 +235,7 @@ export type RowRailMenuView = {
   rowPath: string | null;
   hasChildren: boolean;
   deleteSelectionCount?: number;
+  canEditRowRegion: boolean;
   canDisplayEdit: boolean;
   hasLocalConfig: boolean;
   formatLocalKey: FormatLocalKey;

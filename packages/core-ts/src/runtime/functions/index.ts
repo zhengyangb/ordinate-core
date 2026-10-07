@@ -1,4 +1,9 @@
 import { isError, makeInternalError } from "../errors";
+import { formatEvaluator } from "./format";
+import { elementaryFunctionDefinitions } from "./elementary";
+import { distributionFunctionDefinitions } from "./distributions";
+import { mathematicalFunctionDefinitions } from "./mathematics";
+import { mathViewFunctionDefinitions } from "./mathViews";
 import { viewIndexFunction } from "../indexing";
 import type { FunctionCall, RuntimeValue, RuntimeView } from "../types";
 import { makeRuntimeView } from "../view";
@@ -80,6 +85,7 @@ import {
   isErrorValue,
   isNullValue,
   isNumberValue,
+  isDateValue,
   isTextValue,
   numberValue,
   textValue,
@@ -149,6 +155,10 @@ export interface FunctionDefinition extends FunctionMetadata {
 }
 
 export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
+  ...elementaryFunctionDefinitions,
+  ...distributionFunctionDefinitions,
+  ...mathematicalFunctionDefinitions,
+  ...mathViewFunctionDefinitions,
   {
     name: "sum",
     category: "aggregate",
@@ -722,6 +732,17 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     evaluator: typePredicateEvaluator(isNumberValue),
   },
   {
+    name: "isDate",
+    category: "type",
+    summary: "Returns true for dates, excluding datetimes, and false for every other runtime value.",
+    signatures: [
+      signature([param("x", "value", "Value to inspect.")], "boolean"),
+      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+    ],
+    examples: [example("isDate(2026-03-04)", "true")],
+    evaluator: typePredicateEvaluator(isDateValue),
+  },
+  {
     name: "isText",
     aliases: ["isString"],
     category: "type",
@@ -798,6 +819,17 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     ],
     examples: [example("\"SKU-\" + text(@[:,Code])")],
     evaluator: typeConversionEvaluator(textValue),
+  },
+  {
+    name: "format",
+    category: "text",
+    summary: "Formats a scalar value as text using a native numeric or temporal format.",
+    signatures: [
+      signature([param("value", "value", "Scalar value to convert.")], "string"),
+      signature([param("value", "value", "Scalar value to format."), param("spec", "string", "Native format specification.")], "string"),
+    ],
+    examples: [example('format(1234.5, ",.2f")', '"1,234.50"')],
+    evaluator: formatEvaluator,
   },
   {
     name: "boolean",
@@ -1326,7 +1358,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Discounts a one-dimensional view of future cash flows by a per-period rate.",
     signatures: [signature([
       param("rate", "Scalar[number]", "Per-period discount rate."),
-      param("values", "view[d=1]", "Future cash flows. The first value is discounted by one period."),
+      param("values", "view[d<=1]", "Future cash flows, including a single value. The first value is discounted by one period."),
     ], "number")],
     examples: [example("npv(0.1, @[:,Cashflow])")],
     evaluator: (call, ctx) => {
@@ -1341,7 +1373,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     name: "irr",
     category: "financial",
     summary: "Solves the internal rate of return for a one-dimensional view of periodic cash flows.",
-    signatures: [signature([param("values", "view[d=1]", "Periodic cash flows whose first value is at period 0.")], "number")],
+    signatures: [signature([param("values", "view[d<=1]", "Periodic cash flows whose first value is at period 0.")], "number")],
     examples: [example("irr(@[:,Cashflow])")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 1);
@@ -1356,7 +1388,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "financial",
     summary: "Returns the modified internal rate of return using separate finance and reinvestment rates.",
     signatures: [signature([
-      param("values", "view[d=1]", "Periodic cash flows whose first value is at period 0."),
+      param("values", "view[d<=1]", "Periodic cash flows whose first value is at period 0."),
       param("financeRate", "Scalar[number]", "Rate paid on negative cash flows."),
       param("reinvestRate", "Scalar[number]", "Rate earned by reinvested positive cash flows."),
     ], "number")],
@@ -1375,8 +1407,8 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Discounts cash flows using actual day offsets from the first supplied date and a 365-day year.",
     signatures: [signature([
       param("rate", "Scalar[number]", "Annual discount rate."),
-      param("values", "view[d=1]", "Cash flows."),
-      param("dates", "view[d=1]", "Date values matching the cash-flow shape."),
+      param("values", "view[d<=1]", "Cash flows, including a single value."),
+      param("dates", "view[d<=1]", "Date values matching the cash-flow shape."),
     ], "number")],
     examples: [example("xnpv(0.1, @[:,Cashflow], @[:,Date])")],
     evaluator: (call, ctx) => {
@@ -1394,8 +1426,8 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "financial",
     summary: "Solves the annual internal rate of return for dated cash flows using the deterministic RFC-0031 root solver.",
     signatures: [signature([
-      param("values", "view[d=1]", "Cash flows."),
-      param("dates", "view[d=1]", "Date values matching the cash-flow shape."),
+      param("values", "view[d<=1]", "Cash flows, including a single value."),
+      param("dates", "view[d<=1]", "Date values matching the cash-flow shape."),
     ], "number")],
     examples: [example("xirr(@[:,Cashflow], @[:,Date])")],
     evaluator: (call, ctx) => {

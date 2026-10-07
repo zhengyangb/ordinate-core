@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { FormatOptionGlyph } from "./DisplayMetadataPreview";
 import RailMenuDetailPanel from "./RailMenuDetailPanel";
@@ -76,6 +76,7 @@ function RowStructurePanel({
   onDelete,
   onConvertRowsToHeader,
   onConvertRowsToBody,
+  rowNoteMenuItem,
 }: {
   railMenu: Extract<RailMenuView, { kind: "row" }>;
   onInsertAbove: (rowNumber: number, area: "header" | "body") => void;
@@ -84,6 +85,7 @@ function RowStructurePanel({
   onDelete: (rowNumber: number, area: "header" | "body", rowId: number, mode: CoreRowDeleteMode) => void;
   onConvertRowsToHeader: (rowId: number) => void;
   onConvertRowsToBody: (rowId: number) => void;
+  rowNoteMenuItem: ReactNode;
 }) {
   const deleteLabel =
     railMenu.deleteSelectionCount && railMenu.deleteSelectionCount > 1
@@ -99,9 +101,11 @@ function RowStructurePanel({
       <MenuOption className="rail-structure-action" icon={<InsertBelowGlyph />} onClick={() => onInsertBelow(railMenu.rowNumber, railMenu.area)}>
         Insert Below
       </MenuOption>
-      <MenuOption className="rail-structure-action" icon={<DuplicateGlyph />} onClick={() => onDuplicate(railMenu.rowNumber, railMenu.area, railMenu.rowId)}>
-        {railMenu.hasChildren ? "Duplicate Row and Children" : "Duplicate Row"}
-      </MenuOption>
+      {railMenu.canEditRowRegion ? (
+        <MenuOption className="rail-structure-action" icon={<DuplicateGlyph />} onClick={() => onDuplicate(railMenu.rowNumber, railMenu.area, railMenu.rowId)}>
+          {railMenu.hasChildren ? "Duplicate Row and Children" : "Duplicate Row"}
+        </MenuOption>
+      ) : null}
       {railMenu.canConvertToHeader ? (
         <MenuOption className="rail-structure-action" icon={<InsertAboveGlyph />} onClick={() => onConvertRowsToHeader(railMenu.rowId)}>
           Use Row as Header
@@ -112,19 +116,23 @@ function RowStructurePanel({
           Move Header Row to Body
         </MenuOption>
       ) : null}
-      <MenuOption
-        className="rail-structure-action"
-        icon={<DeleteGlyph />}
-        tone="danger"
-        onClick={() => onDelete(railMenu.rowNumber, railMenu.area, railMenu.rowId, railMenu.hasChildren ? "subtree" : "node")}
-      >
-        {deleteLabel}
-      </MenuOption>
+      {rowNoteMenuItem}
+      {railMenu.canEditRowRegion ? (
+        <MenuOption
+          className="rail-structure-action"
+          icon={<DeleteGlyph />}
+          tone="danger"
+          onClick={() => onDelete(railMenu.rowNumber, railMenu.area, railMenu.rowId, railMenu.hasChildren ? "subtree" : "node")}
+        >
+          {deleteLabel}
+        </MenuOption>
+      ) : null}
     </MenuGroup>
   );
 }
 
 type RailMenuProps = {
+  rowNoteMenuItem: ReactNode;
   open: boolean;
   position: FloatingMenuPosition;
   railMenu: RailMenuView | null;
@@ -136,6 +144,7 @@ type RailMenuProps = {
   onInsertColumnRight: (colIndex: number) => void;
   onDuplicateColumn: (colIndex: number) => void;
   onDeleteColumn: (colIndex: number) => void;
+  onSetHeaderColCount: (count: number) => void;
   onDuplicateRow: (rowNumber: number, area: "header" | "body", rowId: number) => void;
   onConvertRowsToHeader: (rowId: number) => void;
   onConvertRowsToBody: (rowId: number) => void;
@@ -146,6 +155,7 @@ type RailMenuProps = {
 };
 
 export default function RailMenu({
+  rowNoteMenuItem,
   open,
   position,
   railMenu,
@@ -157,6 +167,7 @@ export default function RailMenu({
   onInsertColumnRight,
   onDuplicateColumn,
   onDeleteColumn,
+  onSetHeaderColCount,
   onDuplicateRow,
   onConvertRowsToHeader,
   onConvertRowsToBody,
@@ -234,21 +245,39 @@ export default function RailMenu({
                       Style
                     </MenuOption>
                   </MenuGroup>
-                  {railMenu.canStructureEdit ? <MenuDivider className="column-rail-menu-nav-divider" /> : null}
-                  {railMenu.canStructureEdit ? (
+                  {railMenu.canStructureEdit || railMenu.headerAction ? <MenuDivider className="column-rail-menu-nav-divider" /> : null}
+                  {railMenu.canStructureEdit || railMenu.headerAction ? (
                     <MenuGroup className="column-rail-menu-action-group" ariaLabel="Column structure actions">
-                      <MenuOption className="column-rail-menu-action" icon={<InsertLeftGlyph />} onClick={() => onInsertColumnLeft(railMenu.colIndex)}>
-                        Insert Left
-                      </MenuOption>
-                      <MenuOption className="column-rail-menu-action" icon={<InsertRightGlyph />} onClick={() => onInsertColumnRight(railMenu.colIndex)}>
-                        Insert Right
-                      </MenuOption>
-                      <MenuOption className="column-rail-menu-action" icon={<DuplicateGlyph />} onClick={() => onDuplicateColumn(railMenu.colIndex)}>
-                        Duplicate Column
-                      </MenuOption>
-                      <MenuOption className="column-rail-menu-action" icon={<DeleteGlyph />} tone="danger" onClick={() => onDeleteColumn(railMenu.colIndex)}>
-                        {railMenu.deleteSelectionCount && railMenu.deleteSelectionCount > 1 ? "Delete Columns" : "Delete Column"}
-                      </MenuOption>
+                      {railMenu.canStructureEdit ? (
+                        <>
+                          <MenuOption className="column-rail-menu-action" icon={<InsertLeftGlyph />} onClick={() => onInsertColumnLeft(railMenu.colIndex)}>
+                            Insert Left
+                          </MenuOption>
+                          <MenuOption className="column-rail-menu-action" icon={<InsertRightGlyph />} onClick={() => onInsertColumnRight(railMenu.colIndex)}>
+                            Insert Right
+                          </MenuOption>
+                          <MenuOption className="column-rail-menu-action" icon={<DuplicateGlyph />} onClick={() => onDuplicateColumn(railMenu.colIndex)}>
+                            Duplicate Column
+                          </MenuOption>
+                        </>
+                      ) : null}
+                      {railMenu.headerAction ? (
+                        <MenuOption
+                          className="column-rail-menu-action"
+                          role="menuitem"
+                          icon={railMenu.headerAction.count > railMenu.colIndex ? <InsertLeftGlyph /> : <InsertRightGlyph />}
+                          disabled={Boolean(railMenu.headerAction.disabledReason)}
+                          title={railMenu.headerAction.disabledReason}
+                          onClick={() => onSetHeaderColCount(railMenu.headerAction!.count)}
+                        >
+                          {railMenu.headerAction.label}
+                        </MenuOption>
+                      ) : null}
+                      {railMenu.canStructureEdit ? (
+                        <MenuOption className="column-rail-menu-action" icon={<DeleteGlyph />} tone="danger" onClick={() => onDeleteColumn(railMenu.colIndex)}>
+                          {railMenu.deleteSelectionCount && railMenu.deleteSelectionCount > 1 ? "Delete Columns" : "Delete Column"}
+                        </MenuOption>
+                      ) : null}
                     </MenuGroup>
                   ) : null}
                 </div>
@@ -292,6 +321,7 @@ export default function RailMenu({
                     </>
                   ) : null}
                   <RowStructurePanel
+                    rowNoteMenuItem={rowNoteMenuItem}
                     railMenu={railMenu}
                     onInsertAbove={onInsertRowAbove}
                     onInsertBelow={onInsertRowBelow}

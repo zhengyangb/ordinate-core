@@ -20,20 +20,26 @@ export function FormulaCellAddress({ cell, selection }: { cell: FormulaBarData; 
   }, [open]);
   const id = useId();
   const count = selection ? (selection.rowEnd - selection.rowStart + 1) * (selection.colEnd - selection.colStart + 1) : 1;
+  const isMultiCell = count > 1;
   const range = selection ? `${toColumnLetters(selection.colStart + 1)}${selection.rowStart}:${toColumnLetters(selection.colEnd + 1)}${selection.rowEnd}` : null;
   return <div ref={rootRef} className="formula-bar-meta formula-location" data-escape-owner
     onKeyDown={event => { if (event.key === "Escape" && open) { event.preventDefault(); event.stopPropagation(); setOpen(false); } }}>
-    <button type="button" className="formula-address" aria-label={`${cell.primaryAddress}, cell location`}
+    <button type="button" className={`formula-address${isMultiCell ? " formula-address--selection" : ""}`}
+      aria-label={isMultiCell ? `${count} cells selected, selection details` : `${cell.primaryAddress}, cell location`}
       aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(value => !value)}>
-      <span aria-hidden="true" className="formula-column-address">{toColumnLetters(cell.columnNumber)}<sub>{cell.columnNumber}</sub></span>
-      <span aria-hidden="true" className="formula-row-address">{cell.rowNumber}</span>
+      {isMultiCell ? `${count} cells` : <>
+        <span aria-hidden="true" className="formula-column-address">{toColumnLetters(cell.columnNumber)}<sub>{cell.columnNumber}</sub></span>
+        <span aria-hidden="true" className="formula-row-address">{cell.rowNumber}</span>
+      </>}
     </button>
-    {count > 1 ? <span className="formula-selection-count">{count} cells</span> : null}
     {open ? <div className="formula-location-popover-wrap">
-      <EditorPopover className="formula-location-popover" grow="up" role="region" aria-label="Cell location" id={id}>
+      <EditorPopover className="formula-location-popover" grow="up" role="region" aria-label={isMultiCell ? "Selection details" : "Cell location"} id={id}>
+        {isMultiCell ? <>
+          <div><span className="formula-location-label">Selection</span><span>{range} · {count} cells</span></div>
+          <div><span className="formula-location-label">Active cell</span><span>{cell.primaryAddress} · {cell.chip}</span></div>
+        </> : null}
         <div><span className="formula-location-label">Column</span><span>{cell.columnPath.length ? cell.columnPath.join(" › ") : `Column ${cell.columnNumber}`}</span></div>
         <div><span className="formula-location-label">Row</span><span>{cell.rowPath.length ? cell.rowPath.join(" › ") : `Row ${cell.rowNumber}`}</span></div>
-        {range ? <div><span className="formula-location-label">Selection</span><span>{range} · {count} cells</span></div> : null}
       </EditorPopover>
     </div> : null}
   </div>;

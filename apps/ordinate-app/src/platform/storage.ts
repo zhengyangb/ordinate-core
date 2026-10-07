@@ -33,13 +33,13 @@ export type StorageAdapter = {
   availability: (file: FileReference | null) => Promise<StorageAvailability>;
   open: () => Promise<StorageResult<FileSnapshot>>;
   save: (file: FileReference, text: string, options: SaveOptions) => Promise<StorageResult<FileSnapshot>>;
-  saveAs: (text: string) => Promise<StorageResult<FileSnapshot>>;
+  saveAs: (text: string, suggestedName?: string) => Promise<StorageResult<FileSnapshot>>;
   readCurrent: (file: FileReference) => Promise<StorageResult<FileSnapshot>>;
   // Invalidation, not a cached snapshot: read after any in-flight save completes.
   watch?: (file: FileReference, callback: (error: StorageFailure | null) => void) => () => void;
 };
 
-export type DesktopCommand = "open" | "save" | "saveAs" | "undo" | "redo";
+export type DesktopCommand = "open" | "save" | "saveAs" | "undo" | "redo" | "import" | "export" | "print" | "settings";
 export type DocumentRequest = { id: string; kind: "flush" | "save" | "move" | "open" | "duplicate" | "saveAs" | "revert" };
 export type DocumentWrite = { file: FileReference | null; text: string; version: string | null };
 export type DesktopWindowState = {
@@ -52,13 +52,17 @@ export type DesktopBridge = Pick<StorageAdapter, "availability" | "open" | "save
   watch: NonNullable<StorageAdapter["watch"]>;
   readonly windowChrome: "native";
   readonly sessionId: string;
-  restoreDocument: () => Promise<{ snapshot: StorageResult<FileSnapshot> | null; text: string | null }>;
-  openDocument: () => Promise<void>;
+  readonly systemLocale: string;
+  restoreDocument: () => Promise<{ snapshot: StorageResult<FileSnapshot> | null; text: string | null; draftName?: string }>;
+  openDocument: (file?: File) => Promise<void>;
   newDocument: () => Promise<void>;
+  interchange: import("../interchange/contracts.js").InterchangeTransport;
+  openImportedDocument: (text: string, name: string) => Promise<void>;
   duplicateDocument: (id: string, text: string) => Promise<void>;
   updateWindow: (state: DesktopWindowState) => Promise<void>;
   onCommand: (callback: (command: DesktopCommand) => void) => () => void;
   nativeHistory: (command: "undo" | "redo") => Promise<void>;
+  print: () => Promise<void>;
   onDocumentRequest: (callback: (request: DocumentRequest) => Promise<void>) => () => void;
   commitDocumentRequest: (id: string, write: DocumentWrite) => Promise<StorageResult<FileSnapshot>>;
   readDocumentRequest: (id: string) => Promise<StorageResult<FileSnapshot>>;

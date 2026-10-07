@@ -58,6 +58,11 @@ Current rule:
 - content belongs to that sheet until the next # or end of file
 - each sheet must contain exactly one table
 
+RFC-0043 permits restricted Markdown Sheet Notes before and after that table.
+Notes do not add rows or columns. `# ` remains a sheet boundary; literal structural
+punctuation in a note must be escaped. Unsupported note syntax is preserved with
+validation diagnostics, not interpreted as HTML or executable content.
+
 ## **Basic Table Form**
 
 A table uses a pipe-based plain-text form.
@@ -226,6 +231,6 @@ This escaping is a table-wire concern. It is separate from formula/literal seman
 ## **Open Questions**
 
 
-- should prose be allowed around the table inside a sheet
+- prose before/after the table is defined by RFC-0043
 - should || be the final Header Column marker
 - how strict should Markdown compatibility be

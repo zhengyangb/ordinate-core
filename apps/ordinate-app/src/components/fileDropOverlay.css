@@ -1,0 +1,43 @@
+.file-drop-overlay {
+    --drop-accent: var(--display-color-green);
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    pointer-events: none;
+    user-select: none;
+    color: var(--sheet-ink);
+    background: color-mix(in oklab, var(--sheet-surface) 85%, transparent);
+    backdrop-filter: blur(4px);
+    animation: file-drop-appear 160ms var(--ease-out-expo);
+}
+
+.file-drop-overlay[data-kind="import"] { --drop-accent: var(--display-color-blue); }
+.file-drop-overlay[data-kind="blocked"] { --drop-accent: var(--sheet-ink); }
+
+.file-drop-overlay::before {
+    content: "";
+    position: absolute;
+    inset: 12px;
+    border: 1px dashed color-mix(in oklab, var(--drop-accent) 65%, transparent);
+    border-radius: 8px;
+}
+
+.file-drop-message { max-width: 100%; text-align: center; animation: file-drop-rise 180ms var(--ease-out-expo); }
+.file-drop-message h2 { margin: 0; font-size: clamp(18px, 2.5vw, 24px); font-weight: 600; letter-spacing: -0.025em; }
+.file-drop-message p { margin: 18px 0 0; font-size: 13px; color: color-mix(in oklab, var(--sheet-ink) 72%, var(--sheet-surface)); }
+.file-drop-routes { display: flex; justify-content: center; flex-wrap: wrap; gap: 16px 32px; margin-top: 22px; }
+.file-drop-route { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.file-drop-route svg { width: 22px; height: 22px; }
+.file-drop-route[data-route="document"] { color: var(--display-color-green); }
+.file-drop-route[data-route="import"] { color: var(--display-color-blue); }
+.file-drop-route strong { font-weight: 600; }
+.file-drop-route > span { color: var(--sheet-ink); font-size: 12px; }
+
+@keyframes file-drop-appear { from { opacity: 0; } to { opacity: 1; } }
+@keyframes file-drop-rise { from { transform: translateY(5px); } to { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+    .file-drop-overlay, .file-drop-message { animation: none; }
+}

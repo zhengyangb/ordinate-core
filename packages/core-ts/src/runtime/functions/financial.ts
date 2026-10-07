@@ -355,7 +355,8 @@ function xnpvNumber(rate: number, values: readonly number[], days: readonly numb
 }
 
 function numericViewValues(view: RuntimeView, functionName: string, options: { requireVector: boolean }): Result<number[]> {
-  if (options.requireVector && view.dimension !== 1) {
+  // 1x1 selections are native dimension 0, but remain valid single cash flows.
+  if (options.requireVector && view.dimension > 1) {
     return err(invalid(functionName, "vector_required", { dimension: view.dimension }));
   }
   const values: number[] = [];
@@ -378,7 +379,7 @@ function numericViewValues(view: RuntimeView, functionName: string, options: { r
 }
 
 function pairedCashflowDates(valuesView: RuntimeView, datesView: RuntimeView, functionName: string): Result<PairedCashflowDates> {
-  if (valuesView.dimension !== 1 || datesView.dimension !== 1) return err(invalid(functionName, "vector_required"));
+  if (valuesView.dimension > 1 || datesView.dimension > 1) return err(invalid(functionName, "vector_required"));
   if (!runtimeViewShapesMatch(valuesView, datesView)) return err(invalid(functionName, "shape_mismatch"));
   const values: number[] = [];
   const dates: number[] = [];

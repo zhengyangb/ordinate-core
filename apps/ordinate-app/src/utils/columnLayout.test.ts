@@ -9,6 +9,42 @@ function row(cells: Array<[string, string]>, depth = 0): GridRow {
 }
 
 describe("content-driven column layout", () => {
+  it("keeps dense numeric reports compact despite a text heading and errors", () => {
+    const rows = [row(Array.from({ length: 8 }, () => ["Quarter", "string"]))];
+    for (let i = 0; i < 12; i++) rows.push(row(Array.from({ length: 8 }, () => ["1,234.5", "number"])));
+    rows.push(row(Array.from({ length: 8 }, () => ["Very long error description", "error"])));
+    const columns = resolveColumnLayouts(rows, Array.from({ length: 8 }, (_, i) => `${i}`), 0);
+    expect(columns.every(c => c.width <= 112 && c.wrapText)).toBe(true);
+  });
+  it("fits date displays and narrows only internal empty spacers", () => {
+    const cells: Array<[string,string]> = [["2026-01-02","date"],["","blank"],["123.4","number"],["5","number"],["6","number"],["7","number"],["","blank"]];
+    const columns = resolveColumnLayouts([row(cells)], ["A","B","C","D","E","F","G"],0);
+    expect(columns[0].width).toBeGreaterThanOrEqual(112);
+    expect(columns[1].width).toBe(32);
+    expect(columns[6].width).toBe(EMPTY_COLUMN_WIDTH);
+  });
+  it.each([
+    ["1/1/2026", "date"],
+    ["01.01.2026", "date"],
+    ["2026-01-01", "date"],
+    ["1/1/2026, 11:59:59 PM", "datetime"],
+    ["2026-01-01T23:59:59+05:30", "datetime"],
+    ["11:59:59 PM", "time"],
+    ["100 hr, 30 min, 12 sec", "duration"],
+  ])("fits a lone %s display in a dense numeric report without widening its peers", (text, kind) => {
+    const rows = Array.from({ length: 20 }, () => row(Array.from({ length: 4 }, () => ["120", "number"])));
+    const baseline = resolveColumnLayouts(rows, ["A", "B", "C", "D"], 0);
+    const columns = resolveColumnLayouts([...rows, row([[text, kind], ["", "blank"], ["", "blank"], ["", "blank"]])], ["A", "B", "C", "D"], 0);
+    expect(columns[0].width).toBeGreaterThanOrEqual(text.length * 8 + 32);
+    expect(columns[0].wrapText).toBe(false);
+    expect(columns.slice(1)).toEqual(baseline.slice(1));
+  });
+  it("sizes temporal-only columns using their actual display, not a boolean or numeric cap", () => {
+    const text = "1/1/2026, 11:59:59 PM";
+    const column = resolveColumnLayouts([row([[text, "datetime"]]), row([["true", "boolean"]])], ["When"], 0)[0];
+    expect(column.width).toBeGreaterThanOrEqual(text.length * 8 + 32);
+    expect(column.autoHeight).toBe(false);
+  });
   it("sizes appended empty columns exactly like their preview, independent of preceding content", () => {
     for (const [text, kind] of [["A long note. ".repeat(20), "string"], ["123456789", "number"], ["true", "boolean"]]) {
       const columns = resolveColumnLayouts([row([[text, kind], ["", "blank"], ["", "blank"]])], ["B", "C", "D"], 0);

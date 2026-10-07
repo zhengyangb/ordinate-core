@@ -1,11 +1,14 @@
 import { formatDocument } from "./formatter";
 import { encodeStringLiteral } from "./text_encoding";
+import { encodeNumberLiteral } from "./number_encoding";
 import { type DocumentState, type SheetState } from "./incremental";
 import { escapeCellText } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import { type ExprNode, type FormatSpec, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue, type StyleSpec } from "./runtime/types";
 import { isError, isValidExternalErrorKind } from "./runtime/errors";
-import { renderFormulaExpression, type FormulaRenderContext, type FormulaSheetRenderContext } from "./runtime/renderFormula";
+import { renderFormulaExpression, type FormulaRenderContext } from "./runtime/renderFormula";
+import { buildFormulaRenderContext } from "./formula_context";
+import { noteBlockLines } from "./sheet_notes";
 
 // Serialize a DocumentState to canonical .ord text.
 export function serializeDocumentState(state: DocumentState): string {
@@ -20,7 +23,7 @@ export function serializeDocumentState(state: DocumentState): string {
     }
   });
 
-  const intermediate = `${lines.join("\n").replace(/\s+$/, "")}\n`;
+  const intermediate = `${lines.join("\n").replace(/(?:\n[ \t]*)+$/, "")}\n`;
   return formatDocument(state.frontMatter === null ? intermediate : `${state.frontMatter}\n\n${intermediate}`);
 }
 
@@ -40,17 +43,17 @@ function serializeSheetBodyLines(sheet: SheetState, formulaRenderContext: Formul
           output.push(...block.lines);
         }
       } else {
-        output.push(...block.lines);
+        output.push(...(block.kind === "note" ? noteBlockLines(block) : block.lines));
       }
     });
     return output;
   }
 
   if (tableLines.length === 0) {
-    return sheet.sourceBlocks.flatMap((block) => block.lines);
+    return sheet.sourceBlocks.flatMap((block) => block.kind === "note" ? noteBlockLines(block) : block.lines);
   }
 
-  const output = sheet.sourceBlocks.flatMap((block) => block.lines);
+  const output = sheet.sourceBlocks.flatMap((block) => block.kind === "note" ? noteBlockLines(block) : block.lines);
   if (output.length > 0 && output[output.length - 1] !== "") {
     output.push("");
   }
@@ -65,7 +68,7 @@ function serializeCurrentTableLines(sheet: SheetState, formulaRenderContext: For
 
   const boundary = sheet.logicalRows.length > 0 ? sheet.logicalRows[0].boundary : null;
   const headerCount = sheet.headerRowCount;
-  const includeDisplayControlFrame = sheet.columnDisplayMetadata.some((meta) => meta !== null);
+  const includeDisplayControlFrame = [...sheet.columnDisplayMetadata, ...sheet.rowDisplayMetadata].some((meta) => meta !== null);
   const rowIdToIndex = buildIdIndexMap(sheet.rowIds);
   const colIdToIndex = buildIdIndexMap(sheet.colIds);
   const rowLabelPathsByIndex = Array.from({ length: sheet.rowCount }, (_, rowIndex) =>
@@ -92,13 +95,13 @@ function serializeCurrentTableLines(sheet: SheetState, formulaRenderContext: For
 
     const row = sheet.logicalRows[rAbs];
     const rowBoundary = row.boundary === null ? null : row.boundary + (includeDisplayControlFrame ? 1 : 0);
-    const cells: string[] = includeDisplayControlFrame ? [" "] : [];
+    const rowDefaultDisplay = sheet.rowDisplayMetadata[rAbs] ?? null;
+    const cells: string[] = includeDisplayControlFrame ? [rowDefaultDisplay ? renderDisplayControlCell(rowDefaultDisplay) : " "] : [];
     for (let c = 0; c < sheet.colCount; c += 1) {
       const cellState = sheet.cells[rAbs][c];
       if (rAbs < sheet.headerRowCount || c < sheet.headerColCount) {
         const rawHeaderCell = c < row.rawCells.length ? row.rawCells[c] : "";
-        const rowDefaultDisplay = rAbs >= sheet.bodyStart && c === 0 ? sheet.rowDisplayMetadata[rAbs] ?? null : null;
-        const headerCellText = rowDefaultDisplay ? `${stripCellDisplayMetadata(rawHeaderCell)}${renderDisplayBlock(rowDefaultDisplay)}` : rawHeaderCell;
+        const headerCellText = rAbs >= sheet.bodyStart && c === 0 ? stripCellDisplayMetadata(rawHeaderCell) : rawHeaderCell;
         cells.push(encodeTableCellText(headerCellText));
       } else {
         cells.push(encodeTableCellText(serializeCellState(
@@ -141,21 +144,6 @@ function serializeCellState(
   return `= ${rhs}${displaySuffix}`;
 }
 
-function buildFormulaRenderContext(state: DocumentState): FormulaRenderContext {
-  const sheetsById = new Map<number, FormulaSheetRenderContext>();
-  for (const sheet of state.sheets) {
-    sheetsById.set(sheet.sheetId, {
-      sheetName: sheet.name,
-      rowIdToIndex: buildIdIndexMap(sheet.rowIds),
-      colIdToIndex: buildIdIndexMap(sheet.colIds),
-      rowLabelPathsByIndex: Array.from({ length: sheet.rowCount }, (_, rowIndex) =>
-        rowIndex >= sheet.bodyStart ? (sheet.rowPaths[rowIndex - sheet.bodyStart] ?? "").split(".") : [],
-      ),
-      colLabelsByIndex: sheet.colLabels,
-    });
-  }
-  return { sheetsById };
-}
 
 function serializeLiteralBody(value: RuntimeValue, inputText: string): string {
   if (value.kind === "blank") return "";
@@ -183,7 +171,7 @@ function encodeTableCellText(text: string): string {
 
 function serializeValue(value: RuntimeValue): string {
   if (value.kind === "number") {
-    return serializeNumber(value.value as number | null);
+    return encodeNumberLiteral(value.value);
   }
   if (value.kind === "string") {
     return serializeString(String(value.value ?? ""));
@@ -204,17 +192,6 @@ function serializeValue(value: RuntimeValue): string {
     return serializeErrorValue(value);
   }
   return "error[generic]";
-}
-
-function serializeNumber(value: number | null): string {
-  if (value === null || Number.isNaN(value)) {
-    return "error[generic]";
-  }
-  if (Number.isInteger(value)) {
-    return `${value}`;
-  }
-  const text = Number(value).toPrecision(15);
-  return Number(text).toString();
 }
 
 function serializeString(text: string): string {

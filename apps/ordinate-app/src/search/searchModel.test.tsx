@@ -11,6 +11,8 @@ import { createFileSessionStore, createMemoryLocalDraftStore, getPersistableText
 import { useSheetViewModel } from "../hooks/useSheetViewModel";
 import { useEditorStore } from "../store/editorStore";
 import { buildDocumentSearchCells, findDocumentMatches } from "./searchModel";
+import { createCellDisplayFormatter } from "../preferences/temporalDisplay";
+const displayCell = createCellDisplayFormatter("locale", "en-US");
 
 describe("document-wide search", () => {
   const document = `# First
@@ -23,7 +25,7 @@ describe("document-wide search", () => {
 | ---- || ----- |
 | Revenue || 456 |`;
   beforeEach(() => useEditorStore.getState().replaceDocumentText(document));
-  const search = () => findMatches(buildDocumentSearchCells(useEditorStore.getState(), "en-US"), "Revenue", false);
+  const search = () => findMatches(buildDocumentSearchCells(useEditorStore.getState(), "en-US", displayCell), "Revenue", false);
   it("indexes every sheet with unique stable IDs and sheet-local coordinates", () => {
     const matches = search();
     expect(matches.map(match => match.sheet)).toEqual(["First", "Second"]);
@@ -39,7 +41,7 @@ describe("document-wide search", () => {
     expect(search()).toHaveLength(2);
   });
   it("switches scope without changing the query and follows the current sheet", () => {
-    const cells = buildDocumentSearchCells(useEditorStore.getState(), "en-US");
+    const cells = buildDocumentSearchCells(useEditorStore.getState(), "en-US", displayCell);
     expect(findDocumentMatches(cells, "Revenue", false, "all", "First").map(match => match.sheet)).toEqual(["First", "Second"]);
     expect(findDocumentMatches(cells, "Revenue", false, "current", "First").map(match => match.sheet)).toEqual(["First"]);
     expect(findDocumentMatches(cells, "Revenue", false, "current", "Second").map(match => match.sheet)).toEqual(["Second"]);
@@ -49,7 +51,7 @@ describe("document-wide search", () => {
     expect(findDocumentMatches(cells, "", false, "current", "First")).toEqual([]);
   });
   it("recalculates current-sheet results after editing and undo", () => {
-    const current = () => findDocumentMatches(buildDocumentSearchCells(useEditorStore.getState(), "en-US"), "Revenue", false, "current", "Second");
+    const current = () => findDocumentMatches(buildDocumentSearchCells(useEditorStore.getState(), "en-US", displayCell), "Revenue", false, "current", "Second");
     expect(current()).toHaveLength(1);
     useEditorStore.getState().setCellInput({ kind: "index", sheet: "Second", rowIndex: 1, colIndex: 0 }, "Costs");
     expect(current()).toEqual([]);
@@ -102,7 +104,7 @@ const source = `# Sheet
 | * B || 56 | Revenue total |`;
 function index() {
   let projection!: ReturnType<typeof useSheetViewModel>;
-  function Harness() { projection = useSheetViewModel(useEditorStore.getState()); return null; }
+  function Harness() { projection = useSheetViewModel({ ...useEditorStore.getState(), displayCell }); return null; }
   renderToStaticMarkup(<Harness />);
   const sheet = projection.currentSheetState!;
   return buildSearchCells(projection.allRowData, [], sheet.colIds, sheet.rowIds, "en-US");

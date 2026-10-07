@@ -222,3 +222,20 @@ The following remain V3 host-integration work:
 | convert header rows not ending at last header row | fails |
 | preview row delete with dependent formula | returns affected formula cells |
 | preview column delete with dependent formula | returns affected formula cells |
+
+## Header column boundary editing
+
+`set_header_columns { sheet, count }` updates the leading `||` boundary as one
+undoable edit. Count is an integer from zero to column count minus one; at least
+one data column remains. Rows, columns, stable IDs and reference coordinates do
+not move. Every logical row receives the same boundary, including header rows.
+
+Newly promoted cells become label surfaces. Ordinary quoted text is unquoted
+only when reparsing preserves its literal value and does not introduce hierarchy
+or display syntax. Cell-local presentation on promoted cells is removed because
+native header cells do not support it; it must not turn into whole-row formatting.
+Undo restores it. Existing row-header conversion uses the same literal cleanup.
+
+Promotion of a column containing formulas or invalid input fails atomically.
+RFC 0045 moves canonical row defaults to the `@display` control column, so
+removing the final label column preserves row formatting.

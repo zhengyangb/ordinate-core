@@ -1,0 +1,50 @@
+.settings-dialog { width: min(39rem, calc(100vw - 2rem)); }
+.settings-content { grid-template-columns: 154px minmax(0, 1fr); gap: 0; padding: 0; height: min(28rem, calc(100dvh - 32px)); background: var(--menu-surface-bg); }
+.settings-sidebar { padding: 28px 12px; border-right: 1px solid var(--chrome-border); background: var(--chrome-bg-strong); }
+.settings-sidebar h2 { margin: 0 12px 24px; font-size: .9rem; font-weight: 650; letter-spacing: -.02em; }
+.settings-tabs { display: grid; gap: 5px; }
+.settings-tabs > button { min-height: 36px; padding: 8px 12px; border: 0; border-radius: var(--menu-item-radius); background: transparent; color: var(--chrome-soft); text-align: left; font: inherit; font-size: .82rem; cursor: default; }
+.settings-tabs > button:hover { background: var(--menu-hover-bg); color: var(--menu-hover-ink); }
+.settings-tabs > button[aria-selected="true"] { background: var(--menu-active-bg); color: var(--menu-active-ink); font-weight: 600; }
+.settings-tabs > button:focus-visible { outline: 2px solid var(--selection-ring-color); outline-offset: 2px; }
+.settings-main { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.settings-panels { min-height: 0; padding: 28px 28px 16px; overflow-y: auto; scrollbar-gutter: stable; }
+.settings-panel { display: grid; gap: 16px; outline: none; }
+.settings-panel[hidden] { display: none; }
+.settings-panel:focus-visible { outline: 2px solid var(--selection-ring-color); outline-offset: 6px; }
+.settings-page-heading h3 { margin: 0; font-size: 1.13rem; font-weight: 650; letter-spacing: -.025em; }
+.settings-page-heading p { margin: 8px 0 2px; color: var(--chrome-soft); font-size: .78rem; line-height: 1.5; }
+.settings-field { display: grid; gap: 10px; }
+.settings-field h4 { margin: 0; font-size: .8rem; font-weight: 550; }
+.settings-system-region { display: flex; justify-content: space-between; gap: 12px; font-size: .8rem; }
+.settings-region-detail { color: var(--chrome-soft); }
+.settings-preview { display: grid; gap: 12px; margin: 0; padding: 16px 0; border-top: 1px solid var(--chrome-border); border-bottom: 1px solid var(--chrome-border); font-size: .82rem; }
+.settings-preview > div { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 12px; height: 20px; align-items: center; }
+.settings-preview dt { color: var(--chrome-soft); }
+.settings-preview dd { margin: 0; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.settings-caption { margin: 0; color: var(--chrome-soft); font-size: .74rem; line-height: 1.5; }
+.settings-actions { margin: 0; padding: 12px 28px 20px; }
+.settings-content .app-modal-action.primary { color: var(--menu-active-ink); background: var(--menu-active-bg); }
+.settings-appearance-preview { border: 1px solid var(--chrome-border); border-radius: var(--menu-item-radius); overflow: hidden; }
+.settings-preview-chrome { display: flex; align-items: center; justify-content: space-between; height: 36px; padding: 0 14px; background: var(--chrome-bg); border-bottom: 1px solid var(--chrome-border); }
+.settings-preview-chrome > span:first-child { font-family: var(--font-brand); font-weight: 650; font-size: .8rem; letter-spacing: -.035em; }
+.settings-preview-tools { display: flex; gap: 7px; }
+.settings-preview-tools i { width: 6px; height: 6px; border-radius: 50%; background: var(--chrome-soft); opacity: .5; }
+.settings-preview-sheet { padding: 14px; background: var(--sheet-surface); color: var(--sheet-ink); }
+.settings-preview-sheet table { width: 100%; border-collapse: collapse; font-size: .7rem; font-variant-numeric: tabular-nums; }
+.settings-preview-sheet th, .settings-preview-sheet td { border: 1px solid var(--sheet-grid); padding: 7px 9px; font-weight: 400; }
+.settings-preview-sheet thead th { background: var(--sheet-header-row); text-align: center; }
+.settings-preview-sheet tbody th { background: var(--sheet-header-col); text-align: left; }
+.settings-preview-sheet td { text-align: right; }
+@media (max-width: 540px) {
+  .settings-content { grid-template-columns: 112px minmax(0, 1fr); }
+  .settings-sidebar { padding: 24px 8px; }
+  .settings-sidebar h2 { margin-inline: 8px; }
+  .settings-tabs > button { padding-inline: 8px; font-size: .76rem; }
+  .settings-panels { padding: 24px 16px 12px; }
+  .settings-actions { padding-inline: 16px; }
+  .settings-page-heading h3 { font-size: 1rem; }
+  .settings-preview > div { grid-template-columns: 54px minmax(0, 1fr); gap: 8px; }
+  .settings-field .segmented-choice > button { padding-inline: 4px; font-size: .76rem; }
+  .settings-system-region { flex-wrap: wrap; gap: 6px; }
+}

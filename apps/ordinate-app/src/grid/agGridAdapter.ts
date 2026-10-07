@@ -3,6 +3,15 @@ import type { GridApi } from "ag-grid-community";
 import type { ColumnMetric, GridRow, HeaderOverlayHitResult, RowIndexMetric } from "../types/ui";
 import type { GridScrollSnapshot } from "../utils/gridGeometry";
 
+export function focusAppendedBodyRow(api: GridApi<GridRow>, target: { rAbs: number; colId: string }): boolean {
+  // The live grid model is authoritative during append. A callback scheduled
+  // before insertion still holds the old React row map even after rendering.
+  const lastIndex = api.getDisplayedRowCount() - 1;
+  if (api.getDisplayedRowAtIndex(lastIndex)?.data?.__absoluteRowNumber !== target.rAbs) return false;
+  api.setFocusedCell(lastIndex, target.colId);
+  return true;
+}
+
 export type LeafHeaderCellMetric = {
   colId: string;
   colIndex: number;

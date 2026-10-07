@@ -1,4 +1,6 @@
 import { deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
+import type { NoteSourceBlock } from "./sheet_notes";
+import type { UnparsedBlock } from "./parser";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 
@@ -21,6 +23,8 @@ export interface TableIR {
 
 export interface SheetIR {
   name: string;
+  /** Ordered content outside the primary table, including invalid source diagnostics. */
+  notes: { beforeTable: (NoteSourceBlock | UnparsedBlock)[]; afterTable: (NoteSourceBlock | UnparsedBlock)[] };
   table: TableIR | null;
   hasMultipleTables: boolean;
 }
@@ -35,8 +39,11 @@ export function parseDocumentModel(text: string): DocumentIR {
   const irSheets: SheetIR[] = [];
 
   for (const sheet of sheets) {
+    const tableIndex = sheet.blocks.findIndex(block => block.kind === "table");
+    const content = (start: number, end: number) => sheet.blocks.slice(start, end).filter((block): block is NoteSourceBlock | UnparsedBlock => block.kind !== "table");
+    const notes = { beforeTable: content(0, tableIndex < 0 ? sheet.blocks.length : tableIndex), afterTable: tableIndex < 0 ? [] : content(tableIndex + 1, sheet.blocks.length) };
     if (!sheet.table) {
-      irSheets.push({ name: sheet.name, table: null, hasMultipleTables: sheet.hasMultipleTables });
+      irSheets.push({ name: sheet.name, notes, table: null, hasMultipleTables: sheet.hasMultipleTables });
       continue;
     }
     const parsedRows: ParsedRow[] = stripDisplayControlFrame(
@@ -52,6 +59,7 @@ export function parseDocumentModel(text: string): DocumentIR {
     const { rows, maxDepth } = buildHierarchy(parsedRows, bodyStart);
     irSheets.push({
       name: sheet.name,
+      notes,
       table: {
         rowCount: parsedRows.length,
         columnCount,

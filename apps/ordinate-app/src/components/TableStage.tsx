@@ -12,10 +12,12 @@ import {
   type GridSizeChangedEvent,
   type GridReadyEvent,
   type ModelUpdatedEvent,
+  type TabToNextCellParams,
   themeQuartz,
 } from "ag-grid-community";
 
 import { shouldAnimateTableStructure } from "../config/motion";
+import { rowSelectionRegion } from "../utils/selectionModel";
 import type { AxisDragPreview, AxisDropIndicator, AxisSelectionView, ChromeVisibilityPhase, ColumnMetric, GridRow, HeaderIndexMetric, HeaderOverlayCell, Rect, RowIndexMetric, SelectedCell } from "../types/ui";
 import {
   bodyRowTrackYToViewportY,
@@ -37,6 +39,7 @@ import { QuickAddButton } from "./QuickAddButton";
 import { EMPTY_COLUMN_WIDTH } from "../utils/columnLayout";
 import { readGridBodyOverlayHosts, type GridBodyOverlayHosts } from "../grid/bodyOverlayHosts";
 import { waitForInitialGridLayout } from "../grid/initialGridLayout";
+import { tabToNextBodyCell } from "../grid/tabNavigation";
 import type { FillHandleController } from "../fill/useFillHandle";
 
 type FormulaReferenceOverlay = {
@@ -49,6 +52,11 @@ type FormulaReferenceOverlay = {
 const keepConfiguredPinning = () => [];
 
 type TableStageProps = {
+  columnRailHost: HTMLDivElement;
+  afterTableNote: import("react").ReactNode;
+  afterTableNoteHeight: number;
+  editingAfterTableNote: boolean;
+  onTableWidth: (width: number) => void;
   onLayoutReady: () => void;
   tableStageClassName: string;
   tableStageStyle: CSSProperties;
@@ -76,6 +84,7 @@ type TableStageProps = {
   isRangeSelection: boolean;
   selectedColumnIndex: number | null;
   columnHasLocalConfig: boolean[];
+  rowHasLocalConfig: boolean[];
   showSelectionRing: boolean;
   formulaReferenceOverlays: FormulaReferenceOverlay[];
   onFormulaReferenceOverlaySelect: (tokenId: string) => void;
@@ -93,7 +102,7 @@ type TableStageProps = {
   handleRowRailPointerDown: (rowNumber: number, area: "header" | "body", event: ReactPointerEvent<HTMLElement>) => void;
   handleRowRailMenuOpen: (rowNumber: number, area: "header" | "body", anchorEl: HTMLElement) => void;
   quickAddDisabled: boolean;
-  onQuickAddRows: (count: number) => void;
+  onAppendBodyRows: (count: number, focusColumnIndex?: number) => void;
   onQuickAddColumns: (count: number) => void;
   axisDropIndicator: AxisDropIndicator | null;
   axisDragPreview: AxisDragPreview | null;
@@ -140,18 +149,12 @@ function toColumnLetters(colNumber: number): string {
   return label;
 }
 
-function ColumnConfigGlyph() {
-  return (
-    <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-      <path d="M2 3.1h8M2 6h8M2 8.9h8" />
-      <circle cx="4" cy="3.1" r="1" />
-      <circle cx="7.5" cy="6" r="1" />
-      <circle cx="5.6" cy="8.9" r="1" />
-    </svg>
-  );
-}
-
 export default function TableStage({
+  columnRailHost,
+  afterTableNote,
+  afterTableNoteHeight,
+  editingAfterTableNote,
+  onTableWidth,
   onLayoutReady,
   tableStageClassName,
   tableStageStyle,
@@ -179,6 +182,7 @@ export default function TableStage({
   isRangeSelection,
   selectedColumnIndex,
   columnHasLocalConfig,
+  rowHasLocalConfig,
   showSelectionRing,
   formulaReferenceOverlays,
   onFormulaReferenceOverlaySelect,
@@ -196,7 +200,7 @@ export default function TableStage({
   handleRowRailPointerDown,
   handleRowRailMenuOpen,
   quickAddDisabled,
-  onQuickAddRows,
+  onAppendBodyRows,
   onQuickAddColumns,
   axisDropIndicator,
   axisDragPreview,
@@ -210,7 +214,26 @@ export default function TableStage({
   handleCellDoubleClicked,
   handleCellKeyDown,
 }: TableStageProps) {
+  const handleTabToNextCell = useCallback((params: TabToNextCellParams<GridRow>) =>
+    tabToNextBodyCell(params, !quickAddDisabled, onAppendBodyRows),
+  [quickAddDisabled, onAppendBodyRows]);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
+  const noteFooterRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!editingAfterTableNote) return;
+    // Notes are outside the row model; reveal them through the native viewport
+    // which also owns their live vertical offset.
+    const frame = requestAnimationFrame(() => {
+      const footer = noteFooterRef.current;
+      const viewport = gridWrapRef.current?.querySelector<HTMLElement>('.ag-body-viewport');
+      if (!footer || !viewport) return;
+      const bounds = footer.getBoundingClientRect();
+      const visible = viewport.getBoundingClientRect();
+      if (bounds.bottom > visible.bottom) viewport.scrollTop += bounds.bottom - visible.bottom + 16;
+      else if (bounds.top < visible.top) viewport.scrollTop += bounds.top - visible.top;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [afterTableNoteHeight, editingAfterTableNote]);
   const mountGridRoot = useCallback((root: HTMLDivElement | null) => {
     gridWrapRef.current = root;
     onGridRootChange(root);
@@ -264,12 +287,13 @@ export default function TableStage({
     () =>
       ({
         ...tableStageStyle,
+        "--sheet-note-after-height": `${afterTableNoteHeight}px`,
         "--axis-append-column-scroll-extent": `${APPEND_AXIS_SLOT_GAP + APPEND_COLUMN_WIDTH}px`,
         "--axis-append-row-scroll-extent": `${APPEND_AXIS_SLOT_GAP + APPEND_ROW_SLOT_HEIGHT}px`,
         "--quick-add-row-size": `${GRID_ROW_HEIGHT}px`,
         "--quick-add-column-size": `${previewColumnWidth}px`,
       }) as CSSProperties,
-    [tableStageStyle, previewColumnWidth],
+    [tableStageStyle, previewColumnWidth, afterTableNoteHeight],
   );
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
   const defaultColDef = useMemo<ColDef<GridRow>>(() => ({
@@ -311,6 +335,7 @@ export default function TableStage({
     bodyScrollTop,
   });
   const tableFootprint = tableGeometry.footprint;
+  useLayoutEffect(() => onTableWidth(tableFootprint.width), [tableFootprint.width, onTableWidth]);
   const centerTrackStyle = {
     width: `${centerTrackWidth}px`,
     transform: "translate3d(var(--grid-center-track-offset-x), 0, 0)",
@@ -382,13 +407,12 @@ export default function TableStage({
     axisDragPreview.area === area &&
     rowNumber >= axisDragPreview.rowStart &&
     rowNumber <= axisDragPreview.rowEnd;
-  const isRowAxisSelected = (rowNumber: number, area: "header" | "body") =>
+  const isRowAxisSelected = (rowNumber: number) =>
     axisSelection?.axis === "row" &&
-    axisSelection.area === area &&
     rowNumber >= axisSelection.rowStart &&
     rowNumber <= axisSelection.rowEnd;
   const isRowAxisSelectionInvalid = (area: "header" | "body") =>
-    axisSelection?.axis === "row" && axisSelection.area === area && !axisSelection.draggable;
+    axisSelection?.axis === "row" && rowSelectionRegion(axisSelection, headerIndexMetrics.length) === area && !axisSelection.draggable;
   const bodyRowDragPreviewRows =
     axisDragPreview?.axis === "row" && axisDragPreview.area === "body"
       ? rowIndexMetrics.filter((row) => row.number >= axisDragPreview.rowStart && row.number <= axisDragPreview.rowEnd)
@@ -402,16 +426,16 @@ export default function TableStage({
         }
       : null;
   const bodyRowSelectionRows =
-    axisSelection?.axis === "row" && axisSelection.area === "body"
+    axisSelection?.axis === "row"
       ? rowIndexMetrics.filter((row) => row.number >= axisSelection.rowStart && row.number <= axisSelection.rowEnd)
       : [];
   const bodyRowSelectionBand =
-    bodyRowSelectionRows.length > 0 && axisSelection?.axis === "row" && axisSelection.area === "body"
+    bodyRowSelectionRows.length > 0 && axisSelection?.axis === "row"
       ? {
           top: bodyRowTrackYToViewportY(Math.min(...bodyRowSelectionRows.map((row) => row.top)), headerOverlayHeight, bodyScrollTop),
           bottom: bodyRowTrackYToViewportY(Math.max(...bodyRowSelectionRows.map((row) => row.top + row.height)), headerOverlayHeight, bodyScrollTop),
           rowCount: axisSelection.rowCount,
-          draggable: axisSelection.draggable,
+          invalid: isRowAxisSelectionInvalid("body"),
         }
       : null;
   const axisColumnSelectionBand =
@@ -500,19 +524,14 @@ export default function TableStage({
           onDragStart={(event) => event.preventDefault()}
           onPointerDown={(event) => handleColumnRailPointerDown(metric.colIndex, event)}
           onClick={(event) => handleColumnRailSelect(metric.colIndex, event)}
-          aria-label={`Select column ${letters}`}
+          aria-label={`Select column ${letters}${hasLocalConfig ? ", custom formatting" : ""}`}
         >
-          <span className="column-index-label">
+          <span className="column-index-label axis-format-label" data-formatted={hasLocalConfig || undefined}>
             <span className="column-index-primary">{letters}</span>
-            <sup className="column-index-secondary" aria-hidden="true">
+            <sub className="column-index-secondary" aria-hidden="true">
               {colNumber}
-            </sup>
+            </sub>
           </span>
-          {hasLocalConfig ? (
-            <span className="column-index-config-badge" aria-hidden="true">
-              <ColumnConfigGlyph />
-            </span>
-          ) : null}
         </button>
       </div>
     );
@@ -563,11 +582,11 @@ export default function TableStage({
     setQuickAddPreview(null);
     if (count === 0) return;
     if (axis === "row") {
-      onQuickAddRows(count);
+      onAppendBodyRows(count);
     } else {
       onQuickAddColumns(count);
     }
-  }, [markQuickAddPointerCommit, onQuickAddRows, onQuickAddColumns]);
+  }, [markQuickAddPointerCommit, onAppendBodyRows, onQuickAddColumns]);
 
   const commitQuickAddDrag = useCallback((session: QuickAddDragSession, currentX: number, currentY: number) => {
     if (!session.active) {
@@ -744,14 +763,13 @@ export default function TableStage({
         cell.endCol >= axisSelection.colStart &&
         cell.startCol <= axisSelection.colEnd) ||
       (axisSelection?.axis === "row" &&
-        axisSelection.area === "header" &&
         cell.rowNumber >= axisSelection.rowStart &&
         cell.rowNumber <= axisSelection.rowEnd);
     const className = [
       "header-matrix-cell",
       selectedSlot >= 0 ? "has-slot-selection" : "",
       isAxisSelected ? "is-axis-selected" : "",
-      isAxisSelected && axisSelection?.axis === "row" && !axisSelection.draggable ? "is-axis-selection-invalid" : "",
+      isAxisSelected && isRowAxisSelectionInvalid("header") ? "is-axis-selection-invalid" : "",
       isDragSource ? "is-axis-drag-source" : "",
     ].filter(Boolean).join(" ");
     const style: CSSProperties & {
@@ -812,6 +830,7 @@ export default function TableStage({
 
   return (
     <div className={tableStageClassName} style={resolvedTableStageStyle} data-layout-ready={layoutReady}>
+      {createPortal(<div className="note-column-rail" style={resolvedTableStageStyle}>
       <div
         className={`table-corner ${railsPhaseClass}`}
         onMouseEnter={() => handleIndexRailsHoverChange(true)}
@@ -876,6 +895,7 @@ export default function TableStage({
         </div>
         {renderAppendColumnChromeSlot()}
       </div>
+      </div>, columnRailHost)}
 
       <div
         className={`row-index-strip ${railsPhaseClass}`}
@@ -916,8 +936,8 @@ export default function TableStage({
                   "is-header",
                   edge.isOrigin ? "is-origin" : "",
                   selectedRowNumber === row.number ? "is-active" : "",
-                  isRowAxisSelected(row.number, "header") ? "is-axis-selected" : "",
-                  isRowAxisSelected(row.number, "header") && isRowAxisSelectionInvalid("header") ? "is-axis-selection-invalid" : "",
+                  isRowAxisSelected(row.number) ? "is-axis-selected" : "",
+                  isRowAxisSelected(row.number) && isRowAxisSelectionInvalid("header") ? "is-axis-selection-invalid" : "",
                   isRowDragPreview(row.number, "header") ? "is-axis-drag-source" : "",
                 ].filter(Boolean).join(" ")}
                 style={{
@@ -959,8 +979,8 @@ export default function TableStage({
                       "row-index-cell",
                       edge.isOrigin ? "is-origin" : "",
                       selectedRowNumber === row.number ? "is-active" : "",
-                      isRowAxisSelected(row.number, "body") ? "is-axis-selected" : "",
-                      isRowAxisSelected(row.number, "body") && isRowAxisSelectionInvalid("body") ? "is-axis-selection-invalid" : "",
+                      isRowAxisSelected(row.number) ? "is-axis-selected" : "",
+                      isRowAxisSelected(row.number) && isRowAxisSelectionInvalid("body") ? "is-axis-selection-invalid" : "",
                       isRowDragPreview(row.number, "body") ? "is-axis-drag-source" : "",
                       edge.isTerminal ? "is-track-end" : "",
                     ].filter(Boolean).join(" ")
@@ -978,12 +998,13 @@ export default function TableStage({
                   <button
                     type="button"
                     className="row-index-main"
+                    aria-label={`Select row ${row.number}${rowHasLocalConfig[row.number - 1] ? ", custom formatting" : ""}`}
                     draggable={false}
                     onDragStart={(event) => event.preventDefault()}
                     onPointerDown={(event) => handleRowRailPointerDown(row.number, "body", event)}
                     onClick={(event) => handleRowRailSelect(row.number, "body", event)}
                   >
-                    {row.number}
+                    <span className="axis-format-label" data-formatted={rowHasLocalConfig[row.number - 1] || undefined}>{row.number}</span>
                   </button>
                 </div>
                 );
@@ -1051,7 +1072,7 @@ export default function TableStage({
           <div
             className={[
               "axis-row-selection-preview",
-              bodyRowSelectionBand.draggable ? "" : "is-invalid",
+              bodyRowSelectionBand.invalid ? "is-invalid" : "",
             ].filter(Boolean).join(" ")}
             data-row-count={bodyRowSelectionBand.rowCount}
             style={{
@@ -1298,6 +1319,7 @@ export default function TableStage({
             onCellMouseDown={handleCellMouseDown}
             onCellDoubleClicked={handleCellDoubleClicked}
             onCellKeyDown={handleCellKeyDown}
+            tabToNextCell={handleTabToNextCell}
             rowClassRules={rowClassRules}
           />
         </div>
@@ -1312,6 +1334,9 @@ export default function TableStage({
             aria-hidden="true"
           />
         ) : null}
+        <div ref={noteFooterRef} className="sheet-note-footer" style={{ top: headerOverlayHeight + rowIndexTrackHeight, width: tableFootprint.width }}>
+          {afterTableNote}
+        </div>
       </div>
     </div>
   );

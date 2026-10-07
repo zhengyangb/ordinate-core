@@ -83,6 +83,8 @@ Rules:
 - Shift-clicking a rail item may extend to a contiguous axis segment in V2.
 - Dragging from an unselected rail item selects a contiguous axis segment in V2.
 - Dragging a selected rail item moves the selected axis segment.
+- Row selection is geometric and may span the header/body divider, in either direction, by dragging or Shift-clicking. Its region is derived from the complete selected bounds, not stored as selection state.
+- Mixed header/body selections remain normally highlighted, cannot start a move, and hide region-only menu commands (row defaults, duplicate, delete, and header conversion) instead of displaying disabled explanations. Insertion remains local to the clicked rail; note conversion is offered only when the core preview accepts the entire selection.
 
 V1 may defer persistent multi-axis selection, but should avoid decisions that make V2 difficult.
 
@@ -180,7 +182,7 @@ Interactions:
 Validation:
 
 - Multi-column selection must be contiguous and entirely in data columns.
-- Multi-row selection must be contiguous and entirely within header rows or body rows.
+- Multi-row selection must be contiguous. A move source must remain entirely within header rows or body rows; selection itself may span both.
 - Body row selection must cover complete hierarchy subtrees where required.
 - Invalid partial hierarchy selections should not be draggable.
 

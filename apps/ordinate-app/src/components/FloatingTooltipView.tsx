@@ -4,9 +4,13 @@ import { tooltipPosition } from "../utils/tooltipPosition";
 
 export default function FloatingTooltipView({ tooltip }: { tooltip: FloatingTooltip | null }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Visibility may end before the exit transition does. Keep the last payload
+  // so the text and its surface fade out together without collapsing the box.
+  const [lastTooltip, setLastTooltip] = useState(tooltip);
   const [position, setPosition] = useState({ left: 0, top: 0, placement: "below" as "above" | "below" });
   useLayoutEffect(() => {
     if (!tooltip) return;
+    setLastTooltip(tooltip);
     const element = ref.current!;
     const measure = () => setPosition(tooltipPosition(tooltip.anchor,
       { width: element.offsetWidth, height: element.offsetHeight },
@@ -21,5 +25,5 @@ export default function FloatingTooltipView({ tooltip }: { tooltip: FloatingTool
     data-placement={position.placement} data-alignment="center"
     role="tooltip" aria-hidden={!tooltip}
     style={{ top: position.top, left: position.left }}
-  >{tooltip?.text ?? ""}</div>;
+  >{(tooltip ?? lastTooltip)?.text ?? ""}</div>;
 }

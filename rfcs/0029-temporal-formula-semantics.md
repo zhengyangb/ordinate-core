@@ -389,6 +389,15 @@ date(2026-03-24T14:30:00Z) -> 2026-03-24
 
 `time(datetime)` extracts the time component and preserves offset state.
 
+`time(date)` is invalid. A date does not implicitly acquire a midnight clock.
+Callers that need midnight must explicitly construct `datetime(date, 00:00)`.
+
+The standard type predicate `isDate(value)` returns true only for the native
+`date` kind. It returns false for `datetime` (including midnight), date-looking
+text, numbers, blank, null and errors. Like the predicates in RFC-0023, it maps
+over views element-wise. This distinguishes calendar types without changing
+extraction or arithmetic semantics; Excel adapter decisions are in RFC-0042.
+
 ```text
 time(2026-03-24T14:30:00Z) -> 14:30:00Z
 ```

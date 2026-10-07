@@ -4,6 +4,11 @@ import type { DesktopWindowState, FileReference } from "../src/platform/storage"
 
 const file: FileReference = { id: "capability", displayName: "Untrusted name", adapterKind: "electron" };
 describe("native document presentation", () => {
+  it("uses the host's draft name without creating a represented file URL", () => {
+    const result = windowPresentation({file:null, edited:true, appearance:"dark", chromeColor:"#343532"}, vi.fn(), "季度报告");
+    expect(result.title).toBe("季度报告");
+    expect(result.filename).toBe("");
+  });
   it("uses the granted path for the system title and proxy, not renderer text", () => {
     const resolve = vi.fn(() => "/Documents/季度报告.ord");
     expect(windowPresentation({ file, edited: true, appearance: "dark", chromeColor: "#343532" }, resolve)).toEqual({

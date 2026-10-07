@@ -1,8 +1,9 @@
 import { open, readFile, rename, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { validateDocumentName } from "../src/platform/documentName.js";
 
-export type DocumentSession = { id: string; filename: string | null; text: string | null };
+export type DocumentSession = { id: string; filename: string | null; text: string | null; draftName?: string };
 
 /** Window identity also names its durable untitled draft. Save all windows together. */
 export function createWorkspaceSession(directory: string) {
@@ -32,6 +33,7 @@ export function createWorkspaceSession(directory: string) {
         || (record.filename !== null && (typeof record.filename !== "string" || !path.isAbsolute(record.filename)))
         || (record.text !== null && typeof record.text !== "string"))
         || new Set(records.map(record => record.id)).size !== records.length) throw new Error("Invalid document workspace");
+      for (const record of records) if (record.draftName !== undefined) validateDocumentName(record.draftName);
       return records;
     },
     write(records: DocumentSession[]): Promise<void> {

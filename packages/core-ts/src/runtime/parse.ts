@@ -5,7 +5,6 @@ import {
   type FormatSpec,
   type FunctionCall,
   type IndexAxisExpr,
-  type NumericFormatSpec,
   type ParsedDisplayMetadata,
   type ParsedCell,
   type CellBodyState,
@@ -18,14 +17,24 @@ import {
   type TextColor,
   type TextWeight,
 } from "./types";
-import { validateFormatSpec } from "./displayMetadata";
 import { diagnosticFromError, makeError, makeInternalError } from "./errors";
 import { parseTemporalLiteral } from "./temporal";
-import { parseTemporalFormatSpec } from "./temporalFormat";
+import { parseFormatSpec, serializeFormatSpec } from "./formatting";
 import { buildFormulaConcreteSyntax, type FormulaParserToken } from "./formulaInspection";
 import { normalizeTextLineEndings, trimCellText } from "../text_encoding";
+import { parseSpreadsheetAddress } from "./spreadsheetAddress";
+import { FSTRING_LIMITS, scanFString } from "./fStringSyntax";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
+
+/** Shared metadata-only grammar for either axis of the @display frame. */
+export function parseDisplayControlCell(raw: string): ParsedDisplayMetadata {
+  const parsed = parseCellInput(raw);
+  if (stripCellDisplayMetadata(raw).trim() !== "" || !parsed.localDisplay) {
+    return {valid:false,rawBlock:raw.trim(),issue:{code:"display_control_cell_requires_metadata_only",context:{}}};
+  }
+  return parsed.localDisplay;
+}
 const THIS_COL_RE = /^thisCol\((-?\d+)\)$/;
 const UNDERSCORE_OFFSET_RE = /^_([+-]?\d+)$/;
 const NUMBER_RE = /^-?\d+(?:\.\d+)?$/;
@@ -163,6 +172,11 @@ function parseExpressionError(expr: ExprNode | null): ErrorRuntimeValue | null {
       const err = parseExpressionError(arg);
       if (err) return err;
     }
+    const spec = call.args[1];
+    if (call.name.toLowerCase() === "format" && spec?.kind === "literal" && (spec.value as RuntimeValue).kind === "string") {
+      const parsed = parseFormatSpec((spec.value as { value: string }).value);
+      if ("issue" in parsed) return makeInternalError("parse_invalid_format_spec", { ...parsed.issue });
+    }
     return null;
   }
   if (expr.kind === "array") {
@@ -232,18 +246,6 @@ function renderDisplayMetadataBlock(display: ParsedDisplayMetadata | null): stri
   return blocks.join(" ");
 }
 
-function serializeFormatSpec(spec: FormatSpec): string {
-  if (spec.kind === "temporal") return spec.pattern;
-  let out = "";
-  if (spec.sign === "plus") out += "+";
-  else if (spec.sign === "parentheses") out += "()";
-  if (spec.padWidth !== null) out += `${spec.padWidth}`;
-  if (spec.grouping) out += ",";
-  if (spec.precision !== null) out += `.${spec.precision}`;
-  if (spec.type !== null) out += spec.type;
-  return out;
-}
-
 function serializeStyleSpec(spec: StyleSpec): string {
   const parts: string[] = [];
   if (spec.align === "left") parts.push("<");
@@ -298,9 +300,27 @@ export function stripCellDisplayMetadata(text: string): string {
 }
 
 // Parse a formula expression into an AST node.
-function parseExpression(text: string): ExprNode {
-  const parser = new ExprParser(buildFormulaConcreteSyntax(text).parserTokens);
+function parseExpression(text: string, field = false): ExprNode {
+  const tokens = buildFormulaConcreteSyntax(text).parserTokens;
+  if (field && tokens.length > FSTRING_LIMITS.expressionTokens) return { kind: "literal", value: makeInternalError("parse_f_string_expression_limit") };
+  const parser = new ExprParser(tokens);
   const node = parser.parseExpression();
+  if (field) {
+    const pending: Array<[ExprNode, number]> = [[node, 0]];
+    while (pending.length) {
+      const [current, depth] = pending.pop()!;
+      if (depth > FSTRING_LIMITS.depth) return { kind: "literal", value: makeInternalError("parse_f_string_expression_limit") };
+      if (current.left) pending.push([current.left, depth + 1]);
+      if (current.right) pending.push([current.right, depth + 1]);
+      if (current.kind === "call") for (const arg of (current.value as FunctionCall).args) pending.push([arg, depth + 1]);
+      if (current.kind === "array") for (const row of (current.value as ArrayExpr).rows) for (const arg of row) pending.push([arg, depth + 1]);
+      if (current.kind === "index") {
+        const index = current.value as { target: ExprNode; axes: IndexAxisExpr[] };
+        pending.push([index.target, depth + 1]);
+        for (const axis of index.axes) for (const arg of axis.kind === "scalar" ? [axis.value] : [axis.start, axis.end]) if (arg) pending.push([arg, depth + 1]);
+      }
+    }
+  }
   if (!parser.atEnd()) {
     const existingError = parseExpressionError(node);
     if (existingError) return node;
@@ -479,6 +499,21 @@ class ExprParser {
     if (str) {
       return { kind: "literal", value: parseQuotedString(str[1]) };
     }
+    const fstr = this.match("FSTRING");
+    if (fstr) {
+      const syntax = scanFString(fstr[1], 0);
+      if (syntax.error) return { kind: "literal", value: makeInternalError(syntax.error.code) };
+      const parts: ExprNode[] = syntax.parts.map(part => part.kind === "text"
+        ? { kind: "literal", value: { kind: "string", value: part.text } }
+        : { kind: "call", sourceForm: "f_field", value: { name: "format", args: [
+          parseExpression(fstr[1].slice(part.expression.start, part.expression.end), true),
+          ...(part.spec === undefined ? [] : [{ kind: "literal", value: { kind: "string", value: part.spec } }]),
+        ] } as FunctionCall });
+      const result = parts.length ? parts.reduce((left, right) => ({ kind: "binary", value: "+", left, right, sourceForm: "f_concat" }))
+        : { kind: "literal", value: { kind: "string", value: "" } };
+      result.sourceForm = "f_string";
+      return result;
+    }
     const errLit = this.match("ERROR_LITERAL");
     if (errLit) {
       return { kind: "literal", value: makeError(errLit[1], "literal_error_literal", { source: "formula" }) };
@@ -507,6 +542,7 @@ class ExprParser {
       return parseReferenceNode(ref[1]);
     }
     this.pos += 1;
+    if (tk[0] === "ERR" && tk[1].startsWith("parse_f_string")) return { kind: "literal", value: makeInternalError(tk[1]) };
     const diagnosticToken = CONCRETE_STRUCTURAL_TOKEN_KINDS.has(tk[0]) ? tk[1] : tk[0];
     return { kind: "literal", value: makeInternalError("parse_expression_unexpected_token", { token: diagnosticToken }) };
   }
@@ -576,10 +612,6 @@ class ExprParser {
     if (this.peek()?.[0] === "ARRAY_SEPARATOR" || this.peek()?.[0] === "ARRAY_CLOSE") {
       return { kind: "literal", value: makeInternalError("parse_array_missing_element") };
     }
-    if (this.peek()?.[0] === "IDENT" && isSpreadsheetLikeReferenceText(this.peek()?.[1] ?? "")) {
-      this.pos += 1;
-      return { kind: "literal", value: makeInternalError("parse_array_spreadsheet_reference_unsupported") };
-    }
     return this.parseExpression();
   }
 
@@ -611,10 +643,6 @@ function arrayRowsHaveSameLength(rows: readonly ExprNode[][]): boolean {
   return rows.every((row) => row.length === width);
 }
 
-function isSpreadsheetLikeReferenceText(text: string): boolean {
-  return /^[A-Za-z]+[1-9]\d*$/.test(text);
-}
-
 // Parse a reference expression such as @[Revenue,2025] or @["Inputs"::[Revenue,2025]].
 function parseReferenceNode(text: string): ExprNode {
   const parsed = parseReference(text);
@@ -628,7 +656,7 @@ export type FormulaReferenceSelectorSyntax =
   | Readonly<{ kind: "invalid" }>
   | Readonly<{ kind: "all" }>
   | Readonly<{ kind: "current" }>
-  | Readonly<{ kind: "offset" | "absolute" | "absolute_fixed"; value: number }>
+  | Readonly<{ kind: "offset" | "absolute" | "absolute_fixed"; value: number; copyFixed?: true }>
   | Readonly<{ kind: "label"; value: readonly string[] }>
   | Readonly<{
       kind: "range";
@@ -659,7 +687,7 @@ export function parseFormulaReferenceSyntax(text: string): FormulaReferenceSynta
       : null;
     const parsed = parseReference(text);
     return {
-      style: "ordinate",
+      style: parsed.ok ? parsed.ref.style ?? "ordinate" : "ordinate",
       crossSheet,
       sheetName: sheetSelector?.value ?? null,
       reference: parsed.ok && !referenceHasInvalidSelector(parsed.ref) ? projectReferenceSyntax(parsed.ref) : null,
@@ -693,7 +721,7 @@ function projectReferenceSelectorSyntax(selector: RefSelector): FormulaReference
   }
   if (selector.kind === "offset" || selector.kind === "absolute" || selector.kind === "absolute_fixed") {
     if (typeof selector.value !== "number") throw new Error(`Invalid ${selector.kind} selector projection.`);
-    return { kind: selector.kind, value: selector.value };
+    return { kind: selector.kind, value: selector.value, ...(selector.copyFixed ? { copyFixed: true as const } : {}) };
   }
   if (selector.kind === "label") {
     if (!Array.isArray(selector.value) || !selector.value.every((part) => typeof part === "string")) {
@@ -743,6 +771,8 @@ function parseReference(text: string): ParsedReference {
     if (!sheetSelector) {
       return { ok: false, internalKind: "parse_cross_sheet_reference_invalid_sheet_selector", context: { source: text } };
     }
+    const spreadsheet = parseSpreadsheetAddress(targetText);
+    if (spreadsheet) return { ok: true, ref: { ...spreadsheet, sheetSelector } };
     if (!targetText.startsWith("[") || !targetText.endsWith("]")) {
       return { ok: false, internalKind: "parse_cross_sheet_reference_missing_target_brackets", context: { source: text } };
     }
@@ -851,78 +881,9 @@ function selectorHasContextualReference(selector: RefSelector | null): boolean {
 
 // Parse a spreadsheet-style reference such as A1, A1:B5, A:A, or 1:1.
 function parseSpreadsheetReference(text: string): ReferenceExpr {
-  const trimmed = text.trim();
-  const parts = trimmed.split(":");
-  if (parts.length === 1) {
-    const cell = parseCellAddress(parts[0]);
-    if (!cell) {
-      return { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "spreadsheet" };
-    }
-    return {
-      rowSelector: { kind: "absolute", value: cell.row },
-      colSelector: { kind: "absolute", value: cell.col },
-      style: "spreadsheet",
-    };
-  }
-  if (parts.length !== 2) {
-    return { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "spreadsheet" };
-  }
-
-  const left = parts[0].trim();
-  const right = parts[1].trim();
-  const leftCell = parseCellAddress(left);
-  const rightCell = parseCellAddress(right);
-  if (leftCell && rightCell) {
-    return {
-      rowSelector: {
-        kind: "range",
-        value: [
-          { kind: "absolute", value: leftCell.row },
-          { kind: "absolute", value: rightCell.row },
-        ],
-      },
-      colSelector: {
-        kind: "range",
-        value: [
-          { kind: "absolute", value: leftCell.col },
-          { kind: "absolute", value: rightCell.col },
-        ],
-      },
-      style: "spreadsheet",
-    };
-  }
-
-  const leftCol = columnLabelToIndex(left);
-  const rightCol = columnLabelToIndex(right);
-  if (leftCol !== null && rightCol !== null) {
-    return {
-      rowSelector: { kind: "all" },
-      colSelector: {
-        kind: "range",
-        value: [
-          { kind: "absolute", value: leftCol },
-          { kind: "absolute", value: rightCol },
-        ],
-      },
-      style: "spreadsheet",
-    };
-  }
-
-  if (/^[1-9]\d*$/.test(left) && /^[1-9]\d*$/.test(right)) {
-    return {
-      rowSelector: {
-        kind: "range",
-        value: [
-          { kind: "absolute", value: Number(left) - 1 },
-          { kind: "absolute", value: Number(right) - 1 },
-        ],
-      },
-      colSelector: { kind: "all" },
-      style: "spreadsheet",
-    };
-  }
-
-  return { rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "spreadsheet" };
+  return parseSpreadsheetAddress(text) ?? {
+    rowSelector: { kind: "invalid" }, colSelector: { kind: "invalid" }, style: "spreadsheet",
+  };
 }
 
 // Parse a row/column selector, including ranges.
@@ -962,6 +923,9 @@ function parseScalarSelector(text: string, isRow: boolean): RefSelector {
 
   const fixed = ABSOLUTE_FIXED_RE.exec(text);
   if (fixed) return { kind: "absolute_fixed", value: Number(fixed[1]) - 1 };
+
+  const copyFixed = /^#([1-9]\d*)\$$/.exec(text);
+  if (copyFixed) return { kind: "absolute", value: Number(copyFixed[1]) - 1, copyFixed: true };
 
   const abs = ABSOLUTE_RE.exec(text);
   if (abs) return { kind: "absolute", value: Number(abs[1]) - 1 };
@@ -1090,6 +1054,10 @@ function findTopLevelTrailingDisplayBlock(text: string): { start: number; end: n
 
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
+    if (!inQuote && text.startsWith('f"', i)) {
+      i = scanFString(text, i).end - 1;
+      continue;
+    }
     if (escaped) {
       escaped = false;
       continue;
@@ -1230,86 +1198,6 @@ function diagnostic(code: string, context: Record<string, unknown> = {}): Diagno
   return { code, context };
 }
 
-function parseFormatSpec(spec: string): { value: FormatSpec } | { issue: Diagnostic } {
-  const text = spec.trim();
-  if (text === "") return { issue: diagnostic("empty_format_spec") };
-
-  const temporalSpec = parseTemporalFormatSpec(text);
-  if (temporalSpec) return temporalSpec;
-
-  if (/\s/.test(text)) return { issue: diagnostic("format_spec_contains_whitespace") };
-
-  let i = 0;
-  let sign: NumericFormatSpec["sign"] = "default";
-  if (text.startsWith("+")) {
-    sign = "plus";
-    i += 1;
-  } else if (text.startsWith("()")) {
-    sign = "parentheses";
-    i += 2;
-  }
-
-  let padWidth: number | null = null;
-  const padWidthStart = i;
-  while (i < text.length && /[0-9]/.test(text[i])) {
-    i += 1;
-  }
-  if (i > padWidthStart) {
-    padWidth = Number(text.slice(padWidthStart, i));
-  }
-
-  let grouping = false;
-  if (i < text.length && text[i] === ",") {
-    grouping = true;
-    i += 1;
-  }
-
-  let precision: number | null = null;
-  if (i < text.length && text[i] === ".") {
-    i += 1;
-    const pStart = i;
-    while (i < text.length && /[0-9]/.test(text[i])) {
-      i += 1;
-    }
-    if (i === pStart) {
-      return { issue: diagnostic("precision_requires_digits") };
-    }
-    precision = Number(text.slice(pStart, i));
-  }
-
-  let type: NumericFormatSpec["type"] = null;
-  if (i < text.length) {
-    const ch = text[i];
-    if (ch === "f" || ch === "e" || ch === "%" || ch === "d") {
-      type = ch;
-      i += 1;
-    } else {
-      return { issue: diagnostic(`unsupported_format_type:${ch}`) };
-    }
-  }
-
-  if (i !== text.length) {
-    return { issue: diagnostic("invalid_format_spec_trailing_chars") };
-  }
-
-  const value = {
-    kind: "numeric",
-    sign,
-    padWidth,
-    grouping,
-    precision,
-    type,
-  } satisfies NumericFormatSpec;
-  const compatibilityIssue = validateFormatSpec(value);
-  if (compatibilityIssue) {
-    return { issue: compatibilityIssue };
-  }
-
-  return {
-    value,
-  };
-}
-
 function parseStyleSpec(spec: string): { value: StyleSpec } | { error: string } {
   const text = spec.trim();
   if (text === "") return { error: "empty_style_spec" };
@@ -1375,28 +1263,6 @@ function parseStyleSpec(spec: string): { value: StyleSpec } | { error: string } 
       color,
     },
   };
-}
-
-function parseCellAddress(text: string): { row: number; col: number } | null {
-  const match = /^([A-Za-z]+)([1-9]\d*)$/.exec(text);
-  if (!match) return null;
-  const col = columnLabelToIndex(match[1]);
-  if (col === null) return null;
-  const row = Number(match[2]) - 1;
-  return { row, col };
-}
-
-function columnLabelToIndex(text: string): number | null {
-  if (!/^[A-Za-z]+$/.test(text)) return null;
-  let value = 0;
-  const upper = text.toUpperCase();
-  for (let i = 0; i < upper.length; i += 1) {
-    const code = upper.charCodeAt(i);
-    const digit = code - 64; // A -> 1
-    if (digit < 1 || digit > 26) return null;
-    value = value * 26 + digit;
-  }
-  return value - 1;
 }
 
 // Unescape a quoted string literal.

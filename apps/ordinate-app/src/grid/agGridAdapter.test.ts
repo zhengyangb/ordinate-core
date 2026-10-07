@@ -1,9 +1,9 @@
 import type { GridApi } from "ag-grid-community";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { GridRow } from "../types/ui";
 import type { GridScrollSnapshot } from "../utils/gridGeometry";
-import { createAgGridAdapter } from "./agGridAdapter";
+import { createAgGridAdapter, focusAppendedBodyRow } from "./agGridAdapter";
 
 type MockDisplayedColumn = {
   getActualWidth(): number;
@@ -27,6 +27,33 @@ function mockColumn(args: {
 }
 
 describe("agGridAdapter", () => {
+  it("focuses an appended row only after it reaches the live grid model", () => {
+    const rows = [2, 3, 4, 5];
+    const setFocusedCell = vi.fn();
+    const api = {
+      getDisplayedRowCount: () => rows.length,
+      getDisplayedRowAtIndex: (index: number) => ({ data: { __absoluteRowNumber: rows[index] } }),
+      setFocusedCell,
+    } as unknown as GridApi<GridRow>;
+    const target = { rAbs: 6, colId: "col_0" };
+    expect(focusAppendedBodyRow(api, target)).toBe(false);
+    expect(setFocusedCell).not.toHaveBeenCalled();
+    rows.push(6);
+    expect(focusAppendedBodyRow(api, target)).toBe(true);
+    expect(setFocusedCell).toHaveBeenCalledExactlyOnceWith(4, "col_0");
+  });
+
+  it("resolves appended focus using displayed indices, including collapsed rows", () => {
+    const setFocusedCell = vi.fn();
+    const api = {
+      getDisplayedRowCount: () => 2,
+      getDisplayedRowAtIndex: (index: number) => ({ data: { __absoluteRowNumber: index === 0 ? 2 : 18 } }),
+      setFocusedCell,
+    } as unknown as GridApi<GridRow>;
+    expect(focusAppendedBodyRow(api, { rAbs: 18, colId: "col_1" })).toBe(true);
+    expect(setFocusedCell).toHaveBeenCalledExactlyOnceWith(1, "col_1");
+  });
+
   it("uses displayed column metrics as the column geometry source of truth", () => {
     const adapter = createAgGridAdapter();
     const api = {

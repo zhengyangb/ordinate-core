@@ -1,5 +1,6 @@
 import { type Diagnostic, type RuntimeValue, type TemporalFormatDirective, type TemporalFormatSpec, type TemporalFormatToken } from "./types";
 import { decomposeDurationValue, decomposeTemporalValue, fixedDurationParts, type FixedDurationParts, type TemporalValueParts } from "./temporal";
+import { MAX_TEXT_LENGTH } from "./textLimits";
 
 type TemporalFormatParseResult = { value: TemporalFormatSpec } | { issue: Diagnostic } | null;
 
@@ -120,6 +121,7 @@ export function formatTemporalValue(value: RuntimeValue, format: TemporalFormatS
 
   let out = "";
   for (let i = 0; i < format.pattern.length; i += 1) {
+    if (out.length > MAX_TEXT_LENGTH) return { issue: diagnostic("format_output_limit", { max: MAX_TEXT_LENGTH }) };
     const ch = format.pattern[i];
     if (ch !== "%") {
       out += ch;
@@ -163,7 +165,7 @@ export function formatTemporalValue(value: RuntimeValue, format: TemporalFormatS
     i += 1;
   }
 
-  return { text: out };
+  return boundedResult(out);
 }
 
 function formatDurationTemporalValue(value: RuntimeValue, format: TemporalFormatSpec): { text: string } | { issue: Diagnostic } {
@@ -180,6 +182,7 @@ function formatDurationTemporalValue(value: RuntimeValue, format: TemporalFormat
   let out = "";
   let signApplied = false;
   for (let i = 0; i < format.pattern.length; i += 1) {
+    if (out.length > MAX_TEXT_LENGTH) return { issue: diagnostic("format_output_limit", { max: MAX_TEXT_LENGTH }) };
     const ch = format.pattern[i];
     if (ch !== "%") {
       out += ch;
@@ -230,7 +233,11 @@ function formatDurationTemporalValue(value: RuntimeValue, format: TemporalFormat
     i += 1;
   }
 
-  return { text: out };
+  return boundedResult(out);
+}
+
+function boundedResult(text: string): { text: string } | { issue: Diagnostic } {
+  return text.length > MAX_TEXT_LENGTH ? { issue: diagnostic("format_output_limit", { max: MAX_TEXT_LENGTH }) } : { text };
 }
 
 function formatDirective(

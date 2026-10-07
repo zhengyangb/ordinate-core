@@ -1,0 +1,57 @@
+.integer-stepper-field { min-width: 0; }
+
+.integer-stepper {
+    display: grid;
+    grid-template-columns: var(--stepper-button-width, 2.25rem) minmax(0, 1fr) var(--stepper-button-width, 2.25rem);
+    align-items: stretch;
+    padding: 3px;
+    border: 1px solid var(--chrome-border);
+    border-radius: var(--menu-item-radius);
+    background: var(--toolbar-pill);
+}
+
+.integer-stepper-button,
+.integer-stepper-input {
+    box-sizing: border-box;
+    min-width: 0;
+    height: var(--stepper-control-height, 2rem);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: max(3px, calc(var(--menu-item-radius) - 4px));
+    background: transparent;
+    font: inherit;
+    color: var(--chrome-ink);
+}
+
+.integer-stepper-button {
+    display: grid;
+    place-items: center;
+    color: var(--chrome-soft);
+    font-size: 1.2rem;
+    font-weight: 400;
+    line-height: 1;
+    cursor: default;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+.integer-stepper:hover .integer-stepper-button:not(:disabled),
+.integer-stepper:focus-within .integer-stepper-button:not(:disabled) { color: var(--chrome-ink); }
+.integer-stepper-button:hover:not(:disabled) { background: var(--menu-hover-bg); }
+.integer-stepper-button:active:not(:disabled) { background: var(--accent-soft); color: var(--accent-strong); }
+.integer-stepper-button:disabled { color: var(--chrome-faint); }
+.integer-stepper[data-disabled="true"] { opacity: .6; }
+
+.integer-stepper-input {
+    width: 100%;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    appearance: textfield;
+}
+.integer-stepper-input::-webkit-inner-spin-button,
+.integer-stepper-input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.integer-stepper-input:focus { background: var(--sheet-surface); }
+.integer-stepper-button:focus-visible,
+.integer-stepper-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.integer-stepper-error { margin: .3rem 0 0; color: var(--menu-danger-ink); font-size: .75rem; font-weight: 400; line-height: 1.45; }
+@media (prefers-reduced-motion: reduce) { .integer-stepper-button { transition: none; } }

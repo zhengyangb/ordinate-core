@@ -2,6 +2,7 @@ import type { SheetBodyRowStructure } from "@ordinate/core";
 
 import type { ColumnMetric, GridRow, HeaderIndexMetric, RowIndexMetric } from "../types/ui";
 import { columnViewportXToTrackX, type ColumnAxisViewport } from "./gridGeometry";
+import { rowSelectionRegion } from "./selectionModel";
 
 export type AxisMoveDropMapping =
   | { kind: "target"; targetGapIndex: number }
@@ -64,7 +65,6 @@ export type ColumnAxisSelection = {
 
 export type RowAxisSelection = {
   axis: "row";
-  area: "header" | "body";
   rowStart: number;
   rowEnd: number;
 };
@@ -82,6 +82,7 @@ export function canStartColumnRailMoveDrag(
 export function canStartRowRailMoveDrag(
   rowNumber: number,
   area: "header" | "body",
+  headerRowCount: number,
   axisSelection: RowAxisSelection | null,
   modifiers: AxisRailDragModifiers,
 ): boolean {
@@ -89,7 +90,7 @@ export function canStartRowRailMoveDrag(
   if (hasAxisRailDragModifier(modifiers)) return false;
   return Boolean(
     axisSelection &&
-      axisSelection.area === area &&
+      rowSelectionRegion(axisSelection, headerRowCount) === area &&
       rowNumber >= axisSelection.rowStart &&
       rowNumber <= axisSelection.rowEnd,
   );
@@ -126,7 +127,6 @@ export function canStartRowRailSelectionDrag(
   if (area === "body" && (rowNumber <= headerRowCount || rowNumber > rowCount)) return false;
   return !(
     axisSelection &&
-    axisSelection.area === area &&
     rowNumber >= axisSelection.rowStart &&
     rowNumber <= axisSelection.rowEnd
   );
@@ -196,11 +196,13 @@ export function resolveRowDragSource(
   assertNonNegativeInteger(headerRowCount, "headerRowCount");
   const useSelection =
     selection &&
-    selection.area === area &&
     rowNumber >= selection.rowStart &&
     rowNumber <= selection.rowEnd
       ? selection
       : null;
+  if (useSelection && rowSelectionRegion(useSelection, headerRowCount) !== area) {
+    return { ok: false, reason: "Move rows within the same row region." };
+  }
   const rowIndex = rowNumber - 1;
 
   if (area === "header") {
@@ -421,6 +423,19 @@ export function resolveHeaderRowDropGap(localY: number, metrics: HeaderIndexMetr
 
 export function resolveHeaderRowNumberAtTrackY(localY: number, metrics: HeaderIndexMetric[]): number | null {
   return resolveRowNumberAtTrackY(localY, metrics);
+}
+
+/** Header and scrolled body rails have separate origins, but share one row selection. */
+export function resolveRowRailSelectionFocus(
+  headerTrackY: number,
+  bodyTrackY: number,
+  headers: HeaderIndexMetric[],
+  body: RowIndexMetric[],
+): number | null {
+  const lastHeader = headers.at(-1);
+  return lastHeader && headerTrackY < lastHeader.top + lastHeader.height
+    ? resolveHeaderRowNumberAtTrackY(headerTrackY, headers)
+    : resolveBodyRowNumberAtTrackY(bodyTrackY, body);
 }
 
 export function resolveHeaderRowDropBoundary(localY: number, metrics: HeaderIndexMetric[]): AxisDropBoundary | null {

@@ -2,22 +2,26 @@ import { app, BrowserWindow, dialog, Menu, nativeTheme } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNativeStorage } from "./fileStorage.js";
+import { createNativeInterchange } from "./interchangeStorage.js";
+import { FORMATS, IMPORT_FORMATS, MAX_EXPORT_BYTES } from "../src/interchange/contracts.js";
 import { createDocumentHost } from "./documentHost.js";
 import { createWindowIpc } from "./windowIpc.js";
 import { createVersionHistory } from "./versionHistory.js";
 import { watchDocument } from "./fileWatcher.js";
 import { appKit, setNativeChrome } from "./nativeChrome.js";
 import { windowPresentation } from "./windowPresentation.js";
+import { createSheetPrinter } from "./printing.js";
 import type { DocumentSession } from "./workspaceSession.js";
 import type { FileSnapshot, StorageResult } from "../src/platform/storage.js";
+import { documentSaveName, validateDocumentName } from "../src/platform/documentName.js";
 
 type Options = {
   record: DocumentSession;
   rendererUrl: string;
   persist: () => Promise<void>;
-  open: (parent: BrowserWindow) => Promise<void>;
+  open: (parent: BrowserWindow, filename?: string) => Promise<void>;
   newDocument: (parent: BrowserWindow) => Promise<void>;
-  duplicate: (text: string, parent: BrowserWindow) => Promise<void>;
+  createUntitled: (text: string, parent: BrowserWindow, draftName?: string) => Promise<void>;
   checkDestination: (filename: string) => Promise<void>;
   isQuitting: () => boolean;
   closed: () => void;
@@ -26,17 +30,45 @@ type Options = {
 export function createDocumentWindow(options: Options) {
   const { record, rendererUrl } = options;
   const win = new BrowserWindow({
-    title: record.filename ? path.basename(record.filename) : "Untitled",
+    title: record.filename ? path.basename(record.filename) : record.draftName ?? "Untitled",
     width: 1280, height: 860, minWidth: 640, minHeight: 480,
     backgroundColor: "#f5f5f4", show: false, titleBarStyle: "default",
     ...(process.platform === "darwin" ? { tabbingIdentifier: "dev.ordinate.documents" } : {}),
     webPreferences: {
       preload: path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.cjs"),
-      additionalArguments: [`--ordinate-session=${record.id}`],
+      additionalArguments: [`--ordinate-session=${record.id}`, `--ordinate-locale=${app.getSystemLocale()}`],
       nodeIntegration: false, contextIsolation: true, sandbox: true,
     },
   });
   const ipc = createWindowIpc(win, rendererUrl);
+  ipc.handle("document:print", createSheetPrinter(win, appKit));
+  const interchange = createNativeInterchange({
+    open: async () => {
+      const result = await dialog.showOpenDialog(win, { title: "Import spreadsheet", properties: ["openFile"],
+        filters: [{ name: "Spreadsheets", extensions: [...IMPORT_FORMATS] }] });
+      if (result.canceled) return null;
+      if (!result.filePaths[0]) throw new Error("Import dialog returned no file");
+      return result.filePaths[0];
+    },
+    save: async file => {
+      const result = await dialog.showSaveDialog(win, { title: "Export a copy", defaultPath: file.name,
+        filters: [{ name: FORMATS[file.format].label, extensions: [file.format] }] });
+      if (result.canceled) return null;
+      if (!result.filePath) throw new Error("Export dialog returned no destination");
+      return result.filePath;
+    },
+    checkDestination: async filename => {
+      if (filename === record.filename) throw new Error("Export cannot overwrite the open document. Choose another filename; use Save to update this document.");
+      await options.checkDestination(filename);
+    },
+  });
+  ipc.handle("interchange:pick", () => interchange.pickImport());
+  ipc.handle("interchange:save", (_event, file) => interchange.saveExport(file));
+  ipc.handle("document:import", async (_event, text, name) => {
+    if (typeof text !== "string" || Buffer.byteLength(text) > MAX_EXPORT_BYTES) throw new Error("Invalid imported document.");
+    validateDocumentName(name);
+    await options.createUntitled(text, win, name);
+  });
   const history = createVersionHistory();
   const storage = createNativeStorage({
     open: async () => {
@@ -46,7 +78,7 @@ export function createDocumentWindow(options: Options) {
     },
     save: async () => {
       const result = await dialog.showSaveDialog(win, { title: "Save Ordinate document",
-        defaultPath: record.filename ?? "Untitled.ord", filters: [{ name: "Ordinate document", extensions: ["ord"] }] });
+        defaultPath: record.filename ?? documentSaveName({file: null, draftName: record.draftName ?? null}), filters: [{ name: "Ordinate document", extensions: ["ord"] }] });
       if (result.canceled) return null;
       if (!result.filePath) throw new Error("Save dialog returned no destination");
       await options.checkDestination(result.filePath);
@@ -60,6 +92,7 @@ export function createDocumentWindow(options: Options) {
       const filename = storage.documentPath(result.value.file);
       const changed = record.filename !== filename;
       record.filename = filename;
+      delete record.draftName;
       record.text = null;
       if (process.platform === "darwin") {
         // Registers the URL for AppKit's Open Recent menu.
@@ -82,17 +115,25 @@ export function createDocumentWindow(options: Options) {
   ipc.on("document:ready", () => host.ready());
   ipc.handle("document:commit", async (_event, id, write) => adopt(await host.commit(id, write)));
   ipc.handle("document:read", async (_event, id) => adopt(await host.read(id)));
-  ipc.handle("document:restore", async () => ({
-    snapshot: record.filename ? await adopt(await storage.readPath(record.filename)) : null,
-    text: record.text,
-  }));
+  ipc.handle("document:restore", async () => {
+    return {
+      snapshot: record.filename ? await adopt(await storage.readPath(record.filename)) : null,
+      text: record.text, draftName: record.draftName,
+    };
+  });
   ipc.handle("document:complete", (_event, id, error) => host.complete(id, error));
-  ipc.handle("document:open", () => options.open(win));
+  ipc.handle("document:open", (_event, filename?: unknown) => {
+    if (filename === undefined) return options.open(win);
+    if (typeof filename !== "string" || !path.isAbsolute(filename) || path.extname(filename).toLowerCase() !== ".ord") {
+      throw new Error("Drop an .ord document to open it.");
+    }
+    return options.open(win, filename);
+  });
   ipc.handle("document:new", () => options.newDocument(win));
   ipc.handle("document:duplicate", async (_event, id, text) => {
     if (typeof text !== "string") throw new TypeError("Document content must be text");
     host.claimDuplicate(id);
-    await options.duplicate(text, win);
+    await options.createUntitled(text, win);
   });
   for (const method of ["open", "save", "saveAs", "readCurrent", "availability"] as const) {
     ipc.handle(`file:${method}`, async (_event, ...args) => {
@@ -102,13 +143,13 @@ export function createDocumentWindow(options: Options) {
     });
   }
   ipc.handle("window:update", async (_event, state) => {
-    const presentation = windowPresentation(state, storage.documentPath);
+    const presentation = windowPresentation(state, storage.documentPath, record.draftName);
     nativeTheme.themeSource = presentation.themeSource;
     setNativeChrome(win, presentation.chromeColor);
     // Initial renderer effects run before the file has been restored.
     if (record.filename && !presentation.filename) return;
     win.setTitle(presentation.title);
-    host.update(presentation.filename, presentation.edited);
+    host.update(presentation.filename, presentation.edited, presentation.title);
   });
   ipc.handle("editor:nativeHistory", (_event, command: unknown) => {
     if (command !== "undo" && command !== "redo") throw new TypeError("Invalid history command");

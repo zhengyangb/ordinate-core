@@ -17,6 +17,30 @@ import {
 describe("formula assistant", () => {
   const functions = listStandardFunctionMetadata();
 
+  it.each(functions.filter(fn => fn.category === 'numeric' || fn.category === 'statistical').map(fn => fn.name))
+    ('offers %s from the runtime catalog and resolves its active argument', name => {
+      expect(buildFunctionSuggestions(functions, name).some(item => item.displayName === name)).toBe(true);
+      const draft = `= ${name}(`;
+      expect(resolveActiveFunctionCallContext(draft, draft.length, candidate => candidate === name))
+        .toMatchObject({ name, argumentIndex: 0 });
+      expect(getStandardFunctionMetadata(name)?.signatures.length).toBeGreaterThan(0);
+    });
+
+  it("completes functions in an unfinished interpolation, not literal text or specs", () => {
+    const field = '= f"Total: {for';
+    expect(resolveFunctionNameContext(field, field.length)).toMatchObject({ query: 'for' });
+    const literal = '= f"for';
+    expect(resolveFunctionNameContext(literal, literal.length)).toBeNull();
+    const spec = '= f"{A1:for';
+    expect(resolveFunctionNameContext(spec, spec.length)).toBeNull();
+    expect(functions.find(fn => fn.name === 'format')?.signatures).toHaveLength(2);
+  });
+
+  it("shows the active function parameter inside an f-string field", () => {
+    const draft = '= f"{format(A1, ';
+    expect(resolveActiveFunctionCallContext(draft, draft.length, name => name === 'format')).toMatchObject({ name: 'format', argumentIndex: 1 });
+  });
+
   it("detects a prefix function-name context in a formula draft", () => {
     expect(resolveFunctionNameContext("=su", 3)).toEqual({
       kind: "name",

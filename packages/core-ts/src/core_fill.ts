@@ -25,7 +25,7 @@ function validateRect(sheet: SheetState, rect: CoreFillRect): void {
 
 /** Only positional selectors move. Labels, current/offset selectors and fixed axes retain their meaning. */
 function shiftSelector(selector: RefSelector, delta: number): RefSelector {
-  if (selector.kind === "absolute") {
+  if (selector.kind === "absolute" && !selector.copyFixed) {
     const value = Number(selector.value) + delta;
     return value < 0 ? { kind: "invalid" } : { kind: "absolute", value };
   }

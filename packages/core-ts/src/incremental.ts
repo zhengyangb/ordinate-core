@@ -1,9 +1,11 @@
-import { parseDocument, parseHierarchyLabel, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
+import { parseDocument, parseHierarchyLabel, parseTableRow, stripDisplayControlFrame, type ParsedRow, type UnparsedBlock } from "./parser";
+import { assertNotePosition, parseSheetNote, SheetNoteError, type SheetNote, type SheetNotePosition, type NoteSourceBlock } from "./sheet_notes";
 import { trimCellText } from "./text_encoding";
-import { getCellTextView, parseCellInput, stripCellDisplayMetadata } from "./runtime/parse";
+import { getCellTextView, parseCellInput, parseDisplayControlCell, stripCellDisplayMetadata } from "./runtime/parse";
 import { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
 import { parseTemporalFormatSpec } from "./runtime/temporalFormat";
-import { renderFormulaExpression } from "./runtime/renderFormula";
+import { renderFormulaExpression, type FormulaRenderContext } from "./runtime/renderFormula";
+import { buildFormulaRenderContext } from "./formula_context";
 import {
   buildBodyRows,
   buildColumnLabelMap,
@@ -63,7 +65,8 @@ interface CellState {
 
 export type PreservedSheetBlock =
   | { kind: "table"; lines: string[] }
-  | { kind: "unparsed"; lines: string[] };
+  | NoteSourceBlock
+  | UnparsedBlock;
 
 export interface SheetHistoryCellSnapshot {
   body: CellBodyState;
@@ -233,7 +236,7 @@ export class SheetState {
     const headerColCount = headerColCountFrom(logicalRows);
     const bodyStart = headerRowCount > 0 ? headerRowCount : 0;
     const columnDisplayMetadata = extractColumnDisplayMetadataFromControlRow(controlFrame.controlRow, colCount);
-    const rowDisplayMetadata = extractRowDisplayMetadataFromLabelColumn(logicalRows, bodyStart, headerColCount);
+    const rowDisplayMetadata = extractRowDisplayMetadata(logicalRows, bodyStart, headerColCount);
 
     const colLabelPaths = buildColumnLabelPaths(logicalRows, headerRowCount, colCount);
     const colLabels = buildColumnLabels(colLabelPaths);
@@ -350,6 +353,38 @@ export class SheetState {
     const cloned = cloneHistoryValue(raw);
     copySheetHistoryReferenceMetadata(raw, cloned);
     return cloned;
+  }
+
+  private noteBlockRange(position: SheetNotePosition): [number, number] {
+    assertNotePosition(position);
+    const primary = this.primaryTableBlockIndex;
+    if (primary === null || this.rowCount === 0 || this.sourceBlocks.filter(block => block.kind === "table").length !== 1) {
+      throw new SheetNoteError("Sheet notes require exactly one nonempty table.");
+    }
+    return position === "beforeTable" ? [0, primary] : [primary + 1, this.sourceBlocks.length];
+  }
+
+  getSheetNote(position: SheetNotePosition): SheetNote {
+    const [start, end] = this.noteBlockRange(position);
+    const note: SheetNote = { blocks: [] };
+    for (const block of this.sourceBlocks.slice(start, end)) {
+      if (block.kind === "note") note.blocks.push(...block.note.blocks);
+      else if (block.kind === "unparsed" && block.diagnostics.length) {
+        const diagnostic = block.diagnostics[0];
+        throw new SheetNoteError(diagnostic.message, diagnostic.line);
+      }
+    }
+    return structuredClone(note);
+  }
+
+  setSheetNote(position: SheetNotePosition, markdown: string): void {
+    const [start, end] = this.noteBlockRange(position);
+    const note = parseSheetNote(markdown);
+    const blocks: PreservedSheetBlock[] = note.blocks.length ? [{ kind: "note", note }] : [];
+    const existing = this.sourceBlocks.slice(start, end).filter(block => block.kind !== "unparsed" || block.lines.some(line => line.trim()));
+    if (JSON.stringify(existing) === JSON.stringify(blocks)) return;
+    this.sourceBlocks.splice(start, end - start, ...blocks);
+    this.primaryTableBlockIndex = this.sourceBlocks.findIndex(block => block.kind === "table");
   }
 
   restoreHistorySnapshot(snapshot: SheetHistorySnapshot): void {
@@ -523,8 +558,8 @@ export class SheetState {
     if (rAbs < 0 || rAbs >= this.rowCount) {
       throw new Error("row index out of range");
     }
-    if (rAbs < this.bodyStart || this.headerColCount <= 0) {
-      throw new Error("row default format requires a body row with a header label column");
+    if (rAbs < this.bodyStart) {
+      throw new Error("row default format requires a body row");
     }
     assertFormatSpecOrNull(format);
     const existing = this.rowDisplayMetadata[rAbs];
@@ -540,8 +575,8 @@ export class SheetState {
     if (rAbs < 0 || rAbs >= this.rowCount) {
       throw new Error("row index out of range");
     }
-    if (rAbs < this.bodyStart || this.headerColCount <= 0) {
-      throw new Error("row default style requires a body row with a header label column");
+    if (rAbs < this.bodyStart) {
+      throw new Error("row default style requires a body row");
     }
     assertStylePatch(stylePatch);
     const existing = this.rowDisplayMetadata[rAbs];
@@ -555,8 +590,8 @@ export class SheetState {
     if (rAbs < 0 || rAbs >= this.rowCount) {
       throw new Error("row index out of range");
     }
-    if (rAbs < this.bodyStart || this.headerColCount <= 0) {
-      throw new Error("row default style requires a body row with a header label column");
+    if (rAbs < this.bodyStart) {
+      throw new Error("row default style requires a body row");
     }
     const existing = this.rowDisplayMetadata[rAbs];
     const format = existing && existing.valid ? existing.format : null;
@@ -743,9 +778,51 @@ export class SheetState {
     if (this.bodyStart + count > this.rowCount) {
       throw new Error("row conversion range out of range");
     }
+    this.prepareHeaderCells(this.bodyStart, this.bodyStart + count, 0, this.colCount);
+    for (let r = this.bodyStart; r < this.bodyStart + count; r++) this.rowDisplayMetadata[r] = null;
     this.headerRowCount += count;
     this.bodyStart = this.headerRowCount;
     this.finalizeStructuralRowEdit(eager);
+  }
+
+  /** Change the semantic boundary, never insert/delete/reidentify columns. */
+  setHeaderColumnCount(count: number, eager = true) {
+    if (!Number.isInteger(count) || count < 0 || count >= this.colCount) throw new Error("Keep at least one data column.");
+    if (count === this.headerColCount) return;
+    for (let r = this.bodyStart; r < this.rowCount; r++) {
+      for (let c = this.headerColCount; c < count; c++) {
+        const body = this.cells[r][c].body;
+        if (!body.valid || body.kind === "formula") throw new Error("Cells containing formulas or invalid input cannot become header columns.");
+      }
+    }
+    this.prepareHeaderCells(this.bodyStart, this.rowCount, this.headerColCount, count);
+    this.headerColCount = count;
+    for (const row of this.logicalRows) row.boundary = count === 0 ? null : count;
+    this.finalizeStructuralRowEdit(eager);
+  }
+
+  private prepareHeaderCells(rowStart: number, rowEnd: number, colStart: number, colEnd: number) {
+    for (let r = rowStart; r < rowEnd; r++) {
+      for (let c = colStart; c < colEnd; c++) {
+        const cell = this.cells[r][c];
+        if (!cell.body.valid || cell.body.kind === "formula") continue;
+        if (cell.body.valid && cell.body.kind === "literal" && cell.body.literal.kind === "string") {
+          const text = cell.body.literal.value;
+          const parsed = parseCellInput(text);
+          // Remove literal quotes only when the label has the same native
+          // meaning. Reserved syntax and hierarchy-looking text stay escaped.
+          if (parsed.body.valid && parsed.body.kind === "literal" && parsed.body.literal.kind === "string"
+            && parsed.body.literal.value === text && !parsed.localDisplay && !/[\r\n]/.test(text)
+            && parseHierarchyLabel(text).depth === 0) {
+            cell.body = parsed.body;
+          }
+        }
+        // Header cells have no cell-local display metadata in ORD. Do not
+        // accidentally reinterpret a former cell style as a whole-row style.
+        cell.localDisplay = null;
+        this.updateRowText(r, c, buildCellRawText(cell.body, null));
+      }
+    }
   }
 
   convertHeaderSuffixToBody(count: number, depth: number, eager = true) {
@@ -1302,20 +1379,27 @@ export class SheetState {
   // After structural edits, formula ASTs may be rebased to new row/column positions.
   // Keep the source-facing formula text in sync with the rebased AST so UI/editor
   // surfaces do not show stale references until a serialize/parse round-trip.
-  private refreshFormulaSourceTexts() {
+  refreshFormulaSourceTexts(context?: FormulaRenderContext, crossSheetOnly = false) {
+    const renderContext: FormulaRenderContext = {
+      ...context,
+      rowLabelPathsByIndex: Array.from({ length: this.rowCount }, (_, rowIndex) =>
+        rowIndex >= this.bodyStart ? (this.rowPaths[rowIndex - this.bodyStart] ?? "").split(".") : [],
+      ),
+      colLabelsByIndex: this.colLabels,
+    };
     for (let rAbs = 0; rAbs < this.rowCount; rAbs += 1) {
       for (let c = 0; c < this.colCount; c += 1) {
         const cell = this.cells[rAbs][c];
         if (!cell.body.valid || cell.body.kind !== "formula") {
           continue;
         }
+        if (crossSheetOnly) {
+          let hasCrossSheet = false;
+          walkExpressionReferences(cell.body.expression, ref => { if (ref.sheetSelector) hasCrossSheet = true; });
+          if (!hasCrossSheet) continue;
+        }
         const exprText =
-          renderFormulaExpression(cell.body.expression, this.rowIdToIndex, this.colIdToIndex, {
-            rowLabelPathsByIndex: Array.from({ length: this.rowCount }, (_, rowIndex) =>
-              rowIndex >= this.bodyStart ? (this.rowPaths[rowIndex - this.bodyStart] ?? "").split(".") : [],
-            ),
-            colLabelsByIndex: this.colLabels,
-          }) ?? cell.body.expressionText;
+          renderFormulaExpression(cell.body.expression, this.rowIdToIndex, this.colIdToIndex, renderContext) ?? cell.body.expressionText;
         cell.body.expressionText = exprText;
         cell.body.inputText = exprText.length > 0 ? `= ${exprText}` : "=";
         this.updateRowText(rAbs, c, buildCellRawText(cell.body, cell.localDisplay));
@@ -1545,37 +1629,29 @@ function extractColumnDisplayMetadataFromControlRow(
   for (let c = 0; c < colCount; c += 1) {
     const raw = c + 1 < controlRow.rawCells.length ? controlRow.rawCells[c + 1] : "";
     if (raw.trim() === "") continue;
-    const parsed = parseCellInput(raw);
-    const content = stripCellDisplayMetadata(raw).trim();
-    if (content !== "" || !parsed.localDisplay) {
-      output[c] = {
-        valid: false,
-        rawBlock: raw.trim(),
-        issue: {
-          code: "display_control_cell_requires_metadata_only",
-          context: {},
-        },
-      };
-      continue;
-    }
-    output[c] = parsed.localDisplay;
+    output[c] = parseDisplayControlCell(raw);
   }
   return output;
 }
 
-function extractRowDisplayMetadataFromLabelColumn(
+function extractRowDisplayMetadata(
   logicalRows: ParsedRow[],
   bodyStart: number,
   headerColCount: number,
 ): Array<ParsedDisplayMetadata | null> {
   const output: Array<ParsedDisplayMetadata | null> = Array.from({ length: logicalRows.length }, () => null);
-  if (headerColCount <= 0) {
-    return output;
-  }
-  for (let rAbs = bodyStart; rAbs < logicalRows.length; rAbs += 1) {
-    const raw = logicalRows[rAbs]?.rawCells[0] ?? "";
-    if (raw.trim() === "") continue;
-    output[rAbs] = parseCellInput(raw).localDisplay;
+  for (let rAbs = 0; rAbs < logicalRows.length; rAbs += 1) {
+    const row = logicalRows[rAbs];
+    const control = row.displayControl?.trim() ?? "";
+    if (rAbs < bodyStart) {
+      if (control) throw new Error("Row display defaults require a body row.");
+      continue;
+    }
+    const label = headerColCount > 0 ? parseCellInput(row.rawCells[0] ?? "").localDisplay : null;
+    if (control) {
+      if (label) throw new Error("Row display defaults must have a single source: control cell or label.");
+      output[rAbs] = parseDisplayControlCell(control);
+    } else output[rAbs] = label;
   }
   return output;
 }
@@ -1783,12 +1859,13 @@ export class DocumentState {
         if (block.kind === "table") {
           return { kind: "table", lines: [...block.table.rows] };
         }
-        return { kind: "unparsed", lines: [...block.lines] };
+        return structuredClone(block);
       });
       const primaryTableBlockIndex = sourceBlocks.findIndex((b) => b.kind === "table");
+      const primaryBlock = sourceBlocks[primaryTableBlockIndex];
       const primaryRows =
-        primaryTableBlockIndex >= 0 && primaryTableBlockIndex < sourceBlocks.length
-          ? [...sourceBlocks[primaryTableBlockIndex].lines]
+        primaryBlock?.kind === "table"
+          ? [...primaryBlock.lines]
           : [];
       sheets.push(
         SheetState.fromTableRows(
@@ -1824,6 +1901,12 @@ export class DocumentState {
         }
       }
     }
+    this.refreshCrossSheetFormulaSources();
+  }
+
+  refreshCrossSheetFormulaSources(): void {
+    const context = buildFormulaRenderContext(this);
+    for (const sheet of this.sheets) sheet.refreshFormulaSourceTexts(context, true);
   }
 
   // Evaluate the current state into an EvaluationResult.
@@ -1943,53 +2026,54 @@ export class DocumentState {
 
   // Insert a blank row into a sheet (tentative RFC-0012 behavior).
   insertRow(sheetName: string, rowIndex: number, eager = true, labelRaw = "") {
-    const sheet = this.findSheet(sheetName);
-    sheet.insertRow(rowIndex, eager, labelRaw);
+    this.editSheetStructure(sheetName, sheet => sheet.insertRow(rowIndex, eager, labelRaw));
   }
 
   insertHeaderRow(sheetName: string, rowIndex: number, eager = true, labelRaw = "") {
-    const sheet = this.findSheet(sheetName);
-    sheet.insertHeaderRow(rowIndex, eager, labelRaw);
+    this.editSheetStructure(sheetName, sheet => sheet.insertHeaderRow(rowIndex, eager, labelRaw));
   }
 
   // Delete a row from a sheet (tentative RFC-0012 behavior).
   deleteRow(sheetName: string, rowIndex: number, eager = true) {
-    const sheet = this.findSheet(sheetName);
-    sheet.deleteRow(rowIndex, eager);
+    this.editSheetStructure(sheetName, sheet => sheet.deleteRow(rowIndex, eager));
   }
 
   deleteHeaderRow(sheetName: string, rowIndex: number, eager = true) {
-    const sheet = this.findSheet(sheetName);
-    sheet.deleteHeaderRow(rowIndex, eager);
+    this.editSheetStructure(sheetName, sheet => sheet.deleteHeaderRow(rowIndex, eager));
   }
 
   deleteRows(sheetName: string, rowIndex: number, count: number, eager = true) {
-    const sheet = this.findSheet(sheetName);
-    sheet.deleteRows(rowIndex, count, eager);
+    this.editSheetStructure(sheetName, sheet => sheet.deleteRows(rowIndex, count, eager));
   }
 
   // Insert a blank column into a sheet (tentative RFC-0012 behavior).
   insertCol(sheetName: string, colIndex: number, eager = true) {
-    const sheet = this.findSheet(sheetName);
-    sheet.insertCol(colIndex, eager);
+    this.editSheetStructure(sheetName, sheet => sheet.insertCol(colIndex, eager));
   }
 
   // Delete a column from a sheet (tentative RFC-0012 behavior).
   deleteCol(sheetName: string, colIndex: number, eager = true) {
-    const sheet = this.findSheet(sheetName);
-    sheet.deleteCol(colIndex, eager);
+    this.editSheetStructure(sheetName, sheet => sheet.deleteCol(colIndex, eager));
   }
 
   // Rename a row label in a sheet (tentative RFC-0012 behavior).
   renameRowLabel(sheetName: string, rowPath: string, newLabel: string, eager = true) {
-    const sheet = this.findSheet(sheetName);
-    sheet.renameRowLabel(rowPath, newLabel, eager);
+    this.editSheetStructure(sheetName, sheet => sheet.renameRowLabel(rowPath, newLabel, eager));
   }
 
   // Rename a column label in a sheet (tentative RFC-0012 behavior).
   renameColLabel(sheetName: string, oldLabel: string, newLabel: string, eager = true) {
+    this.editSheetStructure(sheetName, sheet => sheet.renameColLabel(oldLabel, newLabel, eager));
+  }
+
+  private editSheetStructure(sheetName: string, edit: (sheet: SheetState) => void): void {
     const sheet = this.findSheet(sheetName);
-    sheet.renameColLabel(oldLabel, newLabel, eager);
+    // Bind any newly entered cross-sheet positions before identities move.
+    // Source text is part of the editor/fill contract, even with eager=false;
+    // callers must not need an unrelated evaluate/serialize to refresh it.
+    this.bindCrossSheetFormulas();
+    edit(sheet);
+    this.bindCrossSheetFormulas();
   }
 
   private findSheet(name: string): SheetState {

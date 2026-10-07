@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ConfirmationDialogConfig } from "../components/ConfirmationDialog";
 import { useEditorStore, type EditorState } from "../store/editorStore";
-import { defaultFileSessionStore, getPersistableText, useFileSessionStore } from "../store/fileSessionStore";
+import { defaultFileSessionStore, getPersistableText, readUploadedDocument, useFileSessionStore } from "../store/fileSessionStore";
+import { installFileDrop, type FileDropCue } from "../platform/fileDrop";
+import { readImportFile } from "../interchange/browserTransport";
+import type { ImportFile } from "../interchange/contracts";
+import { documentName } from "../platform/documentName";
 import { handleDocumentRequest } from "../platform/documentSession";
 import { fileSessionStatus } from "../utils/fileSessionStatus";
 import { isNativeTextEditingTarget } from "../utils/textEditingTarget";
@@ -13,8 +17,13 @@ type Options = Pick<EditorState, "mode" | "revision" | "sourceText" | "docState"
   requestConfirmation: (config: ConfirmationDialogConfig) => Promise<boolean>;
   prepareForPersistence: () => void;
   hasPendingCellEdit: boolean;
+  onImport: (file?: ImportFile) => void;
+  onExport: () => void;
+  onPrint: () => Promise<void>;
+  onSettings: () => void;
+  onBrowserOpen: (openDocument: () => void) => void;
 };
-export function useFileSessionController({ mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence, hasPendingCellEdit }: Options) {
+export function useFileSessionController({ mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence, hasPendingCellEdit, onImport, onExport, onPrint, onBrowserOpen, onSettings }: Options) {
   const prepareRef = useRef(prepareForPersistence);
   useLayoutEffect(() => { prepareRef.current = prepareForPersistence; }, [prepareForPersistence]);
   const editingRef = useRef(hasPendingCellEdit);
@@ -31,6 +40,7 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
     if (!hasPendingCellEdit) fileSyncRef.current?.refresh();
   }, [hasPendingCellEdit]);
   const fileSessionFile = useFileSessionStore((state) => state.file);
+  const draftName = useFileSessionStore((state) => state.draftName);
   const fileSessionOperation = useFileSessionStore((state) => state.operation);
   const fileSessionConflict = useFileSessionStore((state) => state.conflict);
   const fileSessionRecoveryDraft = useFileSessionStore((state) => state.recoveryDraft);
@@ -54,11 +64,12 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
     lastError: fileSessionLastError,
     file: fileSessionFile,
   }, !!window.ordinateDesktop);
-  const fileName = fileSessionFile?.displayName ?? "Untitled";
+  const fileName = documentName({ file: fileSessionFile, draftName });
 
   const fileSessionEditorSignatureRef = useRef<string | null>(null);
   const initializationRef = useRef<Promise<void> | null>(null);
   const [initializationStatus, setInitializationStatus] = useState<"loading" | "ready" | "failed">("loading");
+  const [fileDropCue, setFileDropCue] = useState<FileDropCue | null>(null);
   const shouldWarnBeforeUnload = fileSessionDocumentDirty === "dirty" && fileSessionLocalDraftState !== "current";
 
   useEffect(() => {
@@ -70,7 +81,10 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
         await defaultFileSessionStore.getState().open(async () => restored.snapshot!);
         return;
       }
-      if (restored) useEditorStore.getState().replaceDocumentText(restored.text ?? BLANK_DOCUMENT);
+      if (restored) {
+        useEditorStore.getState().replaceDocumentText(restored.text ?? BLANK_DOCUMENT);
+        defaultFileSessionStore.setState({ draftName: restored.draftName ?? null });
+      }
       await loadUntitledFileDraft();
       if (window.ordinateDesktop) {
         defaultFileSessionStore.getState().recoverDraft();
@@ -114,14 +128,14 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
   }, [mode, revision, sourceText, syncFileEditorSnapshot, autosaveFileNow]);
 
   useEffect(() => {
-    if (!shouldWarnBeforeUnload) return undefined;
+    if (!shouldWarnBeforeUnload && !hasPendingCellEdit) return undefined;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [shouldWarnBeforeUnload]);
+  }, [shouldWarnBeforeUnload, hasPendingCellEdit]);
 
   const resolveManualSaveOptions = useCallback(async (): Promise<{ allowInvalidSource?: boolean } | null> => {
     if (window.ordinateDesktop) return { allowInvalidSource: true };
@@ -138,12 +152,14 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
     return { allowInvalidSource: true };
   }, [docState, mode, requestConfirmation, sourceText]);
 
-  const handleOpenFile = useCallback(async () => {
+  const handleOpenDocument = useCallback(async (file?: File) => {
+    prepareRef.current();
     if (window.ordinateDesktop) {
-      await window.ordinateDesktop.openDocument();
+      await window.ordinateDesktop.openDocument(file);
       return;
     }
-    if (fileSessionDocumentDirty === "dirty") {
+    defaultFileSessionStore.getState().syncEditorSnapshot();
+    if (defaultFileSessionStore.getState().documentDirty === "dirty") {
       const confirmed = await requestConfirmation({
         title: "Open another file?",
         body: <p>Unsaved changes in this window will be replaced.</p>,
@@ -153,8 +169,40 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
       });
       if (!confirmed) return;
     }
-    void openFile();
-  }, [fileSessionDocumentDirty, openFile, requestConfirmation, saveFileAs, mode, sourceText, docState]);
+    await openFile(file ? () => readUploadedDocument(file) : undefined);
+  }, [openFile, requestConfirmation]);
+
+  const dropActions = useRef({ handleOpenDocument, onImport, requestConfirmation, initializationStatus });
+  useLayoutEffect(() => {
+    dropActions.current = { handleOpenDocument, onImport, requestConfirmation, initializationStatus };
+  }, [handleOpenDocument, onImport, requestConfirmation, initializationStatus]);
+  useEffect(() => {
+    const canDrop = () => dropActions.current.initializationStatus === "ready"
+      && !document.querySelector('[role="dialog"][aria-modal="true"]')
+      && !defaultFileSessionStore.getState().operation;
+    return installFileDrop(window, {
+      canDrop,
+      preview: setFileDropCue,
+      receive: async (file, kind) => {
+        if (kind === "document") await dropActions.current.handleOpenDocument(file);
+        else {
+          const imported = await readImportFile(file);
+          // A command may have opened a dialog while the file was being read.
+          if (canDrop()) dropActions.current.onImport(imported);
+        }
+      },
+      report: async error => {
+        if (!canDrop()) return;
+        await dropActions.current.requestConfirmation({ title: "Could not open file",
+          body: <p>{error instanceof Error ? error.message : String(error)}</p>, confirmLabel: "OK", tone: "warning" });
+      },
+    });
+  }, []);
+
+  const handleOpenFile = useCallback(() => {
+    if (window.ordinateDesktop) void handleOpenDocument();
+    else onBrowserOpen(handleOpenDocument);
+  }, [handleOpenDocument, onBrowserOpen]);
 
   const handleNewFile = useCallback(async () => {
     const bridge = window.ordinateDesktop;
@@ -182,10 +230,13 @@ export function useFileSessionController({ mode, revision, sourceText, docState,
       void window.ordinateDesktop!.nativeHistory(command);
       return;
     }
-    const handlers = { open: handleOpenFile, save: handleSaveFile, saveAs: handleSaveFileAs, undo, redo };
+    // Native menu accelerators bypass DOM keyboard bubbling. A modal must not
+    // let Undo/Open/Save mutate the document behind a conversion review.
+    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+    const handlers = { open: handleOpenFile, save: handleSaveFile, saveAs: handleSaveFileAs, undo, redo, import: onImport, export: onExport, print: onPrint, settings: onSettings };
     void handlers[command]();
-  }), [handleOpenFile, handleSaveFile, handleSaveFileAs, mode, undo, redo]);
+  }), [handleOpenFile, handleSaveFile, handleSaveFileAs, mode, undo, redo, onImport, onExport, onPrint, onSettings]);
 
 
-  return { initializationStatus, fileName, fileStatus, handleNewFile, handleOpenFile, handleSaveFile, handleSaveFileAs };
+  return { initializationStatus, fileDropCue, fileName, fileStatus, handleNewFile, handleOpenFile, handleSaveFile, handleSaveFileAs };
 }

@@ -5,6 +5,11 @@
 
 ## Summary
 
+Current amendment (RFC-0042): the sheet-qualified envelope also accepts an A1
+target, e.g. `@["Inputs"::$A$1:B2]`. It uses the same bound sheet/row/column
+identities and copy locks as other references, and preserves A1 spelling on save.
+This does not introduce Excel's `Sheet!A1` syntax into the native language.
+
 This RFC adds formula references that explicitly target another sheet in the same document.
 
 Current references are sheet-local:

@@ -1,0 +1,48 @@
+/* This root is mounted only for a native print operation. Screen UI is untouched. */
+#ordinate-print-root { display: none; }
+
+@media print {
+    @page { margin: 12mm; background: white; }
+    html:has(#ordinate-print-root),
+    body:has(#ordinate-print-root) {
+        display: block !important;
+        height: auto !important;
+        min-height: 0 !important;
+        width: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        background: white !important;
+        color-scheme: light !important;
+    }
+    body:has(#ordinate-print-root) > :not(#ordinate-print-root) { display: none !important; }
+    #ordinate-print-root {
+        display: block;
+        color: var(--sheet-ink);
+        background: white;
+        font: 9pt/1.4 var(--font-body);
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+        color-scheme: light;
+    }
+    .print-sheet h1 { font-size: 17pt; line-height: 1.2; margin: 0 0 12pt; break-after: avoid; }
+    .print-sheet table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    .print-sheet thead { display: table-header-group; }
+    .print-sheet tr { break-inside: avoid; }
+    .print-sheet th, .print-sheet td {
+        padding: 5pt 4.5pt;
+        border: 0.5pt solid var(--sheet-grid);
+        vertical-align: top;
+        text-align: left;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-variant-numeric: tabular-nums;
+    }
+    .print-sheet thead th { background: var(--sheet-header-row); text-align: center; font-weight: 600; }
+    .print-sheet tbody th { background: var(--sheet-header-col); font-weight: 600; }
+    .print-sheet .print-group > * { background: var(--section-bg); font-weight: 700; }
+    .print-note { margin: 10pt 0; overflow-wrap: anywhere; }
+    .print-note p, .print-note ul, .print-note ol { margin: 0 0 6pt; white-space: pre-wrap; orphans: 2; widows: 2; }
+    .print-note ul, .print-note ol { padding-left: 14pt; }
+    .print-note hr { border: 0; border-top: .5pt solid var(--sheet-grid); margin: 6pt 0; }
+}

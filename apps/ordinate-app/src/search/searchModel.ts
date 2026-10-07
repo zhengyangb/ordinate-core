@@ -4,6 +4,7 @@ import { gridCellText } from "../utils/gridCellText";
 import type { EditorState } from "../store/editorStore";
 import { projectSheetRows } from "../hooks/useSheetViewModel";
 import { buildHeaderMatrix, buildSheetIssueBuckets, trimSheetColCount } from "../utils/appHelpers";
+import type { CellDisplayFormatter } from "../preferences/temporalDisplay";
 
 export type SearchCell = {
   id: string;
@@ -43,6 +44,7 @@ export function findDocumentMatches(cells: DocumentSearchCell[], query: string, 
 export function buildDocumentSearchCells(
   { docState, evaluation, presentation, sheetIssuesByName }: Pick<EditorState, "docState" | "evaluation" | "presentation" | "sheetIssuesByName">,
   locale: UiLocale,
+  displayCell: CellDisplayFormatter,
 ): DocumentSearchCell[] {
   if (!docState || !evaluation) return [];
   const issues = buildSheetIssueBuckets(docState.sheets.map(sheet => sheet.name), sheetIssuesByName);
@@ -53,7 +55,7 @@ export function buildDocumentSearchCells(
     const presented = presentation?.sheets.find(sheet => sheet.name === state.name) ?? null;
     const columns = trimSheetColCount(state, evaluated);
     const frozen = Math.min(state.headerColCount, columns);
-    const rows = projectSheetRows(evaluated, state, presented, columns, frozen, new Set());
+    const rows = projectSheetRows(evaluated, state, presented, columns, frozen, new Set(), displayCell);
     const matrix = buildHeaderMatrix(state, evaluated, presented, columns, state.headerRowCount);
     const headers = matrix.flatMap((row, index) => row.flatMap((label, col) =>
       col > 0 && col !== frozen && row[col - 1] === label ? [] : [{ rowNumber: index + 1, startCol: col, label }],

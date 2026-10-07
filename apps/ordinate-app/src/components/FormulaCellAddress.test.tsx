@@ -35,10 +35,28 @@ describe("compact formula location", () => {
     expect(markup).not.toContain("Fulfillment");
     expect(markup).not.toContain("cells</span>");
   });
-  it("keeps the active address distinct from multi-cell selection size", () => {
+  it("shows only the selected count when multiple cells are selected", () => {
     const markup = renderToStaticMarkup(<FormulaCellAddress cell={cell()}
       selection={{ rowStart: 3, rowEnd: 4, colStart: 0, colEnd: 1 }} />);
-    expect(markup).toContain('aria-label="B4, cell location"');
+    expect(markup).toContain('aria-label="4 cells selected, selection details"');
     expect(markup).toContain("4 cells");
+    expect(markup).not.toContain("B<sub>");
+    expect(markup).not.toContain("Number");
+    expect(markup).toContain('aria-expanded="false"');
+  });
+  it("uses the single-cell address for a one-cell range", () => {
+    const markup = renderToStaticMarkup(<FormulaCellAddress cell={cell()}
+      selection={{ rowStart: 4, rowEnd: 4, colStart: 1, colEnd: 1 }} />);
+    expect(markup).toContain('aria-label="B4, cell location"');
+    expect(markup).toContain("B<sub>2</sub>");
+    expect(markup).not.toContain("cells selected");
+  });
+  it.each([
+    [{ rowStart: 4, rowEnd: 4, colStart: 0, colEnd: 2 }, 3],
+    [{ rowStart: 3, rowEnd: 6, colStart: 1, colEnd: 1 }, 4],
+    [{ rowStart: 1, rowEnd: 1000, colStart: 0, colEnd: 99 }, 100000],
+  ])("counts all cells in %j", (selection, count) => {
+    const markup = renderToStaticMarkup(<FormulaCellAddress cell={cell()} selection={selection} />);
+    expect(markup).toContain(`>${count} cells</button>`);
   });
 });

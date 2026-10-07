@@ -5,6 +5,7 @@ import { useFormulaBarLayout } from "../hooks/useFormulaBarLayout";
 import { FormulaCellAddress } from "./FormulaCellAddress";
 import { revealFormulaCaret } from "../utils/formulaEditorLayout";
 import { canInsertTextLineBreak, plainTextPreview } from "../utils/plainTextEditing";
+import { isSingleCellRect } from "../utils/selectionModel";
 
 import type { UiLocale } from "../i18n/messages";
 import { getFormulaFunctionCategoryLabel } from "../i18n/formulaAssistant";
@@ -385,7 +386,6 @@ export default function FormulaBarOverlay({
   const acceptsLineBreakAtSelection = (editor: HTMLTextAreaElement) => Boolean(
     formulaBarSnapshot?.supportsMultilineText && canInsertTextLineBreak(editor.value, editor.selectionStart, editor.selectionEnd),
   );
-  const multilineText = isEditingInput && !isFormulaDraft && draftInput.includes("\n");
   const inputPreview = plainTextPreview(formulaBarSnapshot?.inputText ?? "");
   useFormulaBarLayout(shellRef, isFormulaDraft ? sourceEditorRef : sourcePlainInputRef, draftInput, isEditingInput, isFormulaDraft,
     mode === "table" && phase !== "hidden" && Boolean(formulaBarSnapshot));
@@ -1277,7 +1277,7 @@ export default function FormulaBarOverlay({
     <>
       <aside
         ref={shellRef}
-        className={`formula-bar-shell formula-bar-shell--${phase}${multilineText ? " is-multiline" : ""}`}
+        className={`formula-bar-shell formula-bar-shell--${phase}`}
         aria-live="polite"
         aria-hidden={formulaBarSnapshot ? undefined : true}
       >
@@ -1286,9 +1286,9 @@ export default function FormulaBarOverlay({
           <div className="formula-meta-stack">
             <div className="formula-meta-top">
               <FormulaCellAddress key={formulaBarSnapshot.primaryAddress} cell={formulaBarSnapshot} selection={selectedRange} />
-              <span className="formula-chip-slot">
+              {!selectedRange || isSingleCellRect(selectedRange) ? <span className="formula-chip-slot">
                 <span className="formula-chip formula-chip--inline" title={chipText}>{chipText}</span>
-              </span>
+              </span> : null}
             </div>
             <div className="formula-meta-lower">
               <div className="formula-display-meta" aria-label="Display metadata">
@@ -1609,9 +1609,9 @@ export default function FormulaBarOverlay({
               <div className="formula-editor-wrap">
               <textarea
                 ref={sourcePlainInputRef}
-                className={`formula-source formula-source-input formula-plain-textarea is-editing${multilineText ? " is-multiline" : ""}`}
+                className="formula-source formula-source-input formula-plain-textarea is-editing"
                 rows={1}
-                wrap={canInsertLineBreak ? "soft" : "off"}
+                wrap="soft"
                 aria-multiline={canInsertLineBreak}
                 aria-description={canInsertLineBreak ? "Enter to apply; Shift+Enter for a new line" : "Enter to apply"}
                 onBeforeInput={event => {

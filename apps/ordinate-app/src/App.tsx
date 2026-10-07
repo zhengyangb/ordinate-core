@@ -12,30 +12,41 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 
 import {
+  groupHeaderSpans,
   type SheetEvaluation,
   type SheetPresentation
 } from "@ordinate/core";
 import AppChrome from "./components/AppChrome";
 import { useConfirmationDialog } from "./components/ConfirmationDialog";
 import FileSessionNotices from "./components/FileSessionNotices";
+import { FileDropOverlay } from "./components/FileDropOverlay";
+import { useInterchangeController } from "./interchange/InterchangeDialog";
 import FormulaBarOverlay from "./components/FormulaBarOverlay";
 import OverlayPortals from "./components/OverlayPortals";
 import SheetParseErrorPanel from "./components/SheetParseErrorPanel";
 import TableStage from "./components/TableStage";
+import { ViewHandoff } from "./components/ViewHandoff";
+import { NoteWorkspace } from "./notes/NoteWorkspace";
+import { SheetNote } from "./notes/SheetNote";
+import { useNoteEditor } from "./notes/useNoteEditor";
+import { useRowsToNoteCommand } from "./notes/useRowsToNoteCommand";
+import type { SheetNotePosition } from "@ordinate/core";
+import "./notes/notes.css";
 import { shouldAnimateTableStructure } from "./config/motion";
-import { createAgGridAdapter } from "./grid/agGridAdapter";
+import { createAgGridAdapter, focusAppendedBodyRow } from "./grid/agGridAdapter";
 import { useAnchoredMenuPosition } from "./hooks/useAnchoredMenuPosition";
 import { useDisplayFormatCommands } from "./hooks/useDisplayFormatCommands";
 import { useFileSessionController } from "./hooks/useFileSessionController";
+import { usePrintSheet } from "./printing/usePrintSheet";
 import { useGridColumnDefs } from "./hooks/useGridColumnDefs";
 import { useSheetStructureCommands } from "./hooks/useSheetStructureCommands";
 import { useSheetViewModel } from "./hooks/useSheetViewModel";
 import { useStructureTransition } from "./hooks/useStructureTransition";
 import { useTooltips } from "./hooks/useTooltips";
 import { resolveUiLocale } from "./i18n/messages";
-import { AutoIcon, MoonIcon, SunIcon } from "./icons/uiIcons";
 import { useWindowAppearance } from "./platform/useWindowAppearance";
-import { resolveInitialThemeMode } from "./platform/themePreference";
+import { usePreferences } from "./preferences/preferencesStore";
+import { SettingsDialog } from "./preferences/SettingsDialog";
 import { finishStartup } from "./platform/startupScreen";
 import { useEditorStore } from "./store/editorStore";
 import { buildDocumentSearchCells } from "./search/searchModel";
@@ -59,13 +70,12 @@ import type {
   RowIndexMetric,
   SelectedCell,
   SheetSelection,
-  ThemeMenuPosition,
-  ThemeMode
 } from "./types/ui";
 import {
   APPEND_AXIS_SLOT_GAP,
   APPEND_COLUMN_WIDTH,
   buildColumnHasLocalConfig,
+  buildRowHasLocalConfig,
   buildHeaderMatrix,
   buildRailMenu,
   CHROME_TRANSITION_MS,
@@ -93,12 +103,11 @@ import {
   canStartRowRailSelectionDrag,
   computeAxisAutoPanDelta,
   resolveBodyRowDropBoundary,
-  resolveBodyRowNumberAtTrackY,
   resolveColumnDragSource,
   resolveColumnDropBoundaryInViewport,
   resolveColumnIndexInViewport,
   resolveHeaderRowDropBoundary,
-  resolveHeaderRowNumberAtTrackY,
+  resolveRowRailSelectionFocus,
   resolveRowDragSource,
   validateColumnMoveDrop,
   validateRowMoveDrop,
@@ -145,7 +154,9 @@ import {
   getSelectionFocus,
   getSelectionRange,
   makeCellSelection,
-  makeRangeSelection
+  makeRangeSelection,
+  makeRowSelection,
+  selectionContainsCell
 } from "./utils/selectionModel";
 import {
   compactColLabel
@@ -203,7 +214,6 @@ type ColumnAxisSelectionDragSession = {
 
 type RowAxisSelectionDragSession = {
   axis: "row";
-  area: "header" | "body";
   pointerId: number;
   captureTarget: HTMLElement;
   startX: number;
@@ -282,7 +292,6 @@ function axisColumnSelectionEqual(
 
 function axisRowSelectionEqual(
   current: SheetSelection | null,
-  area: "header" | "body",
   rowNumber: number,
   anchorRowNumber: number,
   rowStart: number,
@@ -290,7 +299,6 @@ function axisRowSelectionEqual(
 ): boolean {
   return (
     current?.kind === "row" &&
-    current.area === area &&
     current.rowNumber === rowNumber &&
     current.anchorRowNumber === anchorRowNumber &&
     current.rowStart === rowStart &&
@@ -299,6 +307,13 @@ function axisRowSelectionEqual(
 }
 
 export default function App() {
+  const { preferences, update: updatePreferences, systemLocale, displayCell } = usePreferences();
+  const themeMode = preferences.appearance;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const notes = useNoteEditor();
+  const [noteTableWidth, setNoteTableWidth] = useState(0);
+  const [noteFooterHeight, setNoteFooterHeight] = useState(0);
   const uiLocale = useMemo(() => resolveUiLocale(window.navigator.language), []);
   const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
   const {
@@ -340,9 +355,6 @@ export default function App() {
   const [formulaPointReferenceRequest, setFormulaPointReferenceRequest] = useState<{ id: number; gestureId: number; text: string } | null>(null);
   const [activeReferenceTokenId, setActiveReferenceTokenId] = useState<string | null>(null);
   const [formulaBarSnapshot, setFormulaBarSnapshot] = useState<FormulaBarData | null>(null);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode);
-  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
-  const [themeMenuPosition, setThemeMenuPosition] = useState<ThemeMenuPosition>({ top: 0, left: 0 });
   const [sheetSetupOpen, setSheetSetupOpen] = useState(false);
   const [sheetSetupPosition, setSheetSetupPosition] = useState<FloatingMenuPosition>({ top: 0, left: 0 });
   const [selectionMenuOpen, setSelectionMenuOpen] = useState(false);
@@ -354,7 +366,7 @@ export default function App() {
     { kind: "column"; colIndex: number } | { kind: "row"; rowNumber: number; area: "header" | "body"; hasChildren: boolean } | null
   >(null);
   const [gridViewportWidth, setGridViewportWidth] = useState(0);
-  const { tooltip, setTooltip, clearTooltip, showTooltip, handleTabMouseEnter, suppressTooltipForTarget, releaseTooltipForTarget } = useTooltips();
+  const { tooltip, clearTooltip, showTooltip, handleTabMouseEnter, suppressTooltipForTarget, releaseTooltipForTarget } = useTooltips();
   const [gridScrollSnapshot, setGridScrollSnapshot] = useState<SheetGridScrollSnapshot>(EMPTY_GRID_SCROLL_SNAPSHOT);
   const [rowIndexMetrics, setRowIndexMetrics] = useState<RowIndexMetric[]>([]);
   const [rowIndexTrackHeight, setRowIndexTrackHeight] = useState(0);
@@ -415,10 +427,7 @@ export default function App() {
   }, []);
   const pendingHeaderSelectionRef = useRef<{ colId: string; rAbs: number; expiresAt: number } | null>(null);
   const pendingBodyFocusRef = useRef<{ rAbs: number; cAbs: number; expiresAt: number } | null>(null);
-  const themeControlRef = useRef<HTMLDivElement | null>(null);
-  const themeButtonRef = useRef<HTMLButtonElement | null>(null);
   const sheetSetupButtonRef = useRef<HTMLButtonElement | null>(null);
-  const themeMenuRef = useRef<HTMLDivElement | null>(null);
   const sheetSetupMenuRef = useRef<HTMLDivElement | null>(null);
   const selectionMenuRef = useRef<HTMLDivElement | null>(null);
   const railMenuAnchorRef = useRef<HTMLElement | null>(null);
@@ -479,12 +488,13 @@ export default function App() {
     rowData,
     columnLayouts,
     toggleCollapse, expandRowPath,
-  } = useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName });
+  } = useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName, displayCell });
 
 
   const columnHasLocalConfig = useMemo<boolean[]>(() => {
     return buildColumnHasLocalConfig(currentSheetPresentation, sheetColCount);
   }, [currentSheetPresentation, sheetColCount]);
+  const rowHasLocalConfig = useMemo(() => buildRowHasLocalConfig(currentSheetPresentation), [currentSheetPresentation]);
 
   const railMenu = useMemo<RailMenuView | null>(() => {
     const baseMenu = buildRailMenu(
@@ -495,6 +505,7 @@ export default function App() {
       currentSheetState,
       currentSheetPresentation,
       columnHasLocalConfig,
+      selection,
     );
     if (!baseMenu) return null;
     if (
@@ -511,7 +522,6 @@ export default function App() {
     if (
       baseMenu.kind === "row" &&
       selection?.kind === "row" &&
-      baseMenu.area === selection.area &&
       baseMenu.rowNumber >= selection.rowStart &&
       baseMenu.rowNumber <= selection.rowEnd
     ) {
@@ -605,7 +615,6 @@ export default function App() {
 
   useWindowAppearance(themeMode);
 
-  useAnchoredMenuPosition(themeMenuOpen, themeButtonRef, themeMenuRef, setThemeMenuPosition, "end");
 
 
   useAnchoredMenuPosition(sheetSetupOpen, sheetSetupButtonRef, sheetSetupMenuRef, setSheetSetupPosition, "start");
@@ -648,10 +657,7 @@ export default function App() {
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
-      setTooltip(null);
-      if (!target?.closest(".theme-control") && !target?.closest(".theme-menu")) {
-        setThemeMenuOpen(false);
-      }
+      clearTooltip();
       if (!target?.closest(".tool-overflow-control") && !target?.closest(".tool-menu")) {
       }
       if (!target?.closest(".sheet-setup-button") && !target?.closest(".sheet-setup-menu")) {
@@ -673,15 +679,11 @@ export default function App() {
 
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, []);
+  }, [clearTooltip]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (themeMenuOpen) {
-        setThemeMenuOpen(false);
-        return;
-      }
       if (sheetSetupOpen) {
         setSheetSetupOpen(false);
         return;
@@ -703,7 +705,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, isActiveSheetBlocked, selection, clearActiveSelection, themeMenuOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
+  }, [mode, isActiveSheetBlocked, selection, clearActiveSelection, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
 
   useEffect(() => {
     const handleHistoryKeyDown = (event: KeyboardEvent) => {
@@ -739,11 +741,11 @@ export default function App() {
       if (mode === "source" || isActiveSheetBlocked) return;
       const focus = getSelectionFocus(selection);
       if (!focus || formulaInputMode !== "read") return;
-      if (themeMenuOpen || sheetSetupOpen || selectionMenuOpen || railMenuOpen) return;
+      if (settingsOpen || sheetSetupOpen || selectionMenuOpen || railMenuOpen) return;
       const target = event.target as HTMLElement | null;
       if (
         target?.closest(
-          "input, textarea, [contenteditable='true'], .formula-format-menu, .formula-style-menu, .rail-menu, .theme-menu, .tool-menu, .sheet-setup-menu, .selection-menu",
+          "input, textarea, [contenteditable='true'], .formula-format-menu, .formula-style-menu, .rail-menu, .app-modal-shell, .tool-menu, .sheet-setup-menu, .selection-menu",
         )
       ) {
         return;
@@ -759,7 +761,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleEnterToEdit);
     return () => window.removeEventListener("keydown", handleEnterToEdit);
-  }, [mode, isActiveSheetBlocked, selection, formulaInputMode, themeMenuOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
+  }, [mode, isActiveSheetBlocked, selection, formulaInputMode, settingsOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -768,7 +770,7 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (!selection) return;
       const interactiveRoot = target?.closest(
-        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .theme-control, .theme-menu, .tool-overflow-control, .tool-menu, .sheet-setup-button, .sheet-setup-menu, .selection-menu, .sheet-tab, .column-index-cell, .column-index-main, .row-index-cell, .row-index-main, .rail-menu, textarea",
+        ".ag-cell, .ag-header-cell, .ag-header-group-cell, .formula-bar, .formula-format-menu, .formula-style-menu, .source-button, .settings-button, .app-modal-shell, .tool-overflow-control, .tool-menu, .sheet-setup-button, .sheet-setup-menu, .selection-menu, .sheet-tab, .column-index-cell, .column-index-main, .row-index-cell, .row-index-main, .rail-menu, textarea",
       );
       if (interactiveRoot) return;
       clearActiveSelection();
@@ -916,7 +918,7 @@ export default function App() {
 
   const selectedRowAxisSelection = useMemo<RowAxisSelection | null>(() => (
     selection?.kind === "row"
-      ? { axis: "row", area: selection.area, rowStart: selection.rowStart, rowEnd: selection.rowEnd }
+      ? { axis: "row", rowStart: selection.rowStart, rowEnd: selection.rowEnd }
       : null
   ), [selection]);
 
@@ -931,7 +933,6 @@ export default function App() {
     if (selection?.kind !== "row") return null;
     const rowSelection = {
       axis: "row" as const,
-      area: selection.area,
       rowStart: selection.rowStart,
       rowEnd: selection.rowEnd,
     };
@@ -939,7 +940,7 @@ export default function App() {
       currentSheetState != null &&
       resolveRowDragSource(
         selection.rowNumber,
-        selection.area,
+        selection.rowNumber <= headerRowCount ? "header" : "body",
         headerRowCount,
         currentSheetState.rowIds,
         currentSheetRowStructure,
@@ -1105,20 +1106,8 @@ export default function App() {
     const nextCells: HeaderOverlayCell[] = [];
 
     for (let rowOffset = 0; rowOffset < headerOverlayRows; rowOffset += 1) {
-      let cursor = 0;
-      while (cursor < columnMetrics.length) {
-        const start = columnMetrics[cursor];
-        const label = headerMatrix[rowOffset]?.[start.colIndex] ?? "";
-        let end = cursor;
-        while (end + 1 < columnMetrics.length) {
-          const current = columnMetrics[end];
-          const candidate = columnMetrics[end + 1];
-          if (candidate.colIndex !== current.colIndex + 1) break;
-          if (current.colIndex < headerColCount && candidate.colIndex >= headerColCount) break;
-          const candidateLabel = headerMatrix[rowOffset]?.[candidate.colIndex] ?? "";
-          if (candidateLabel !== label) break;
-          end += 1;
-        }
+      for (const { start: startIndex, end, label } of groupHeaderSpans(columnMetrics, headerMatrix[rowOffset] ?? [], headerColCount)) {
+        const start = columnMetrics[startIndex];
 
         const left = Math.round(start.left);
         const rightMetric = columnMetrics[end];
@@ -1141,7 +1130,6 @@ export default function App() {
           });
         }
 
-        cursor = end + 1;
       }
     }
 
@@ -1149,8 +1137,8 @@ export default function App() {
   }, [mode, isActiveSheetBlocked, headerOverlayRows, sheetColCount, columnMetrics, headerMatrix, headerColCount]);
 
   const searchCells = useMemo(() => buildDocumentSearchCells(
-    { docState, evaluation, presentation, sheetIssuesByName }, uiLocale,
-  ), [docState, evaluation, presentation, sheetIssuesByName, uiLocale]);
+    { docState, evaluation, presentation, sheetIssuesByName }, uiLocale, displayCell,
+  ), [docState, evaluation, presentation, sheetIssuesByName, uiLocale, displayCell]);
   const sheetSearch = useSheetSearch({
     cells: searchCells, scope: activeSheet ?? "",
     enabled: mode === "table",
@@ -1199,18 +1187,17 @@ export default function App() {
       nextScrollSize: bodyViewport.scrollHeight,
       viewportSize: bodyViewport.clientHeight,
     });
-    if (targetScrollTop == null) return false;
-    bodyViewport.scrollTop = targetScrollTop;
+    if (targetScrollTop != null) bodyViewport.scrollTop = targetScrollTop;
+    // Focus follows the new row model, not scroll-height growth: a short
+    // table can append a visible row without changing the viewport's height.
     if (pending.focusTarget && !pending.focusApplied && isGridApiAlive(gridApiRef.current)) {
-      const displayedRowIndex = absoluteRowToDisplayedIndex.get(pending.focusTarget.rAbs);
-      if (displayedRowIndex != null) {
-        gridApiRef.current.setFocusedCell(displayedRowIndex, pending.focusTarget.colId);
-        bodyViewport.scrollTop = targetScrollTop;
+      if (focusAppendedBodyRow(gridApiRef.current, pending.focusTarget)) {
+        if (targetScrollTop != null) bodyViewport.scrollTop = targetScrollTop;
         pending.focusApplied = true;
       }
     }
-    return true;
-  }, [absoluteRowToDisplayedIndex, isGridApiAlive]);
+    return pending.focusTarget ? pending.focusApplied : targetScrollTop != null;
+  }, [isGridApiAlive]);
 
   const applyPendingAppendColumnAnchorScroll = useCallback(() => {
     const pending = pendingAppendColumnAnchorScrollRef.current;
@@ -1551,22 +1538,27 @@ export default function App() {
   );
 
   useEffect(() => {
+    const isInsideSelection = (logical: LogicalCell | null) =>
+      logical && selectionContainsCell(selection, logical);
+    const preserveContextSelection = (event: MouseEvent) => {
+      if (event.button !== 2 || mode === "source" || isActiveSheetBlocked) return;
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest(".ag-cell, .header-matrix-cell, .persistent-range-selection, .persistent-selection-ring")) return;
+      if (!isInsideSelection(resolveLogicalCellFromPoint(event.clientX, event.clientY))) return;
+      // The grid focuses right-clicked cells before contextmenu, which must not collapse the selection.
+      event.preventDefault();
+      suppressCellFocusSelectionUntilRef.current = performance.now() + 320;
+    };
     const handleContextMenu = (event: MouseEvent) => {
       if (mode === "source" || isActiveSheetBlocked) return;
       const target = event.target as HTMLElement | null;
       if (!target?.closest(".ag-cell, .header-matrix-cell, .persistent-range-selection, .persistent-selection-ring")) return;
 
       const logical = resolveLogicalCellFromPoint(event.clientX, event.clientY);
-      const clickedInsideSelection =
-        logical &&
-        selectedRange &&
-        logical.rAbs >= selectedRange.rowStart &&
-        logical.rAbs <= selectedRange.rowEnd &&
-        logical.cAbs >= selectedRange.colStart &&
-        logical.cAbs <= selectedRange.colEnd;
+      const clickedInsideSelection = isInsideSelection(logical);
       if (logical && !clickedInsideSelection) {
         setSelection(makeCellSelection(logical));
-      } else if (!logical && !selectedRange) {
+      } else if (!logical && !selection) {
         return;
       }
 
@@ -1583,9 +1575,13 @@ export default function App() {
       setFormulaBarSnapshot(null);
     };
 
+    document.addEventListener("mousedown", preserveContextSelection, true);
     document.addEventListener("contextmenu", handleContextMenu);
-    return () => document.removeEventListener("contextmenu", handleContextMenu);
-  }, [mode, isActiveSheetBlocked, resolveLogicalCellFromPoint, selectedRange]);
+    return () => {
+      document.removeEventListener("mousedown", preserveContextSelection, true);
+      document.removeEventListener("contextmenu", handleContextMenu);
+    };
+  }, [mode, isActiveSheetBlocked, resolveLogicalCellFromPoint, selection]);
 
   useEffect(() => {
     const computeScrollDelta = (position: number, start: number, end: number) => {
@@ -1938,21 +1934,10 @@ export default function App() {
       const firstDataCol = headerColCount;
       if (firstDataCol >= sheetColCount) return;
       const anchorRowNumber =
-        event?.shiftKey === true && selection?.kind === "row" && selection.area === area
+        event?.shiftKey === true && selection?.kind === "row"
           ? selection.anchorRowNumber
           : clampedRowNumber;
-      const rowStart = Math.min(anchorRowNumber, clampedRowNumber);
-      const rowEnd = Math.max(anchorRowNumber, clampedRowNumber);
-      if (area === "header" && (rowStart < 1 || rowEnd > headerRowCount)) return;
-      if (area === "body" && rowStart <= headerRowCount) return;
-      setSelection({
-        kind: "row",
-        area,
-        rowNumber: clampedRowNumber,
-        anchorRowNumber,
-        rowStart,
-        rowEnd,
-      });
+      setSelection(makeRowSelection(anchorRowNumber, clampedRowNumber));
       suppressCellFocusSelectionUntilRef.current = performance.now() + 320;
       setFormulaInputMode("read");
       closeRailMenu();
@@ -2048,6 +2033,8 @@ export default function App() {
 
     const tableStage = root.closest<HTMLElement>(".table-stage");
     if (!tableStage) throw new Error("grid viewport sync requires a table stage");
+    const workspace = root.closest<HTMLElement>(".workspace-shell");
+    if (!workspace) throw new Error("grid viewport sync requires a workspace");
     return gridViewportAdapter.attachViewportSync(root, (snapshot) => {
       setGridScrollSnapshot((current) => {
         const next = { ...snapshot, sheetName: activeSheet };
@@ -2056,8 +2043,8 @@ export default function App() {
     }, ({ top, left }) => {
       tableStage.classList.toggle("has-scroll-y", top > 0.5);
       tableStage.classList.toggle("has-scroll-x", left > 0.5);
-      tableStage.style.setProperty("--grid-center-track-offset-x", `${-left}px`);
-      tableStage.style.setProperty("--grid-body-track-offset-y", `${-top}px`);
+      workspace.style.setProperty("--grid-center-track-offset-x", `${-left}px`);
+      workspace.style.setProperty("--grid-body-track-offset-y", `${-top}px`);
     });
   }, [
     gridRoot,
@@ -2724,7 +2711,6 @@ export default function App() {
     moveRows(activeSheet, session.source.rowIds, validation.mapping.targetGapIndex);
     setSelection({
       kind: "row",
-      area: session.source.area,
       rowNumber: nextRowNumber,
       anchorRowNumber: nextRowNumber,
       rowStart: nextRowNumber,
@@ -2875,28 +2861,22 @@ export default function App() {
       return true;
     }
 
-    const rowNumber = session.area === "header"
-      ? resolveHeaderRowNumberAtTrackY(clientY - gridRect.top, headerIndexMetrics)
-      : rowTrackRef.current
-        ? resolveBodyRowNumberAtTrackY(clientY - rowTrackRef.current.getBoundingClientRect().top, rowIndexMetrics)
-        : null;
+    const bodyTrack = rowTrackRef.current;
+    if (!bodyTrack) return false;
+    const rowNumber = resolveRowRailSelectionFocus(
+      clientY - gridRect.top,
+      clientY - bodyTrack.getBoundingClientRect().top,
+      headerIndexMetrics,
+      rowIndexMetrics,
+    );
     if (rowNumber == null) return false;
-    const clampedRowNumber = session.area === "header"
-      ? Math.max(1, Math.min(headerRowCount, rowNumber))
-      : Math.max(headerRowCount + 1, Math.min(sheetRowCount, rowNumber));
+    const clampedRowNumber = Math.max(1, Math.min(sheetRowCount, rowNumber));
     const rowStart = Math.min(session.anchorRowNumber, clampedRowNumber);
     const rowEnd = Math.max(session.anchorRowNumber, clampedRowNumber);
     setSelection((current) => (
-      axisRowSelectionEqual(current, session.area, clampedRowNumber, session.anchorRowNumber, rowStart, rowEnd)
+      axisRowSelectionEqual(current, clampedRowNumber, session.anchorRowNumber, rowStart, rowEnd)
         ? current
-        : {
-            kind: "row",
-            area: session.area,
-            rowNumber: clampedRowNumber,
-            anchorRowNumber: session.anchorRowNumber,
-            rowStart,
-            rowEnd,
-          }
+        : makeRowSelection(session.anchorRowNumber, clampedRowNumber)
     ));
     return true;
   }, [
@@ -2921,9 +2901,7 @@ export default function App() {
       const didScroll =
         session.axis === "column"
           ? applyAxisHorizontalAutoPan(point.clientX)
-          : session.area === "body"
-            ? applyAxisBodyVerticalAutoPan(point.clientY)
-            : false;
+          : applyAxisBodyVerticalAutoPan(point.clientY);
       if (!didScroll) return;
       updateAxisSelectionDrag(session, point.clientX, point.clientY);
       axisAutoPanRafRef.current = window.requestAnimationFrame(tickAxisAutoPan);
@@ -3058,13 +3036,12 @@ export default function App() {
   const handleRowRailPointerDown = useCallback((rowNumber: number, area: "header" | "body", event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0 || mode === "source" || isActiveSheetBlocked) return;
     event.preventDefault();
-    const canStartMove = canStartRowRailMoveDrag(rowNumber, area, selectedRowAxisSelection, event);
+    const canStartMove = canStartRowRailMoveDrag(rowNumber, area, headerRowCount, selectedRowAxisSelection, event);
     if (!canStartMove) {
       if (!canStartRowRailSelectionDrag(rowNumber, area, headerRowCount, sheetRowCount, selectedRowAxisSelection, event)) return;
       event.currentTarget.setPointerCapture(event.pointerId);
       beginAxisSelectionDragSession({
         axis: "row",
-        area,
         pointerId: event.pointerId,
         captureTarget: event.currentTarget,
         startX: event.clientX,
@@ -3301,8 +3278,6 @@ export default function App() {
           : "hidden"
       : "hidden";
 
-  const themeButtonLabel = themeMode === "auto" ? "Automatic appearance" : themeMode === "light" ? "Light mode" : "Dark mode";
-  const themeButtonIcon = themeMode === "auto" ? <AutoIcon /> : themeMode === "light" ? <SunIcon /> : <MoonIcon />;
 
 
   const tableStageClassName = [
@@ -3469,11 +3444,38 @@ export default function App() {
   }, [formulaEditSourceCell, activeSheet, headerColCount, currentSheetRowStructure, clearCell, setCellInput, focusHeaderOverlayCell, focusBodyCellAt]);
 
   const prepareForPersistence = useCallback(() => {
+    notes.prepare();
     if (formulaInputMode === "edit") handleCommitFormulaInput(formulaDraftInput);
-  }, [formulaInputMode, formulaDraftInput, handleCommitFormulaInput]);
-  const { initializationStatus, fileName, fileStatus, handleNewFile, handleOpenFile, handleSaveFileAs, handleSaveFile } = useFileSessionController({
+  }, [notes.prepare, formulaInputMode, formulaDraftInput, handleCommitFormulaInput]);
+  const handleEditNote = (position: SheetNotePosition) => {
+    if (!currentSheetState || !shouldRenderGrid) throw new Error("Notes require an editable sheet");
+    if (formulaInputMode === "edit") handleCommitFormulaInput(formulaDraftInput);
+    clearActiveSelection();
+    setFormulaInputMode("read");
+    setSheetSetupOpen(false);
+    notes.begin(currentSheetState.sheetId, position);
+  };
+  const interchange = useInterchangeController(prepareForPersistence);
+  const openSettings = useCallback(() => {
+    prepareForPersistence();
+    clearTooltip();
+    setSettingsOpen(true);
+  }, [prepareForPersistence, clearTooltip]);
+  const handlePrint = usePrintSheet(prepareForPersistence, requestConfirmation, displayCell);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key === ",") {
+        event.preventDefault();
+        if (!document.querySelector(".app-modal-backdrop")) openSettings();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openSettings]);
+  const { initializationStatus, fileDropCue, fileName, fileStatus, handleNewFile, handleOpenFile, handleSaveFileAs, handleSaveFile } = useFileSessionController({
     mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence,
-    hasPendingCellEdit: formulaInputMode === "edit",
+    hasPendingCellEdit: formulaInputMode === "edit" || notes.draft !== null,
+    onImport: interchange.openImport, onExport: interchange.openExport, onPrint: handlePrint, onBrowserOpen: interchange.openBrowserFile, onSettings: openSettings,
   });
   const [initialGridReady, setInitialGridReady] = useState(false);
   const handleInitialLayoutReady = useCallback(() => setInitialGridReady(true), []);
@@ -3564,7 +3566,7 @@ export default function App() {
 
   const {
     handleInsertRow, handleAppendBodyRows, handleDuplicateRow, handleDeleteRow,
-    handleConvertRowsToHeader, handleConvertRowsToBody, maxHeaderRowCount, handleSetHeaderRowCount,
+    handleConvertRowsToHeader, handleConvertRowsToBody, maxHeaderRowCount, handleSetHeaderRowCount, maxHeaderColCount, handleSetHeaderColCount,
     handleInsertColumn, handleAppendDataColumns, handleDuplicateColumn, handleDeleteColumn,
   } = useSheetStructureCommands({
     currentSheet, currentSheetState, currentSheetRowStructure, sheetColCount, headerRowCount,
@@ -3574,6 +3576,18 @@ export default function App() {
     focusBodyCellAt, gridWrapRef, queueAppendRowAnchorScroll, requestConfirmation,
     clearActiveSelection, scheduleColumnIntoView, scheduleAppendColumnAnchorScroll,
   });
+
+  const rowNoteActions = useRowsToNoteCommand(
+    mode === "source" || isActiveSheetBlocked ? null : docState, activeSheet,
+    railMenuOpen || selectionMenuOpen ? selection : null,
+    railMenuOpen ? railMenu : null,
+    () => {
+      closeRailMenu();
+      setSelectionMenuOpen(false);
+      clearActiveSelection();
+      setFormulaInputMode("read");
+    },
+  );
 
   const handleRequestFormulaEdit = useCallback(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -3651,17 +3665,12 @@ export default function App() {
           onDeleteSheet={handleDeleteSheet}
           onMoveSheet={handleMoveSheet}
           onRenameSheet={handleRenameSheet}
-          themeMenuOpen={themeMenuOpen}
-          setThemeMenuOpen={setThemeMenuOpen}
-          themeButtonLabel={themeButtonLabel}
-          themeButtonIcon={themeButtonIcon}
-          themeControlRef={themeControlRef}
-          themeButtonRef={themeButtonRef}
+          settingsOpen={settingsOpen}
+          onOpenSettings={openSettings}
           sheetSetupOpen={sheetSetupOpen}
           sheetSetupButtonRef={sheetSetupButtonRef}
           onToggleSheetSetup={() => {
             setSheetSetupOpen((open) => !open);
-            setThemeMenuOpen(false);
           }}
           canUndo={canUndo}
           canRedo={canRedo}
@@ -3670,6 +3679,10 @@ export default function App() {
           onUndo={undo}
           onRedo={redo}
           onOpenFile={handleOpenFile}
+          onExportFile={interchange.openExport}
+          exportMenuOpen={interchange.exportMenuOpen}
+          onExportMenuOpenChange={interchange.setExportMenuOpen}
+          onExportFormat={interchange.selectExportFormat}
           onNewFile={handleNewFile}
           onSaveFile={handleSaveFile}
           onSaveFileAs={handleSaveFileAs}
@@ -3685,6 +3698,7 @@ export default function App() {
 
         <SearchPanel />
         <FileSessionNotices />
+        {interchange.dialog}
 
         {error ? (
           <div className="error" role="alert">
@@ -3693,9 +3707,12 @@ export default function App() {
           </div>
         ) : null}
 
+        <ViewHandoff viewKey={mode === "source" ? "source" : gridInstanceKey ?? "empty"}
+          waitForLayout={mode === "table" && initializationStatus !== "loading" && shouldRenderGrid}>
         {mode === "source" ? (
           <section className="source-shell">
             <textarea value={sourceText} onChange={(event) => setSourceText(event.target.value)} spellCheck={false} />
+            <FileDropOverlay cue={fileDropCue} />
           </section>
         ) : (
           <section
@@ -3708,7 +3725,15 @@ export default function App() {
             }
           >
             {initializationStatus !== "loading" && shouldRenderGrid ? (
+              <NoteWorkspace sheetId={currentSheetState!.sheetId} width={noteTableWidth}
+                intro={<SheetNote sheet={currentSheetState!} position="beforeTable" editor={notes} onBegin={handleEditNote} />}>
+              {railHost =>
               <TableStage
+                columnRailHost={railHost}
+                onTableWidth={setNoteTableWidth}
+                afterTableNoteHeight={noteFooterHeight}
+                editingAfterTableNote={notes.draft?.position === "afterTable" && notes.draft.sheetId === currentSheetState!.sheetId}
+                afterTableNote={<SheetNote sheet={currentSheetState!} position="afterTable" editor={notes} onBegin={handleEditNote} onHeight={setNoteFooterHeight} />}
                 onLayoutReady={handleInitialLayoutReady}
                 tableStageClassName={tableStageClassName}
                 tableStageStyle={tableStageStyle}
@@ -3736,6 +3761,7 @@ export default function App() {
                 isRangeSelection={isRangeSelection}
                 selectedColumnIndex={selectedColumnIndex}
                 columnHasLocalConfig={columnHasLocalConfig}
+                rowHasLocalConfig={rowHasLocalConfig}
                 suppressAgHeaderFocus={Boolean(suppressAgHeaderFocus)}
                 overlayOwnsGridHeader={headerOverlayRows > 0}
                 showSelectionRing={mode === "table" && !isActiveSheetBlocked && Boolean(selectedCell)}
@@ -3753,7 +3779,7 @@ export default function App() {
                 handleRowRailPointerDown={handleRowRailPointerDown}
                 handleRowRailMenuOpen={handleRowRailMenuOpen}
                 quickAddDisabled={mode !== "table" || isActiveSheetBlocked}
-                onQuickAddRows={handleAppendBodyRows}
+                onAppendBodyRows={handleAppendBodyRows}
                 onQuickAddColumns={handleAppendDataColumns}
                 axisDropIndicator={axisDropIndicator}
                 axisDragPreview={axisDragPreview}
@@ -3766,7 +3792,8 @@ export default function App() {
                 handleCellMouseDown={handleCellMouseDown}
                 handleCellDoubleClicked={handleCellDoubleClicked}
                 handleCellKeyDown={handleCellKeyDown}
-              />
+              />}
+              </NoteWorkspace>
             ) : activeSheet && isActiveSheetBlocked ? (
               <SheetParseErrorPanel sheetName={activeSheet} issues={activeSheetBlockingIssues} onOpenSourceMode={enterSourceMode} />
             ) : (
@@ -3775,12 +3802,14 @@ export default function App() {
                 <p>Pick a sheet from the tab strip or return to source mode to inspect the document.</p>
               </div>
             )}
+            <FileDropOverlay cue={fileDropCue} />
           </section>
         )}
+        </ViewHandoff>
         <FormulaBarOverlay
           locale={uiLocale}
           mode={mode}
-          phase={cellChromeVisibilityPhase}
+          phase={notes.draft ? "hidden" : cellChromeVisibilityPhase}
           formulaBarSnapshot={formulaBarData ?? formulaBarSnapshot}
           selectedRange={isRangeSelection ? selectedRange : null}
           inputMode={formulaInputMode}
@@ -3807,13 +3836,9 @@ export default function App() {
         />
       </div>
 
+      <SettingsDialog open={settingsOpen} onClose={closeSettings} preferences={preferences} systemLocale={systemLocale} update={updatePreferences} />
       <OverlayPortals
-        themeMenuOpen={themeMenuOpen}
-        themeMenuPosition={themeMenuPosition}
-        themeMenuRef={themeMenuRef}
-        themeMode={themeMode}
-        setThemeMode={setThemeMode}
-        setThemeMenuOpen={setThemeMenuOpen}
+        rowNoteActions={rowNoteActions}
         railMenuOpen={railMenuOpen}
         railMenuPosition={railMenuPosition}
         railMenu={railMenu}
@@ -3821,10 +3846,14 @@ export default function App() {
         sheetSetupOpen={sheetSetupOpen}
         sheetSetupPosition={sheetSetupPosition}
         sheetSetupMenuRef={sheetSetupMenuRef}
+        onEditNote={handleEditNote}
+        notesDisabled={!shouldRenderGrid || mode !== "table"}
         headerRowCount={headerRowCount}
         maxHeaderRowCount={maxHeaderRowCount}
         headerColCount={headerColCount}
         onSetHeaderRowCount={handleSetHeaderRowCount}
+        maxHeaderColCount={maxHeaderColCount}
+        onSetHeaderColCount={handleSetHeaderColCount}
         selectionMenuOpen={selectionMenuOpen}
         selectionMenuPosition={selectionMenuPosition}
         selectionMenuRef={selectionMenuRef}

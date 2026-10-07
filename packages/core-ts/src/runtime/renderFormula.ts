@@ -1,5 +1,7 @@
 import { isError, isValidExternalErrorKind } from "./errors";
 import { encodeStringLiteral } from "../text_encoding";
+import { encodeNumberLiteral } from "../number_encoding";
+import { renderSpreadsheetAddress } from "./spreadsheetAddress";
 import { formatFormulaReferencePathComponent, formatFormulaSheetSelector } from "./referenceSyntax";
 import { getBoundSheetId, selectorSource } from "./references";
 import type { ArrayExpr, ExprNode, IndexAxisExpr, IndexExpr, ReferenceExpr, RefSelector, RuntimeValue } from "./types";
@@ -26,10 +28,26 @@ export function renderFormulaExpression(
   parentPrec = 0,
 ): string | null {
   if (!node) return null;
+  if (node.sourceForm === "f_string") {
+    const literal = (text: string) => JSON.stringify(text).slice(1, -1).replaceAll("{", "{{").replaceAll("}", "}}");
+    const renderPart = (part: ExprNode): string => {
+      if (part.kind === "binary" && (part.sourceForm === "f_concat" || part.sourceForm === "f_string")) {
+        return renderPart(part.left!) + renderPart(part.right!);
+      }
+      if (part.kind === "literal") return literal((part.value as { value: string }).value);
+      if (part.kind !== "call" || (part.sourceForm !== "f_field" && part.sourceForm !== "f_string")) throw new Error("Invalid f-string source annotation");
+      const call = part.value as { args: ExprNode[] };
+      const expression = renderFormulaExpression(call.args[0], rowIdToIndex, colIdToIndex, context);
+      if (expression === null) throw new Error("Cannot render f-string expression");
+      const spec = call.args[1] ? ":" + JSON.stringify((call.args[1].value as { value: string }).value).slice(1, -1) : "";
+      return "{" + expression + spec + "}";
+    };
+    return 'f"' + renderPart(node) + '"';
+  }
   if (node.kind === "literal") {
     const value = node.value as RuntimeValue;
     if (value.kind === "string") return serializeString(String(value.value ?? ""));
-    if (value.kind === "number") return serializeNumber(value.value as number | null);
+    if (value.kind === "number") return encodeNumberLiteral(value.value);
     if (value.kind === "boolean") return value.value ? "true" : "false";
     if (value.kind === "null") return "null";
     if (value.kind === "date" || value.kind === "time" || value.kind === "datetime" || value.kind === "duration") {
@@ -45,7 +63,7 @@ export function renderFormulaExpression(
       return renderCrossSheetReference(ref, context);
     }
     if (ref.style === "spreadsheet") {
-      const spreadsheet = renderSpreadsheetReference(ref, rowIdToIndex, colIdToIndex);
+      const spreadsheet = renderSpreadsheetAddress(ref, rowIdToIndex, colIdToIndex);
       if (spreadsheet) return spreadsheet;
     }
     const rowSel = renderSelector(ref.rowSelector, rowIdToIndex, context.rowLabelPathsByIndex);
@@ -83,8 +101,8 @@ export function renderFormulaExpression(
   if (node.kind === "binary") {
     const op = String(node.value ?? "");
     const prec = precedence(op);
-    const left = renderFormulaExpression(node.left ?? null, rowIdToIndex, colIdToIndex, context, prec) ?? "error[generic]";
-    const right = renderFormulaExpression(node.right ?? null, rowIdToIndex, colIdToIndex, context, prec + 1) ?? "error[generic]";
+    const left = renderFormulaExpression(node.left ?? null, rowIdToIndex, colIdToIndex, context, prec + (op === "**" ? 1 : 0)) ?? "error[generic]";
+    const right = renderFormulaExpression(node.right ?? null, rowIdToIndex, colIdToIndex, context, prec + (op === "**" ? 0 : 1)) ?? "error[generic]";
     const text = `${left} ${op} ${right}`;
     return parentPrec > prec ? `(${text})` : text;
   }
@@ -95,6 +113,10 @@ function renderCrossSheetReference(ref: ReferenceExpr, context: FormulaRenderCon
   const boundSheetId = boundSheetIdOf(ref);
   const targetContext = boundSheetId === null ? undefined : context.sheetsById?.get(boundSheetId);
   const sheetName = targetContext?.sheetName ?? ref.sheetSelector?.value ?? "";
+  if (ref.style === "spreadsheet") {
+    const address = renderSpreadsheetAddress(ref, targetContext?.rowIdToIndex ?? new Map(), targetContext?.colIdToIndex ?? new Map());
+    if (address) return `@[${formatFormulaSheetSelector(sheetName)}::${address}]`;
+  }
   const rowSel = renderSelector(
     ref.rowSelector,
     targetContext?.rowIdToIndex ?? new Map<number, number>(),
@@ -113,8 +135,9 @@ function boundSheetIdOf(ref: ReferenceExpr): number | null {
 }
 
 function precedence(op: string): number {
-  if (op === "primary") return 6;
-  if (op === "postfix") return 5;
+  if (op === "primary") return 7;
+  if (op === "postfix") return 6;
+  if (op === "**") return 5;
   if (op === "unary") return 4;
   if (op === "*" || op === "/") return 3;
   if (op === "+" || op === "-") return 2;
@@ -169,12 +192,12 @@ function renderScalarSelector(selector: RefSelector, idToIndex: Map<number, numb
   }
   if (selector.kind === "absolute") {
     const idx = Number(selector.value ?? 0);
-    return `#${idx + 1}`;
+    return `#${idx + 1}${selector.copyFixed ? "$" : ""}`;
   }
   if (selector.kind === "absolute_id") {
     const idx = idToIndex.get(Number(selector.value));
     if (idx === undefined) return renderSelectorSourceFallback(selector, idToIndex, labelsByIndex) ?? "#?";
-    return `#${idx + 1}`;
+    return `#${idx + 1}${selector.copyFixed ? "$" : ""}`;
   }
   if (selector.kind === "label_id") {
     const idx = idToIndex.get(Number(selector.value));
@@ -208,120 +231,6 @@ function isStructurallyBoundSelector(selector: RefSelector | null): selector is 
 function selectorIndex(selector: RefSelector, idToIndex: Map<number, number>): number | null {
   if (!isStructurallyBoundSelector(selector)) return null;
   return idToIndex.get(Number(selector.value)) ?? null;
-}
-
-type SpreadsheetAxis =
-  | { kind: "all" }
-  | { kind: "scalar"; index: number }
-  | { kind: "range"; start: number; end: number };
-
-function renderSpreadsheetReference(
-  ref: ReferenceExpr,
-  rowIdToIndex: Map<number, number>,
-  colIdToIndex: Map<number, number>,
-): string | null {
-  const rowAxis = spreadsheetAxis(ref.rowSelector, rowIdToIndex);
-  const colAxis = spreadsheetAxis(ref.colSelector, colIdToIndex);
-  if (!rowAxis || !colAxis) return null;
-
-  if (rowAxis.kind === "all" && colAxis.kind === "all") {
-    return null;
-  }
-
-  if (rowAxis.kind === "all") {
-    if (colAxis.kind === "scalar") {
-      const col = columnLabel(colAxis.index);
-      return `${col}:${col}`;
-    }
-    if (colAxis.kind === "range") {
-      const start = columnLabel(colAxis.start);
-      const end = columnLabel(colAxis.end);
-      return `${start}:${end}`;
-    }
-    return null;
-  }
-
-  if (colAxis.kind === "all") {
-    if (rowAxis.kind === "scalar") {
-      const row = rowAxis.index + 1;
-      return `${row}:${row}`;
-    }
-    if (rowAxis.kind === "range") {
-      const start = rowAxis.start + 1;
-      const end = rowAxis.end + 1;
-      return `${start}:${end}`;
-    }
-    return null;
-  }
-
-  const rowStart = rowAxis.kind === "scalar" ? rowAxis.index : rowAxis.start;
-  const rowEnd = rowAxis.kind === "scalar" ? rowAxis.index : rowAxis.end;
-  const colStart = colAxis.kind === "scalar" ? colAxis.index : colAxis.start;
-  const colEnd = colAxis.kind === "scalar" ? colAxis.index : colAxis.end;
-
-  const startCell = `${columnLabel(colStart)}${rowStart + 1}`;
-  const endCell = `${columnLabel(colEnd)}${rowEnd + 1}`;
-  if (rowStart === rowEnd && colStart === colEnd) return startCell;
-  return `${startCell}:${endCell}`;
-}
-
-function spreadsheetAxis(selector: RefSelector, idToIndex: Map<number, number>): SpreadsheetAxis | null {
-  if (selector.kind === "all") {
-    return { kind: "all" };
-  }
-  if (selector.kind === "absolute") {
-    return { kind: "scalar", index: Number(selector.value) };
-  }
-  if (selector.kind === "absolute_id") {
-    const idx = idToIndex.get(Number(selector.value));
-    if (idx === undefined) return null;
-    return { kind: "scalar", index: idx };
-  }
-  if (selector.kind === "range") {
-    const [startSel, endSel] = selector.value as [RefSelector | null, RefSelector | null];
-    if (!startSel || !endSel) return null;
-    const start = spreadsheetScalar(startSel, idToIndex);
-    const end = spreadsheetScalar(endSel, idToIndex);
-    if (start === null || end === null) return null;
-    if (isStructurallyBoundSelector(startSel) && isStructurallyBoundSelector(endSel) && start > end) {
-      return { kind: "range", start: end, end: start };
-    }
-    return { kind: "range", start, end };
-  }
-  return null;
-}
-
-function spreadsheetScalar(selector: RefSelector, idToIndex: Map<number, number>): number | null {
-  if (selector.kind === "absolute") {
-    return Number(selector.value);
-  }
-  if (selector.kind === "absolute_id") {
-    const idx = idToIndex.get(Number(selector.value));
-    return idx === undefined ? null : idx;
-  }
-  return null;
-}
-
-function columnLabel(index: number): string {
-  let value = index + 1;
-  let out = "";
-  while (value > 0) {
-    const rem = (value - 1) % 26;
-    out = String.fromCharCode(65 + rem) + out;
-    value = Math.floor((value - 1) / 26);
-  }
-  return out;
-}
-
-function serializeNumber(value: number | null): string {
-  if (value === null || Number.isNaN(value)) {
-    return "error[generic]";
-  }
-  if (Number.isInteger(value)) {
-    return `${value}`;
-  }
-  const text = Number(value).toPrecision(15);
-  return Number(text).toString();
 }
 
 function serializeString(text: string): string {

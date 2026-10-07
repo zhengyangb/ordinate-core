@@ -267,13 +267,13 @@ describe("RFC-0037 formula editor inspection", () => {
       expect(tokenKinds(result).slice(1)).toEqual(expectedKinds);
     });
 
-    it("does not classify spreadsheet-like identifiers inside arrays or postfix indexes", () => {
+    it("classifies A1 references inside arrays but not postfix index expressions", () => {
       const array = inspect("=[A1, B1]");
       const index = inspect("=@[Rows, Cols][A1]");
-      expect(array.tokens.some((token) => token.kind === "spreadsheet_reference")).toBe(false);
+      expect(array.tokens.filter((token) => token.kind === "spreadsheet_reference")).toHaveLength(2);
       expect(index.tokens.some((token) => token.kind === "spreadsheet_reference")).toBe(false);
       const parsed = parseCellText("=[A1, B1]");
-      expect(parsed.body.valid).toBe(false);
+      expect(parsed.body.valid).toBe(true);
     });
   });
 

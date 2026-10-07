@@ -50,17 +50,40 @@ a timestamp menu, not AppKit's full-screen Time Machine version browser. Volumes
 that cannot store macOS versions report the native error instead of silently
 claiming version history exists. Web has no native document or version logic.
 
-## Export direction (not implemented)
+## Import and export
 
-CSV/TSV can export one sheet's evaluated values and quote multiline text using
-standard CSV escaping. They cannot preserve multiple sheets, hierarchy, styles
-or formulas; a workbook export could contain one file per sheet.
+File → Import opens a converted CSV, TSV or XLSX document in a new native tab.
+File → Export and the toolbar's Export button share the conversion-review flow.
+Export never changes the active document or its autosave destination. See the
+[spreadsheet interchange specification](spreadsheet-interchange.md) for format
+scope, warning/error behavior and the distinction between export-copy and Save As.
 
-XLSX has two useful scopes: a values-only workbook can preserve sheets and basic
-formatting without translating any formulas; a formula-preserving workbook needs
-an explicit mapping from Ordinate references/functions/types to Excel semantics.
-Unsupported formulas should be reported, not silently rewritten. ODS is another
-open spreadsheet format, but has the same semantic translation question.
+## Printing (macOS)
 
-The .ord document remains the lossless editable source. Export is deliberately
-outside this implementation.
+File → Print… / Cmd+P prints only the current sheet, including its full table,
+expanded hierarchy, computed values, effective number/style formatting and both
+Notes. No toolbar, Rails, selection rings or other sheets are printed. There is
+no web/toolbar entry. Chromium paginates an in-memory PDF; PDFKit presents the
+Mac window-modal print panel with page preview explicitly enabled. The panel
+owns printer, paper, orientation, page range and scaling. Changing paper fits
+the already-paginated PDF rather than reflowing the table. Wide tables wrap to
+the PDF page width. Long tables paginate and repeat their header rows.
+
+The command commits pending cell/note edits, then builds a detached snapshot
+using the existing presentation and row projection. Source mode parses the
+current source instead of printing stale table state; invalid structure/notes
+fail explicitly. Cell formula errors remain visible. A print-only React root
+renders the complete table rather than the virtualized screen DOM. The scoped
+native IPC passes the PDF buffer directly to PDFKit (no temporary file), retaining
+the PDF document/operation and print root until
+completion/cancellation, then cleans it up even on failure. Repeated commands
+and commands behind a modal do not start another job. Printing itself does not
+save, mutate or export the document.
+
+`npm run desktop:test-print` exercises this path in a test-owned Mac window,
+substituting only the PDFKit completion callback. Real Chromium PDFs verify
+pagination/formatting. A separate native smoke opens and cancels the actual
+system preview twice, verifies its preview option and two-page PDF, and rejects
+malformed PDFs without submitting physical print jobs. Test-only panel controls
+are excluded from the production addon. Unit tests cover complete data, current
+source, invalid input, escaping, format cascade and print lifecycle/failures.

@@ -15,6 +15,8 @@
     "desktop:compile": "tsc -p tsconfig.desktop.json && node desktop/build-native.mjs",
     "desktop:test-native": "npm run desktop:compile && node desktop/build-native.mjs --test && electron desktop/document-smoke.mjs",
     "desktop:test-workspace": "npm run build && npm run desktop:compile && electron desktop/workspace-smoke.mjs",
+    "desktop:test-interchange": "npm run build && npm run desktop:compile && electron desktop/interchange-smoke.mjs",
+    "desktop:test-print": "npm run build && npm run desktop:compile && electron desktop/interchange-smoke.mjs --print-only && node desktop/build-native.mjs --test && electron desktop/print-preview-smoke.mjs",
     "desktop:dev": "npm run desktop:compile && node desktop/dev.mjs",
     "desktop:debug": "npm run desktop:compile && node desktop/dev.mjs --inspect",
     "desktop:build": "npm run build && npm run desktop:compile && electron-builder --dir --config.electronDist=node_modules/electron/dist",

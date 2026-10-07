@@ -15,6 +15,20 @@ import {
   type FormulaReferenceSheetContext,
 } from "./formulaPointMode";
 
+describe("f-string point mode (shared web and desktop editor)", () => {
+  it("highlights and replaces only field references, retaining format specs", () => {
+    const source = '= f"literal A1 {B2:,.2f} {sum(C1:C3)}"';
+    const tokens = tokenizeFormulaReferences(source);
+    expect(tokens.map(t => t.text)).toEqual(['B2', 'C1:C3']);
+    const edit = applyFormulaReferencePick(source, tokens[0].start, tokens[0].end, '$D$4');
+    expect(edit.nextDraft).toBe('= f"literal A1 {$D$4:,.2f} {sum(C1:C3)}"');
+  });
+  it("keeps unfinished field references editable", () => {
+    const source = '= f"Total: {sum(A1:A3';
+    expect(tokenizeFormulaReferences(source).map(t => t.text)).toEqual(['A1:A3']);
+  });
+});
+
 function sheetContext(overrides: Partial<FormulaReferenceSheetContext> = {}): FormulaReferenceSheetContext {
   return {
     rowCount: 8,
@@ -173,8 +187,8 @@ describe("formula point mode", () => {
     expect(tokenizeFormulaReferences('=@["Inputs"::[Revenue,Amount]')).toEqual([]);
   });
 
-  it("does not highlight spreadsheet-like identifiers inside arrays or postfix indexes", () => {
-    expect(tokenizeFormulaReferences("=sum([A1,B1])")).toEqual([]);
+  it("highlights array A1 operands without treating bare index identifiers as references", () => {
+    expect(tokenizeFormulaReferences("=sum([A1,B1])").map(token => token.text)).toEqual(["A1", "B1"]);
     expect(tokenizeFormulaReferences("=@[Rows,Cols][A1]").map((token) => token.text)).toEqual(["@[Rows,Cols]"]);
   });
 
@@ -212,8 +226,12 @@ describe("formula point mode", () => {
     expect(view.options.find((option) => option.style === "ordinate-positional")?.text).toBe(
       "@[\"Management Report\"::[#2,#3]]",
     );
-    expect(view.options.find((option) => option.style === "spreadsheet-a1")?.disabledReason).toMatch(/Cross-sheet A1/);
+    expect(view.options.find((option) => option.style === "spreadsheet-a1")?.text).toBe('@["Management Report"::C2]');
     expect(view.options.find((option) => option.style === "ordinate-relative")?.disabledReason).toMatch(/Cross-sheet/);
+    const [a1] = resolveFormulaReferenceViews('=@["Management Report"::$C$2]', ctx);
+    expect(a1.style).toBe("spreadsheet-a1");
+    expect(a1.sheetName).toBe("Management Report");
+    expect(a1.rect).toEqual(view.rect);
   });
 
   it("uses core escape semantics for quoted cross-sheet names", () => {

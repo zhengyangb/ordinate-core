@@ -114,6 +114,20 @@ function expectCellErrorReason(doc: string, rowPath: string, colLabel: string, r
   expectErrorReason(cellValue(doc, rowPath, colLabel), reason);
 }
 
+describe("single cash-flow views", () => {
+  it("accepts the native dimension-0 representation without admitting matrices", () => {
+    const cashflow = makeRuntimeView(0, 1, 1, [n(100)]);
+    const dates = makeRuntimeView(0, 1, 1, [date("2024-01-01")]);
+    expectNumber(npvView(n(0.1), cashflow, "npv"), 100 / 1.1);
+    expectNumber(xnpvView(n(0.1), cashflow, dates, "xnpv"), 100);
+    expect(irrView(cashflow, "irr").kind).toBe("error");
+    expect(mirrView(cashflow, n(0.1), n(0.1), "mirr").kind).toBe("error");
+    expect(xirrView(cashflow, dates, "xirr").kind).toBe("error");
+    expectErrorReason(npvView(n(0.1), matrix([n(1), n(2), n(3), n(4)]), "npv"), "vector_required");
+    expectErrorReason(xnpvView(n(0.1), matrix([n(1), n(2), n(3), n(4)]), dates, "xnpv"), "vector_required");
+  });
+});
+
 describe("RFC-0031 financial function library v1", () => {
   it("exposes deterministic financial functions from the registry", () => {
     const names = listStandardFunctionMetadata().map((definition) => definition.name);

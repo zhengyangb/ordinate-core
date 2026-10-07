@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useLayoutEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { FloatingMenuPosition } from "../types/ui";
 import { POSITION_EPSILON, resolveAnchoredMenuPosition } from "../utils/appHelpers";
 
@@ -6,7 +6,7 @@ export function useAnchoredMenuPosition(
   open: boolean, anchorRef: RefObject<HTMLElement>, menuRef: RefObject<HTMLElement>,
   setPosition: Dispatch<SetStateAction<FloatingMenuPosition>>, align: "start" | "end",
 ) {
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     const update = () => {
       const anchor = anchorRef.current, menu = menuRef.current;

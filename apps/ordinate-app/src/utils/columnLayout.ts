@@ -37,11 +37,21 @@ export function resolveColumnLayouts(
     let hasText = false;
     let hasNumber = false;
     let hasBoolean = false;
+    let hasTemporal = false;
+    let numberCount = 0;
+    let textCount = 0;
+    let scalarContentWidth = 0;
     for (const row of rows) {
       const value = row[`col_${colIndex}`];
       if (typeof value !== "string") throw new Error(`missing display text for column ${colIndex}`);
       if (!value) continue;
       const kind = row[`__kind_${colIndex}`];
+      if (kind === "error") continue; // Error chips can collapse to their icon.
+      numberCount += kind === "number" ? 1 : 0;
+      const temporal = kind === "date" || kind === "datetime" || kind === "time" || kind === "duration";
+      hasTemporal ||= temporal;
+      if (kind === "number" || temporal) scalarContentWidth = Math.max(scalarContentWidth, textWidth(value), value.length * 8);
+      textCount += kind === "string" || kind === "label" ? 1 : 0;
       hasText ||= kind === "string" || kind === "label";
       hasNumber ||= kind === "number";
       hasBoolean ||= kind === "boolean";
@@ -51,16 +61,26 @@ export function resolveColumnLayouts(
     widths.sort((a, b) => a - b);
     // An unusually long note should wrap instead of widening its entire column.
     const representative = widths.length ? widths[Math.ceil(widths.length * 0.8) - 1] : 0;
-    const desired = Math.max(textWidth(header), representative) + 32;
     const isHeader = colIndex < headerColCount;
-    const numeric = !isHeader && hasNumber && !hasText;
+    const numeric = !isHeader && hasNumber && numberCount / (numberCount + textCount) >= 0.7;
+    // Prose can wrap; numeric and temporal displays must also account for a
+    // single outlier. Measure the projected display, including locale/format,
+    // rather than the underlying ISO value. Temporal columns do not inherit
+    // the dense report's numeric width cap or widen unrelated numeric peers.
+    const desired = Math.max(textWidth(header), representative, numeric || hasTemporal ? scalarContentWidth : 0) + 32;
     const width = isHeader ? boundedWidth(desired, 176, 256)
-      : hasText ? boundedWidth(desired, 144, 320)
+      : hasTemporal ? boundedWidth(desired, EMPTY_COLUMN_WIDTH, 320)
+      : hasText && !numeric ? boundedWidth(desired, 144, 320)
       : hasBoolean && !hasNumber ? boundedWidth(desired, 96, 144)
       : boundedWidth(desired, EMPTY_COLUMN_WIDTH, 176);
-    return { width, numeric, wrapText: hasText, autoHeight: hasText };
+    return { width, numeric, hasTemporal, desired, empty: widths.length === 0, wrapText: hasText, autoHeight: hasText };
   });
   // Comparable numeric columns share a rhythm rather than varying with each value.
-  const numericWidth = profiles.reduce((max, column) => column.numeric ? Math.max(max, column.width) : max, EMPTY_COLUMN_WIDTH);
-  return profiles.map(({ numeric, ...column }) => ({ ...column, width: numeric ? numericWidth : column.width }));
+  const dense = profiles.filter(column => column.numeric).length >= 4;
+  const numericWidth = profiles.reduce((max, column) => column.numeric && !column.hasTemporal ? Math.max(max, dense ? boundedWidth(column.desired, 80, 144) : column.width) : max, dense ? 80 : EMPTY_COLUMN_WIDTH);
+  const firstContent = profiles.findIndex(c => !c.empty);
+  const lastContent = profiles.reduce((last, column, i) => column.empty ? last : i, -1);
+  return profiles.map(({ numeric, hasTemporal, desired: _desired, empty, ...column }, i) => ({ ...column,
+    width: numeric && !hasTemporal ? numericWidth : dense && empty && i > firstContent && i < lastContent ? 32 : column.width,
+  }));
 }

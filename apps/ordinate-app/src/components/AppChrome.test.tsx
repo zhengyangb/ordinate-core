@@ -15,11 +15,11 @@ const props: ComponentProps<typeof AppChrome> = {
   mode: "table", fileName: "Quarterly Report.ord", fileStatus: "Saved", fileStatusTone: "neutral",
   activeSheet: "Sheet", sheetNames: ["Sheet"], sheetHealthByName: {},
   setActiveSheet: noop, onInsertSheet: noop, onDeleteSheet: noop, onMoveSheet: noop, onRenameSheet: () => null,
-  themeMenuOpen: false, setThemeMenuOpen: noop, themeButtonLabel: "Appearance", themeButtonIcon: null,
-  themeControlRef: createRef(), themeButtonRef: createRef(),
+  settingsOpen: false, onOpenSettings: noop,
   sheetSetupOpen: false, sheetSetupButtonRef: createRef(), onToggleSheetSetup: noop,
   canUndo: false, canRedo: false, undoLabel: null, redoLabel: null, onUndo: noop, onRedo: noop,
-  onNewFile: noop, onOpenFile: noop, onSaveFile: noop, onSaveFileAs: noop, onEnterSourceMode: noop, onExitSourceMode: noop,
+  onNewFile: noop, onOpenFile: noop, onExportFile: noop, onSaveFile: noop, onSaveFileAs: noop, onEnterSourceMode: noop, onExitSourceMode: noop,
+  exportMenuOpen: false, onExportMenuOpenChange: noop, onExportFormat: noop,
   onTooltipEnter: noop, onTooltipLeave: noop, onTooltipSuppress: noop, onTooltipRelease: noop,
   onTabMouseEnter: noop, onTabMouseLeave: noop,
 };
@@ -33,8 +33,16 @@ describe("host-specific document title placement", () => {
     expect(markup.indexOf('aria-label="Current file"')).toBeGreaterThan(markup.indexOf('class="topbar"'));
     expect(markup.indexOf('aria-label="Current file"')).toBeLessThan(markup.indexOf('aria-label="Toolbar"'));
     expect(markup).toContain('aria-label="Save file"');
+    expect(markup).toContain('aria-label="Settings" aria-haspopup="dialog"');
+    expect(markup.indexOf('aria-label="Settings"')).toBeGreaterThan(markup.indexOf('aria-label="Redo"'));
+    expect(markup.indexOf('aria-label="Settings"')).toBeLessThan(markup.indexOf('class="toolbar-actions"'));
+    expect(markup).toContain('class="toolbar-group toolbar-group--preferences"');
+    expect(markup).not.toContain('settings-button active');
+    expect(markup).not.toContain('theme-control');
     expect(markup).toContain('aria-label="Save as"');
     expect(markup).not.toContain('aria-label="New document"');
+    expect(markup).toContain('aria-label="Export a copy"');
+    expect(markup).not.toContain('aria-label="Import spreadsheet"');
   });
 
   it.each(["table", "source"] as const)("leaves the title to macOS and keeps only branding in %s mode", (mode) => {
@@ -47,7 +55,11 @@ describe("host-specific document title placement", () => {
     expect(markup).not.toContain('aria-label="File status"');
     expect(markup).not.toContain('Saved');
     expect(markup).toContain('aria-label="Open file"');
+    expect(markup.indexOf('aria-label="Settings"')).toBeGreaterThan(markup.indexOf('aria-label="Redo"'));
+    expect(markup.indexOf('aria-label="Settings"')).toBeLessThan(markup.indexOf('class="toolbar-actions"'));
     expect(markup).toContain('aria-label="New document"');
+    expect(markup).toContain('aria-label="Export a copy"');
+    expect(markup).not.toContain('aria-label="Import spreadsheet"');
     expect(markup).not.toContain('aria-label="Save file"');
     expect(markup).not.toContain('aria-label="Save as"');
   });

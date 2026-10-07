@@ -74,8 +74,8 @@ export function createDocumentHost(win: BrowserWindow, storage: ReturnType<typeo
       ready = true;
       for (const { id, kind } of pending.values()) win.webContents.send("document:request", { id, kind });
     },
-    update(filename: string, edited: boolean) {
-      if (nativeId !== undefined) appKit!.updateDocument(nativeId, filename, edited);
+    update(filename: string, edited: boolean, title: string) {
+      if (nativeId !== undefined) appKit!.updateDocument(nativeId, filename, edited, title);
     },
     flush(): Promise<void> {
       if (!ready) return Promise.reject(new Error("The editor is not ready to save. Please wait for it to finish loading."));

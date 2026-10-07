@@ -12,6 +12,11 @@ export function isNumberValue(value: RuntimeValue): boolean {
   return value.kind === "number";
 }
 
+/** Exact native type test, not date-looking text or an Excel serial heuristic. */
+export function isDateValue(value: RuntimeValue): boolean {
+  return value.kind === "date";
+}
+
 export function isTextValue(value: RuntimeValue): boolean {
   return value.kind === "string";
 }

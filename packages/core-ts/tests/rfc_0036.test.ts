@@ -112,7 +112,7 @@ describe("RFC-0036 cross-sheet references", () => {
       "parse_cross_sheet_reference_contextual_selector",
     );
     expectInvalidFormula(
-      '= @["Inputs"::A1]',
+      '= @["Inputs"::A0]',
       "parse_cross_sheet_reference_missing_target_brackets",
     );
     expectInvalidFormula(

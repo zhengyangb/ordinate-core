@@ -7,8 +7,33 @@ export {
 } from "./validator";
 
 export { formatDocument } from "./formatter";
+export { groupHeaderSpans } from "./presentation";
+export { parseSheetNote, serializeSheetNote, matchNoteListItem, SheetNoteError, type SheetNote, type SheetNotePosition, type NoteBlock, type NoteInline, type NoteDiagnostic } from "./sheet_notes";
+export { previewRowsToNote, type RowsToNotePreview } from "./core_note_rows";
+export { configureImportedDocument, type ImportSheetHeaders } from "./import_layout";
 export { isImplicitTextInput } from "./runtime/parse";
 export { evaluateAndFormatDocument } from "./materialize";
+
+export {
+  importExcelWorkbook, exportExcelWorkbook, DEFAULT_EXCEL_LIMITS,
+  prepareExcelImport, importPreparedExcelWorkbook, excelImportNoteCandidates,
+  type PreparedExcelImport, type ExcelNoteChoice, type ExcelNoteCandidate,
+  type ExcelLimits, type ExcelOptions, type ExcelImportOptions, type ExcelExportOptions, type ExcelResult, type ExcelImportResult, type ExcelDiagnostic, type ExcelDiagnosticCode,
+} from "./excel";
+
+export {
+  importDelimitedDocument,
+  exportDelimitedSheet,
+  DEFAULT_DELIMITED_LIMITS,
+  type DelimitedImportOptions,
+  type DelimitedExportOptions,
+  type DelimitedSheetExport,
+  type DelimitedFormat,
+  type DelimitedLimits,
+  type DelimitedDiagnostic,
+  type DelimitedDiagnosticCode,
+  type DelimitedResult,
+} from "./delimited";
 
 export {
   parseDocumentModel,
@@ -127,6 +152,7 @@ export type {
   CoreMoveRowsEdit,
 } from "./core_edit_axis";
 export type { CellInputTextView, CellTextViewSource } from "./runtime";
+export { decomposeTemporalValue, decomposeDurationValue } from "./runtime/temporal";
 export {
   formatPresentedCell,
   resolveDocumentPresentation,

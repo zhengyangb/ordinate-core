@@ -2,17 +2,17 @@ import { getCellTextView, resolveSheetRowStructure, type RuntimeValue } from "@o
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EditorState } from "../store/editorStore";
 import type { GridRow, SheetHealth, SheetIssueViewModel } from "../types/ui";
-import { BLANK_RUNTIME_VALUE, GRID_HEADER_HEIGHT, buildHeaderMatrix, buildSheetHealthByName, buildSheetIssueBuckets, toColFieldId, trimSheetColCount } from "../utils/appHelpers";
+import { GRID_HEADER_HEIGHT, buildHeaderMatrix, buildSheetHealthByName, buildSheetIssueBuckets, toColFieldId, trimSheetColCount } from "../utils/appHelpers";
 import { resolveBooleanCellView } from "../utils/booleanCell";
 import { resolveColumnLayouts } from "../utils/columnLayout";
-import { compactColLabel, isVisiblePath, runtimeValueToText } from "../utils/sheetView";
-import { autoNumberDisplay } from "../utils/autoNumberDisplay";
+import { compactColLabel, isVisiblePath } from "../utils/sheetView";
+import type { CellDisplayFormatter } from "../preferences/temporalDisplay";
 
 export function projectSheetRows(
   currentSheet: NonNullable<EditorState["evaluation"]>["sheets"][number] | null,
   currentSheetState: NonNullable<EditorState["docState"]>["sheets"][number] | null,
   currentSheetPresentation: NonNullable<EditorState["presentation"]>["sheets"][number] | null,
-  sheetColCount: number, headerColCount: number, collapsedPaths: ReadonlySet<string>,
+  sheetColCount: number, headerColCount: number, collapsedPaths: ReadonlySet<string>, displayCell: CellDisplayFormatter,
 ): GridRow[] {
   const currentSheetRowStructure = currentSheetState ? resolveSheetRowStructure(currentSheetState) : [];
     if (!currentSheet || !currentSheetState) return [];
@@ -37,9 +37,7 @@ export function projectSheetRows(
           const presentedCell = currentSheetPresentation?.cells[rowIndex]?.[colIndex] ?? null;
           const rawCell = currentSheetState.cells[rowInfo.absoluteRowIndex]?.[colIndex];
           const runtimeValue = row[colIndex] as RuntimeValue | undefined;
-          const displayText = runtimeValue?.kind === "number" && !presentedCell?.formatLayer.effective && !presentedCell?.errors.length
-            ? autoNumberDisplay(Number(runtimeValue.value))
-            : presentedCell?.displayText ?? runtimeValueToText(runtimeValue ?? BLANK_RUNTIME_VALUE);
+          const displayText = displayCell(runtimeValue, presentedCell);
 
           if (colIndex < headerColCount) {
             if (colIndex === 0) {
@@ -79,8 +77,8 @@ export function projectSheetRows(
       });
 }
 
-type Options = Pick<EditorState, "docState" | "evaluation" | "presentation" | "activeSheet" | "sheetIssuesByName">;
-export function useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName }: Options) {
+type Options = Pick<EditorState, "docState" | "evaluation" | "presentation" | "activeSheet" | "sheetIssuesByName"> & { displayCell: CellDisplayFormatter };
+export function useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName, displayCell }: Options) {
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const expandRowPath = useCallback((rowPath: string) => {
     setCollapsedPaths(current => {
@@ -198,8 +196,8 @@ export function useSheetViewModel({ docState, evaluation, presentation, activeSh
   }, []);
 
   const allRowData = useMemo(() => projectSheetRows(
-    currentSheet, currentSheetState, currentSheetPresentation, sheetColCount, headerColCount, collapsedPaths,
-  ), [currentSheet, currentSheetState, currentSheetPresentation, sheetColCount, headerColCount, collapsedPaths]);
+    currentSheet, currentSheetState, currentSheetPresentation, sheetColCount, headerColCount, collapsedPaths, displayCell,
+  ), [currentSheet, currentSheetState, currentSheetPresentation, sheetColCount, headerColCount, collapsedPaths, displayCell]);
 
   const rowData = useMemo(
     () => allRowData.filter((row) => isVisiblePath(row.__rowPath, collapsedPaths)),

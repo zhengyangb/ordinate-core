@@ -114,6 +114,67 @@ async function openHarness() {
   return harness;
 }
 
+describe("importing a new untitled document", () => {
+  it("recovers the imported draft name and suggests it on first Save", async () => {
+    const first = createHarness();
+    first.store.getState().importUntitled(DOC_B, "季度报告");
+    await first.store.getState().autosaveNow();
+    const restored = createHarness({localDraftStore:first.localDraftStore});
+    await restored.store.getState().loadUntitledDraft();
+    restored.store.getState().recoverDraft();
+    expect(restored.editor.getText()).toBe(DOC_B);
+    expect(restored.store.getState().draftName).toBe("季度报告");
+    let suggestedName: string | undefined;
+    const saveAs = restored.adapter.saveAs;
+    restored.adapter.saveAs = async (text, name) => { suggestedName = name; return saveAs(text); };
+    await restored.store.getState().save();
+    expect(suggestedName).toBe("季度报告.ord");
+    expect(restored.store.getState().draftName).toBeNull();
+    expect(restored.store.getState().file).not.toBeNull();
+  });
+  it("rejects an invalid name without replacing the current document", () => {
+    const {store,editor} = createHarness();
+    const original = editor.getText();
+    expect(() => store.getState().importUntitled(DOC_B, "../report")).toThrow("Invalid document name");
+    expect(editor.getText()).toBe(original);
+  });
+  it("detaches the old backing file before saving the imported draft", async () => {
+    const { store, editor, adapter, localDraftStore } = await openHarness();
+    store.getState().importUntitled(DOC_B, "Quarterly report");
+    expect(editor.getText()).toBe(DOC_B);
+    expect(store.getState()).toMatchObject({ file: null, backingText: null, backingVersion: null, documentDirty: "dirty", backingFileState: "none" });
+    await store.getState().autosaveNow();
+    expect(adapter.getDiskText("file-a")).toBe(DOC_A);
+    expect((await localDraftStore.get("untitled:untitled-test"))?.text).toBe(DOC_B);
+    expect(store.getState().draftName).toBe("Quarterly report");
+    expect((await localDraftStore.get("untitled:untitled-test"))?.draftName).toBe("Quarterly report");
+  });
+  it("refuses to replace a document while a file operation is in flight", async () => {
+    const { store, editor } = await openHarness();
+    const state = store.getState();
+    store.setState({ operation: { id: "active", kind: "save", fileId: state.file!.id, text: DOC_A, expectedVersion: state.backingVersion } });
+    expect(() => store.getState().importUntitled(DOC_B, "Report")).toThrow();
+    expect(editor.getText()).toBe(DOC_A);
+    expect(store.getState().file).toBe(state.file);
+  });
+  it("requires an external edit conflict to be resolved before replacement", async () => {
+    const { store, editor, adapter } = await openHarness();
+    editor.setText(DOC_B);
+    await adapter.setDiskText("file-a", DOC_C);
+    await store.getState().refreshFromDisk(() => true);
+    expect(store.getState().conflict).not.toBeNull();
+    expect(() => store.getState().importUntitled(DOC_D, "Report")).toThrow();
+    expect(editor.getText()).toBe(DOC_B);
+    expect(adapter.getDiskText("file-a")).toBe(DOC_C);
+  });
+  it("preserves the user's disabled-autosave preference", async () => {
+    const { store } = await openHarness();
+    store.setState({ autosaveEnabled: false });
+    store.getState().importUntitled(DOC_B, "Report");
+    expect(store.getState().autosaveEnabled).toBe(false);
+  });
+});
+
 describe("external file refresh", () => {
   it("reloads a clean document without presenting a conflict", async () => {
     const { store, editor, adapter } = await openHarness();

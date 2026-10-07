@@ -106,6 +106,15 @@ export function SheetSetupIcon() {
   );
 }
 
+export function NoteIcon() {
+  return (
+    <ToolbarIcon>
+      <rect x="4" y="3.5" width="12" height="13" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M7 7h6M7 10h6M7 13h4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.2" />
+    </ToolbarIcon>
+  );
+}
+
 export function NewDocumentIcon() {
   return (
     <ToolbarIcon>
@@ -197,13 +206,14 @@ export function OpenIcon() {
   return (
     <ToolbarIcon>
       <path
-        d="M3.2 6.2h5l1.5 1.7h7.1v6.6a1.6 1.6 0 0 1-1.6 1.6H4.8a1.6 1.6 0 0 1-1.6-1.6V6.2Z"
+        d="M2.8 14.8V5.3c0-.8.6-1.4 1.4-1.4H7l1.6 1.8h5.6c.8 0 1.4.6 1.4 1.4V9"
         fill="none"
         stroke="currentColor"
+        strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="1.35"
       />
-      <path d="M3.2 8.2V5.8a1.5 1.5 0 0 1 1.5-1.5h3.2l1.5 1.6h3.2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.25" />
+      <path d="m2.8 14.8 2.3-5.6h12.1l-2.1 5.9c-.2.6-.7 1-1.3 1H4.2c-1 0-1.7-.4-1.4-1.3Z" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.35" />
     </ToolbarIcon>
   );
 }
@@ -237,6 +247,19 @@ export function SaveAsIcon() {
       <path d="m8 14.1 4.7-4.7 1.9 1.9-4.7 4.7H8v-1.9Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.15" />
     </ToolbarIcon>
   );
+}
+
+export function ExportIcon() {
+  return <ToolbarIcon>
+    <path d="M10 12V3m-3.3 3.4L10 3l3.3 3.4M4 11v5.5h12V11" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+  </ToolbarIcon>;
+}
+
+export function SettingsIcon() {
+  return <ToolbarIcon>
+    <path d="m8.2 2.5-.4 1.8-1.4.8-1.8-.5-1.8 3.1 1.4 1.3v1.6l-1.4 1.3 1.8 3.1 1.8-.5 1.4.8.4 1.8h3.6l.4-1.8 1.4-.8 1.8.5 1.8-3.1-1.4-1.3V9l1.4-1.3-1.8-3.1-1.8.5-1.4-.8-.4-1.8Z" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+    <circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.35" />
+  </ToolbarIcon>;
 }
 
 export function SunIcon() {

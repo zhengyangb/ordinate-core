@@ -340,7 +340,8 @@ describe("RFC-0018 header surface editing and row area operations", () => {
     expect(presentation.sheets[0].cells[0][0].errors).toEqual([]);
 
     const output = serializeDocumentState(result.nextDocument);
-    expect(output).toContain("A {:,.1f} {::>,blue}");
+    expect(output).toContain("@display");
+    expect(output).toContain("{:,.1f} {::>,blue}");
     const roundTripped = DocumentState.fromText(output);
     const roundTrippedRowDefault = roundTripped.sheets[0].rowDisplayMetadata[1];
     expect(roundTrippedRowDefault?.valid).toBe(true);
@@ -383,7 +384,7 @@ describe("RFC-0018 header surface editing and row area operations", () => {
     expect(presentation.sheets[0].cells[1][1].source).toBe("column");
   });
 
-  it("rejects row display defaults outside body rows with a label column", () => {
+  it("rejects header-row defaults but accepts body defaults without a label column", () => {
     const state = DocumentState.fromText(`
 # Sheet
 | Item || Price |
@@ -417,9 +418,7 @@ describe("RFC-0018 header surface editing and row area operations", () => {
         format: GROUPED_1F,
       },
     ]);
-    expect(noLabelResult.ok).toBe(false);
-    if (noLabelResult.ok) throw new Error("expected failure");
-    expect(noLabelResult.error.category).toBe("invalid_operation");
+    expect(noLabelResult.ok).toBe(true);
   });
 
   it("sets a rectangular region by rowId and colId", () => {

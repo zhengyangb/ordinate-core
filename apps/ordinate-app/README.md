@@ -23,6 +23,8 @@ an Electron window. React/CSS edits hot-reload; restart the command after changi
 runtime download requires network access.
 
 - Renderer debugging: **View → Toggle Developer Tools** (`Cmd+Option+I` on macOS).
+- Printing: **File → Print…** (`Cmd+P`) on macOS prints the complete current sheet
+  and its before/after notes. There is no toolbar or web print action.
 - Main-process debugging: `npm run desktop:debug`, then attach a Node debugger to
   `127.0.0.1:9229`. TypeScript source maps are emitted to `desktop-out/`.
 - No `.app` rebuild is required for normal UI development.
@@ -81,6 +83,20 @@ installers, auto-update, and Windows/Linux validation are separate release work.
 Do not bypass Gatekeeper warnings; a distributable build needs proper signing.
 
 ## Local files
+
+- **Export a copy** is available in the toolbar on both hosts; desktop also has
+  **File → Import… / Export…**. There is no toolbar Import button. On the web,
+  **Open file → Import spreadsheet…** is the import entry point.
+- CSV/TSV export one selected sheet's calculated values; XLSX exports all sheets
+  with supported executable formulas. Conversion notes and cell-level errors
+  appear before confirmation. Unsupported formulas are not silently flattened.
+- **Ordinate copy (.ord)** exports native source without switching the active
+  file. **Save As** switches it. Desktop imports open a new untitled document tab;
+  browser imports explicitly confirm replacement of the current document. The
+  original spreadsheet is never an autosave target.
+- Full frontend contract: [Spreadsheet interchange](docs/features/spreadsheet-interchange.md).
+- Sheet Notes: [In-place editing and rail layout](docs/features/sheet-notes.md).
+- Settings: [Regional date/time display and appearance](docs/features/display-preferences.md).
 
 - **File → Open…** (`Cmd/Ctrl+O`) uses the operating system's file picker for `.ord`
   and `.txt` documents.
@@ -161,6 +177,7 @@ npm test
 npm run typecheck
 npm run desktop:compile
 npm run desktop:test-native # macOS only; hidden window and temporary fixtures
+npm run desktop:test-interchange # real renderer + preload; isolated desktop/web file workflows
 npm run desktop:build
 ```
 
