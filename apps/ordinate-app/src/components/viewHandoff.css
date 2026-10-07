@@ -1,0 +1,7 @@
+.view-handoff { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
+.view-handoff-live { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.view-handoff-snapshot { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 30; }
+.view-handoff-snapshot:empty { display: none; }
+.view-handoff-snapshot * { pointer-events: none !important; animation: none !important; transition: none !important; }
+.view-handoff-loading { display: none; position: absolute; inset: 0; place-items: center; background: var(--sheet-surface); color: var(--sheet-soft); font-size: .82rem; z-index: 30; }
+.view-handoff[data-handoff="loading"] > .view-handoff-loading { display: grid; }

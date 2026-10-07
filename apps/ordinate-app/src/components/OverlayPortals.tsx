@@ -1,8 +1,9 @@
 import { createPortal } from "react-dom";
-import type { ReactNode, RefObject } from "react";
+import type { RefObject } from "react";
 
-import { AutoIcon, MoonIcon, SunIcon } from "../icons/uiIcons";
 import RailMenu from "./RailMenu";
+import { RowsToNoteMenuItem } from "../notes/RowsToNoteMenuItem";
+import type { RowsToNoteAction } from "../notes/useRowsToNoteCommand";
 import SheetSetupMenu from "./SheetSetupMenu";
 import FloatingTooltipView from "./FloatingTooltipView";
 import { MenuOption, MenuSurface } from "./MenuSurface";
@@ -14,27 +15,24 @@ import type {
   FormatLocalOptions,
   RailMenuView,
   StyleLocalView,
-  ThemeMenuPosition,
-  ThemeMode,
 } from "../types/ui";
 
 type OverlayPortalsProps = {
-  themeMenuOpen: boolean;
-  themeMenuPosition: ThemeMenuPosition;
-  themeMenuRef: RefObject<HTMLDivElement>;
-  themeMode: ThemeMode;
-  setThemeMode: (mode: ThemeMode) => void;
-  setThemeMenuOpen: (open: boolean) => void;
+  rowNoteActions: { rail: RowsToNoteAction | null; selection: RowsToNoteAction | null };
   railMenuOpen: boolean;
   railMenuPosition: FloatingMenuPosition;
   railMenu: RailMenuView | null;
   railMenuRef: RefObject<HTMLDivElement>;
   sheetSetupOpen: boolean;
+  onEditNote: (position: import("@ordinate/core").SheetNotePosition) => void;
+  notesDisabled: boolean;
   sheetSetupPosition: FloatingMenuPosition;
   sheetSetupMenuRef: RefObject<HTMLDivElement>;
   headerRowCount: number;
   maxHeaderRowCount: number;
   headerColCount: number;
+  maxHeaderColCount: number;
+  onSetHeaderColCount: (count: number) => void;
   onSetHeaderRowCount: (count: number) => void;
   selectionMenuOpen: boolean;
   selectionMenuPosition: FloatingMenuPosition;
@@ -59,22 +57,21 @@ type OverlayPortalsProps = {
 };
 
 export default function OverlayPortals({
-  themeMenuOpen,
-  themeMenuPosition,
-  themeMenuRef,
-  themeMode,
-  setThemeMode,
-  setThemeMenuOpen,
+  rowNoteActions,
   railMenuOpen,
   railMenuPosition,
   railMenu,
   railMenuRef,
   sheetSetupOpen,
+  onEditNote,
+  notesDisabled,
   sheetSetupPosition,
   sheetSetupMenuRef,
   headerRowCount,
   maxHeaderRowCount,
   headerColCount,
+  maxHeaderColCount,
+  onSetHeaderColCount,
   onSetHeaderRowCount,
   selectionMenuOpen,
   selectionMenuPosition,
@@ -100,39 +97,8 @@ export default function OverlayPortals({
   return (
     <>
       {createPortal(
-        <MenuSurface
-          innerRef={themeMenuRef}
-          className="theme-menu"
-          open={themeMenuOpen}
-          style={{ top: `${themeMenuPosition.top}px`, left: `${themeMenuPosition.left}px` }}
-        >
-          {(
-            [
-              { mode: "auto", label: "Auto", icon: <AutoIcon /> },
-              { mode: "light", label: "Light", icon: <SunIcon /> },
-              { mode: "dark", label: "Dark", icon: <MoonIcon /> },
-            ] satisfies Array<{ mode: ThemeMode; label: string; icon: ReactNode }>
-          ).map((option) => (
-            <MenuOption
-              key={option.mode}
-              role="menuitemradio"
-              aria-checked={themeMode === option.mode}
-              active={themeMode === option.mode}
-              icon={<span className="tool-icon">{option.icon}</span>}
-              onClick={() => {
-                setThemeMode(option.mode);
-                setThemeMenuOpen(false);
-              }}
-            >
-              {option.label}
-            </MenuOption>
-          ))}
-        </MenuSurface>,
-        document.body,
-      )}
-
-      {createPortal(
         <RailMenu
+          rowNoteMenuItem={<RowsToNoteMenuItem action={rowNoteActions.rail} />}
           open={railMenuOpen}
           position={railMenuPosition}
           railMenu={railMenu}
@@ -144,6 +110,7 @@ export default function OverlayPortals({
           onInsertColumnRight={onInsertColumnRight}
           onDuplicateColumn={onDuplicateColumn}
           onDeleteColumn={onDeleteColumn}
+          onSetHeaderColCount={onSetHeaderColCount}
           onDuplicateRow={onDuplicateRow}
           onConvertRowsToHeader={onConvertRowsToHeader}
           onConvertRowsToBody={onConvertRowsToBody}
@@ -157,12 +124,16 @@ export default function OverlayPortals({
 
       {createPortal(
         <SheetSetupMenu
+          onEditNote={onEditNote}
+          notesDisabled={notesDisabled}
           open={sheetSetupOpen}
           position={sheetSetupPosition}
           menuRef={sheetSetupMenuRef}
           headerRowCount={headerRowCount}
           maxHeaderRowCount={maxHeaderRowCount}
           headerColCount={headerColCount}
+          maxHeaderColCount={maxHeaderColCount}
+          onSetHeaderColCount={onSetHeaderColCount}
           onSetHeaderRowCount={onSetHeaderRowCount}
         />,
         document.body,
@@ -178,6 +149,7 @@ export default function OverlayPortals({
           <MenuOption role="menuitem" tone="danger" disabled={!canClearSelection} onClick={onClearSelection}>
             Clear selection
           </MenuOption>
+          <RowsToNoteMenuItem action={rowNoteActions.selection} />
         </MenuSurface>,
         document.body,
       )}

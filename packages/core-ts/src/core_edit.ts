@@ -22,6 +22,9 @@ import {
 import { resolveSheetRowStructure } from "./row_structure";
 import { applyFillRegion, type CoreFillMode } from "./core_fill";
 import { isImplicitTextInput } from "./runtime/parse";
+import { cloneDocumentState } from "./document_clone";
+import type { SheetNotePosition } from "./sheet_notes";
+import { convertRowsToNote } from "./core_note_rows";
 
 export interface CoreEditError {
   category: CoreEditErrorCategory;
@@ -80,6 +83,8 @@ export type CoreRenameSheetEdit = {
 };
 
 export type CoreEdit =
+  | { op: "set_sheet_note"; sheet: string; position: SheetNotePosition; markdown: string }
+  | { op: "convert_rows_to_note"; sheet: string; rowIds: number[] }
   | { op: "set_cell_input"; target: CoreCellTarget; input: string }
   | { op: "clear_cell"; target: CoreCellTarget }
   | { op: "set_cell_local_format"; target: CoreCellTarget; format: FormatSpec | null }
@@ -99,6 +104,7 @@ export type CoreEdit =
   | { op: "clear_region"; target: CoreRegionTarget }
   | { op: "convert_rows_to_header"; sheet: string; rowIds: number[] }
   | { op: "convert_rows_to_body"; sheet: string; rowIds: number[]; depth: number }
+  | { op: "set_header_columns"; sheet: string; count: number }
   | CoreRenameSheetEdit
   | CoreInsertSheetEdit
   | CoreDeleteSheetEdit
@@ -204,7 +210,7 @@ export function applyBatchAtomic(
     const edit = edits[i];
     try {
       applySingleEdit(staged, edit);
-      staged.bindCrossSheetFormulas();
+      bindAfterEdit(staged, edit.op);
     } catch (error) {
       if (error instanceof CoreEditFailure) {
         return {
@@ -262,7 +268,7 @@ export function applyBatchWithUndo(
         const before = captureDocumentHistorySnapshot(staged);
         const beforeSignature = documentSnapshotSignature(before);
         applySingleEdit(staged, edit);
-        staged.bindCrossSheetFormulas();
+        bindAfterEdit(staged, edit.op);
         const after = captureDocumentHistorySnapshot(staged);
         const afterSignature = documentSnapshotSignature(after);
         if (beforeSignature !== afterSignature) {
@@ -281,7 +287,7 @@ export function applyBatchWithUndo(
         const before = sheet.captureHistorySnapshot();
         const beforeSignature = sheetSnapshotSignature(before);
         applySingleEdit(staged, edit);
-        staged.bindCrossSheetFormulas();
+        bindAfterEdit(staged, edit.op);
         const after = sheet.captureHistorySnapshot();
         const afterSignature = sheetSnapshotSignature(after);
         if (beforeSignature !== afterSignature) {
@@ -336,7 +342,7 @@ export function applyCoreEditMemento(
           );
         }
         restoreDocumentHistorySnapshot(staged, replacement);
-        staged.bindCrossSheetFormulas();
+        bindAfterEdit(staged, entry.op);
       } else {
         const expected = direction === "undo" ? entry.after : entry.before;
         const expectedSignature = direction === "undo" ? entry.afterSignature : entry.beforeSignature;
@@ -349,8 +355,12 @@ export function applyCoreEditMemento(
             `cannot ${direction} ${entry.op}: document state does not match the history entry`,
           );
         }
-        sheet.restoreHistorySnapshot(replacement);
-        staged.bindCrossSheetFormulas();
+        if (entry.op === "set_sheet_note") {
+          // Notes history changes only document content, never calculation state.
+          sheet.sourceBlocks = structuredClone(replacement.sourceBlocks);
+          sheet.primaryTableBlockIndex = replacement.primaryTableBlockIndex;
+        } else sheet.restoreHistorySnapshot(replacement);
+        bindAfterEdit(staged, entry.op);
       }
     } catch (error) {
       return { ok: false, error: coreEditErrorFromCaught(error, entry.editIndex, entry.op) };
@@ -413,16 +423,6 @@ export function previewDeleteColumn(
   };
 }
 
-function cloneDocumentState(document: DocumentState): DocumentState {
-  const clone = structuredClone(document) as DocumentState;
-  Object.setPrototypeOf(clone, DocumentState.prototype);
-  for (const sheet of clone.sheets) {
-    Object.setPrototypeOf(sheet, SheetState.prototype);
-  }
-  copyDocumentReferenceMetadata(document, clone);
-  return clone;
-}
-
 function coreEditErrorFromCaught(error: unknown, editIndex: number, op: CoreEdit["op"]): CoreEditError {
   if (error instanceof CoreEditFailure) {
     return {
@@ -459,6 +459,10 @@ function sheetNameForEdit(edit: CoreEdit): string {
     throw new CoreEditFailure("invalid_operation", `${edit.op} is a document-level edit`);
   }
   return edit.sheet;
+}
+
+function bindAfterEdit(document: DocumentState, op: CoreEdit["op"]): void {
+  if (op !== "set_sheet_note") document.bindCrossSheetFormulas();
 }
 
 function isDocumentHistoryEdit(edit: CoreEdit): boolean {
@@ -505,28 +509,6 @@ function documentSnapshotSignature(snapshot: CoreDocumentHistorySnapshot): strin
   return JSON.stringify(snapshot);
 }
 
-function copyDocumentReferenceMetadata(source: DocumentState, target: DocumentState): void {
-  source.sheets.forEach((sheet, sheetIndex) => {
-    const targetSheet = target.sheets[sheetIndex];
-    if (!targetSheet) return;
-    sheet.cells.forEach((row, rAbs) => {
-      row.forEach((cell, c) => {
-        const sourceBody = cell.body;
-        const targetBody = targetSheet.cells[rAbs]?.[c]?.body;
-        if (
-          !sourceBody.valid ||
-          sourceBody.kind !== "formula" ||
-          !targetBody?.valid ||
-          targetBody.kind !== "formula"
-        ) {
-          return;
-        }
-        copyExpressionReferenceMetadata(sourceBody.expression, targetBody.expression);
-      });
-    });
-  });
-}
-
 function copyDocumentHistoryReferenceMetadata(
   source: CoreDocumentHistorySnapshot,
   target: CoreDocumentHistorySnapshot,
@@ -557,6 +539,14 @@ function copySheetSnapshotReferenceMetadata(source: SheetHistorySnapshot, target
 }
 
 function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
+  if (edit.op === "convert_rows_to_note") {
+    convertRowsToNote(document, edit.sheet, edit.rowIds);
+    return;
+  }
+  if (edit.op === "set_sheet_note") {
+    resolveSheet(document, edit.sheet).setSheetNote(edit.position, edit.markdown);
+    return;
+  }
   if (edit.op === "fill_region") {
     if (edit.source.sheet !== edit.target.sheet) fail("invalid_operation", "fill regions must belong to the same sheet");
     const source = resolveRegionTarget(document, edit.source);
@@ -675,6 +665,14 @@ function applySingleEdit(document: DocumentState, edit: CoreEdit): void {
   if (edit.op === "convert_rows_to_header") {
     const sheet = resolveSheet(document, edit.sheet);
     applyConvertRowsToHeader(sheet, edit.rowIds);
+    return;
+  }
+
+  if (edit.op === "set_header_columns") {
+    const sheet = resolveSheet(document, edit.sheet);
+    assertInteger(edit.count, "count", fail, "invalid_operation");
+    if (edit.count < 0 || edit.count >= sheet.colCount) throw new CoreEditFailure("invalid_operation", "Keep at least one data column.");
+    sheet.setHeaderColumnCount(edit.count, false);
     return;
   }
 

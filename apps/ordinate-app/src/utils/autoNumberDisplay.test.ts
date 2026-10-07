@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { autoNumberDisplay } from "./autoNumberDisplay";
 import { buildDocumentSearchCells } from "../search/searchModel";
 import { useEditorStore } from "../store/editorStore";
+import { createCellDisplayFormatter } from "../preferences/temporalDisplay";
+const displayCell = createCellDisplayFormatter("locale", "en-US");
 
 describe("compact Auto number display", () => {
   it("limits decimals without adding trailing zeros", () => {
@@ -20,7 +22,7 @@ describe("compact Auto number display", () => {
     useEditorStore.getState().replaceDocumentText(`# Sheet\n| Value |\n| ----- |\n| = 53 / 65 |`);
     const state = useEditorStore.getState();
     const before = state.sourceText;
-    const cells = buildDocumentSearchCells(state, "en-US");
+    const cells = buildDocumentSearchCells(state, "en-US", displayCell);
     expect(cells.some(cell => cell.text === "0.8154")).toBe(true);
     expect(useEditorStore.getState().sourceText).toBe(before);
     const value = state.evaluation!.sheets[0].values[0][0];
@@ -29,7 +31,7 @@ describe("compact Auto number display", () => {
   });
   it("preserves explicitly requested precision", () => {
     useEditorStore.getState().replaceDocumentText(`# Sheet\n| Value |\n| ----- |\n| 0.123456789 {:.6f} |`);
-    const cells = buildDocumentSearchCells(useEditorStore.getState(), "en-US");
+    const cells = buildDocumentSearchCells(useEditorStore.getState(), "en-US", displayCell);
     expect(cells.some(cell => cell.text === "0.123457")).toBe(true);
   });
 });

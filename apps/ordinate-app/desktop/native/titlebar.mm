@@ -50,6 +50,7 @@ static napi_value SetChrome(napi_env env, napi_callback_info info) {
 }
 
 void RegisterDocuments(napi_env env, napi_value exports);
+void RegisterPrinting(napi_env env, napi_value exports);
 NAPI_MODULE_INIT() {
   napi_value callback;
   if (napi_create_function(env, "setChrome", NAPI_AUTO_LENGTH, SetChrome, nullptr, &callback) != napi_ok ||
@@ -58,5 +59,6 @@ NAPI_MODULE_INIT() {
     return nullptr;
   }
   RegisterDocuments(env, exports);
+  RegisterPrinting(env, exports);
   return exports;
 }

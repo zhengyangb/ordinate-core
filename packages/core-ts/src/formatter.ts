@@ -1,5 +1,6 @@
 import { escapeCellText, parseDocument, parseTableRow, ParsedRow } from "./parser";
 import { trimCellText } from "./text_encoding";
+import { noteBlockLines } from "./sheet_notes";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 
@@ -17,6 +18,8 @@ export function formatDocument(text: string): string {
         for (const row of parsed) {
           parts.push(renderRow(row, widths, boundary));
         }
+      } else if (block.kind === "note") {
+        parts.push(...noteBlockLines(block));
       } else {
         parts.push(...block.lines);
       }
@@ -26,7 +29,7 @@ export function formatDocument(text: string): string {
     }
   });
 
-  const body = parts.join("\n").replace(/\s+$/, "") + "\n";
+  const body = parts.join("\n").replace(/(?:\n[ \t]*)+$/, "") + "\n";
   if (frontMatter === null) return body;
   return parts.length === 0 ? `${frontMatter}\n` : `${frontMatter}\n\n${body}`;
 }

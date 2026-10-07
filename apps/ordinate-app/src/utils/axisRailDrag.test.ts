@@ -18,6 +18,7 @@ import {
   resolveHeaderRowDropGap,
   resolveHeaderRowNumberAtTrackY,
   resolveRowDragSource,
+  resolveRowRailSelectionFocus,
   validateColumnMoveDrop,
   validateRowMoveDrop,
 } from "./axisRailDrag";
@@ -167,7 +168,7 @@ describe("axis rail drag helpers", () => {
       sourceStartIndex: 2,
       sourceCount: 3,
     });
-    expect(resolveRowDragSource(3, "body", 2, ROW_IDS, BODY_ROWS, { axis: "row", area: "body", rowStart: 3, rowEnd: 3 })).toMatchObject({
+    expect(resolveRowDragSource(3, "body", 2, ROW_IDS, BODY_ROWS, { axis: "row", rowStart: 3, rowEnd: 3 })).toMatchObject({
       ok: true,
       area: "body",
       rowIds: [101, 102, 103],
@@ -177,17 +178,17 @@ describe("axis rail drag helpers", () => {
   });
 
   it("starts row move drag only from the selected full row without selection modifiers", () => {
-    const selection = { axis: "row" as const, area: "body" as const, rowStart: 6, rowEnd: 8 };
-    expect(canStartRowRailMoveDrag(6, "body", null, {})).toBe(false);
-    expect(canStartRowRailMoveDrag(5, "body", selection, {})).toBe(false);
-    expect(canStartRowRailMoveDrag(6, "body", selection, {})).toBe(true);
-    expect(canStartRowRailMoveDrag(7, "body", selection, {})).toBe(true);
-    expect(canStartRowRailMoveDrag(8, "header", selection, {})).toBe(false);
-    expect(canStartRowRailMoveDrag(6, "body", selection, { shiftKey: true })).toBe(false);
+    const selection = { axis: "row" as const, rowStart: 6, rowEnd: 8 };
+    expect(canStartRowRailMoveDrag(6, "body", 2, null, {})).toBe(false);
+    expect(canStartRowRailMoveDrag(5, "body", 2, selection, {})).toBe(false);
+    expect(canStartRowRailMoveDrag(6, "body", 2, selection, {})).toBe(true);
+    expect(canStartRowRailMoveDrag(7, "body", 2, selection, {})).toBe(true);
+    expect(canStartRowRailMoveDrag(8, "header", 2, selection, {})).toBe(false);
+    expect(canStartRowRailMoveDrag(6, "body", 2, selection, { shiftKey: true })).toBe(false);
   });
 
   it("starts row selection drag only from an unselected valid row rail", () => {
-    const selection = { axis: "row" as const, area: "body" as const, rowStart: 6, rowEnd: 8 };
+    const selection = { axis: "row" as const, rowStart: 6, rowEnd: 8 };
     expect(canStartRowRailSelectionDrag(1, "header", 2, 9, selection, {})).toBe(true);
     expect(canStartRowRailSelectionDrag(6, "body", 2, 9, selection, {})).toBe(false);
     expect(canStartRowRailSelectionDrag(9, "body", 2, 9, selection, {})).toBe(true);
@@ -195,7 +196,7 @@ describe("axis rail drag helpers", () => {
   });
 
   it("resolves multi-row drag sources and rejects partial selected subtrees", () => {
-    expect(resolveRowDragSource(4, "body", 2, ROW_IDS, BODY_ROWS, { axis: "row", area: "body", rowStart: 4, rowEnd: 5 })).toMatchObject({
+    expect(resolveRowDragSource(4, "body", 2, ROW_IDS, BODY_ROWS, { axis: "row", rowStart: 4, rowEnd: 5 })).toMatchObject({
       ok: true,
       area: "body",
       rowIds: [102, 103],
@@ -204,17 +205,40 @@ describe("axis rail drag helpers", () => {
       firstDepth: 1,
       lastDepth: 1,
     });
-    expect(resolveRowDragSource(3, "body", 2, ROW_IDS, BODY_ROWS, { axis: "row", area: "body", rowStart: 3, rowEnd: 4 })).toMatchObject({
+    expect(resolveRowDragSource(3, "body", 2, ROW_IDS, BODY_ROWS, { axis: "row", rowStart: 3, rowEnd: 4 })).toMatchObject({
       ok: false,
       reason: "Selected row segment does not include the complete subtree.",
     });
-    expect(resolveRowDragSource(1, "header", 2, ROW_IDS, BODY_ROWS, { axis: "row", area: "header", rowStart: 1, rowEnd: 2 })).toMatchObject({
+    expect(resolveRowDragSource(1, "header", 2, ROW_IDS, BODY_ROWS, { axis: "row", rowStart: 1, rowEnd: 2 })).toMatchObject({
       ok: true,
       area: "header",
       rowIds: [11, 12],
       sourceStartIndex: 0,
       sourceCount: 2,
     });
+  });
+
+  it("keeps mixed row selections intact but never starts a move from either region", () => {
+    const selection = {axis:"row" as const,rowStart:1,rowEnd:5};
+    for (const [row, area] of [[1,"header"], [4,"body"]] as const) {
+      expect(canStartRowRailMoveDrag(row, area, 2, selection, {})).toBe(false);
+      expect(canStartRowRailSelectionDrag(row, area, 2, 7, selection, {})).toBe(false);
+      expect(resolveRowDragSource(row, area, 2, ROW_IDS, BODY_ROWS, selection)).toEqual({
+        ok:false,reason:"Move rows within the same row region.",
+      });
+    }
+    expect(canStartRowRailSelectionDrag(6, "body", 2, 7, selection, {})).toBe(true);
+  });
+
+  it("resolves selection focus across both rails and preserves scrolled body coordinates", () => {
+    const headers = [{number:1,top:0,height:38},{number:2,top:38,height:38}];
+    const body = [{rowKey:"r3",number:3,top:0,height:38},{rowKey:"r4",number:4,top:38,height:38}];
+    expect(resolveRowRailSelectionFocus(20, -56, headers, body)).toBe(1);
+    expect(resolveRowRailSelectionFocus(75, -1, headers, body)).toBe(2);
+    expect(resolveRowRailSelectionFocus(76, 0, headers, body)).toBe(3);
+    expect(resolveRowRailSelectionFocus(130, 54, headers, body)).toBe(4);
+    expect(resolveRowRailSelectionFocus(80, 45, headers, body)).toBe(4);
+    expect(resolveRowRailSelectionFocus(20, 20, [], body)).toBe(3);
   });
 
   it("validates body row hierarchy drops before core mutation", () => {

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { SearchButton } from "../search/SheetSearch";
+import { ChoiceMenu } from "./ChoiceMenu";
+import { FORMATS, type ExportFormat } from "../interchange/contracts";
 
-import { ChevronLeftIcon, ChevronRightIcon, CodeIcon, NewDocumentIcon, OpenIcon, SheetSetupIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
+import { ChevronLeftIcon, ChevronRightIcon, CodeIcon, ExportIcon, NewDocumentIcon, OpenIcon, SheetSetupIcon, SettingsIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
 import { MenuDivider, MenuGroup, MenuHead, MenuOption, MenuSurface, MenuTitle } from "./MenuSurface";
 import type { SheetHealth } from "../types/ui";
 import {
@@ -31,12 +33,8 @@ type AppChromeProps = {
   onDeleteSheet: (sheetName: string) => Promise<void> | void;
   onMoveSheet: (sheetName: string, targetGapIndex: number) => void;
   onRenameSheet: (sheetName: string, nextName: string) => string | null;
-  themeMenuOpen: boolean;
-  setThemeMenuOpen: (value: SetStateAction<boolean>) => void;
-  themeButtonLabel: string;
-  themeButtonIcon: ReactNode;
-  themeControlRef: RefObject<HTMLDivElement>;
-  themeButtonRef: RefObject<HTMLButtonElement>;
+  settingsOpen: boolean;
+  onOpenSettings: () => void;
   sheetSetupOpen: boolean;
   sheetSetupButtonRef: RefObject<HTMLButtonElement>;
   onToggleSheetSetup: () => void;
@@ -47,6 +45,10 @@ type AppChromeProps = {
   onUndo: () => void;
   onRedo: () => void;
   onOpenFile: () => void;
+  onExportFile: () => void;
+  exportMenuOpen: boolean;
+  onExportMenuOpenChange: (open: boolean) => void;
+  onExportFormat: (format: ExportFormat) => void;
   onNewFile: () => void;
   onSaveFile: () => void;
   onSaveFileAs: () => void;
@@ -149,12 +151,8 @@ export default function AppChrome({
   onDeleteSheet,
   onMoveSheet,
   onRenameSheet,
-  themeMenuOpen,
-  setThemeMenuOpen,
-  themeButtonLabel,
-  themeButtonIcon,
-  themeControlRef,
-  themeButtonRef,
+  settingsOpen,
+  onOpenSettings,
   sheetSetupOpen,
   sheetSetupButtonRef,
   onToggleSheetSetup,
@@ -165,6 +163,10 @@ export default function AppChrome({
   onUndo,
   onRedo,
   onOpenFile,
+  onExportFile,
+  exportMenuOpen,
+  onExportMenuOpenChange,
+  onExportFormat,
   onNewFile,
   onSaveFile,
   onSaveFileAs,
@@ -579,6 +581,17 @@ export default function AppChrome({
             </span>
           </button>
           </>}
+          <ChoiceMenu open={exportMenuOpen} onOpenChange={open => open ? onExportFile() : onExportMenuOpenChange(false)}
+            onChoose={onExportFormat} label="Export format" portal
+            options={Object.entries(FORMATS).map(([value, format]) => ({ value: value as ExportFormat, label: format.label, detail: `.${value}` }))}
+            buttonProps={{ className: `tool-button file-command-button${exportMenuOpen ? " active" : ""}`, "aria-label": "Export a copy",
+              onMouseEnter: event => { if (!exportMenuOpen) onTooltipEnter("Export a copy", event.currentTarget); },
+              onMouseLeave: event => onTooltipRelease(event.currentTarget),
+              onFocus: event => { if (!exportMenuOpen) onTooltipEnter("Export a copy", event.currentTarget); },
+              onBlur: event => onTooltipRelease(event.currentTarget),
+              onMouseDown: event => onTooltipSuppress(event.currentTarget),
+              children: <span className="tool-icon"><ExportIcon /></span>,
+            }} />
           </div>
 
           <div className="toolbar-group toolbar-group--document" role="group" aria-label="Document">
@@ -643,31 +656,27 @@ export default function AppChrome({
           </button>
           </div>
 
+          <div className="toolbar-group toolbar-group--preferences" role="group" aria-label="Preferences">
+          <button
+            className="tool-button settings-button"
+            type="button"
+            onClick={onOpenSettings}
+            aria-label="Settings"
+            aria-haspopup="dialog"
+            aria-expanded={settingsOpen}
+            onMouseEnter={(event) => { if (!settingsOpen) onTooltipEnter("Settings", event.currentTarget); }}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => { if (!settingsOpen) onTooltipEnter("Settings", event.currentTarget); }}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+          >
+            <span className="tool-icon"><SettingsIcon /></span>
+          </button>
+          </div>
         </nav>
 
         <div className="toolbar-actions">
           <SearchButton />
-          <div className="theme-control" ref={themeControlRef}>
-            <button
-              className={themeMenuOpen ? "tool-button theme-button active" : "tool-button theme-button"}
-              type="button"
-              onClick={() => setThemeMenuOpen((open) => !open)}
-              ref={themeButtonRef}
-              aria-label={themeButtonLabel}
-              aria-haspopup="menu"
-              aria-expanded={themeMenuOpen}
-              onMouseEnter={(event) => onTooltipEnter(themeButtonLabel, event.currentTarget)}
-              onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-              onFocus={(event) => {
-                if (!themeMenuOpen) onTooltipEnter(themeButtonLabel, event.currentTarget);
-              }}
-              onBlur={(event) => onTooltipRelease(event.currentTarget)}
-              onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
-            >
-              <span className="tool-icon">{themeButtonIcon}</span>
-            </button>
-          </div>
-
           <button
             className={mode === "source" ? "tool-button source-button active" : "tool-button source-button"}
             onClick={mode === "source" ? onExitSourceMode : onEnterSourceMode}

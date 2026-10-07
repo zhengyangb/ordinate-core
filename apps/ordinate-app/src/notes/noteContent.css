@@ -1,0 +1,10 @@
+.note-content-layout { container: note-content / inline-size; }
+.sheet-note-columns { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.sheet-note-column { min-width: 0; }
+.note-content-layout hr { border: 0; border-top: 1px solid var(--sheet-grid); margin: .8em 0; }
+/* Preserve the existing narrow-note breakpoint; beyond it, fit readable
+   12rem columns with a 24px gutter. Layout never changes the document AST. */
+@container note-content (width > 420px) and (min-width: calc(24rem + 24px)) {
+  .sheet-note-columns { grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 24px; }
+  .sheet-note-column + .sheet-note-column > hr:first-child { display: none; }
+}

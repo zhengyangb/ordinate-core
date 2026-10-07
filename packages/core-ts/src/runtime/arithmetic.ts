@@ -1,4 +1,5 @@
 import { makeInternalError } from "./errors";
+import { MAX_TEXT_LENGTH } from "./textLimits";
 import { evalTemporalArithmetic } from "./temporal";
 import type { BooleanRuntimeValue, RuntimeValue } from "./types";
 
@@ -16,6 +17,7 @@ export function evalArithmetic(op: string, left: RuntimeValue, right: RuntimeVal
 
   if (left.kind === "string" && right.kind === "string") {
     if (op === "+") {
+      if (left.value.length + right.value.length > MAX_TEXT_LENGTH) return makeInternalError("invalid_text_output_limit", { max: MAX_TEXT_LENGTH });
       return { kind: "string", value: String(left.value) + String(right.value) };
     }
     return makeInternalError("invalid_arithmetic", { operator: op, leftKind: left.kind, rightKind: right.kind });

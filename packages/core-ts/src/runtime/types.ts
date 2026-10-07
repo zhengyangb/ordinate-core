@@ -82,6 +82,8 @@ export type RuntimeValue =
 export interface RefSelector {
   kind: string;
   value?: unknown;
+  /** Keep this axis fixed during copy/fill, not during structural edits. */
+  copyFixed?: true;
 }
 
 export interface SheetRefSelector {
@@ -139,6 +141,8 @@ export interface ArrayExpr {
 
 export interface ExprNode {
   kind: string;
+  /** Source notation only; evaluation and reference traversal use the ordinary tree. */
+  sourceForm?: "f_string" | "f_concat" | "f_field";
   value?: unknown;
   left?: ExprNode | null;
   right?: ExprNode | null;

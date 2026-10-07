@@ -6,8 +6,15 @@ import {
   resolveGridInstanceKey,
   resolveRowDeleteTargets,
 } from "./appHelpers";
+import { makeRowSelection } from "./selectionModel";
 
 describe("app rail menu helpers", () => {
+  it("rejects mixed-region deletion rather than deleting only the right-clicked row", () => {
+    const sheet = {colCount:1,rowIds:[1,2,3],colLabels:["A"],headerRowCount:1,bodyStart:1,cells:[]};
+    for (const [row,area] of [[1,"header"],[2,"body"]] as const) {
+      expect(() => resolveRowDeleteTargets(row,area,row,makeRowSelection(1,2),sheet,[])).toThrow("within one row region");
+    }
+  });
   it("keys grid instances by stable sheet identity and sizing mode", () => {
     expect(resolveGridInstanceKey(1, 5, 1, 2)).not.toBe(
       resolveGridInstanceKey(2, 2, 0, 0),
@@ -72,6 +79,7 @@ describe("app rail menu helpers", () => {
         ],
       },
       1,
+      null,
     );
 
     expect(menu).toMatchObject({
@@ -116,6 +124,7 @@ describe("app rail menu helpers", () => {
       },
       { columnDefaults: [], rowDefaults: [] },
       1,
+      null,
     );
 
     expect(menu).toMatchObject({
@@ -153,7 +162,7 @@ describe("app rail menu helpers", () => {
       2,
       "header",
       102,
-      { kind: "row", rowNumber: 2, area: "header", anchorRowNumber: 1, rowStart: 1, rowEnd: 2 },
+      { kind: "row", rowNumber: 2, anchorRowNumber: 1, rowStart: 1, rowEnd: 2 },
       {
         colCount: 3,
         rowIds: [101, 102, 103, 104],
@@ -176,7 +185,7 @@ describe("app rail menu helpers", () => {
       3,
       "body",
       201,
-      { kind: "row", rowNumber: 4, area: "body", anchorRowNumber: 3, rowStart: 3, rowEnd: 5 },
+      { kind: "row", rowNumber: 4, anchorRowNumber: 3, rowStart: 3, rowEnd: 5 },
       {
         colCount: 3,
         rowIds: [101, 102, 201, 202, 203, 204],

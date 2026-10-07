@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useFileSessionStore } from "../store/fileSessionStore";
 import type { ThemeMode } from "../types/ui";
-import { THEME_STORAGE_KEY } from "./themePreference";
 
 /** Resolve the CSS design token to opaque sRGB, the native window's color space. */
 export function readChromeColor(): string {
@@ -24,7 +23,6 @@ export function useWindowAppearance(themeMode: ThemeMode) {
   const draft = useFileSessionStore(state => state.localDraftState);
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
-    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
   }, [themeMode]);
 
   useEffect(() => {

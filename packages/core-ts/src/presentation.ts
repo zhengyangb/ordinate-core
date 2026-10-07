@@ -1,7 +1,7 @@
 import { DocumentState } from "./incremental";
 import { stripCellDisplayMetadata } from "./runtime/parse";
-import { type Diagnostic, type FormatSpec, type NumericFormatSpec, type RuntimeValue, type StyleSpec } from "./runtime/types";
-import { formatTemporalValue } from "./runtime/temporalFormat";
+import { type Diagnostic, type FormatSpec, type RuntimeValue, type StyleSpec } from "./runtime/types";
+import { formatValue, serializeNumber } from "./runtime/formatting";
 
 export interface DisplayLayer<T> {
   local: T | null;
@@ -44,6 +44,25 @@ export interface SheetPresentation {
 
 export interface PresentationResult {
   sheets: SheetPresentation[];
+}
+
+/** Screen, print and workbook headers share adjacent-label groups. Indices in
+ * the result address the supplied columns, which may contain hidden gaps. */
+export function groupHeaderSpans(columns: ReadonlyArray<{ colIndex: number }>, labels: readonly string[], headerColCount: number) {
+  const spans: { start: number; end: number; label: string }[] = [];
+  for (let start = 0; start < columns.length;) {
+    const label = labels[columns[start].colIndex] ?? "";
+    let end = start;
+    while (end + 1 < columns.length) {
+      const current = columns[end].colIndex, next = columns[end + 1].colIndex;
+      if (next !== current + 1 || (current < headerColCount && next >= headerColCount)
+        || (labels[next] ?? "") !== label) break;
+      end++;
+    }
+    spans.push({ start, end, label });
+    start = end + 1;
+  }
+  return spans;
 }
 
 export function formatPresentedCell(cell: {
@@ -325,10 +344,9 @@ function formatRuntimeValue(value: RuntimeValue | null, format: FormatSpec | nul
     if (!Number.isFinite(rawNumber)) {
       return { displayText: "#ERROR", issue: null };
     }
-    return { displayText: formatNumber(rawNumber, format), issue: null };
   }
 
-  const formatted = formatTemporalValue(value, format);
+  const formatted = formatValue(value, format);
   if ("issue" in formatted) {
     return { displayText: base, issue: formatted.issue };
   }
@@ -358,73 +376,6 @@ function runtimeValueToText(value: RuntimeValue | null): string {
     default:
       return "";
   }
-}
-
-function formatNumber(value: number, format: NumericFormatSpec): string {
-  const isNegative = value < 0 || Object.is(value, -0);
-  const abs = Math.abs(value);
-
-  let numericText: string;
-  const precision = format.precision;
-  switch (format.type) {
-    case "e":
-      numericText = abs.toExponential(precision ?? 6);
-      break;
-    case "%": {
-      const percentage = abs * 100;
-      const percentageText = precision != null ? percentage.toFixed(precision) : serializeNumber(percentage);
-      numericText = `${percentageText}%`;
-      break;
-    }
-    case "d":
-      numericText = Math.trunc(abs).toString(10);
-      break;
-    case "f":
-      numericText = precision != null ? abs.toFixed(precision) : serializeNumber(abs);
-      break;
-    default:
-      numericText = precision != null ? abs.toFixed(precision) : serializeNumber(abs);
-      break;
-  }
-
-  if (format.grouping) {
-    numericText = applyGrouping(numericText);
-  }
-
-  let signedText: string;
-  if (format.sign === "parentheses" && isNegative) {
-    signedText = `(${numericText})`;
-  } else {
-    const signPrefix = isNegative ? "-" : format.sign === "plus" ? "+" : "";
-    signedText = `${signPrefix}${numericText}`;
-  }
-
-  if (format.padWidth === null || format.padWidth <= 0 || signedText.length >= format.padWidth) {
-    return signedText;
-  }
-  if (signedText.startsWith("-") || signedText.startsWith("+")) {
-    const sign = signedText[0];
-    const body = signedText.slice(1).padStart(format.padWidth - 1, "0");
-    return `${sign}${body}`;
-  }
-  return signedText.padStart(format.padWidth, "0");
-}
-
-function applyGrouping(text: string): string {
-  const [integerPart, fractionalPart = ""] = text.split(".");
-  const grouped = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return fractionalPart.length > 0 ? `${grouped}.${fractionalPart}` : grouped;
-}
-
-function serializeNumber(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "#ERROR";
-  }
-  if (Number.isInteger(value)) {
-    return `${value}`;
-  }
-  const text = Number(value).toPrecision(15);
-  return Number(text).toString();
 }
 
 function diagnostic(code: string, context: Record<string, unknown> = {}): Diagnostic {

@@ -178,7 +178,7 @@ describe("RFC-0032 formula array literals", () => {
     expect(cellValue(doc, "ComputedError", "Result").kind).toBe("error");
   });
 
-  it("rejects malformed arrays, ragged arrays, over-deep arrays, and spreadsheet refs inside arrays", () => {
+  it("rejects malformed arrays, ragged arrays, and over-deep arrays", () => {
     expectInvalidFormula("= [1, 2", "parse_array_missing_closing_bracket");
     expectInvalidFormula("= [1,]", "parse_array_trailing_comma");
     expectInvalidFormula("= [,1]", "parse_array_missing_element");
@@ -187,8 +187,6 @@ describe("RFC-0032 formula array literals", () => {
     expectInvalidFormula("= [[], [1]]", "parse_array_ragged_rows");
     expectInvalidFormula("= [[1, 2], 3]", "parse_array_mixed_rows_and_scalars");
     expectInvalidFormula("= [[[1]]]", "parse_array_too_deep");
-    expectInvalidFormula("= [A1, B1]", "parse_array_spreadsheet_reference_unsupported");
-    expectInvalidFormula("= [A1:B3]", "parse_array_spreadsheet_reference_unsupported");
 
     const doc = `
 # SpreadsheetRefs

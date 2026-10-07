@@ -37,9 +37,12 @@ export function useTooltips() {
 
   useEffect(() => {
     if (!tooltip) return;
+    const anchor = tooltipAnchorRef.current;
     let rafId: number;
     const validateAnchor = () => {
-      const anchor = tooltipAnchorRef.current;
+      // A leave/enter handoff can happen before this effect's cleanup. The old
+      // tooltip must not cancel the next target's pending show timer.
+      if (tooltipAnchorRef.current !== anchor) return;
       if (!anchor || !anchor.isConnected || anchor.getClientRects().length === 0) {
         clearTooltip();
         return;
@@ -73,7 +76,7 @@ export function useTooltips() {
   }, [showTooltip, clearTooltip]);
 
   return {
-    tooltip, setTooltip, clearTooltip, showTooltip, handleTabMouseEnter, suppressTooltipForTarget,
+    tooltip, clearTooltip, showTooltip, handleTabMouseEnter, suppressTooltipForTarget,
     releaseTooltipForTarget,
   };
 }

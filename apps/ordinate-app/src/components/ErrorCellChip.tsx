@@ -1,5 +1,6 @@
 import { formatErrorTooltip, getExternalErrorLabel } from "../i18n/errorKinds";
 import type { UiLocale } from "../i18n/messages";
+import { useLayoutEffect, useRef, useState } from "react";
 
 type ErrorCellChipProps = {
   locale: UiLocale;
@@ -19,6 +20,24 @@ export default function ErrorCellChip({
   onTooltipLeave,
 }: ErrorCellChipProps) {
   const label = getExternalErrorLabel(locale, externalKind);
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const chipRef = useRef<HTMLSpanElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [compact, setCompact] = useState(false);
+  useLayoutEffect(() => {
+    const container = containerRef.current!, chip = chipRef.current!, text = labelRef.current!;
+    const measure = () => {
+      const style = getComputedStyle(chip);
+      const icon = chip.querySelector<HTMLElement>(".error-cell-chip-icon")!;
+      const needed = text.scrollWidth + icon.getBoundingClientRect().width + parseFloat(style.columnGap)
+        + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 2;
+      setCompact(needed > container.clientWidth);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(container); observer.observe(text);
+    measure();
+    return () => observer.disconnect();
+  }, [label]);
   const details = formatErrorTooltip({
     locale,
     externalKind,
@@ -27,8 +46,15 @@ export default function ErrorCellChip({
   });
 
   return (
+    <span className="error-cell-chip-container" ref={containerRef}>
     <span
-      className="error-cell-chip"
+      ref={chipRef}
+      className={`error-cell-chip${compact ? " is-compact" : ""}`}
+      tabIndex={0}
+      role="img"
+      aria-label={details}
+      onFocus={(event) => onTooltipEnter(details, event.currentTarget, 0)}
+      onBlur={onTooltipLeave}
       onMouseEnter={(event) => onTooltipEnter(details, event.currentTarget, 120)}
       onMouseLeave={onTooltipLeave}
     >
@@ -38,7 +64,8 @@ export default function ErrorCellChip({
           <path d="M7 4.3v3.9M7 10.1h.01" />
         </svg>
       </span>
-      <span className="error-cell-chip-label">{label}</span>
+      <span className="error-cell-chip-label" ref={labelRef} aria-hidden="true">{label}</span>
+    </span>
     </span>
   );
 }

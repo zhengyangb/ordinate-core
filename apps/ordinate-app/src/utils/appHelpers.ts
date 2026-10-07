@@ -9,6 +9,7 @@ import {
 
 import type {
   ColumnMetric,
+  ColumnHeaderAction,
   ColumnRailMenuView,
   FloatingMenuPosition,
   HeaderOverlayCell,
@@ -20,6 +21,7 @@ import type {
 } from "../types/ui";
 import { firstColumnFormatPreviewValue, formatLocalViewFromSpec } from "./formatDisplay";
 import { runtimeValueToText } from "./sheetView";
+import { rowSelectionRegion } from "./selectionModel";
 
 export const APPEND_AXIS_SLOT_GAP = 8;
 export const APPEND_COLUMN_WIDTH = 32;
@@ -346,6 +348,45 @@ export function buildColumnHasLocalConfig(
   });
 }
 
+export function buildRowHasLocalConfig(presentation: PresentationSheet | null): boolean[] {
+  return (presentation?.rowDefaults ?? []).map(row => Boolean(row && (
+    row.formatLayer.local || row.styleLayer.local?.align || row.styleLayer.local?.weight || row.styleLayer.local?.color
+  )));
+}
+
+/** Header columns form one left-hand prefix; only its boundary may move. */
+export function resolveColumnHeaderAction(
+  colIndex: number,
+  selection: SheetSelection | null,
+  headerColCount: number,
+  sheetColCount: number,
+): ColumnHeaderAction | null {
+  if (!Number.isInteger(colIndex) || colIndex < 0 || colIndex >= sheetColCount ||
+    !Number.isInteger(headerColCount) || headerColCount < 0 || headerColCount >= sheetColCount) {
+    throw new Error("Header column actions require a valid column and header boundary.");
+  }
+  const selected = selection?.kind === "column" && colIndex >= selection.colStart && colIndex <= selection.colEnd;
+  const first = selected ? selection.colStart : colIndex;
+  const last = selected ? selection.colEnd : colIndex;
+  if (!Number.isInteger(first) || !Number.isInteger(last) || first < 0 || last >= sheetColCount || first > last) {
+    throw new Error("Header column actions require a valid consecutive selection.");
+  }
+  if (first <= headerColCount && last >= headerColCount) {
+    return {
+      count: last + 1,
+      label: last === first ? "Use Column as Header" : "Use Columns as Headers",
+      ...(last === sheetColCount - 1 ? {disabledReason: "Keep at least one data column."} : {}),
+    };
+  }
+  if (last === headerColCount - 1) {
+    return {
+      count: first,
+      label: last === first ? "Move Header Column to Data" : "Move Header Columns to Data",
+    };
+  }
+  return null;
+}
+
 export function buildColumnRailMenu(
   openColumnMenuColIndex: number | null,
   sheetColCount: number,
@@ -354,6 +395,7 @@ export function buildColumnRailMenu(
   currentSheetState: StateSheet | null,
   currentSheetPresentation: PresentationSheet | null,
   columnHasLocalConfig: boolean[],
+  selection: SheetSelection | null,
 ): ColumnRailMenuView | null {
   if (openColumnMenuColIndex == null || openColumnMenuColIndex < 0 || openColumnMenuColIndex >= sheetColCount) {
     return null;
@@ -373,6 +415,7 @@ export function buildColumnRailMenu(
     colLabel: toColumnLetters(openColumnMenuColIndex + 1),
     hasLocalConfig: columnHasLocalConfig[openColumnMenuColIndex] === true,
     canStructureEdit: openColumnMenuColIndex >= headerColCount,
+    headerAction: resolveColumnHeaderAction(openColumnMenuColIndex, selection, headerColCount, sheetColCount),
     ...formatLocalView(columnDefault?.formatLayer.local, previewValue),
     formatPreviewContext: {
       value: previewValue,
@@ -400,6 +443,7 @@ export function buildRowRailMenu(
   currentSheet: RuntimeSheet | null,
   currentSheetPresentation: PresentationSheet | null,
   headerColCount: number,
+  selection: SheetSelection | null,
 ): RowRailMenuView | null {
   if (target == null) {
     return null;
@@ -411,7 +455,10 @@ export function buildRowRailMenu(
   }
   const headerRowCount = currentSheetState?.headerRowCount ?? 0;
   const bodyStart = currentSheetState?.bodyStart ?? headerRowCount;
-  const canDisplayEdit = target.area === "body" && rowIndex >= bodyStart && headerColCount > 0;
+  const mixedSelection = selection?.kind === "row" &&
+    target.rowNumber >= selection.rowStart && target.rowNumber <= selection.rowEnd &&
+    rowSelectionRegion(selection, headerRowCount) === "mixed";
+  const canDisplayEdit = !mixedSelection && target.area === "body" && rowIndex >= bodyStart;
   const rowDefault = canDisplayEdit ? currentSheetPresentation?.rowDefaults?.[rowIndex] : null;
   const localStyle = rowDefault?.styleLayer.local;
   const rowRel = rowIndex - bodyStart;
@@ -431,6 +478,7 @@ export function buildRowRailMenu(
     rowId,
     rowPath: canDisplayEdit ? currentSheet?.rowPaths?.[rowRel] ?? null : null,
     hasChildren: target.hasChildren,
+    canEditRowRegion: !mixedSelection,
     canDisplayEdit,
     hasLocalConfig: rowHasLocalConfig,
     ...formatLocalView(rowDefault?.formatLayer.local, previewValue),
@@ -439,8 +487,8 @@ export function buildRowRailMenu(
       scope: previewValue ? "row" : "sample",
     },
     styleLocal,
-    canConvertToHeader: target.area === "body" && rowIndex === bodyStart,
-    canConvertToBody: target.area === "header" && headerRowCount > 0 && rowIndex === headerRowCount - 1,
+    canConvertToHeader: !mixedSelection && target.area === "body" && rowIndex === bodyStart,
+    canConvertToBody: !mixedSelection && target.area === "header" && headerRowCount > 0 && rowIndex === headerRowCount - 1,
   };
 }
 
@@ -455,10 +503,11 @@ export function buildRailMenu(
   currentSheetState: StateSheet | null,
   currentSheetPresentation: PresentationSheet | null,
   columnHasLocalConfig: boolean[],
+  selection: SheetSelection | null,
 ): RailMenuView | null {
   if (!target) return null;
   if (target.kind === "column") {
-    return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheet, currentSheetState, currentSheetPresentation, columnHasLocalConfig);
+    return buildColumnRailMenu(target.colIndex, sheetColCount, headerColCount, currentSheet, currentSheetState, currentSheetPresentation, columnHasLocalConfig, selection);
   }
   return buildRowRailMenu(
     { rowNumber: target.rowNumber, area: target.area, hasChildren: target.hasChildren },
@@ -466,6 +515,7 @@ export function buildRailMenu(
     currentSheet,
     currentSheetPresentation,
     headerColCount,
+    selection,
   );
 }
 
@@ -511,11 +561,14 @@ export function resolveRowDeleteTargets(
 ): RowDeleteTarget[] {
   const selectedRange =
     selection?.kind === "row" &&
-    selection.area === area &&
     rowNumber >= selection.rowStart &&
     rowNumber <= selection.rowEnd
       ? { start: selection.rowStart, end: selection.rowEnd }
       : { start: rowNumber, end: rowNumber };
+  if (selection?.kind === "row" && selectedRange.start === selection.rowStart &&
+      rowSelectionRegion(selection, currentSheetState.headerRowCount ?? 0) === "mixed") {
+    throw new Error("Row deletion requires a selection within one row region.");
+  }
 
   if (area === "header") {
     const headerRowCount = currentSheetState.headerRowCount ?? 0;

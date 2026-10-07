@@ -1,0 +1,230 @@
+.note-workspace {
+  --note-rail-height: calc(var(--index-rail-height-active) + var(--index-rail-gap));
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+.note-workspace::-webkit-scrollbar { display: none; }
+.note-rail-host {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  height: var(--note-rail-height);
+  background: var(--sheet-surface);
+}
+.note-column-rail {
+  display: grid;
+  grid-template-columns: calc(var(--index-rail-width-active) + var(--index-rail-gap)) minmax(0, 1fr);
+}
+.note-workspace > .table-stage {
+  height: calc(var(--note-stage-height) - var(--note-rail-height));
+  min-height: 0;
+  grid-template-rows: 0 minmax(0, 1fr);
+}
+.sheet-note-intro {
+  margin-left: calc(var(--index-rail-width-active) + var(--index-rail-gap));
+  width: min(var(--note-table-width), calc(100% - var(--index-rail-width-active) - var(--index-rail-gap)));
+  position: relative;
+  z-index: 20;
+  /* The grid owns measured width/readiness. Keep intro text out of the first
+     paint until that same layout is ready, including before the grid mounts.
+     Do not guess a width or introduce an independent note-ready timer. */
+  visibility: hidden;
+}
+.note-workspace:has(> .table-stage[data-layout-ready="true"]) > .sheet-note-intro { visibility: visible; }
+/* The empty boundary affordance straddles the rail; saved notes scroll beneath it. */
+.sheet-note-intro:has(.sheet-note-add) { z-index: 26; }
+.sheet-note-slot {
+  --note-accent: #89681a;
+  display: flow-root;
+  position: relative;
+  color: var(--sheet-ink);
+}
+.sheet-note,
+.sheet-note-editor-surface {
+  /* Reading, creation placeholder and editing share the selected paper inset. */
+  padding: 10px;
+}
+.sheet-note {
+  position: relative;
+  box-sizing: border-box;
+  background: var(--sheet-surface);
+  border: 0;
+}
+.sheet-note-title {
+  margin: 0 0 12px;
+  font-size: clamp(1.1rem, 2vw, 1.4rem);
+  font-weight: 650;
+  letter-spacing: -.025em;
+  overflow-wrap: anywhere;
+}
+.sheet-note-content {
+  font-size: 14px;
+  line-height: 1.6;
+  cursor: default;
+  overflow-wrap: anywhere;
+}
+.sheet-note-content p { margin: 0 0 .65em; }
+.sheet-note-content p:last-child { margin-bottom: 0; }
+.sheet-note-content ul,
+.sheet-note-content ol { margin: .4em 0; padding-left: 1.4em; }
+.sheet-note-content li + li { margin-top: .2em; }
+.sheet-note-content pre { white-space: pre-wrap; font: inherit; }
+/* The slot is only an exit focus anchor, never a selected action. Keyboard
+   navigation focuses the complete paper, including its read-only title. */
+.sheet-note-slot:focus { outline: none; }
+.sheet-note:focus-visible { outline: 2px solid var(--selection-ring-color); outline-offset: -2px; }
+.sheet-note-slot.is-editing > .sheet-note { opacity: .35; }
+/* Creation reserves the same title + one body line as a saved single-line note.
+   Draft growth belongs only to the overlay, never this layout placeholder. */
+.sheet-note-slot.is-editing:not(.has-note) > .sheet-note { visibility: hidden; }
+.sheet-note-slot.is-editing:not(.has-note) .sheet-note-content { min-height: 1.6em; }
+
+/* Floating editor: no width/height animation and no changes to saved layout. */
+.sheet-note-editor {
+  position: fixed;
+  /* Portaled to body: above the isolated workspace, below app chrome (28)
+     and command menus/dialogs. A note is a document editor, not a modal. */
+  z-index: 27;
+  box-sizing: border-box;
+  color: var(--sheet-ink);
+  max-height: calc(100vh - 24px);
+}
+.sheet-note-editor-surface {
+  position: relative;
+  background: var(--sheet-surface);
+  border: 0;
+  border-radius: 0;
+  box-shadow: 0 0 24px -12px color-mix(in oklab, var(--sheet-ink) 21%, transparent);
+}
+.sheet-note-editor.is-ready .sheet-note-editor-surface { animation: note-editor-enter 220ms cubic-bezier(.22,1,.36,1); }
+.sheet-note-editor.is-creating .sheet-note-editor-surface { transform-origin: top center; }
+.sheet-note-editor.is-ready.is-creating .sheet-note-editor-surface { animation-name: note-editor-unfold; animation-duration: 280ms; }
+.sheet-note-editor-heading { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.sheet-note-editor-heading .sheet-note-title { min-width: 0; flex: 1; margin: 0; }
+.sheet-note-done { margin-left: auto; flex: none; }
+.sheet-note-input {
+  display: block;
+  width: 100%;
+  min-height: 1.6em;
+  max-height: 45vh;
+  box-sizing: border-box;
+  resize: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--sheet-ink) 25%, transparent) transparent;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  color: var(--sheet-ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  cursor: text;
+}
+.sheet-note-input:focus { outline: none; box-shadow: none; }
+.sheet-note-error { color: var(--danger-ink); font-size: .82rem; line-height: 1.5; margin: 8px 0 0; }
+.sheet-note-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  height: 24px;
+  margin: -12px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--note-accent);
+  cursor: default;
+  z-index: 15;
+}
+.sheet-note-add::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: calc(50% - .5px);
+  height: 1px;
+  background: var(--note-accent);
+  opacity: 0;
+  transition: opacity 280ms cubic-bezier(.22,1,.36,1);
+}
+.sheet-note-leaf {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 186px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding-inline: 18px;
+  height: 23px;
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  /* Tracking is independent of the delayed scale/fade reveal. */
+  --note-peek-y: -50%;
+  translate: var(--note-pointer-offset, 0px) var(--note-peek-y);
+  transform-origin: center bottom;
+  transform: scale(1,.08);
+  transition: opacity 180ms cubic-bezier(.22,1,.36,1), transform 280ms cubic-bezier(.22,1,.36,1);
+}
+.sheet-note-slot--afterTable .sheet-note-leaf { --note-peek-y: 50%; transform-origin: center top; }
+.sheet-note-slot--afterTable .sheet-note-leaf-shape { transform: scaleY(-1); }
+.sheet-note-leaf-shape { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.sheet-note-leaf-shape path {
+  fill: var(--note-accent);
+}
+.sheet-note-leaf-label { position: relative; color: #fff; }
+.sheet-note-add:hover::before, .sheet-note-add:focus-visible::before { opacity: 1; }
+.sheet-note-add:hover .sheet-note-leaf, .sheet-note-add:focus-visible .sheet-note-leaf { opacity: 1; transform: none; }
+.sheet-note-add:active .sheet-note-leaf { transform: scale(.97,.9); transition-delay: 0ms; }
+.sheet-note-add:focus-visible .sheet-note-leaf { translate: 0 var(--note-peek-y); }
+/* The upper boundary is on the path between sheets, rails and cells. Require
+   hover intent there, without delaying exit or keyboard discovery. */
+@media (hover: hover) {
+  .sheet-note-add:hover:not(:focus-visible)::before,
+  .sheet-note-add:hover:not(:focus-visible) .sheet-note-leaf {
+    transition-delay: 350ms;
+  }
+}
+.sheet-note-add:focus-visible::before,
+.sheet-note-add:focus-visible .sheet-note-leaf {
+  transition: none;
+}
+.sheet-note-footer {
+  position: absolute;
+  left: 0;
+  /* Keep the boundary above pinned body columns, below frozen header rows. */
+  z-index: 7;
+  transform: translate3d(0,var(--grid-body-track-offset-y),0);
+}
+.sheet-setup-notes { display:grid; gap:2px; padding-top:8px; }
+.note-workspace .ag-center-cols-viewport { padding-bottom:calc(var(--axis-append-row-scroll-extent) + var(--sheet-note-after-height,0px)); }
+@keyframes note-editor-enter { from { opacity:0; transform:translateY(6px) scale(.99); } to { opacity:1; transform:none; } }
+@keyframes note-editor-unfold { from { opacity:.2; transform:scaleY(.025); } to { opacity:1; transform:none; } }
+@media (hover:none) { .sheet-note-add::before,.sheet-note-leaf { opacity:1;transform:none; } }
+@media (prefers-reduced-motion:reduce) {
+  .sheet-note-leaf,.sheet-note-add::before { transition:none; }
+  .sheet-note-add:active .sheet-note-leaf { transform:none; }
+  /* Keep the hover-intent delay, but remove the expansion/fade animation. */
+  .sheet-note-add:hover:not(:focus-visible)::before,
+  .sheet-note-add:hover:not(:focus-visible) .sheet-note-leaf {
+    transition-property: opacity, transform;
+    transition-duration: .01ms;
+  }
+  .sheet-note-editor.is-ready .sheet-note-editor-surface,
+  .sheet-note-editor.is-ready.is-creating .sheet-note-editor-surface { animation:none; }
+}
+.rows-to-note-reason {
+  max-width: 240px;
+  margin: 2px 10px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--chrome-soft);
+}

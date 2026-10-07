@@ -1,4 +1,5 @@
 import { type Diagnostic, type FormatSpec, type NumericFormatType } from "./types";
+import { MAX_FORMAT_PRECISION, MAX_TEXT_LENGTH } from "./textLimits";
 
 type FormatField = "precision" | "grouping" | "sign" | "padWidth";
 type FormatCompatibilityType = NumericFormatType | "default";
@@ -20,6 +21,12 @@ export function validateFormatSpec(spec: FormatSpec): Diagnostic | null {
   }
 
   const type = toCompatibilityType(spec.type);
+  if (spec.precision !== null && (!Number.isInteger(spec.precision) || spec.precision < 0 || spec.precision > MAX_FORMAT_PRECISION)) {
+    return { code: "format_precision_limit", context: { max: MAX_FORMAT_PRECISION } };
+  }
+  if (spec.padWidth !== null && (!Number.isInteger(spec.padWidth) || spec.padWidth < 0 || spec.padWidth > MAX_TEXT_LENGTH)) {
+    return { code: "format_width_limit", context: { max: MAX_TEXT_LENGTH } };
+  }
   const rule = FORMAT_COMPATIBILITY[type];
 
   if (spec.precision !== null && !rule.precision) {

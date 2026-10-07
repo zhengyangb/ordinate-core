@@ -58,7 +58,7 @@ The next implementation should make file lifecycle behavior explicit while keepi
 - Recovery UI should be a modal/dialog, not a persistent banner.
 - Ordinary Save As switches the active session to the new file.
 - Conflict Save as New File also switches the active session to the new file and clears the conflict.
-- Export-copy-without-switching is a distinct future command, not V1 Save As behavior.
+- Export-copy-without-switching is a distinct command, not Save As behavior; see [spreadsheet interchange](spreadsheet-interchange.md).
 - Browser V1 uses content hash versions for backing-file freshness.
 - Electron may use file metadata for cheap watch signals, but conflict-sensitive saves should still verify content freshness.
 - Clean external backing-file changes should be adopted automatically without a blocking conflict dialog.

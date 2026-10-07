@@ -5,5 +5,7 @@ export const THEME_STORAGE_KEY = "ordinate-theme-mode";
 export function resolveInitialThemeMode(): ThemeMode {
   if (typeof window === "undefined") return "auto";
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return stored === "light" || stored === "dark" || stored === "auto" ? stored : "auto";
+  if (stored === null) return "auto";
+  if (stored !== "light" && stored !== "dark" && stored !== "auto") throw new Error("Invalid appearance preference");
+  return stored;
 }

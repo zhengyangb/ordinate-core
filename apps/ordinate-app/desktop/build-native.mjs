@@ -13,10 +13,10 @@ if (process.platform === 'darwin') {
   mkdirSync(path.dirname(output), { recursive: true });
   const result = spawnSync('xcrun', [
     'clang++', '-std=c++17', '-fobjc-arc', '-fblocks', '-bundle', '-undefined', 'dynamic_lookup',
-    '-mmacosx-version-min=12.0', '-DNAPI_VERSION=8', '-framework', 'Cocoa',
+    '-mmacosx-version-min=12.0', '-DNAPI_VERSION=8', '-framework', 'Cocoa', '-framework', 'PDFKit',
     ...(testing ? ['-DORDINATE_NATIVE_TEST=1'] : []),
     '-I', require('node-api-headers').include_dir,
-    path.join(root, 'desktop/native/titlebar.mm'), path.join(root, 'desktop/native/document.mm'), '-o', output,
+    ...['titlebar.mm', 'document.mm', 'printing.mm'].map(file => path.join(root, 'desktop/native', file)), '-o', output,
   ], { stdio: 'inherit' });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Native titlebar build failed (${result.status})`);

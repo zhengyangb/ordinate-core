@@ -4,11 +4,24 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
+    "test:interchange": "vitest run --config vitest.interchange.config.ts",
+    "test:excel": "vitest run --config vitest.excel.config.ts",
+    "test:excel:recalc": "tsc -p tsconfig.excel-recalc.json && vitest run --config vitest.excel-recalc.config.ts",
     "test:watch": "vitest",
     "build": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "@formulajs/formulajs": "^4.6.1",
+    "@types/node": "22.19.15",
+    "@vitest/coverage-v8": "^1.6.1",
+    "fast-formula-parser": "1.0.19",
     "typescript": "^5.6.0",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "xlsx-calc": "^0.9.2"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "fflate": "^0.8.2",
+    "saxes": "^6.0.0"
   }
 }

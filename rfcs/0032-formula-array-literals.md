@@ -5,6 +5,11 @@
 
 ## Summary
 
+Current amendment (RFC-0042): array elements now accept A1 references through
+the shared structural tokenizer. `[A1, $B$2]` is valid. Non-scalar range elements
+still fail at evaluation under the ordinary array shape rules. The V1 exclusions
+below are historical and are superseded by this amendment.
+
 This RFC adds array literals to the formula language.
 
 Array literals create temporary runtime views that can be passed to existing view-consuming functions, indexed, sliced, and used in existing element-wise operations. This RFC does not define spreadsheet-style spill behavior or any other mechanism that writes array results into multiple cells.

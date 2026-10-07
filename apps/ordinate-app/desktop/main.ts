@@ -39,7 +39,7 @@ async function createWindow(record: DocumentSession = { id: randomUUID(), filena
     record, rendererUrl, persist,
     open: chooseDocuments,
     newDocument: async parent => { await createWindow(undefined, parent); },
-    duplicate: async (text, parent) => { await createWindow({ id: randomUUID(), filename: null, text }, parent); },
+    createUntitled: async (text, parent, draftName) => { await createWindow({ id: randomUUID(), filename: null, text, draftName }, parent); },
     checkDestination: async filename => {
       let canonical: string;
       try { canonical = await realpath(filename); }
@@ -67,26 +67,27 @@ async function createWindow(record: DocumentSession = { id: randomUUID(), filena
   return entry;
 }
 
-async function openDocument(filename: string) {
+async function openDocument(filename: string, parent?: BrowserWindow) {
   const canonical = await realpath(filename);
   const existing = [...windows.values()].find(entry => entry.record.filename === canonical);
   if (existing) { existing.win.show(); existing.win.focus(); return existing; }
-  return createWindow({ id: randomUUID(), filename: canonical, text: null }, focused()?.win);
+  return createWindow({ id: randomUUID(), filename: canonical, text: null }, parent ?? focused()?.win);
 }
 
-function openSystemDocument(filename: string): Promise<DocumentWindow> {
-  const opening = openQueue.then(async () => { await startup; return openDocument(filename); });
+function openSystemDocument(filename: string, parent?: BrowserWindow): Promise<DocumentWindow> {
+  const opening = openQueue.then(async () => { await startup; return openDocument(filename, parent); });
   openQueue = opening.catch(() => undefined);
   return opening;
 }
 
-async function chooseDocuments(parent?: BrowserWindow) {
+async function chooseDocuments(parent?: BrowserWindow, filename?: string) {
+  if (filename !== undefined) { await openSystemDocument(filename, parent); return; }
   const options: Electron.OpenDialogOptions = {
     title: "Open Ordinate document", properties: ["openFile", "multiSelections"],
     filters: [{ name: "Ordinate documents", extensions: ["ord", "txt"] }],
   };
   const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
-  if (!result.canceled) for (const filename of result.filePaths) await openSystemDocument(filename);
+  if (!result.canceled) for (const filename of result.filePaths) await openSystemDocument(filename, parent);
 }
 
 appKit?.setDocumentOpenHandler((id, _kind, filename) => {
@@ -130,16 +131,26 @@ function installMenu() {
     { type: "separator" },
     { id: "save", label: "Save", accelerator: "CmdOrCtrl+S", click: () => command("save") },
     { id: "saveAs", label: "Save As…", accelerator: "CmdOrCtrl+Shift+S", click: () => command("saveAs") },
+    { id: "import", label: "Import…", click: () => command("import") },
+    { id: "export", label: "Export…", click: () => command("export") },
     { id: "duplicate", label: "Duplicate", click: () => { const entry = focused(); if (entry) run(() => entry.host.request("duplicate")); } },
     ...(process.platform === "darwin" ? [
       { id: "rename", label: "Rename…", click: () => nativeAction("rename") },
       { id: "move", label: "Move To…", click: () => nativeAction("move") },
       { id: "revert", label: "Revert To…", click: () => { const entry = focused(); if (entry) run(entry.showVersions); } },
+      { type: "separator" as const },
+      { id: "print", label: "Print…", accelerator: "Cmd+P", click: () => command("print") },
     ] : []),
     { type: "separator" }, { role: "close" },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    ...(process.platform === "darwin" ? [{ label: app.name, submenu: [
+      { role: "about" as const }, { type: "separator" as const },
+      { label: "Settings…", accelerator: "Cmd+,", click: () => command("settings") },
+      { type: "separator" as const }, { role: "services" as const }, { type: "separator" as const },
+      { role: "hide" as const }, { role: "hideOthers" as const }, { role: "unhide" as const },
+      { type: "separator" as const }, { role: "quit" as const },
+    ] }] : []),
     { label: "File", submenu: fileMenu },
     { label: "Edit", submenu: [
       { label: "Undo", accelerator: "CmdOrCtrl+Z", click: () => command("undo") },
@@ -167,7 +178,7 @@ function installMenu() {
 function refreshMenu() {
   const entry = focused();
   const menu = Menu.getApplicationMenu();
-  for (const id of ["save", "saveAs", "duplicate", "rename", "move", "revert"]) {
+  for (const id of ["save", "saveAs", "import", "export", "duplicate", "rename", "move", "revert", "print"]) {
     const item = menu?.getMenuItemById(id);
     if (item) item.enabled = !!entry && (id !== "revert" || !!entry.record.filename);
   }

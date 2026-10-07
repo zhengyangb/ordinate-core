@@ -8,6 +8,7 @@ import {
   type RuntimeValue,
 } from "./runtime";
 import { describeDisplayMetadataDiagnostic } from "./runtime/displayMetadata";
+import { parseDisplayControlCell } from "./runtime/parse";
 import { isError } from "./runtime/errors";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
@@ -63,6 +64,11 @@ export function validateDocument(text: string): ValidationResult {
   }
 
   for (const sheet of sheets) {
+    for (const block of sheet.blocks) {
+      if (block.kind === "unparsed") for (const diagnostic of block.diagnostics) {
+        result.errors.push({ code: diagnostic.code, message: diagnostic.message, sheet: sheet.name, context: { noteLine: diagnostic.line } });
+      }
+    }
     if (!sheet.table) {
       result.errors.push({ message: "Sheet has no table.", sheet: sheet.name });
       sheetSummaries.push({
@@ -179,6 +185,21 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
   }
 
   const [headerRowCount, headerColumnCount] = headerCounts(parsedRows, columnCount);
+  parsedRows.forEach((row, index) => {
+    const raw = row.displayControl?.trim();
+    if (!raw) return;
+    if (isSeparatorRow(row.cells) && SEPARATOR_CELL_RE.test(raw)) return;
+    if (index < headerRowCount || isSeparatorRow(row.cells)) {
+      pushValidationError(result, {sheet,row:index+1,message:"Row display defaults require a body row."});
+      return;
+    }
+    if (headerColumnCount > 0 && parseCellInput(row.rawCells[0] ?? "").localDisplay) {
+      pushValidationError(result, {sheet,row:index+1,message:"Row display defaults must have a single source: control cell or label."});
+    }
+    const parsed = parseDisplayControlCell(raw);
+    if (!parsed.valid) pushDiagnosticValidationError(result, {sheet,row:index+1,issue:parsed.issue,
+      message:`Row ${index+1}: invalid row display metadata (${describeDisplayMetadataDiagnostic(parsed.issue)}).`});
+  });
   displayMetadataChecks(result, sheet, parsedRows, headerRowCount);
   semanticCellChecks(result, sheet, parsedRows, headerRowCount);
   const { maxDepth } = hierarchyStats(result, sheet, parsedRows, headerRowCount);
@@ -206,9 +227,8 @@ function validateDisplayControlFrame(
   for (let c = 1; c < controlRow.rawCells.length; c += 1) {
     const raw = controlRow.rawCells[c];
     if (raw.trim() === "") continue;
-    const parsed = parseCellInput(raw);
-    const content = stripCellDisplayMetadata(raw).trim();
-    if (content !== "" || parsed.localDisplay === null) {
+    const parsed = parseDisplayControlCell(raw);
+    if (!parsed.valid && parsed.issue.code === "display_control_cell_requires_metadata_only") {
       pushValidationError(result, {
         message: `Row 1, col ${c + 1}: display control cell must contain only display metadata.`,
         sheet,
@@ -217,13 +237,13 @@ function validateDisplayControlFrame(
       });
       continue;
     }
-    if (parsed.localDisplay.valid === false) {
+    if (parsed.valid === false) {
       pushDiagnosticValidationError(result, {
-        message: `Row 1, col ${c + 1}: invalid display metadata (${describeDisplayMetadataDiagnostic(parsed.localDisplay.issue)}).`,
+        message: `Row 1, col ${c + 1}: invalid display metadata (${describeDisplayMetadataDiagnostic(parsed.issue)}).`,
         sheet,
         row: 1,
         col: c + 1,
-        issue: parsed.localDisplay.issue,
+        issue: parsed.issue,
       });
     }
   }

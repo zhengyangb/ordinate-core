@@ -52,6 +52,7 @@ export function useSheetStructureCommands({
   const deleteRows = useEditorStore(state => state.deleteRows);
   const convertRowsToHeader = useEditorStore(state => state.convertRowsToHeader);
   const convertRowsToBody = useEditorStore(state => state.convertRowsToBody);
+  const applyCoreEdits = useEditorStore(state => state.applyCoreEdits);
   const insertColumn = useEditorStore(state => state.insertColumn);
   const insertColumns = useEditorStore(state => state.insertColumns);
   const duplicateColumns = useEditorStore(state => state.duplicateColumns);
@@ -141,7 +142,7 @@ export function useSheetStructureCommands({
     });
   }, [activeSheet, currentSheet, currentSheetState, currentSheetRowStructure, defaultBodyRailColIndex, selectedCell, headerRowCount, startRowTransition, insertRow, closeRailMenu, focusHeaderOverlayCell, focusBodyCellAt, expandRowPath, setSelectedCell, setSelectedColumnIndex, setFormulaInputMode]);
 
-  const handleAppendBodyRows = useCallback((count: number) => {
+  const handleAppendBodyRows = useCallback((count: number, focusColumnIndex = defaultBodyRailColIndex) => {
     if (!Number.isInteger(count) || count <= 0) {
       throw new Error("append body rows requires a positive integer count");
     }
@@ -151,7 +152,7 @@ export function useSheetStructureCommands({
     if (!currentSheetState) {
       throw new Error("append body rows requires current sheet state");
     }
-    if (defaultBodyRailColIndex == null) {
+    if (focusColumnIndex == null) {
       throw new Error("append body rows requires at least one selectable column");
     }
     const root = gridWrapRef.current;
@@ -163,7 +164,7 @@ export function useSheetStructureCommands({
     const previousBodyScrollHeight = bodyViewport.scrollHeight;
     const rowGapIndex = currentSheetState.rowIds.length;
     const nextRowNumber = rowGapIndex + count;
-    const nextColId = toColFieldId(defaultBodyRailColIndex);
+    const nextColId = toColFieldId(focusColumnIndex);
     queueAppendRowAnchorScroll(activeSheet, previousBodyScrollTop, previousBodyScrollHeight, {
       rAbs: nextRowNumber,
       colId: nextColId,
@@ -175,7 +176,7 @@ export function useSheetStructureCommands({
       area: "body",
       logical: {
         rAbs: nextRowNumber,
-        cAbs: defaultBodyRailColIndex,
+        cAbs: focusColumnIndex,
       },
       colId: nextColId,
       rowPath: null,
@@ -387,6 +388,15 @@ export function useSheetStructureCommands({
     return Math.max(0, rowCount - 1);
   }, [currentSheetState]);
 
+  const maxHeaderColCount = Math.max(0, sheetColCount - 1);
+  const handleSetHeaderColCount = useCallback((count: number) => {
+    if (!activeSheet) throw new Error("Header column conversion requires an active sheet.");
+    applyCoreEdits("Set header columns", [{ op: "set_header_columns", sheet: activeSheet, count }]);
+    closeRailMenu();
+    clearActiveSelection();
+    setFormulaInputMode("read");
+  }, [activeSheet, applyCoreEdits, closeRailMenu, clearActiveSelection, setFormulaInputMode]);
+
   const handleSetHeaderRowCount = useCallback((nextCount: number) => {
     if (!activeSheet) {
       throw new Error("header row conversion requires an active sheet");
@@ -539,7 +549,7 @@ export function useSheetStructureCommands({
 
   return {
     handleInsertRow, handleAppendBodyRows, handleDuplicateRow, handleDeleteRow,
-    handleConvertRowsToHeader, handleConvertRowsToBody, maxHeaderRowCount, handleSetHeaderRowCount,
+    handleConvertRowsToHeader, handleConvertRowsToBody, maxHeaderRowCount, handleSetHeaderRowCount, maxHeaderColCount, handleSetHeaderColCount,
     handleInsertColumn, handleAppendDataColumns, handleDuplicateColumn, handleDeleteColumn,
   };
 }

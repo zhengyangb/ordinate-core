@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../store/editorStore";
 import { useSheetViewModel } from "./useSheetViewModel";
+import { createCellDisplayFormatter } from "../preferences/temporalDisplay";
+const displayCell = createCellDisplayFormatter("locale", "en-US");
 
 const source = `# Sheet
 | Item || Amount | Description |
@@ -18,7 +20,7 @@ beforeEach(() => {
 function view() {
   let result!: ReturnType<typeof useSheetViewModel>;
   function Harness() {
-    result = useSheetViewModel(useEditorStore.getState());
+    result = useSheetViewModel({ ...useEditorStore.getState(), displayCell });
     return null;
   }
   renderToStaticMarkup(<Harness />);

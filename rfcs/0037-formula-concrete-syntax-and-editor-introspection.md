@@ -403,11 +403,13 @@ Only complete temporal literals and spreadsheet references are recognized as
 such. Partial forms are tokenized by the remaining rules; V1 does not create
 incomplete temporal or spreadsheet-reference tokens.
 
-Spreadsheet-reference recognition follows strict grammar context. It is
-disabled inside both array and postfix-index brackets. Therefore `[A1, B1]` and
-`@[Rows, Cols][A1]` expose `A1` and `B1` as identifiers, not spreadsheet
-reference tokens. Strict AST lowering retains the RFC-0032 unsupported-reference
-error for spreadsheet-like identifiers inside arrays.
+Spreadsheet-reference recognition follows strict grammar context. Under the
+RFC-0042 amendment, arrays accept A1 operands. Bare postfix-index axes retain
+their existing tokenization: `@[Rows, Cols][A1]` exposes `A1` as an identifier.
+Calls or groups inside index axes may contain A1 references, separating reference
+ranges from the index axis's slice colon. Sheet-qualified `@[Inputs::$A$1]`
+remains one complete envelope token; reference inspection reports spreadsheet
+style and the target sheet, so editor hosts do not infer style from the envelope.
 
 ## Structural Nodes
 

@@ -91,7 +91,6 @@
   color: var(--chrome-ink);
   font: inherit;
   font-weight: var(--menu-item-font-weight);
-  cursor: pointer;
 }
 .fill-method-trigger { width: 112px; }
 .fill-method-trigger svg, .fill-options-dismiss svg { width: 14px; height: 14px; flex: none; opacity: .65; }

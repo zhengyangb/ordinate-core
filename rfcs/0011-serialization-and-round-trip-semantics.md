@@ -41,6 +41,11 @@ The internal document model is the primary representation.
 
 Saving a document means regenerating `.ord` from the internal model. It does not mean applying textual patches to a previously loaded `.ord` file.
 
+RFC-0043 adds typed Sheet Note blocks before and after the table. Supported notes
+serialize as canonical restricted Markdown; soft line wrapping and blank spacing
+may normalize. Unsupported note source remains preserved with diagnostics.
+Note edits never modify table coordinates, formula syntax or calculation caches.
+
 ## Round-Trip Semantics
 
 This RFC requires **semantic round-trip**.
@@ -73,6 +78,12 @@ Current working direction: implementations should still aim to produce stable ou
 RFC-0040 adds a document-level opaque front-matter block. Its original block text
 is preserved during formatting and serialization; canonical table formatting
 applies to the document body only.
+
+RFC-0041 requires shared, non-exponential number literal encoding for imported
+numbers, native literal cells, formula literals and formula caches. Finite JS
+numbers retain their value (including negative zero), with no display rounding
+at serialization time. Non-finite numeric values cannot be serialized as number
+literals and are rejected.
 
 Serialization emits a canonical form.
 

@@ -38,7 +38,7 @@ async function run() {
           : await storage.moveTo(destination, snapshot.file, snapshot.version, (from, to) => native.moveDocumentFile(host, from, to));
         assert.equal(result.ok, true, JSON.stringify(result));
         snapshot = result.value;
-        native.updateDocument(host, storage.documentPath(snapshot.file), false);
+        native.updateDocument(host, storage.documentPath(snapshot.file), false, snapshot.file.displayName);
       }
       native.completeDocumentRequest(host, id, '');
     } catch (error) { native.completeDocumentRequest(host, id, String(error)); }
@@ -54,7 +54,7 @@ async function run() {
     if (!result.ok) { native.completeDocumentOpen(id, 0, result.error.kind); return; }
     snapshot = result.value;
     text = snapshot.text;
-    native.updateDocument(host, storage.documentPath(snapshot.file), false);
+    native.updateDocument(host, storage.documentPath(snapshot.file), false, snapshot.file.displayName);
     native.completeDocumentOpen(id, host, '');
   };
   const operation = (kind, destination = directory) => new Promise((resolve, reject) => {
@@ -62,7 +62,7 @@ async function run() {
     native.testOperation(host, kind, destination, (_id, error) => error ? reject(new Error(error)) : resolve());
   });
   try {
-    native.updateDocument(host, '', true);
+    native.updateDocument(host, '', true, 'Imported report');
     const original = path.join(directory, 'Original.ord');
     const renamed = path.join(directory, 'Renamed.ord');
     await operation('save', original);

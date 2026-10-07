@@ -5,6 +5,8 @@ type MenuSurfaceProps = {
   className?: string;
   innerRef?: RefObject<HTMLDivElement>;
   role?: HTMLAttributes<HTMLDivElement>["role"];
+  ariaLabel?: string;
+  triggerId?: string;
   style?: CSSProperties;
   children: ReactNode;
 };
@@ -14,6 +16,8 @@ export function MenuSurface({
   className = "",
   innerRef,
   role = "menu",
+  ariaLabel,
+  triggerId,
   style,
   children,
 }: MenuSurfaceProps) {
@@ -24,6 +28,8 @@ export function MenuSurface({
       ref={innerRef}
       className={["menu-surface", className, "open"].join(" ").trim()}
       role={role}
+      aria-label={ariaLabel}
+      data-menu-trigger={triggerId}
       style={style}
     >
       {children}

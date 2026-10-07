@@ -66,6 +66,12 @@ The assistant is an anchored popover above the formula editor. It follows the ex
 
 The list and detail are one surface, not nested cards.
 
+All assistant modes are bounded by the formula input row's available width, not
+the viewport width. Container queries place descriptions below function names
+when the panel is narrow and stack expanded parameter/description/example help.
+Lists and long help scroll inside the panel; opening it must not horizontally
+scroll the application chrome. Keyboard selection and insertion remain unchanged.
+
 ## V1 Acceptance
 
 - Clicking `fx` opens the function browser.

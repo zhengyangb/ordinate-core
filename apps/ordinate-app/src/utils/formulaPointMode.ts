@@ -133,7 +133,7 @@ export function tokenizeFormulaReferences(draft: string): FormulaReferenceToken[
       if (!token.complete) return [];
       const text = draft.slice(token.span.start, token.span.end);
       const syntax = parseFormulaReferenceSyntax(text);
-      if (!syntax || syntax.style !== "ordinate") {
+      if (!syntax) {
         throw new Error("core returned an Ordinate reference token without Ordinate reference syntax");
       }
       return [{
@@ -141,7 +141,7 @@ export function tokenizeFormulaReferences(draft: string): FormulaReferenceToken[
         start: token.span.start,
         end: token.span.end,
         text,
-        style: classifyOrdinateStyle(syntax.reference),
+        style: syntax.style === "spreadsheet" ? "spreadsheet-a1" : classifyOrdinateStyle(syntax.reference),
         sheetName: syntax.sheetName,
         syntax,
       }];
@@ -382,9 +382,6 @@ function referenceTextForRect(
   context: FormulaReferenceGenerationContext,
   sheetName: string | null = null,
 ): { text: string | null; disabledReason: string | null } {
-  if (sheetName && style === "spreadsheet-a1") {
-    return { text: null, disabledReason: "Cross-sheet A1 references are not supported." };
-  }
   if (sheetName && style === "ordinate-relative") {
     return { text: null, disabledReason: "Cross-sheet references cannot use relative selectors." };
   }
@@ -393,7 +390,7 @@ function referenceTextForRect(
   let disabledReason: string | null = null;
   if (style === "spreadsheet-a1") {
     text = formatA1ReferenceForRect(rect);
-    return { text, disabledReason };
+    return { text: sheetName ? `@[${formatFormulaSheetSelector(sheetName)}::${text}]` : text, disabledReason };
   }
 
   if (style === "ordinate-positional") {
@@ -613,9 +610,7 @@ function disabledReferenceOptions(reason: string): FormulaReferenceOption[] {
 
 export function resolveFormulaReferenceViews(draft: string, context: FormulaReferenceContext): FormulaReferenceView[] {
   return tokenizeFormulaReferences(draft).map((token, index) => {
-    const target = token.syntax.style === "spreadsheet"
-      ? { ok: true as const, context, sheetName: null }
-      : resolveTokenContext(token, context);
+    const target = resolveTokenContext(token, context);
     const reference = token.syntax.reference;
     const rect = target.ok && reference ? resolveReferenceRect(reference, target.context) : null;
     const validRect = rect && target.ok ? clampRectToSheet(rect, target.context) : null;

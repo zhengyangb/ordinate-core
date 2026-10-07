@@ -1,4 +1,5 @@
 import { trimCellText } from "./text_encoding";
+import { parseSheetNote, SheetNoteError, type NoteDiagnostic, type NoteSourceBlock } from "./sheet_notes";
 
 export interface Table {
   rows: string[];
@@ -12,9 +13,10 @@ export interface TableBlock {
 export interface UnparsedBlock {
   kind: "unparsed";
   lines: string[];
+  diagnostics: NoteDiagnostic[];
 }
 
-export type SheetBlock = TableBlock | UnparsedBlock;
+export type SheetBlock = TableBlock | NoteSourceBlock | UnparsedBlock;
 
 export interface Sheet {
   name: string;
@@ -53,6 +55,8 @@ function splitDocumentEnvelope(text: string): { frontMatter: string | null; body
 }
 
 export interface ParsedRow {
+  /** Serialization-only row display metadata, removed from logical coordinates. */
+  displayControl?: string;
   rawCells: string[];
   cells: string[];
   boundary: number | null;
@@ -103,7 +107,7 @@ export function parseDocument(text: string): ParsedDocument {
   }
 
   for (const raw of body.split(/\r?\n/)) {
-    const line = raw.replace(/\s+$/, "");
+    const line = raw;
     if (line.startsWith("# ")) {
       flushSheet();
       currentName = line.slice(2).trim();
@@ -128,7 +132,13 @@ function splitBlocks(lines: string[]): SheetBlock[] {
     if (mode === "table") {
       blocks.push({ kind: "table", table: { rows: current } });
     } else {
-      blocks.push({ kind: "unparsed", lines: current });
+      try {
+        const note = parseSheetNote(current.join("\n"));
+        blocks.push(note.blocks.length ? { kind: "note", note } : { kind: "unparsed", lines: current, diagnostics: [] });
+      } catch (error) {
+        if (!(error instanceof SheetNoteError)) throw error;
+        blocks.push({ kind: "unparsed", lines: current, diagnostics: [{ code: error.code, message: error.message, line: error.line }] });
+      }
     }
     current = [];
     mode = null;
@@ -188,7 +198,7 @@ export function parseTableRow(row: string): ParsedRow {
 // Strip serialization-only display control frame when top-left marker is "@display".
 // Control frame consists of:
 // - first row: column display defaults (top-left marker cell + per-column display cells)
-// - first column: reserved control column (future row defaults)
+// - first column: row display defaults
 // Returned rows are semantic table rows used by evaluation/validation/runtime.
 export function stripDisplayControlFrame(rows: ParsedRow[]): DisplayControlFrameResult {
   if (rows.length === 0) {
@@ -214,6 +224,7 @@ export function stripDisplayControlFrame(rows: ParsedRow[]): DisplayControlFrame
       }
     }
     stripped.push({
+      displayControl: row.rawCells[0] ?? "",
       rawCells: nextRaw,
       cells: nextCells,
       boundary: nextBoundary,

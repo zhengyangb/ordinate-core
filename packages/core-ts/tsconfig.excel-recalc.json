@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["integration/excel-recalc.test.ts", "integration/excel-sample-audit.ts", "vitest.excel-recalc.config.ts"]
+}

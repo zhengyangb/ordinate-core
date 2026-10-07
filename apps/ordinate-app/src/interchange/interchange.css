@@ -1,0 +1,73 @@
+.app-modal-shell.interchange-dialog { width: min(34rem, calc(100vw - 2rem)); }
+.app-modal-shell.interchange-dialog--preview { width: min(52rem, calc(100vw - 2rem)); }
+.interchange-dialog--export .app-modal-content { display:flex; flex-direction:column; max-height:calc(100dvh - 3rem); box-sizing:border-box; }
+.interchange-dialog--export .app-modal-header { display:flex; align-items:baseline; gap:.75rem; min-width:0; }
+.interchange-dialog--export .app-modal-header h2 { flex:none; }
+.interchange-dialog--import .app-modal-header { display:flex; align-items:baseline; flex-wrap:wrap; gap:.5rem 1rem; min-width:0; }
+.interchange-dialog--import .app-modal-header h2 { flex:none; }
+.interchange-dialog--import .interchange-filename { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--chrome-soft); font-size:.8rem; font-weight:400; }
+.excel-export-summary { display:flex; align-items:baseline; gap:.75rem; min-width:0; flex:1; color:var(--chrome-soft); font-size:.8rem; font-weight:400; }
+.excel-export-filename { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.excel-export-sheet-count { flex:none; margin-left:auto; white-space:nowrap; }
+.import-preview { display:flex; flex-direction:column; gap:.75rem; min-width:0; }
+.import-preview-controls { display:grid; grid-template-columns:minmax(8rem,1fr) 8.5rem 8.5rem; gap:.75rem; align-items:start; }
+.import-preview-stage { position:relative; min-height:10rem; }
+.import-preview-grid { max-height:17rem; overflow:auto; border:1px solid var(--chrome-border); border-radius:.5rem; }
+.import-preview-grid[aria-hidden="true"] { visibility:hidden; }
+.import-preview-grid table { border-collapse:separate; border-spacing:0; width:100%; font-size:.8rem; }
+.import-preview-grid th, .import-preview-grid td { padding:.4rem .6rem; border-right:1px solid var(--chrome-border); border-bottom:1px solid var(--chrome-border); min-width:5rem; max-width:13rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; }
+.import-preview-grid th { color:var(--chrome-ink); background:var(--toolbar-pill); font-weight:500; }
+.import-preview-grid thead th { position:sticky; top:0; z-index:1; }
+.import-preview-grid tr > th:first-child { min-width:2rem; text-align:center; }
+.import-preview-grid td[data-header="true"] { background:var(--accent-soft); color:var(--sheet-ink); font-weight:600; }
+.import-preview-grid:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+@media(max-width:540px) { .import-preview-controls { grid-template-columns:1fr 1fr; } .import-preview-sheet { grid-column:1 / -1; } }
+.app-modal-body.interchange-body { display: flex; flex-direction: column; gap: 1rem; max-height: min(65vh, 40rem); overflow-y: auto; }
+.interchange-dialog--export .interchange-body { min-height:0; max-height:none; overflow:hidden; }
+.interchange-dialog--export .interchange-body > :not(.interchange-export-notes) { flex-shrink:0; }
+.interchange-dialog--export .app-modal-header, .interchange-dialog--export .app-modal-actions { flex-shrink:0; }
+.interchange-export-notes { height:min(16rem,32vh); min-height:0; overflow-y:auto; overscroll-behavior-y:contain; scrollbar-gutter:stable; }
+.interchange-export-notes .interchange-diagnostics { max-height:none; overflow:visible; }
+.interchange-body p { margin: 0; line-height: 1.5; }
+.interchange-fields { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+.interchange-fields label, .interchange-field { display: flex; flex-direction: column; gap: .4rem; font-weight: 600; }
+.interchange-select { display: flex; align-items: center; justify-content: space-between; gap: .75rem; width: 100%; min-height: 2.5rem; padding: .5rem .65rem; border: 1px solid var(--chrome-border); border-radius: var(--menu-item-radius); color: var(--chrome-ink); background: var(--toolbar-pill); font: inherit; text-align: left; }
+.interchange-select > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.interchange-body small { display: block; font-size: .8rem; line-height: 1.45; font-weight: 400; opacity: .82; }
+.interchange-filename { overflow-wrap: anywhere; font-weight: 500; }
+.excel-export-options { display:flex; flex-direction:column; gap:1rem; }
+.interchange-review { display: flex; flex-direction: column; gap: .65rem; }
+.interchange-review h3 { margin: 0; font-size: 1rem; }
+.interchange-error { color: var(--menu-danger-ink); }
+.interchange-warning { font-weight: 500; }
+.interchange-diagnostics { min-height:0; max-height:min(16rem,32vh); overflow-y:auto; overscroll-behavior-y:contain; margin:0; padding:0 .25rem 0 0; list-style:none; border-top:1px solid var(--chrome-border); font-size:.84rem; }
+.interchange-diagnostics:focus-visible, .interchange-export-notes:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.interchange-diagnostics li { padding: .65rem 0; border-bottom: 1px solid var(--chrome-border); overflow-wrap: anywhere; line-height: 1.45; }
+.interchange-diagnostic-label { display: block; margin-bottom: .2rem; color: var(--warning-ink); font-size: .76rem; }
+.interchange-diagnostic-label[data-loss="true"] { color: var(--menu-danger-ink); }
+.interchange-diagnostics details p { margin-top: .6rem; }
+.interchange-diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 8rem; overflow-y: auto; }
+.interchange-dialog .app-modal-actions { flex-wrap: wrap; }
+.interchange-export-status { flex:1; min-width:0; align-self:center; color:var(--chrome-soft); font-size:.75rem; white-space:nowrap; }
+.interchange-dialog .app-modal-action.primary { background: var(--accent-soft); color: color-mix(in oklab, var(--accent-strong) 25%, var(--sheet-ink)); }
+.interchange-open-options button { text-align: left; border-radius: .65rem; padding: .8rem; }
+.interchange-open-options small { display: block; font-weight: 400; margin-top: .25rem; }
+@media (max-width: 480px) { .interchange-dialog .app-modal-content { padding: 1rem; } .interchange-body { max-height: 60vh; } }
+.import-note-choices { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.25rem 1rem; }
+.import-note-choice { display:flex; min-width:0; align-items:center; gap:.2rem; }
+.import-note-select { flex:1; }
+.import-note-summary { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.import-note-select:has(.import-note-reason):disabled { opacity:1; }
+.import-note-reason { display:block; margin-top:.25rem; color:var(--chrome-soft); font-size:.75rem; line-height:1.4; overflow-wrap:anywhere; }
+.import-note-preview-button { flex:none; min-height:2.75rem; padding:.45rem .5rem; border:0; border-radius:var(--menu-item-radius); background:transparent; color:var(--chrome-soft); font:inherit; font-size:.75rem; font-weight:600; cursor:default; }
+.import-note-preview-button:hover { background:var(--menu-hover-bg); color:var(--chrome-ink); }
+.import-note-preview-button[aria-pressed="true"] { background:var(--accent-soft); }
+.import-note-preview-button[aria-pressed="true"] { color:var(--sheet-ink); }
+.import-note-preview-button:focus-visible, .import-note-reader-content:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.import-note-reader { position:absolute; inset:0; display:flex; flex-direction:column; border:1px solid var(--chrome-border); border-radius:.5rem; background:var(--sheet-surface); color:var(--sheet-ink); overflow:hidden; }
+.import-note-reader > header { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding:.4rem .75rem; border-bottom:1px solid var(--chrome-border); font-size:.85rem; }
+.import-note-reader .import-note-preview-button { color:var(--sheet-ink); }
+.import-note-reader .import-note-preview-button:hover { background:var(--accent-soft); }
+.import-note-reader-content { flex:1; min-height:0; overflow:auto; padding:.75rem; overflow-wrap:anywhere; font-size:.85rem; line-height:1.5; }
+.import-note-reader-content p, .import-note-reader-content ul, .import-note-reader-content ol { margin:0 0 .65rem; }
+@media(max-width:540px) { .import-note-choices { grid-template-columns:1fr; } }

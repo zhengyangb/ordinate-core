@@ -19,8 +19,11 @@ async function session() {
   const adapter = createDesktopStorageAdapter({
     windowChrome: "native",
     sessionId: "test-session",
+    systemLocale: "en-US",
     openDocument: async () => {},
     newDocument: async () => {},
+    openImportedDocument: async () => { throw new Error("Not used by storage tests"); },
+    interchange: { pickImport: async () => { throw new Error("Not used by storage tests"); }, saveExport: async () => { throw new Error("Not used by storage tests"); } },
     duplicateDocument: async () => {},
     watch: () => () => {},
     restoreDocument: async () => ({ snapshot: null, text: null }),
@@ -28,6 +31,7 @@ async function session() {
     updateWindow: async () => {},
     ...createNativeStorage({ open: async () => file, save: async () => path.join(directory, "copy.ord") }),
     onCommand: () => () => {}, nativeHistory: async () => {},
+    print: async () => { throw new Error("Not used by storage tests"); },
     onDocumentRequest: () => () => {}, commitDocumentRequest: async () => { throw new Error("Not used by storage tests"); },
   });
   const store = createFileSessionStore({

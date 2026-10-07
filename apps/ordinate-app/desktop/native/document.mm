@@ -203,7 +203,10 @@ static napi_value Update(napi_env env, napi_value *args) {
   std::string path = String(env, args[1]); bool edited; Check(napi_get_value_bool(env, args[2], &edited));
   NSURL *url = path.empty() ? nil : [NSURL fileURLWithPath:@(path.c_str())];
   if (![host.document.fileURL isEqual:url]) host.document.fileURL = url;
-  if (!url) host.document.displayName = @"Untitled";
+  if (!url) {
+    std::string title = String(env, args[3]);
+    host.document.displayName = @(title.c_str());
+  }
   if (host.document.isDocumentEdited != edited) [host.document updateChangeCount:edited ? NSChangeDone : NSChangeCleared];
   // AppKit gates this entire button on preservesVersions, but its rename/move
   // actions also work without a version browser. Enable the public system button;

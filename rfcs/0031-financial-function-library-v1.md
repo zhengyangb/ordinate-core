@@ -61,7 +61,11 @@ All functions are deterministic and must return an Ordinate `error` rather than 
 
 ## Cash-Flow Inputs
 
-Cash-flow inputs are `view[d=1]`.
+Cash-flow inputs are `view[d<=1]`: a row/column vector or a single-value view.
+The runtime represents a 1x1 view as dimension 0; this is a valid one-cash-flow
+input, not an invalid vector. NPV discounts that flow by one period and XNPV
+anchors a single dated flow at period zero. IRR/MIRR/XIRR retain their existing
+positive/negative-flow and minimum-length requirements. Matrices remain invalid.
 
 Supported:
 
@@ -148,7 +152,7 @@ Rules:
 ### `npv`
 
 ```text
-npv(rate, values: view[d=1]) -> number
+npv(rate, values: view[d<=1]) -> number
 ```
 
 The first value is discounted by one period:
@@ -166,7 +170,7 @@ initial + npv(rate, future_flows)
 ### `irr`
 
 ```text
-irr(values: view[d=1]) -> number
+irr(values: view[d<=1]) -> number
 ```
 
 `irr` solves:
@@ -180,7 +184,7 @@ The first cash flow is at period `0`.
 ### `mirr`
 
 ```text
-mirr(values: view[d=1], financeRate, reinvestRate) -> number
+mirr(values: view[d<=1], financeRate, reinvestRate) -> number
 ```
 
 Negative cash flows are discounted using `financeRate`. Positive cash flows are compounded using `reinvestRate`.
@@ -188,7 +192,7 @@ Negative cash flows are discounted using `financeRate`. Positive cash flows are 
 ### `xnpv`
 
 ```text
-xnpv(rate, values: view[d=1], dates: view[d=1]) -> number
+xnpv(rate, values: view[d<=1], dates: view[d<=1]) -> number
 ```
 
 Dates must be `date` values. Values and dates must have the same shape after ignored blanks are removed pairwise.
@@ -204,7 +208,7 @@ Dates may be unordered. The first date in the supplied view is the anchor date.
 ### `xirr`
 
 ```text
-xirr(values: view[d=1], dates: view[d=1]) -> number
+xirr(values: view[d<=1], dates: view[d<=1]) -> number
 ```
 
 `xirr` solves `xnpv(rate, values, dates) = 0`.
