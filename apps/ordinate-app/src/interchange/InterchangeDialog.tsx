@@ -6,9 +6,11 @@ import { ImportClient } from "./importClient";
 import { ImportPreview } from "./ImportPreview";
 import { ExcelExportOptions, ExportSummary } from "./ExcelExportOptions";
 import { SelectionRow } from "../components/SelectionRow";
+import { BrowserOpenDialog } from "./BrowserOpenDialog";
 import { useEditorStore } from "../store/editorStore";
 import { defaultFileSessionStore, getPersistableText } from "../store/fileSessionStore";
-import { createBrowserInterchange } from "./browserTransport";
+import { createBrowserInterchange, readImportFile } from "./browserTransport";
+import { installFileDrop, type FileDropCue } from "../platform/fileDrop";
 import { delimitedExportName, FORMATS, importFormat, importedDocumentName, type ExportFile, type ExportFormat, type ImportFile } from "./contracts";
 import { documentName } from "../platform/documentName";
 import { convertExport, describeExcelExport, diagnosticLocation, groupDiagnostics, requiresImportConsent, type PreparedImport, type ConversionDiagnostic } from "./conversion";
@@ -21,6 +23,9 @@ type Request = {
 
 function InterchangeDialog({ request, onClose }: { request: Request; onClose: () => void }) {
   const titleId = useId(), helpId = useId();
+  const importing = request.kind === "import";
+  const dropTarget = useRef<HTMLDivElement>(null);
+  const [dropCue, setDropCue] = useState<FileDropCue | null>(null);
   const format = request.kind === "export" ? request.format : null;
   const delimited = format === "csv" || format === "tsv";
   const [excelSummary] = useState(() => format === "xlsx" ? describeExcelExport(request.source, request.name) : null);
@@ -59,10 +64,28 @@ function InterchangeDialog({ request, onClose }: { request: Request; onClose: ()
     catch (issue) { if (mounted.current) setError(issue instanceof Error ? issue.message : String(issue)); }
     finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   };
+  const selectFile = (chosen: ImportFile) => { reset(); setReading(true); setFile(chosen); };
   const pick = () => run(async () => {
     const chosen = await transport.pickImport();
-    if (chosen && mounted.current) { reset(); setReading(true); setFile(chosen); }
+    if (chosen && mounted.current) selectFile(chosen);
   });
+  useEffect(() => {
+    if (!importing) return;
+    const target = dropTarget.current;
+    if (!target) throw new Error("import dialog requires a file drop region");
+    return installFileDrop(target, {
+      scope: "import",
+      canDrop: () => !busyRef.current && !reading && !configuring,
+      preview: setDropCue,
+      receive: async dropped => {
+        await run(async () => {
+          const chosen = await readImportFile(dropped);
+          if (mounted.current) selectFile(chosen);
+        });
+      },
+      report: async issue => { if (mounted.current) setError(issue instanceof Error ? issue.message : String(issue)); },
+    });
+  }, [importing, reading, configuring]);
   // A selected file is the request to prepare a preview, not an extra wizard
   // step. CSV value-mode edits keep the user's header choices. Choosing another
   // file resets them before this effect runs. Cleanup also cancels stale work.
@@ -168,7 +191,6 @@ function InterchangeDialog({ request, onClose }: { request: Request; onClose: ()
     }
     onClose();
   });
-  const importing = request.kind === "import";
   const conversionNotes = !!diagnostics.length && <ul className="interchange-diagnostics selectable-text" aria-label="Conversion notes" tabIndex={importing ? 0 : undefined}>
     {groupDiagnostics(diagnostics).map(({ item, title, count, messages, sheets }, index) => <li key={index} data-severity={item.severity}>
       <strong className="interchange-diagnostic-label" data-loss={item.code === "cell_omitted" || item.severity === "error"}>{title}</strong>
@@ -177,7 +199,10 @@ function InterchangeDialog({ request, onClose }: { request: Request; onClose: ()
     </li>)}
   </ul>;
   return <ModalShell open className={`interchange-dialog${importing && file ? ' interchange-dialog--preview' : ''}${!importing ? ' interchange-dialog--export' : ' interchange-dialog--import'}`} titleId={titleId} descriptionId={importing ? helpId : undefined} initialFocusRef={exportSummary ? cancelButton : undefined} onClose={close}>
-    <div className="app-modal-content">
+    <div ref={dropTarget} className={`app-modal-content${importing ? ' interchange-import-drop-target' : ''}`}>
+      {importing && dropCue && <div className="interchange-import-drop-cue" data-kind={dropCue.kind} role="status">
+        <span>{dropCue.kind === "blocked" ? dropCue.message : "Drop spreadsheet"}</span>
+      </div>}
       <header className="app-modal-header"><h2 id={titleId}>{importing ? "Import spreadsheet" : excelSummary ? "Export Excel" : `Export ${FORMATS[format!].label}`}</h2>
         {exportSummary && <ExportSummary summary={exportSummary} />}
         {importing && file && <span className="interchange-filename" title={file.name}>{file.name}</span>}
@@ -189,7 +214,10 @@ function InterchangeDialog({ request, onClose }: { request: Request; onClose: ()
           onToggle={() => { invalidateExport(); setFreezeHeaders(value => !value); }} />}
         {((importing && (!file || importFormat(file.name) !== "xlsx")) || delimited) && <fieldset disabled={busy || reading || configuring} className="interchange-fields">
           {importing ? <>
-            {!file && <button type="button" className="app-modal-action secondary" onClick={pick}>Choose CSV, TSV or Excel…</button>}
+            {!file && <>
+              <button type="button" className="app-modal-action secondary" onClick={pick}>Choose file…</button>
+              <small className="interchange-import-types">Excel (.xlsx), CSV, TSV · or drop a file here</small>
+            </>}
             {file && importFormat(file.name) !== "xlsx" && <div className="interchange-field"><span>Read values as</span>
               <ChoiceMenu portal open={valueMenuOpen} onOpenChange={setValueMenuOpen} label="Read values as" selected={valueMode}
                 onChoose={value => { if (value !== valueMode) { setPrepared(null); setReading(true); setValueMode(value); } }} options={[{value:"text", label:"Text"}, {value:"infer", label:"Detect numbers and booleans"}]}
@@ -234,11 +262,10 @@ function InterchangeDialog({ request, onClose }: { request: Request; onClose: ()
   </ModalShell>;
 }
 
-export function useInterchangeController(prepare: () => void) {
+export function useInterchangeController(prepare: () => void, openFromLink?: () => void) {
   const [request, setRequest] = useState<Request | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [openDocument, setOpenDocument] = useState<(() => void) | null>(null);
-  const openTitleId = useId();
   const close = useCallback(() => { setRequest(null); setOpenDocument(null); }, []);
   const start = useCallback((target: { kind: "import"; file?: ImportFile } | { kind: "export"; format: ExportFormat }) => {
     if (request) return;
@@ -255,14 +282,7 @@ export function useInterchangeController(prepare: () => void) {
     selectExportFormat: useCallback((format: ExportFormat) => start({kind: "export", format}), [start]),
     openBrowserFile: useCallback((open: () => void) => { if (!request) setOpenDocument(() => open); }, [request]),
     dialog: request ? <InterchangeDialog request={request} onClose={close} /> : openDocument ?
-      <ModalShell open titleId={openTitleId} onClose={close}>
-        <div className="app-modal-content">
-          <header className="app-modal-header"><h2 id={openTitleId}>Open file</h2></header>
-          <div className="app-modal-body interchange-open-options">
-            <button className="app-modal-action secondary" onClick={() => { close(); openDocument(); }}>Open Ordinate document…<small>.ord · continue editing the original</small></button>
-            <button className="app-modal-action secondary" onClick={() => start({kind: "import"})}>Import spreadsheet…<small>.csv, .tsv, .xlsx · convert to a new document</small></button>
-          </div>
-          <footer className="app-modal-actions"><button className="app-modal-action secondary" onClick={close}>Cancel</button></footer>
-        </div>
-      </ModalShell> : null };
+      <BrowserOpenDialog onClose={close} onOpenDocument={() => { close(); openDocument(); }}
+        onOpenLink={openFromLink ? () => { close(); openFromLink(); } : undefined}
+        onImport={() => start({kind: "import"})} /> : null };
 }

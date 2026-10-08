@@ -1,0 +1,11 @@
+[
+  {"id":"getting-started","file":"00-getting-started.ord","title":"Getting started","category":"Essentials","featured":true,"description":"A guided tour through a connected report, invoices, financing and delivery work. Change an input and follow the results."},
+  {"id":"company-report","file":"01-company-report.ord","title":"Company report","category":"Business","description":"Five years of operating results, cash flow and board reporting."},
+  {"id":"dcf-valuation","file":"02-dcf-valuation.ord","title":"DCF valuation","category":"Business","description":"Forecast cash flows, bridge to equity value and compare assumptions."},
+  {"id":"project-investment","file":"03-project-investment.ord","title":"Project investment","category":"Business","description":"Model a ten-year investment, dated returns and commissioning scenarios."},
+  {"id":"personal-budget","file":"04-personal-budget.ord","title":"Personal budget","category":"Personal","description":"A full-year cashbook with monthly budgets, savings and spending categories."},
+  {"id":"mortgage","file":"05-mortgage.ord","title":"Mortgage","category":"Personal","description":"Explore a 30-year repayment schedule and the complete cost of ownership."},
+  {"id":"subscription-business","file":"06-subscription-business.ord","title":"Subscription business","category":"Business","description":"Follow acquisition cohorts, recurring revenue, retention and runway."},
+  {"id":"inventory-replenishment","file":"07-inventory-replenishment.ord","title":"Inventory replenishment","category":"Operations","description":"Plan stock, safety buffers, supplier orders and replenishment quantities."},
+  {"id":"time-and-invoices","file":"08-time-and-invoices.ord","title":"Time and invoices","category":"Operations","description":"Turn delivery sessions into monthly client invoices and project reviews."}
+]

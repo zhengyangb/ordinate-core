@@ -394,7 +394,8 @@ export async function checkNotes(win, {query,wait,capture}) {
   await capture(win,`${host}-sheet-notes-columns`);
   assert.equal(await query(win,`document.querySelectorAll('.sheet-note-column').length`),2);
   assert.equal(await query(win,`getComputedStyle(document.querySelector('.sheet-note-content hr')).display`),'none','Wide presentation uses the separator as a column boundary');
-  win.setSize(480,840);
+  // This breakpoint depends on paper space, no longer on table width.
+  win.setSize(440,840);
   await wait(win,`document.querySelector('.sheet-note-content').getBoundingClientRect().width<=420`);
   assert.ok(await query(win,`(() => {const c=[...document.querySelectorAll('.sheet-note-column')].map(e=>e.getBoundingClientRect());return c[1].top>=c[0].bottom && Math.abs(c[1].left-c[0].left)<1;})()`),'Narrow notes stack columns in reading order');
   assert.notEqual(await query(win,`getComputedStyle(document.querySelector('.sheet-note-content hr')).display`),'none','Narrow presentation shows the same separator as a horizontal rule');
@@ -516,6 +517,38 @@ export async function checkNotes(win, {query,wait,capture}) {
   await key('Enter',{metaKey:true});
   await wait(win,`document.querySelectorAll('.sheet-note-content p').length===2`);
   await capture(win,host+'-sheet-note-paragraph-editing');
+  // Real table measurements exercise the shared paper clamp, not a mocked
+  // width. Cover one/two columns, the follow range, and horizontal overflow.
+  for (const columns of [1, 2, 6, 24]) {
+    await load('# Paper width\nA readable overview of the reporting period, assumptions and results.\n\n'
+      + '| '+Array.from({length:columns},(_,i)=>'Column '+(i+1)).join(' | ')+' |\n'
+      + '| '+Array.from({length:columns},(_,i)=>String(i+1)).join(' | ')+' |\n\n'
+      + 'Source: internal reporting. All amounts are illustrative.');
+    for (const windowWidth of [1280, 760, 360]) {
+      win.setSize(windowWidth,920);
+      await wait(win,`(() => {
+        const workspace=document.querySelector('.note-workspace');
+        const table=parseFloat(getComputedStyle(workspace).getPropertyValue('--note-table-width'));
+        const available=document.querySelector('.grid-shell').getBoundingClientRect().width;
+        const expected=Math.min(available,Math.max(480,Math.min(960,table)));
+        return ['.sheet-note-intro','.sheet-note-footer'].every(selector=>
+          Math.abs(document.querySelector(selector).getBoundingClientRect().width-expected)<1);
+      })()`);
+      for (const slot of ['.sheet-note-intro','.sheet-note-footer']) {
+        await edit(slot+' .sheet-note');
+        await wait(win,`document.activeElement?.className==='sheet-note-input'`);
+        await wait(win,`(() => {
+          const paper=document.querySelector('${slot}').getBoundingClientRect();
+          const editor=document.querySelector('.sheet-note-editor').getBoundingClientRect();
+          return Math.abs(paper.width-editor.width)<1&&editor.left>=11&&editor.right<=innerWidth-11;
+        })()`);
+        await key('Escape');
+        await wait(win,`!document.querySelector('.sheet-note-editor')`);
+      }
+      if (windowWidth===1280 || windowWidth===360) await capture(win,host+'-note-paper-'+columns+'-columns-'+windowWidth);
+    }
+  }
+  win.setSize(1060,920);
   // A single temporal value below the 80th percentile must still fit inside
   // the live AG Grid column. Cover post-edit recalculation, not just mounting.
   const numbers=Array.from({length:20},()=> '| Item || 120 | 140 | 160 | 180 |').join('\n');

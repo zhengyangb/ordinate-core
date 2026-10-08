@@ -2,9 +2,13 @@ import type { GridRow } from "../types/ui";
 
 type ColumnLayout = { width: number; wrapText: boolean; autoHeight: boolean };
 
+// Short scalar columns need the same compact floor in sparse sheets and dense
+// reports. The floor is not a preferred width: displayed content still sizes up.
+const MIN_DATA_COLUMN_WIDTH = 80;
+
 // Also used by the append-column preview: an empty column has no text or
 // numeric peers to size from, regardless of the preceding column's content.
-export const EMPTY_COLUMN_WIDTH = 112;
+export const EMPTY_COLUMN_WIDTH = MIN_DATA_COLUMN_WIDTH;
 
 // Approximate the 13px table font, including wide scripts. Actual line wrapping
 // and row height are measured by the grid, not guessed from character counts.
@@ -69,15 +73,15 @@ export function resolveColumnLayouts(
     // the dense report's numeric width cap or widen unrelated numeric peers.
     const desired = Math.max(textWidth(header), representative, numeric || hasTemporal ? scalarContentWidth : 0) + 32;
     const width = isHeader ? boundedWidth(desired, 176, 256)
-      : hasTemporal ? boundedWidth(desired, EMPTY_COLUMN_WIDTH, 320)
+      : hasTemporal ? boundedWidth(desired, MIN_DATA_COLUMN_WIDTH, 320)
       : hasText && !numeric ? boundedWidth(desired, 144, 320)
       : hasBoolean && !hasNumber ? boundedWidth(desired, 96, 144)
-      : boundedWidth(desired, EMPTY_COLUMN_WIDTH, 176);
+      : boundedWidth(desired, MIN_DATA_COLUMN_WIDTH, 176);
     return { width, numeric, hasTemporal, desired, empty: widths.length === 0, wrapText: hasText, autoHeight: hasText };
   });
   // Comparable numeric columns share a rhythm rather than varying with each value.
   const dense = profiles.filter(column => column.numeric).length >= 4;
-  const numericWidth = profiles.reduce((max, column) => column.numeric && !column.hasTemporal ? Math.max(max, dense ? boundedWidth(column.desired, 80, 144) : column.width) : max, dense ? 80 : EMPTY_COLUMN_WIDTH);
+  const numericWidth = profiles.reduce((max, column) => column.numeric && !column.hasTemporal ? Math.max(max, dense ? boundedWidth(column.desired, MIN_DATA_COLUMN_WIDTH, 144) : column.width) : max, MIN_DATA_COLUMN_WIDTH);
   const firstContent = profiles.findIndex(c => !c.empty);
   const lastContent = profiles.reduce((last, column, i) => column.empty ? last : i, -1);
   return profiles.map(({ numeric, hasTemporal, desired: _desired, empty, ...column }, i) => ({ ...column,

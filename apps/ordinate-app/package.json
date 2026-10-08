@@ -8,8 +8,11 @@
   "scripts": {
     "app": "npm run desktop:build",
     "dev": "vite",
+    "dev:online": "vite --mode online",
     "build": "tsc -b && vite build",
+    "build:online": "tsc -b && vite build --mode online",
     "preview": "vite preview",
+    "preview:online": "vite preview --mode online",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "desktop:compile": "tsc -p tsconfig.desktop.json && node desktop/build-native.mjs",
@@ -26,7 +29,8 @@
     "appId": "dev.ordinate.desktop",
     "productName": "Ordinate",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "resources"
     },
     "files": [
       "dist/**/*",
@@ -35,6 +39,7 @@
       "package.json"
     ],
     "mac": {
+      "icon": "resources/Ordinate.icon",
       "category": "public.app-category.productivity",
       "identity": null,
       "extendInfo": {

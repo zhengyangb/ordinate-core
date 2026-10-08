@@ -25,9 +25,9 @@ describe("file drop routing", () => {
   });
 });
 
-function setup() {
+function setup(scope: "open" | "import" = "open") {
   const target = new EventTarget();
-  const actions = {canDrop: vi.fn(() => true), preview: vi.fn(), receive: vi.fn(async () => {}), report: vi.fn(async () => {})};
+  const actions = {scope, canDrop: vi.fn(() => true), preview: vi.fn(), receive: vi.fn(async () => {}), report: vi.fn(async () => {})};
   const dispose = installFileDrop(target as Window, actions);
   const dispatch = (type: string, files = [new File(['42'], 'file.csv')], types = ['Files'], prevented = false) => {
     const event = new Event(type, {cancelable: true});
@@ -40,6 +40,46 @@ function setup() {
   return {target, actions, dispose, dispatch};
 }
 describe("file drop event lifecycle", () => {
+  it("restricts an import receiver consistently on hover and drop, before reading", async () => {
+    const f = setup("import");
+    const files = [new File([], 'report.ord')];
+    expect(f.dispatch('dragenter', files).transfer.dropEffect).toBe('none');
+    expect(f.actions.preview).toHaveBeenLastCalledWith({kind:'blocked', message:'Use Open for .ord documents.'});
+    expect(f.dispatch('drop', files).event.defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(f.actions.report).toHaveBeenCalledWith(expect.objectContaining({message:'Use Open for .ord documents.'})));
+    expect(f.actions.receive).not.toHaveBeenCalled();
+    f.dispose();
+  });
+  it("gives the nearest receiver ownership, including when it is busy, and restores ownership on disposal", () => {
+    const parent = setup(), child = setup("import");
+    const send = (type: string) => {
+      const event = new Event(type, {cancelable:true});
+      const transfer = {types:['Files'], files:[new File([], 'report.csv')], items:[], dropEffect:'unset'};
+      Object.defineProperties(event, {
+        dataTransfer:{value:transfer}, composedPath:{value:() => [child.target, parent.target]},
+      });
+      // Node EventTarget has no tree; reproduce the DOM capture path explicitly.
+      parent.target.dispatchEvent(event); child.target.dispatchEvent(event);
+      return {event, transfer};
+    };
+    parent.dispatch('dragenter');
+    send('dragenter');
+    expect(parent.actions.preview).toHaveBeenLastCalledWith(null);
+    expect(child.actions.preview).toHaveBeenLastCalledWith({kind:'import'});
+    child.actions.canDrop.mockReturnValue(false);
+    expect(send('drop').event.defaultPrevented).toBe(true);
+    expect(child.actions.receive).not.toHaveBeenCalled();
+    expect(parent.actions.receive).not.toHaveBeenCalled();
+    child.dispose();
+    send('drop');
+    expect(parent.actions.receive).toHaveBeenCalledOnce();
+    parent.dispose();
+  });
+  it("fails early on duplicate receiver installation", () => {
+    const f = setup();
+    expect(() => installFileDrop(f.target as Window, f.actions)).toThrow("already installed");
+    f.dispose();
+  });
   it("keeps a stable cue across nested elements without publishing every mouse movement", () => {
     const f = setup();
     f.dispatch('dragenter'); f.dispatch('dragenter'); f.dispatch('dragleave'); f.dispatch('dragover');

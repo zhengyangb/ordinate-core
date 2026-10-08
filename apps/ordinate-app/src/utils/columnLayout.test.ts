@@ -60,8 +60,25 @@ describe("content-driven column layout", () => {
     expect(columns[1].width).toBeLessThanOrEqual(176);
     expect(columns[1].wrapText).toBe(false);
   });
-  it("does not give a lone numeric column a 560px text-column width", () => {
-    expect(resolveColumnLayouts([row([["12", "number"]])], ["Value"], 0)[0].width).toBe(112);
+  it("uses the compact floor for short numbers even without four numeric peers", () => {
+    for (const count of [1, 2, 3, 4, 8]) {
+      const columns = resolveColumnLayouts([row(Array.from({ length: count }, () => ["12", "number"]))], Array.from({ length: count }, () => "Value"), 0);
+      expect(columns.every(column => column.width === 80 && !column.wrapText)).toBe(true);
+    }
+  });
+  it("keeps Hours and Fee compact beside timestamps, durations and Boolean controls", () => {
+    const columns = resolveColumnLayouts([row([
+      ["6/1/2026, 9:00:00 AM Z", "datetime"], ["2 hr", "duration"],
+      ["2", "number"], ["false", "boolean"], ["250", "number"],
+    ])], ["Start", "Elapsed", "Hours", "Billable", "Fee"], 0);
+    expect(columns[2].width).toBe(80);
+    expect(columns[4].width).toBe(80);
+    expect(columns[0].width).toBeGreaterThan(160);
+    expect(columns[3].width).toBeGreaterThanOrEqual(96);
+  });
+  it("still grows numeric columns for formatted values and longer headers", () => {
+    expect(resolveColumnLayouts([row([["12,000,000", "number"]])], ["Value"], 0)[0].width).toBeGreaterThanOrEqual(112);
+    expect(resolveColumnLayouts([row([["12", "number"]])], ["Monthly payment"], 0)[0].width).toBeGreaterThan(80);
   });
   it("wraps long prose at a bounded width and lets the grid measure row height", () => {
     expect(resolveColumnLayouts([row([["A long note. ".repeat(100), "string"]])], ["Notes"], 0)[0])

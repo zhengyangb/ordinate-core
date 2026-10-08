@@ -52,8 +52,8 @@ const bridge: DesktopBridge = {
   onDocumentRequest: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, request: DocumentRequest) => {
       void callback(request).then(
-        () => ipcRenderer.invoke("document:complete", request.id, null),
-        (error: unknown) => ipcRenderer.invoke("document:complete", request.id, String(error)),
+        result => ipcRenderer.invoke("document:complete", request.id, null, result),
+        (error: unknown) => ipcRenderer.invoke("document:complete", request.id, String(error), null),
       );
     };
     ipcRenderer.on("document:request", listener);

@@ -1,0 +1,11 @@
+.mac-download-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: .36rem; flex: none;
+  min-height: 1.85rem; padding: .25rem .65rem; border-radius: 999px; border: 1px solid var(--chrome-border);
+  background: var(--toolbar-pill); color: var(--chrome-ink); font: 500 .76rem var(--font-body); cursor: pointer;
+}
+.mac-download-button svg { width: 1rem; height: 1rem; flex: none; }
+.mac-download-button:hover { background: var(--menu-active-bg); border-color: var(--accent-strong); }
+.mac-download-button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.topbar > .mac-download-button { margin-right: .45rem; }
+.topbar > .mac-download-button + .toolbar-actions { padding-left: .45rem; border-left: 1px solid var(--chrome-border); }
+@media (max-width: 1000px) { .topbar > .mac-download-button span { display: none; } .topbar > .mac-download-button { padding: .3rem; width: 1.85rem; } }

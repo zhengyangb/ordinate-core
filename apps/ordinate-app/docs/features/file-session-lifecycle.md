@@ -272,9 +272,16 @@ load AppKit. The renderer never receives filesystem paths from this bridge.
 
 Close/quit commits an active formula editor, waits for in-flight operations, then
 flushes the latest snapshot. A current local draft suffices only for an untitled
-document; a named document must be current on disk. Failure or conflict prevents
-closing. Untitled drafts restore automatically; the open workspace reopens on
-launch. Native moves update the session's backing capability and recovery key
+document; a named document must be current on disk. A new untitled document has a
+canonical initial-content baseline separate from recovery durability. Until its
+content differs from that baseline it is clean, even with a prefilled table.
+Imports and duplicates have no pristine baseline. Both Close and Quit use the fresh save
+requirement returned by the completed flush; it does not infer user edits from
+the absence of a filename. Edited unnamed documents offer Save, Cancel or Don't
+Save in either flow; a local recovery draft does not waive this confirmation.
+Failure or conflict prevents closing. Untitled drafts restore after an interrupted
+session; a confirmed quit only restores saved files, not discarded drafts.
+Native moves update the session's backing capability and recovery key
 before subsequent edits can autosave. See [Desktop document workspace](desktop-document-workspace.md)
 for multi-window sessions, native tabs, duplication and macOS version history.
 
@@ -325,6 +332,26 @@ Recovery dialog actions:
 - **Discard Draft**: remove local draft and keep current backing file text.
 
 This should be a modal/dialog because it is an explicit recovery choice, not a background status notification.
+
+### Online URL imports
+
+Online treats a URL as one-shot input, not a document identity or backing file.
+Each manual link open or `#url=` launch reads the file anew, bypassing HTTP cache.
+The resulting untitled working copy stores its name and content, not a source URL;
+there are no URL-keyed archives, source reload commands, or remote writes.
+
+Online recovery is independently namespaced by a tab session in `sessionStorage`
+and `[sessionId, key]` records in IndexedDB. Ordinary refresh restores the active
+working copy. A consumed launch fragment is not replayed by refresh; a newly
+supplied fragment always requests a fresh import, even for the same URL.
+New tabs get independent drafts; copied tabs fork their inherited session using
+a Web Locks lease rather than sharing a mutable draft.
+
+Exact-URL permissions are shared consent records only. They suppress the risk
+confirmation, never a network read or the separate edited-document replacement
+confirmation. Declining replacement or failing to download leaves the current
+working copy unchanged. Draft recovery must never substitute edited local
+content for the file requested by a link.
 
 ## Autosave Model
 

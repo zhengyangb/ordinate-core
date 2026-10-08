@@ -8,6 +8,7 @@ import { createDocumentWindow, type DocumentWindow } from "./documentWindow.js";
 import { presentDocumentWindow } from "./presentDocumentWindow.js";
 import { createWorkspaceSession, type DocumentSession } from "./workspaceSession.js";
 import type { DesktopCommand } from "../src/platform/storage.js";
+import { createQuitCoordinator } from "./quitCoordinator.js";
 
 const isDev = !app.isPackaged && process.argv.includes("--dev");
 const rendererUrl = isDev ? "http://127.0.0.1:5174/" : "ordinate://app/";
@@ -18,23 +19,26 @@ protocol.registerSchemesAsPrivileged([{ scheme: "ordinate", privileges: { standa
 const windows = new Map<number, DocumentWindow>();
 const workspace = createWorkspaceSession(app.getPath("userData"));
 let initialized = false;
-let allowQuit = false;
-let flushingQuit = false;
 let openQueue: Promise<unknown> = Promise.resolve();
 let startup: Promise<void>;
 const focused = () => {
   const win = BrowserWindow.getFocusedWindow();
   return win ? windows.get(win.id) : undefined;
 };
-const persist = () => {
+const persist = (records = [...windows.values()].map(entry => entry.record)) => {
   refreshMenu();
-  return workspace.write([...windows.values()].map(entry => entry.record));
+  return workspace.write(records);
 };
 const reportError = (error: unknown) => dialog.showErrorBox("Ordinate", String(error));
 const run = (action: () => Promise<unknown>) => { void action().catch(reportError); };
+const quitting = createQuitCoordinator({
+  documents: () => [...windows.values()], persist,
+  flushStorage: () => session.defaultSession.flushStorageData(),
+  quit: () => app.quit(), reportError,
+});
 
 async function createWindow(record: DocumentSession = { id: randomUUID(), filename: null, text: null }, parent?: BrowserWindow) {
-  if (flushingQuit) throw new Error("Wait for Ordinate to finish saving before opening another document.");
+  if (quitting.phase !== "idle") throw new Error("Finish the quit confirmation before opening another document.");
   const entry = createDocumentWindow({
     record, rendererUrl, persist,
     open: chooseDocuments,
@@ -51,10 +55,10 @@ async function createWindow(record: DocumentSession = { id: randomUUID(), filena
         throw new Error("This file is already open in another window. Choose a different name or close that document first.");
       }
     },
-    isQuitting: () => allowQuit,
+    quitPhase: () => quitting.phase,
     closed: () => {
       windows.delete(entry.win.id);
-      if (!allowQuit) run(persist);
+      if (quitting.phase !== "approved") run(persist);
     },
   });
   windows.set(entry.win.id, entry);
@@ -98,21 +102,7 @@ appKit?.setDocumentOpenHandler((id, _kind, filename) => {
 });
 app.on("open-file", (event, filename) => { event.preventDefault(); run(() => openSystemDocument(filename)); });
 
-// Flush every document before closing any window. Failed saves leave the whole
-// workspace open, and the persisted identities restore independent drafts.
-app.on("before-quit", event => {
-  if (allowQuit) return;
-  event.preventDefault();
-  if (flushingQuit) return;
-  flushingQuit = true;
-  void (async () => {
-    await Promise.all([...windows.values()].map(entry => entry.host.flush()));
-    await persist();
-    session.defaultSession.flushStorageData();
-    allowQuit = true;
-    app.quit();
-  })().catch(error => { flushingQuit = false; reportError(error); });
-});
+app.on("before-quit", quitting.beforeQuit);
 
 function installMenu() {
   const command = (value: DesktopCommand) => focused()?.win.webContents.send("editor:command", value);

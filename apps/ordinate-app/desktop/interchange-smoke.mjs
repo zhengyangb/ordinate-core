@@ -13,15 +13,30 @@ import { checkFormattedText } from './formatted-text-smoke.mjs';
 import { checkRowFormatting } from './row-format-smoke.mjs';
 import { checkFileDrop } from './file-drop-smoke.mjs';
 import { checkPrint } from './print-smoke.mjs';
+import { checkBrowserPrint } from './browser-print-smoke.mjs';
 import { checkFormulaAssistant } from './formula-assistant-smoke.mjs';
+import { checkExamples } from './examples-smoke.mjs';
+import { checkOnline, checkStaticOnline } from './online-smoke.mjs';
+import { checkRemoteWorkbooks } from './remote-workbook-smoke.mjs';
+import { checkClose } from './close-smoke.mjs';
+import { checkRailMotion } from './rail-motion-smoke.mjs';
+import { checkQuit } from './quit-smoke.mjs';
+import { checkDoubleClick } from './double-click-smoke.mjs';
+import { checkSheetTooltip } from './sheet-tooltip-smoke.mjs';
 
 // Application integration test, not control of the user's running browser/app.
 // Test-owned profile/windows/files; real production assets, preload and core.
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'ordinate-interchange-smoke-')));
 await mkdir(path.join(directory, 'profile'));
 app.setPath('userData', path.join(directory, 'profile'));
+if (process.argv.includes('--remote-only')) {
+  // Test fixture TLS and DNS only, never the production application/profile.
+  app.commandLine.appendSwitch('host-resolver-rules', 'MAP models.example 127.0.0.1');
+  app.commandLine.appendSwitch('ignore-certificate-errors');
+  app.commandLine.appendSwitch('no-proxy-server');
+}
 app.on('window-all-closed', () => {});
-protocol.registerSchemesAsPrivileged([{ scheme: 'ordinate-test', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+protocol.registerSchemesAsPrivileged([{ scheme: 'ordinate-test', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 appKit?.setDocumentOpenHandler(id => appKit.completeDocumentOpen(id, 0, 'Not part of this test'));
 const windows = [], imported = [], opened = [];
 let inputPath = null, outputPath = null;
@@ -48,7 +63,7 @@ const query = (win, expression) => win.webContents.executeJavaScript(expression)
 });
 const buttonExpression = text => `[...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
 async function click(win, text) { await wait(win, `${buttonExpression(text)} && !${buttonExpression(text)}.disabled`); await query(win, `${buttonExpression(text)}.click()`); }
-async function nativeWindow(record) {
+async function nativeWindow(record, quitPhase = () => closing ? 'approved' : 'idle') {
   const entry = createDocumentWindow({ record, rendererUrl: 'ordinate-test://app/', persist: async () => {},
     open: async (parent, filename) => {
       assert.equal(parent, entry.win);
@@ -57,7 +72,7 @@ async function nativeWindow(record) {
       if (process.platform === 'darwin') parent.addTabbedWindow(created.win);
       opened.push(created);
     }, newDocument: async () => { throw new Error('Unexpected New'); },
-    checkDestination: async () => {}, isQuitting: () => closing, closed: () => {},
+    checkDestination: async () => {}, quitPhase, closed: () => {},
     createUntitled: async (text, parent, draftName) => {
       assert.equal(parent, entry.win);
       const created = await nativeWindow({ id: `import-${imported.length}`, filename: null, text, draftName });
@@ -102,7 +117,7 @@ async function exportReview(win, format) {
 }
 async function importReview(win) {
   win.webContents.send('editor:command', 'import');
-  await click(win, 'Choose CSV, TSV or Excel…');
+  await click(win, 'Choose file…');
   await wait(win, `document.querySelector('.interchange-filename')`);
   await wait(win, `document.querySelector('[aria-label="Conversion review"]')`);
 }
@@ -152,13 +167,13 @@ async function checkImportFocus(win) {
     // Initial opening and reopening must both retain usable, unclipped keyboard focus.
     for (let opening = 0; opening < 2; opening++) {
       win.webContents.send('editor:command', 'import');
-      await wait(win, `document.activeElement === ${buttonExpression('Choose CSV, TSV or Excel…')}`);
+      await wait(win, `document.activeElement === ${buttonExpression('Choose file…')}`);
       win.webContents.sendInputEvent({type:'keyDown', keyCode:'Tab'});
       win.webContents.sendInputEvent({type:'keyUp', keyCode:'Tab'});
       await wait(win, `document.activeElement === ${buttonExpression('Cancel')}`);
       win.webContents.sendInputEvent({type:'keyDown', keyCode:'Tab', modifiers:['shift']});
       win.webContents.sendInputEvent({type:'keyUp', keyCode:'Tab', modifiers:['shift']});
-      await wait(win, `document.activeElement === ${buttonExpression('Choose CSV, TSV or Excel…')}`);
+      await wait(win, `document.activeElement === ${buttonExpression('Choose file…')}`);
       const focus = await query(win, `(() => {
         const button = document.activeElement, style = getComputedStyle(button);
         const bounds = button.getBoundingClientRect();
@@ -253,32 +268,68 @@ async function checkAutomaticImportPreview(native, web) {
   console.log('Automatic import preview passed on native/web: no redundant Continue, editable CSV interpretation, retained headers, replacement/reset, picker cancellation, malformed files and pending-work cancellation.');
 }
 
-async function webWindow() {
+async function webWindow(url = 'ordinate-test://web/', { background = false } = {}) {
   // No preload/desktop bridge; this origin/profile belongs only to the test.
-  const web = new BrowserWindow({ show: false, width: 420, height: 780, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
-  windows.push(web); web.webContents.setBackgroundThrottling(false);
-  await web.loadURL('ordinate-test://web/'); await wait(web, `document.documentElement.dataset.startup === 'ready'`);
+  const web = new BrowserWindow({ show: false, paintWhenInitiallyHidden: !background, width: 420, height: 780,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: background } });
+  windows.push(web);
+  await web.loadURL(url);
+  if (!background) await wait(web, `document.documentElement.dataset.startup === 'ready'`);
   return web;
 }
 
 async function run() {
   await app.whenReady();
-  const assets = path.resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
+  const standalone = process.argv.includes('--online-build-only');
+  const base = process.argv.find(arg => arg.startsWith('--base='))?.slice('--base='.length) ?? '/';
+  const assets = path.resolve(fileURLToPath(new URL(standalone ? '../dist-online/' : '../dist/', import.meta.url)));
   protocol.handle('ordinate-test', request => {
     const url = new URL(request.url);
-    const target = path.resolve(assets, `.${url.pathname === '/' ? '/index.html' : url.pathname}`);
+    if (!url.pathname.startsWith(base)) throw new Error('Request outside static hosting base');
+    const pathname = '/' + url.pathname.slice(base.length);
+    const target = path.resolve(assets, `.${pathname === '/' ? '/index.html' : pathname}`);
     if (!target.startsWith(`${assets}${path.sep}`)) throw new Error('Unexpected asset path');
     return net.fetch(pathToFileURL(target).href);
   });
+  if (standalone) {
+    await checkStaticOnline(await webWindow(`ordinate-test://web${base}`), base, {query,wait,capture});
+    return;
+  }
   const source = '# Data\n| 2 | 3 | = A1 * B1 |\n# Notes\n| hello |\n# Errors\n| = "x" * 2 | = len(trim(" word ")) | 42 |\n# Unsafe\n| "=1+1" |';
+  if (process.argv.includes('--remote-only')) {
+    await checkRemoteWorkbooks(await webWindow(), {query,wait,capture,directory});
+    return;
+  }
   const backing = path.join(directory, 'source.ord'); await writeFile(backing, source);
   const entry = await nativeWindow({ id: 'native', filename: backing, text: null }), win = entry.win;
+  if (process.argv.includes('--close-only')) {
+    await checkClose({nativeWindow,query,wait,saveTo:()=>outputPath=path.join(directory,'explicit-save.ord')});
+    return;
+  }
+  if (process.argv.includes('--quit-only')) {
+    await checkQuit({nativeWindow,query,wait,saveTo:name=>outputPath=name===null?null:path.join(directory,name)});
+    return;
+  }
+  if (process.argv.includes('--online-only')) {
+    assert.equal(await query(win,`!!document.querySelector('[aria-label="Ordinate menu"]')`),false,'Native menu is not duplicated');
+    await checkOnline(await webWindow(undefined, {background:true}), {query,wait,capture});
+    return;
+  }
+  if (process.argv.includes('--examples-only')) {
+    for (const target of [win, await webWindow()]) await checkExamples(target,{query,wait,capture});
+    return;
+  }
   if (process.argv.includes('--import-preview-only')) {
     await checkAutomaticImportPreview(win, await webWindow());
     return;
   }
   if (process.argv.includes('--print-only')) {
     await checkPrint(win, {query,wait,capture,directory});
+    return;
+  }
+  if (process.argv.includes('--browser-print-only')) {
+    await checkBrowserPrint(await webWindow(), {query,wait,capture,directory});
+    await checkBrowserPrint(await webWindow(), {query,wait,capture,directory}, true);
     return;
   }
   if (process.argv.includes('--file-drop-only')) {
@@ -292,6 +343,18 @@ async function run() {
   }
   if (process.argv.includes('--formula-assistant-only')) {
     for (const target of [win, await webWindow()]) await checkFormulaAssistant(target, {query,wait,capture});
+    return;
+  }
+  if (process.argv.includes('--double-click-only')) {
+    for(const target of [win,await webWindow()]) await checkDoubleClick(target,{query,wait,capture});
+    return;
+  }
+  if (process.argv.includes('--rail-motion-only')) {
+    for (const target of [win, await webWindow()]) await checkRailMotion(target, {query,wait,capture});
+    return;
+  }
+  if (process.argv.includes('--sheet-tooltip-only')) {
+    for (const target of [win, await webWindow()]) await checkSheetTooltip(target, {query,wait,capture});
     return;
   }
   if (process.argv.includes('--row-format-only')) {
@@ -434,7 +497,7 @@ async function run() {
 
   // Error/cancel cannot replace either document or create another tab.
   inputPath = path.join(directory, 'broken.xlsx'); await writeFile(inputPath, 'Not a workbook');
-  win.webContents.send('editor:command', 'import'); await click(win, 'Choose CSV, TSV or Excel…');
+  win.webContents.send('editor:command', 'import'); await click(win, 'Choose file…');
   await wait(win, `document.querySelector('.interchange-filename')`);
   await wait(win, `document.querySelector('[role="alert"]')`);
   assert.equal(await query(win, `!!document.querySelector('[aria-label="Conversion review"]')`), false);
@@ -510,7 +573,7 @@ async function run() {
       this.files = transfer.files; this.dispatchEvent(new Event('change', {bubbles:true}));
     };
   })()`);
-  await click(web, 'Choose CSV, TSV or Excel…'); await wait(web, `document.querySelector('.interchange-filename')`);
+  await click(web, 'Choose file…'); await wait(web, `document.querySelector('.interchange-filename')`);
   await wait(web, `document.querySelector('[aria-label="Conversion review"]')`);
   await capture(web, 'web-import-mobile');
   const bounds = await query(web, `(() => { const r = document.querySelector('[role="dialog"]').getBoundingClientRect(); return {left:r.left,right:r.right,bottom:r.bottom,width:innerWidth,height:innerHeight}; })()`);

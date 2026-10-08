@@ -37,7 +37,7 @@ import { createAgGridAdapter, focusAppendedBodyRow } from "./grid/agGridAdapter"
 import { useAnchoredMenuPosition } from "./hooks/useAnchoredMenuPosition";
 import { useDisplayFormatCommands } from "./hooks/useDisplayFormatCommands";
 import { useFileSessionController } from "./hooks/useFileSessionController";
-import { usePrintSheet } from "./printing/usePrintSheet";
+import { usePrintDocument } from "./printing/usePrintDocument";
 import { useGridColumnDefs } from "./hooks/useGridColumnDefs";
 import { useSheetStructureCommands } from "./hooks/useSheetStructureCommands";
 import { useSheetViewModel } from "./hooks/useSheetViewModel";
@@ -306,7 +306,11 @@ function axisRowSelectionEqual(
   );
 }
 
-export default function App() {
+export default function App({ initialText, online, onSessionReady }: {
+  initialText?: string;
+  online?: import("./platform/experience").OnlineChrome;
+  onSessionReady?: (commands: import("./platform/experience").OnlineEditorCommands) => void;
+} = {}) {
   const { preferences, update: updatePreferences, systemLocale, displayCell } = usePreferences();
   const themeMode = preferences.appearance;
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1377,7 +1381,9 @@ export default function App() {
     currentSheet, currentSheetState, sheetColCount, headerColCount, headerRowCount,
     frozenColumnCount, columnLayouts, headerLeafLabels, headerSemanticLabels, toggleCollapse,
     uiLocale, showTooltip, clearTooltip, selectedColumnAxisSelection, axisColumnDragPreview,
-    activateBooleanLiteralAt, canStartFormulaPointPick, revision,
+    activateBooleanLiteralAt,
+    formulaPointPickActive: formulaInputMode === "edit" && formulaDraftInput.trimStart().startsWith("="),
+    revision,
   });
 
   const headerIndexMetrics = useMemo<HeaderIndexMetric[]>(() => {
@@ -3455,13 +3461,17 @@ export default function App() {
     setSheetSetupOpen(false);
     notes.begin(currentSheetState.sheetId, position);
   };
-  const interchange = useInterchangeController(prepareForPersistence);
+  const onlineChrome = useMemo(() => online ? { ...online,
+    showExamples: () => { prepareForPersistence(); online.showExamples(); },
+    openFromLink: () => { prepareForPersistence(); online.openFromLink(); },
+  } : undefined, [online, prepareForPersistence]);
+  const interchange = useInterchangeController(prepareForPersistence, onlineChrome?.openFromLink);
   const openSettings = useCallback(() => {
     prepareForPersistence();
     clearTooltip();
     setSettingsOpen(true);
   }, [prepareForPersistence, clearTooltip]);
-  const handlePrint = usePrintSheet(prepareForPersistence, requestConfirmation, displayCell);
+  const printing = usePrintDocument(prepareForPersistence, requestConfirmation, displayCell);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key === ",") {
@@ -3472,17 +3482,21 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openSettings]);
-  const { initializationStatus, fileDropCue, fileName, fileStatus, handleNewFile, handleOpenFile, handleSaveFileAs, handleSaveFile } = useFileSessionController({
-    mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence,
+  const { initializationStatus, fileDropCue, fileName, fileStatus, handleNewFile, handleOpenFile, handleOpenDocumentText, handleSaveFileAs, handleSaveFile } = useFileSessionController({
+    initialText, mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence,
     hasPendingCellEdit: formulaInputMode === "edit" || notes.draft !== null,
-    onImport: interchange.openImport, onExport: interchange.openExport, onPrint: handlePrint, onBrowserOpen: interchange.openBrowserFile, onSettings: openSettings,
+    onImport: interchange.openImport, onExport: interchange.openExport, onPrint: printing.openPrint, onBrowserOpen: interchange.openBrowserFile, onSettings: openSettings,
   });
   const [initialGridReady, setInitialGridReady] = useState(false);
   const handleInitialLayoutReady = useCallback(() => setInitialGridReady(true), []);
+  const initialViewReady = initializationStatus === "ready"
+    && (mode === "source" || !shouldRenderGrid || initialGridReady);
   useEffect(() => {
-    if (initializationStatus === "failed" || (initializationStatus === "ready"
-      && (mode === "source" || !shouldRenderGrid || initialGridReady))) finishStartup();
-  }, [initializationStatus, mode, shouldRenderGrid, initialGridReady]);
+    if (initializationStatus === "failed" || initialViewReady) finishStartup();
+    // Online's invitation uses the same readiness boundary as the startup reveal,
+    // not merely storage completion (which can precede the first table layout).
+    if (initialViewReady) onSessionReady?.({ replaceDocument: handleOpenDocumentText, openFile: handleOpenFile });
+  }, [initializationStatus, initialViewReady, onSessionReady, handleOpenDocumentText, handleOpenFile]);
 
   const handleApplyFormulaInputToSelection = useCallback((nextInput: string) => {
     if (!currentSheetState || !selectedRange || !isRangeSelection) {
@@ -3652,6 +3666,8 @@ export default function App() {
     <div className="page">
       <div className={mode === "source" ? "app-window source-mode" : "app-window"}>
         <AppChrome
+          online={onlineChrome}
+          onImportFile={interchange.openImport}
           titlePlacement={window.ordinateDesktop ? "native" : "toolbar"}
           mode={mode}
           fileName={fileName}
@@ -3679,6 +3695,7 @@ export default function App() {
           onUndo={undo}
           onRedo={redo}
           onOpenFile={handleOpenFile}
+          onPrintFile={printing.openPrint}
           onExportFile={interchange.openExport}
           exportMenuOpen={interchange.exportMenuOpen}
           onExportMenuOpenChange={interchange.setExportMenuOpen}
@@ -3699,6 +3716,7 @@ export default function App() {
         <SearchPanel />
         <FileSessionNotices />
         {interchange.dialog}
+        {printing.dialog}
 
         {error ? (
           <div className="error" role="alert">
@@ -3794,7 +3812,7 @@ export default function App() {
                 handleCellKeyDown={handleCellKeyDown}
               />}
               </NoteWorkspace>
-            ) : activeSheet && isActiveSheetBlocked ? (
+            ) : initializationStatus === "loading" ? null : activeSheet && isActiveSheetBlocked ? (
               <SheetParseErrorPanel sheetName={activeSheet} issues={activeSheetBlockingIssues} onOpenSourceMode={enterSourceMode} />
             ) : (
               <div className="empty-state">

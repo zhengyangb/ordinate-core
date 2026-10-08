@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BrowserWindow } from "electron";
-import type { DocumentRequest, DocumentWrite, FileSnapshot } from "../src/platform/storage.js";
+import type { DocumentFlushResult, DocumentRequest, DocumentWrite, FileSnapshot } from "../src/platform/storage.js";
 import type { createNativeStorage } from "./fileStorage.js";
 import { appKit } from "./nativeChrome.js";
 
@@ -8,7 +8,7 @@ type Request = DocumentRequest & {
   destination?: string;
   restore?: { baseline: FileSnapshot; text: string };
   committed: boolean;
-  finish: (error: string | null) => void;
+  finish: (error: string | null, result: DocumentFlushResult | null) => void;
 };
 
 /** Destinations stay in the main process; the renderer only sees single-use IDs. */
@@ -33,7 +33,7 @@ export function createDocumentHost(win: BrowserWindow, storage: ReturnType<typeo
   });
   const unavailable = (message: string) => {
     ready = false;
-    for (const request of pending.values()) request.finish(message);
+    for (const request of pending.values()) request.finish(message, null);
     pending.clear();
   };
   return {
@@ -77,10 +77,10 @@ export function createDocumentHost(win: BrowserWindow, storage: ReturnType<typeo
     update(filename: string, edited: boolean, title: string) {
       if (nativeId !== undefined) appKit!.updateDocument(nativeId, filename, edited, title);
     },
-    flush(): Promise<void> {
+    flush(): Promise<DocumentFlushResult> {
       if (!ready) return Promise.reject(new Error("The editor is not ready to save. Please wait for it to finish loading."));
       return new Promise((resolve, reject) => send({ id: randomUUID(), kind: "flush", committed: false,
-        finish: (error) => error ? reject(new Error(error)) : resolve() }));
+        finish: (error, result) => error ? reject(new Error(error)) : resolve(result!) }));
     },
     async commit(id: string, write: DocumentWrite) {
       const request = pending.get(id);
@@ -91,12 +91,13 @@ export function createDocumentHost(win: BrowserWindow, storage: ReturnType<typeo
       if (!write.file || !write.version || !appKit) throw new Error("Moving requires a saved macOS document");
       return storage.moveTo(request.destination, write.file, write.version, (from, to) => appKit!.moveDocumentFile(nativeId!, from, to));
     },
-    complete(id: string, error: unknown) {
+    complete(id: string, error: unknown, result: unknown) {
       const request = pending.get(id);
       if (!request || (error !== null && typeof error !== "string")) throw new Error("Invalid document completion");
+      if (error === null && (!result || typeof (result as DocumentFlushResult).needsSave !== "boolean")) throw new Error("Missing document flush result");
       if (request.kind !== "flush" && request.kind !== "saveAs" && !request.committed && error === null) throw new Error("Document write has not been committed");
       pending.delete(id);
-      request.finish(error);
+      request.finish(error, result as DocumentFlushResult | null);
     },
     dispose() {
       // Complete AppKit requests before releasing their callback channel.

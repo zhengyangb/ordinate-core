@@ -4,7 +4,7 @@ import { createCellDisplayFormatter } from "./temporalDisplay";
 import { useSheetViewModel } from "../hooks/useSheetViewModel";
 import { useEditorStore } from "../store/editorStore";
 import { buildDocumentSearchCells } from "../search/searchModel";
-import { buildPrintSheet } from "../printing/printSheetModel";
+import { preparePrintDocument, DEFAULT_PRINT_OPTIONS } from "../printing/printDocumentModel";
 
 const us = createCellDisplayFormatter("locale", "en-US"), gb = createCellDisplayFormatter("locale", "en-GB");
 const date = { kind: "date", value: "2026-06-07", isOffsetQualified: false } as const;
@@ -51,7 +51,7 @@ describe("regional temporal display", () => {
     ]);
     const cells = buildDocumentSearchCells(state, "en-US", us);
     expect(cells.map(cell => cell.text)).toEqual(rows.flatMap(row => [row.col_0, row.col_1]));
-    expect(buildPrintSheet(state, us).rows).toEqual(rows);
+    expect(preparePrintDocument(state, us).build(DEFAULT_PRINT_OPTIONS)[0].rows).toEqual(rows);
     expect(useEditorStore.getState().sourceText).toBe(before);
     expect(state.evaluation!.sheets[0].values[0][0]).toEqual(date);
   });

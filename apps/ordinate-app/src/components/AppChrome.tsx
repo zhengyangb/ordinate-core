@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { useCallback, useContext, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { SearchButton } from "../search/SheetSearch";
+import { SearchButton, SheetSearchContext } from "../search/SheetSearch";
+import { ApplicationMenu, type ApplicationMenuGroup } from "./ApplicationMenu";
+import { InfoDialog } from "./InfoDialog";
+import { MacDownloadButton } from "./MacDownloadButton";
+import type { OnlineChrome } from "../platform/experience";
 import { ChoiceMenu } from "./ChoiceMenu";
 import { FORMATS, type ExportFormat } from "../interchange/contracts";
 
@@ -20,6 +24,8 @@ import {
 export type FileStatusTone = "neutral" | "dirty" | "saving" | "warning" | "error";
 
 type AppChromeProps = {
+  online?: OnlineChrome;
+  onImportFile?: () => void;
   titlePlacement?: "toolbar" | "native";
   mode: "table" | "source";
   fileName: string;
@@ -45,6 +51,7 @@ type AppChromeProps = {
   onUndo: () => void;
   onRedo: () => void;
   onOpenFile: () => void;
+  onPrintFile: () => void;
   onExportFile: () => void;
   exportMenuOpen: boolean;
   onExportMenuOpenChange: (open: boolean) => void;
@@ -138,6 +145,8 @@ function positionSheetRenameError(target: DOMRect): { top: number; left: number 
 }
 
 export default function AppChrome({
+  online,
+  onImportFile,
   titlePlacement = "toolbar",
   mode,
   fileName,
@@ -163,6 +172,7 @@ export default function AppChrome({
   onUndo,
   onRedo,
   onOpenFile,
+  onPrintFile,
   onExportFile,
   exportMenuOpen,
   onExportMenuOpenChange,
@@ -179,6 +189,8 @@ export default function AppChrome({
   onTabMouseEnter,
   onTabMouseLeave,
 }: AppChromeProps) {
+  const search = useContext(SheetSearchContext);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [renamingSheet, setRenamingSheet] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<SheetRenameErrorState | null>(null);
@@ -506,12 +518,39 @@ export default function AppChrome({
   );
   const fileError = fileStatusTone === "error" ? fileStatus : null;
   const openFileTooltip = fileError ? `Open file · ${fileError}` : "Open file";
+  const applicationGroups: ApplicationMenuGroup[] = [
+    { label: "File", items: [
+      { label: "New document", run: onNewFile, icon: <NewDocumentIcon /> },
+      ...(online ? [{ label: "Examples…", run: online.showExamples }, ...(online.resetExample ? [{ label: "Reset example…", run: online.resetExample }] : [])] : []),
+      { label: "Open…", run: onOpenFile, icon: <OpenIcon /> },
+      ...(online ? [{ label: "Open from link…", run: online.openFromLink }] : []),
+      { label: "Save", run: onSaveFile, icon: <SaveIcon /> },
+      { label: "Save as…", run: onSaveFileAs, icon: <SaveAsIcon /> },
+      ...(onImportFile ? [{ label: "Import spreadsheet…", run: onImportFile }] : []),
+      ...Object.entries(FORMATS).map(([format, info]) => ({ label: `Export ${info.label}…`, run: () => onExportFormat(format as ExportFormat), icon: <ExportIcon /> })),
+      { label: "Print…", run: onPrintFile, disabled: !activeSheet },
+    ] },
+    { label: "Edit", items: [
+      { label: "Undo", run: onUndo, disabled: mode !== "table" || !canUndo, icon: <UndoIcon /> },
+      { label: "Redo", run: onRedo, disabled: mode !== "table" || !canRedo, icon: <RedoIcon /> },
+      { label: "Settings…", run: onOpenSettings, icon: <SettingsIcon /> },
+    ] },
+    { label: "View", items: [
+      ...(search ? [{ label: "Find in document…", run: search.show, disabled: !search.enabled }] : []),
+      { label: mode === "table" ? "Source mode" : "Table view", run: mode === "table" ? onEnterSourceMode : onExitSourceMode, icon: <CodeIcon /> },
+      { label: "Sheet setup…", run: onToggleSheetSetup, disabled: mode !== "table" || !activeSheet, icon: <SheetSetupIcon /> },
+    ] },
+    { label: "Help", items: [
+      ...(online ? [{ label: "Get Mac app…", run: online.downloadMac }] : []),
+      { label: "About Ordinate", run: () => setAboutOpen(true) },
+    ] },
+  ];
 
   return (
     <header className={mode === "source" ? "app-chrome source-mode" : "app-chrome"}>
       <div className="topbar">
         <div className="brand-lockup">
-          <span className="brand-name">ordinate</span>
+          {hasNativeTitle ? <span className="brand-name">ordinate</span> : <ApplicationMenu groups={applicationGroups} />}
         </div>
         {documentTitle}
 
@@ -675,6 +714,7 @@ export default function AppChrome({
           </div>
         </nav>
 
+        {online?.isMac && <MacDownloadButton onClick={online.downloadMac} />}
         <div className="toolbar-actions">
           <SearchButton />
           <button
@@ -736,7 +776,7 @@ export default function AppChrome({
                     event.preventDefault();
                     return;
                   }
-                  onTabMouseLeave();
+                  onTooltipSuppress(event.currentTarget);
                   setActiveSheet(sheetName);
                 }}
                 onDoubleClick={() => startRename(sheetName)}
@@ -744,7 +784,10 @@ export default function AppChrome({
                   event.preventDefault();
                   openSheetMenu(sheetName, event.currentTarget);
                 }}
-                onPointerDown={(event) => handleSheetPointerDown(sheetName, sheetIndex, event)}
+                onPointerDown={(event) => {
+                  onTooltipSuppress(event.currentTarget);
+                  handleSheetPointerDown(sheetName, sheetIndex, event);
+                }}
                 onPointerMove={handleSheetPointerMove}
                 onPointerUp={finishSheetPointerDrag}
                 onPointerCancel={cancelSheetDrag}
@@ -755,14 +798,15 @@ export default function AppChrome({
                 onMouseEnter={(event) => {
                   if (sheetName !== renamingSheet) onTabMouseEnter(sheetName, event.currentTarget);
                 }}
-                onMouseLeave={() => {
-                  if (sheetName !== renamingSheet) onTabMouseLeave();
-                }}
+                onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
                 onFocus={(event) => {
                   if (sheetName !== renamingSheet) onTabMouseEnter(sheetName, event.currentTarget);
                 }}
-                onBlur={() => {
-                  if (sheetName !== renamingSheet) onTabMouseLeave();
+                onBlur={(event) => {
+                  // Pointer dismissal lasts until leave; keyboard dismissal lasts
+                  // until blur so a later keyboard visit can reveal the full title.
+                  if (event.currentTarget.matches(":hover")) onTabMouseLeave();
+                  else onTooltipRelease(event.currentTarget);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "F2") {
@@ -919,6 +963,7 @@ export default function AppChrome({
           ) : null}
         </div>
       </div>
+      {aboutOpen && <InfoDialog title="Ordinate" onClose={() => setAboutOpen(false)}><p>Structured tables, formulas and notes.</p></InfoDialog>}
     </header>
   );
 }

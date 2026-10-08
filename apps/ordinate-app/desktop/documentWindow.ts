@@ -14,6 +14,7 @@ import { createSheetPrinter } from "./printing.js";
 import type { DocumentSession } from "./workspaceSession.js";
 import type { FileSnapshot, StorageResult } from "../src/platform/storage.js";
 import { documentSaveName, validateDocumentName } from "../src/platform/documentName.js";
+import type { QuitPhase } from "./quitCoordinator.js";
 
 type Options = {
   record: DocumentSession;
@@ -23,7 +24,7 @@ type Options = {
   newDocument: (parent: BrowserWindow) => Promise<void>;
   createUntitled: (text: string, parent: BrowserWindow, draftName?: string) => Promise<void>;
   checkDestination: (filename: string) => Promise<void>;
-  isQuitting: () => boolean;
+  quitPhase: () => QuitPhase;
   closed: () => void;
 };
 
@@ -121,7 +122,7 @@ export function createDocumentWindow(options: Options) {
       text: record.text, draftName: record.draftName,
     };
   });
-  ipc.handle("document:complete", (_event, id, error) => host.complete(id, error));
+  ipc.handle("document:complete", (_event, id, error, result) => host.complete(id, error, result));
   ipc.handle("document:open", (_event, filename?: unknown) => {
     if (filename === undefined) return options.open(win);
     if (typeof filename !== "string" || !path.isAbsolute(filename) || path.extname(filename).toLowerCase() !== ".ord") {
@@ -192,32 +193,46 @@ export function createDocumentWindow(options: Options) {
   win.webContents.on("render-process-gone", () => { stopWatch(); host.unavailable("The editor stopped before saving completed."); });
   let closing = false;
   let flushed = false;
+  let closePreparation: Promise<boolean> | null = null;
+  function prepareToClose(reason: "close" | "quit"): Promise<boolean> {
+    if (closePreparation) return closePreparation;
+    closePreparation = (async () => {
+      const result = await host.flush();
+      if (!result.needsSave) return true;
+      const choice = await dialog.showMessageBox(win, {
+        message: reason === "quit" ? "Save this document before quitting?" : "Save this document before closing?",
+        detail: "Your changes have not been saved to a file.",
+        buttons: ["Save…", "Cancel", "Don't Save"], defaultId: 0, cancelId: 1,
+      });
+      switch (choice.response) {
+        case 0: await host.request("saveAs"); return true;
+        case 1: return false;
+        case 2: return true;
+        default: throw new Error("Invalid document close choice");
+      }
+    })().finally(() => { closePreparation = null; });
+    return closePreparation;
+  }
   win.on("close", event => {
-    if (flushed || options.isQuitting()) return;
+    if (options.quitPhase() === "checking") { event.preventDefault(); return; }
+    if (flushed || options.quitPhase() === "approved") return;
     event.preventDefault();
     if (closing) return;
     closing = true;
     void (async () => {
-      await host.flush();
-      if (!record.filename) {
-        const choice = await dialog.showMessageBox(win, { message: "Save this document before closing?",
-          detail: "You can quit Ordinate to keep unnamed documents for next time.",
-          buttons: ["Save…", "Cancel", "Don't Save"], defaultId: 0, cancelId: 1 });
-        if (choice.response === 1) return;
-        if (choice.response === 0) await host.request("saveAs");
-      }
+      if (!await prepareToClose("close") || options.quitPhase() !== "idle") return;
       flushed = true;
       win.webContents.session.flushStorageData();
       win.close();
     })().catch(reportError).finally(() => { closing = false; });
   });
   win.webContents.on("will-prevent-unload", event => {
-    if (flushed || options.isQuitting()) event.preventDefault();
+    if (flushed || options.quitPhase() === "approved") event.preventDefault();
   });
   // Creation/loading never presents a window. The workspace decides whether
   // this document becomes a standalone window or joins an existing tab group.
   win.on("closed", () => { stopWatch(); host.dispose(); ipc.dispose(); options.closed(); });
-  return { win, host, record, showVersions, reportError, load: () => win.loadURL(rendererUrl) };
+  return { win, host, record, prepareToClose, showVersions, reportError, load: () => win.loadURL(rendererUrl) };
 }
 
 export type DocumentWindow = ReturnType<typeof createDocumentWindow>;

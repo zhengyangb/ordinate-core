@@ -1,5 +1,5 @@
 import type { ColDef } from "ag-grid-community";
-import { useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import BooleanCellCapsule from "../components/BooleanCellCapsule";
 import ErrorCellChip from "../components/ErrorCellChip";
 import { SearchText } from "../search/SheetSearch";
@@ -16,14 +16,25 @@ type Options = Pick<ReturnType<typeof useSheetViewModel>, "currentSheet" | "curr
   selectedColumnAxisSelection: ColumnAxisSelection | null;
   axisColumnDragPreview: Extract<AxisDragPreview, { axis: "column" }> | null;
   activateBooleanLiteralAt: (row: GridRow, colIndex: number, value: boolean) => void;
-  canStartFormulaPointPick: () => boolean;
+  formulaPointPickActive: boolean;
 };
 export function useGridColumnDefs({
   currentSheet, currentSheetState, sheetColCount, headerColCount, headerRowCount, frozenColumnCount,
   columnLayouts, headerLeafLabels, headerSemanticLabels, toggleCollapse, uiLocale, showTooltip,
   clearTooltip, selectedColumnAxisSelection, axisColumnDragPreview, activateBooleanLiteralAt,
-  canStartFormulaPointPick, revision,
+  formulaPointPickActive, revision,
 }: Options) {
+  // Grid definitions describe presentation; live interaction commands are not
+  // column metadata. Selection changes replace the Boolean activation callback,
+  // but must not replace every cell renderer between pointer down and up.
+  // Keep the grid-facing command stable while invoking the latest committed one.
+  // Likewise, render from the point-pick *state*, not the identity of a draft-
+  // dependent predicate: selecting a cell changes the draft, not presentation.
+  const booleanActivation = useRef(activateBooleanLiteralAt);
+  useLayoutEffect(() => { booleanActivation.current = activateBooleanLiteralAt; }, [activateBooleanLiteralAt]);
+  const activateBoolean = useCallback((row: GridRow, colIndex: number, value: boolean) => {
+    booleanActivation.current(row, colIndex, value);
+  }, []);
   const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
     if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
 
@@ -121,14 +132,13 @@ export function useGridColumnDefs({
               throw new Error(`missing boolean metadata for column ${colIndex}`);
             }
             if (!interactive) return <SearchText row={row} col={colIndex} text={text} />;
-            const pointPickOwnsPointer = canStartFormulaPointPick();
-            return <SearchText row={row} col={colIndex} text={text}>{pointPickOwnsPointer ? (
+            return <SearchText row={row} col={colIndex} text={text}>{formulaPointPickActive ? (
               <BooleanCellCapsule value={value} interactive={false} />
             ) : (
               <BooleanCellCapsule
                 value={value}
                 interactive
-                onToggle={() => activateBooleanLiteralAt(params.data!, colIndex, value)}
+                onToggle={() => activateBoolean(params.data!, colIndex, value)}
               />
             )}</SearchText>;
           }
@@ -214,8 +224,8 @@ export function useGridColumnDefs({
     clearTooltip,
     selectedColumnAxisSelection,
     axisColumnDragPreview,
-    activateBooleanLiteralAt,
-    canStartFormulaPointPick,
+    activateBoolean,
+    formulaPointPickActive,
     revision,
   ]);
 

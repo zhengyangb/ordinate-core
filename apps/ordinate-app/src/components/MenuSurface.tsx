@@ -113,12 +113,14 @@ type MenuGroupProps = {
   className?: string;
   role?: HTMLAttributes<HTMLDivElement>["role"];
   ariaLabel?: string;
+  reserveIconSpace?: boolean;
   children: ReactNode;
 };
 
-export function MenuGroup({ className = "", role, ariaLabel, children }: MenuGroupProps) {
+export function MenuGroup({ className = "", role, ariaLabel, reserveIconSpace = false, children }: MenuGroupProps) {
   return (
-    <div className={["menu-surface-group", className].join(" ").trim()} role={role} aria-label={ariaLabel}>
+    <div className={["menu-surface-group", className].join(" ").trim()} role={role} aria-label={ariaLabel}
+      data-icon-gutter={reserveIconSpace || undefined}>
       {children}
     </div>
   );

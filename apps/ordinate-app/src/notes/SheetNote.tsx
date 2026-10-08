@@ -57,7 +57,9 @@ function NoteEditorOverlay({ anchor, draft, title, label, creating, editor, fini
     let frame = 0;
     const measure = () => {
       const rect = origin.getBoundingClientRect();
-      const width = Math.min(Math.max(rect.width, 340), window.innerWidth - 24);
+      // The saved paper/creation placeholder already owns the readable width.
+      // Only constrain the portalled editor to the window, never size it anew.
+      const width = Math.min(rect.width, window.innerWidth - 24);
       const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
       textarea.style.height = "0px";
       textarea.style.height = `${textarea.scrollHeight}px`;

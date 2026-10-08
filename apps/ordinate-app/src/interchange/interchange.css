@@ -30,6 +30,11 @@
 .interchange-export-notes .interchange-diagnostics { max-height:none; overflow:visible; }
 .interchange-body p { margin: 0; line-height: 1.5; }
 .interchange-fields { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+.interchange-import-drop-target { position:relative; }
+.interchange-import-types { color:var(--chrome-soft); text-align:center; }
+.interchange-import-drop-cue { position:absolute; inset:0; z-index:2; display:grid; place-items:center; padding:1rem; border:2px solid var(--accent); border-radius:inherit; background:color-mix(in oklab,var(--menu-surface-bg) 88%,transparent); backdrop-filter:blur(4px); color:var(--chrome-ink); font-weight:600; pointer-events:none; }
+.interchange-import-drop-cue[data-kind="blocked"] { border-color:var(--menu-danger-ink); }
+.interchange-import-drop-cue span { padding:.75rem 1rem; border-radius:var(--menu-item-radius); background:var(--toolbar-pill); text-align:center; }
 .interchange-fields label, .interchange-field { display: flex; flex-direction: column; gap: .4rem; font-weight: 600; }
 .interchange-select { display: flex; align-items: center; justify-content: space-between; gap: .75rem; width: 100%; min-height: 2.5rem; padding: .5rem .65rem; border: 1px solid var(--chrome-border); border-radius: var(--menu-item-radius); color: var(--chrome-ink); background: var(--toolbar-pill); font: inherit; text-align: left; }
 .interchange-select > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

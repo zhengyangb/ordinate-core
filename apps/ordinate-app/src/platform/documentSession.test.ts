@@ -24,6 +24,15 @@ function harness(autosaveInvalidSource = false) {
 }
 
 describe("desktop document session", () => {
+  it("flushes an untouched initial document without manufacturing user changes", async () => {
+    const { store } = harness();
+    store.getState().initializeUntitled("default table");
+    await flushFileSession(store);
+    expect(store.getState()).toMatchObject({
+      file: null, documentDirty: "clean", localDraftState: "current", localDraftText: "default table",
+    });
+  });
+
   it("duplicates the latest pending text without changing the source document identity", async () => {
     const { store, edit, adapter } = harness();
     await store.getState().open();
