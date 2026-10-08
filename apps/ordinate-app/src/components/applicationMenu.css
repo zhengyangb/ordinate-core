@@ -1,0 +1,11 @@
+.brand-menu-button {
+  display: inline-flex; align-items: center; border: 1px solid transparent;
+  background: transparent; color: var(--chrome-ink); border-radius: 999px; padding: .28rem .42rem;
+  margin-inline: -.42rem; flex: none;
+  transition: background-color 160ms var(--ease-out-quart);
+}
+.brand-menu-button:hover, .brand-menu-button[aria-expanded="true"] { background: color-mix(in oklab, var(--chrome-bg-strong) 86%, var(--chrome-ink)); }
+.brand-menu-button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.application-menu { grid-template-columns: 6.2rem 1fr; width: min(25rem, calc(100vw - 24px)); z-index: 122; }
+.application-menu-categories { border-right: 1px solid var(--chrome-border); padding-right: .26rem; align-content: start; }
+.application-menu-commands { min-height: 12rem; max-height: calc(100dvh - 100px); overflow: auto; align-content: start; padding-left: .26rem; }

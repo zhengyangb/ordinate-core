@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import ExcelJS from '../../../packages/core-ts/node_modules/exceljs/excel.js';
 
 // Test-owned native/web windows only; no user documents or browser state.
 export async function checkFileDrop(win, {query, wait, capture}) {
@@ -56,5 +57,55 @@ export async function checkFileDrop(win, {query, wait, capture}) {
   assert.equal(await query(win,"!!document.querySelector('.file-drop-overlay')"),false,'No drop invitation behind a modal');
   await query(win,"[...document.querySelectorAll('[role=dialog] button')].find(b=>b.textContent.trim()==='Cancel').click()");
   await wait(win,"!document.querySelector('[role=dialog]')");
-  console.log(`${host}: file drop cues, nested drag, cancellation, source focus, import routing, modal protection, both themes and narrow layout passed.`);
+  win.setSize(1000,760);
+  if (host === 'native') win.webContents.send('editor:command', 'import');
+  else {
+    await query(win,"document.querySelector('[aria-label=\"Open file\"]').click()");
+    await wait(win,"document.querySelector('.interchange-open-options')");
+    await query(win,"[...document.querySelectorAll('.interchange-open-options button')].find(b=>b.textContent.startsWith('Import spreadsheet')).click()");
+  }
+  await wait(win,"document.querySelector('.interchange-import-drop-target button')?.textContent === 'Choose file…'");
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet('Revenue').addRows([['Year','Revenue'], [2026,12000000], [2027,15000000]]);
+  const bytes = Array.from(new Uint8Array(await workbook.xlsx.writeBuffer()));
+  const modalDrag = (type, files, selector = '.interchange-import-drop-target') => query(win, `(() => {
+    const transfer = new DataTransfer();
+    for (const file of ${JSON.stringify(files)}) transfer.items.add(new File([file.bytes ? new Uint8Array(file.bytes) : file.text], file.name));
+    const event = new DragEvent(${JSON.stringify(type)}, {bubbles:true,cancelable:true,dataTransfer:transfer});
+    document.querySelector(${JSON.stringify(selector)}).dispatchEvent(event);
+    return event.defaultPrevented;
+  })()`);
+  const spreadsheet = [{name:'dragged.xlsx',bytes}];
+  const chooseButton = '.interchange-import-drop-target .interchange-fields button';
+  for (const theme of ['light','dark']) {
+    await query(win, `document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+    const focused = await query(win,"document.activeElement.textContent");
+    assert.equal(await modalDrag('dragenter', spreadsheet, chooseButton),true);
+    await wait(win,"document.querySelector('.interchange-import-drop-cue')?.dataset.kind === 'import'");
+    assert.equal(await query(win,"!!document.querySelector('.file-drop-overlay')"),false,'Only the modal owns this drag');
+    assert.equal(await query(win,"document.activeElement.textContent"),focused,'Local feedback does not steal focus');
+    await capture(win,`${host}-import-drop-${theme}`);
+    await query(win,"window.dispatchEvent(new Event('dragend'))");
+    await wait(win,"!document.querySelector('.interchange-import-drop-cue')");
+  }
+  assert.equal(await modalDrag('drop',spreadsheet,chooseButton),true);
+  await wait(win,"document.querySelector('.interchange-filename')?.textContent === 'dragged.xlsx' && document.querySelector('[aria-label=\"Conversion review\"]')");
+  assert.ok(await query(win,"document.querySelector('.import-preview-grid').textContent.includes('12000000')"),'Real XLSX data reaches the normal preview');
+  for (const files of [[{name:'report.ord',text:'# Report'}],[{name:'bad.pdf',text:''}],[{name:'a.csv',text:'a'},{name:'b.csv',text:'b'}]]) {
+    assert.equal(await modalDrag('dragenter',files),true);
+    await wait(win,"document.querySelector('.interchange-import-drop-cue')?.dataset.kind === 'blocked'");
+    assert.equal(await modalDrag('drop',files),true);
+    await wait(win,"document.querySelector('.interchange-error')");
+    assert.equal(await query(win,"document.querySelector('.interchange-filename').textContent"),'dragged.xlsx','Invalid files do not replace the preview');
+  }
+  await modalDrag('drop',[{name:'replacement.csv',text:'Name,Amount\nParts,42\nServices,84'}],'.interchange-import-drop-target header');
+  await wait(win,"document.querySelector('.interchange-filename')?.textContent === 'replacement.csv' && document.querySelector('.import-preview-grid')?.textContent.includes('Services')");
+  assert.equal(await query(win,"!!document.querySelector('.interchange-error')"),false,'A valid retry clears the error');
+  await query(win,"[...document.querySelectorAll('[role=dialog] button')].find(b=>b.textContent.trim()==='Cancel').click()");
+  await wait(win,"!document.querySelector('[role=dialog]')");
+  await query(win,"document.querySelector('.source-button').click()");
+  await wait(win,"document.querySelector('.source-shell textarea')");
+  assert.equal(await query(win,"document.querySelector('.source-shell textarea').value"),source,'Dialog drops only prepare; cancellation leaves the document untouched');
+  await query(win,"document.querySelector('.source-button').click()");
+  console.log(`${host}: global/local drop ownership, real XLSX button drop, preview replacement, invalid/multiple files, cancellation, both themes and narrow layout passed.`);
 }

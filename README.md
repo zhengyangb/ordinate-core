@@ -5,6 +5,18 @@ Core library for Ordinate documents.
 Primary implementation: TypeScript (`packages/core-ts`).
 Python (`src/ordinate_core`) is a frozen reference and is not actively maintained.
 
+## Example workbooks
+
+The shared [examples directory](examples/README.md) contains a guided workbook and eight editable native
+`.ord` workbooks: company reporting, DCF valuation, project investment, household
+budgeting, mortgage amortization, subscription metrics, inventory planning and
+time-based invoicing. All figures and companies are fictional. These are
+user-facing models, separate from RFC compliance fixtures; core tests read the
+same files rather than duplicate their source.
+
+[Ordinate Online](apps/ordinate-app/README.md#ordinate-online) is a static-hosted
+variant of the shared editor, with an example gallery and separate browser drafts.
+
 ## Specification Boundaries
 
 Ordinate RFCs in `rfcs/` define the core document format, semantic model, parser and serializer behavior, evaluation semantics, and public core library edit contracts.

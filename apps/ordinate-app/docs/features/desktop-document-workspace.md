@@ -37,11 +37,24 @@ recorded before its renderer loads. The workspace file is replaced atomically.
 The first workspace boot migrates the prior single-document bookmark and keeps
 its existing untitled draft identity; subsequent launches read only the workspace.
 
-Quit flushes every document before closing any window, writes the workspace and
-flushes Chromium storage. A failed save leaves all documents open. Next launch
+Close and Quit share the same flush and save-confirmation policy. Quit confirms
+documents sequentially before closing any window, writes the workspace and
+flushes Chromium storage. Cancel or a failed save leaves all documents open. Next launch
 reopens the saved workspace; document windows may be merged again with the native
-Window menu. Individual untitled-window close offers Save, Cancel or Don't Save.
-Closed documents are removed from the workspace; quitting keeps their records.
+Window menu. Closing an untouched new document is silent, even when its initial
+content includes a default table. The shared file session compares current content
+with the canonical initial-content baseline; selection and view changes do not
+count as edits, and Undo back to that baseline makes the document clean again.
+Imported, duplicated and recovered changed content remains protected. An edited
+untitled-window close offers Save, Cancel or Don't Save. The main process uses the
+fresh save requirement returned by the renderer's completed flush, not the native
+edited indicator (which tracks recovery durability). Explicitly saved files remain
+on disk when their windows close.
+Closed documents are removed from the workspace. Confirmed quit keeps saved file
+records; untouched new documents and documents explicitly discarded with Don't
+Save are not reopened. Recovery drafts still protect against crashes, not as a
+silent substitute for a quit confirmation. Repeated quit attempts share one
+pending operation, and close/new-window actions cannot interfere with it.
 
 macOS checkpoints the existing file before its first changed save and at most
 once per five minutes of subsequent autosaves. Restoring a version forces a
@@ -60,19 +73,32 @@ scope, warning/error behavior and the distinction between export-copy and Save A
 
 ## Printing (macOS)
 
-File → Print… / Cmd+P prints only the current sheet, including its full table,
-expanded hierarchy, computed values, effective number/style formatting and both
-Notes. No toolbar, Rails, selection rings or other sheets are printed. There is
-no web/toolbar entry. Chromium paginates an in-memory PDF; PDFKit presents the
+File → Print… / Cmd+P opens a compact shared options dialog. Its segmented choice
+reuses the Settings control for Current sheet (default) or All sheets. Full-row
+choices reuse the export selection component for notes above and below the table,
+independently included by default. Note choices are absent when no sheet has that
+note position; when only other sheets have notes, they remain disabled in Current
+sheet instead of changing dialog geometry on scope switches. The summary is a
+fixed-height, truncatable line. Cancel/Escape starts no system print job.
+
+Printing includes the full table, expanded hierarchy, computed values and effective
+number/style formatting. Table headers remain included and repeat on long pages;
+note settings never remove headers. All sheets retain workbook order and each
+starts on a fresh page, with no blank lead or trailing page. No toolbar, Rails or
+selection rings are printed. There is no toolbar entry.
+Chromium paginates an in-memory PDF; PDFKit presents the
 Mac window-modal print panel with page preview explicitly enabled. The panel
 owns printer, paper, orientation, page range and scaling. Changing paper fits
 the already-paginated PDF rather than reflowing the table. Wide tables wrap to
 the PDF page width. Long tables paginate and repeat their header rows.
 
 The command commits pending cell/note edits, then builds a detached snapshot
-using the existing presentation and row projection. Source mode parses the
+using the existing presentation and row projection. One captured source backs
+both the options and the printed content; a whole-workbook print shares one
+evaluation across every sheet and presentation. Source mode parses the
 current source instead of printing stale table state; invalid structure/notes
-fail explicitly. Cell formula errors remain visible. A print-only React root
+fail explicitly. Blocking issues in an unselected sheet do not reject Current
+sheet, but All sheets fails explicitly rather than silently omitting them. Cell formula errors remain visible. A print-only React root
 renders the complete table rather than the virtualized screen DOM. The scoped
 native IPC passes the PDF buffer directly to PDFKit (no temporary file), retaining
 the PDF document/operation and print root until
@@ -87,3 +113,25 @@ system preview twice, verifies its preview option and two-page PDF, and rejects
 malformed PDFs without submitting physical print jobs. Test-only panel controls
 are excluded from the production addon. Unit tests cover complete data, current
 source, invalid input, escaping, format cascade and print lifecycle/failures.
+
+## Printing (browser)
+
+Both the editor web build and Ordinate Online expose Ordinate → File → Print…
+and Cmd/Ctrl+P. The same options and snapshot/layout above render all rows and the
+chosen notes/sheets; only the host dialog differs. Browser printing passes HTML/CSS directly
+to `window.print()`, with no backend, uploaded content or pre-generated PDF.
+The browser owns pagination, print settings and its available PDF destinations.
+
+The print root remains mounted until `afterprint`, not merely until `print()`
+returns, since browser previews can be asynchronous. Cancellation is a normal
+completion. Errors remove the root and release the command for retry. Keyboard
+printing commits active edits and is blocked behind application dialogs, just
+like the native command. There is no guessed timeout or fallback print/export.
+
+After building, `npx electron desktop/interchange-smoke.mjs --browser-print-only`
+tests isolated ordinary/Online pages with a stubbed dialog and real Chromium PDF
+pagination: full 260-row data, notes, active sheet, source edits, keyboard commit,
+both themes, cancellation, duplicate requests and invalid-source/modal guards.
+Both native and browser suites also verify the options dialog, keyboard controls,
+scope/toggle geometry, narrow layouts, independent note omission, all-sheet order,
+cross-sheet formulas, three-page PDF breaks and invalid-sheet rejection/retry.

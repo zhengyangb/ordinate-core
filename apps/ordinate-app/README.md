@@ -11,6 +11,94 @@ npm ci
 npm run dev
 ```
 
+## Ordinate Online
+
+The ordinary browser entry (`/`) remains the shared development editor. Visit
+`/online.html` for the online experience: examples, blank/local documents and a
+separate recoverable browser draft. Browser hosts also have a wordmark menu;
+macOS desktop keeps its native menu.
+
+```sh
+npm run dev:online
+npm run build:online
+npm run preview:online
+```
+
+The online build outputs `dist-online/index.html`, assets and examples. Host that
+directory statically over HTTPS; no backend or SPA rewrite is required. For a
+subdirectory deployment, build with `npm run build:online -- --base /app/`.
+Known template links use `?example=mortgage` (IDs are in `examples/catalog.json`).
+External workbook links use `#url=${encodeURIComponent(fileUrl)}`. Online's
+Open file → Open from link (also in File) accepts a public HTTPS `.ord` direct
+link, or an HTTP/HTTPS file on the editor's own origin. Links without an `.ord`
+suffix show a format reminder but may be opened; downloaded content must pass
+Ordinate workbook validation, so an HTML sharing page is still rejected.
+The first linked launch asks permission before fetching; an
+explicit Open click records permission for that exact URL in this browser.
+Unapproved fragment launches show an **Open from URL** confirmation with the full,
+copyable URL and a quiet shield beside the trust/local-copy reminder. Manual
+Open from link remains a form. The quiet trust reminder is not a safety certification.
+Every link open is a one-shot import: fetch fresh input with `cache: "no-store"`,
+even when the same URL was opened before or its earlier copy is still active.
+The imported working copy retains its name and content, not a source association
+or a URL-keyed draft archive. Approved launches never mount a consent dialog
+while loading. Permission is independent of document identity: it does not reset
+after editing, nor certify unchanged remote content; another path or query string
+is a different approval. Replacing an edited document still requires the separate
+replacement confirmation, and cancellation or failure preserves that copy.
+Online recovery is tab-scoped: `sessionStorage` holds a UUID, and IndexedDB
+stores drafts under `[sessionId, key]`. New base-URL tabs start a new document;
+refresh restores that tab's work. Two tabs opening the same URL get independent
+working copies. Preferences and exact-URL approvals remain shared in localStorage.
+A Web Locks lease detects copied sessionStorage: duplicated/opener tabs clone
+the snapshots into a new namespace before making any writes. There is no
+cross-tab document syncing. IndexedDB/lease failures are explicit, never a
+fallback to shared or memory-only recovery. Old global localStorage draft records
+are left untouched, not automatically adopted by newly opened tabs.
+There is no Reload from source, remote save or sync:
+Save/Save as writes a local copy; browser recovery is not a saved remote file.
+Launch fragments are consumed so refresh restores the latest local draft.
+Requests omit credentials and referrers, require CORS, reject redirects, time
+out after 30 seconds, and enforce the shared 16 MiB limit on actual bytes.
+There is no server proxy or `no-cors` retry. On failure users can download the
+file themselves and open it locally. Cross-origin literal local-network targets are rejected;
+this is not a DNS firewall. Downloaded text goes through native workbook validation.
+
+For local testing with Online at `http://127.0.0.1:5190/`, paste
+`http://127.0.0.1:5190/examples/00-getting-started.ord` into Open from link, or visit:
+`http://127.0.0.1:5190/#url=http%3A%2F%2F127.0.0.1%3A5190%2Fexamples%2F00-getting-started.ord`.
+Use the actual server port and the same hostname in both URLs. A disk `file://`
+path is not fetchable this way; use local Open or serve it from the editor's origin.
+
+The spreadsheet appears first. Only an untouched default new document receives
+the examples dialog after a visible spreadsheet paint and a 400ms pause, with a
+240ms entrance. Background tabs wait for activation and get the full pause; starting to work cancels
+that invitation.
+Existing browser drafts resume directly, with no Continue screen. File → Examples
+reopens the same dialog on demand. Getting started is a six-sheet guided workbook
+above the eight full-scale models. The editor remains visible behind the dialog;
+only the model list scrolls, leaving the title and file actions in place.
+Selecting an example opens an editable copy, never writes to the template, and
+asks before replacing edited content. An untouched default table is replaced
+without confirmation. Reload recovers the browser draft rather than repeatedly
+reopening a template link.
+Failed draft recovery stops initialization and leaves the stored draft untouched.
+
+Root `examples/` is the sole content source. Vite publishes those files and
+generates miniature table previews using the core presentation engine. Catalog
+and workbook mismatches fail the build. Add examples there, not under `src/`.
+
+Set `VITE_MAC_DOWNLOAD_URL=https://…` at build time when a release is available.
+Until then, the visible button opens a short unpublished-release notice. The
+editor toolbar shortcut appears on macOS; Help has the action on all platforms.
+This does not download an unsigned development build or publish a release.
+
+```sh
+npm run build
+npx electron desktop/interchange-smoke.mjs --online-only
+npx electron desktop/interchange-smoke.mjs --remote-only # consent, drafts and real CORS; isolated local HTTPS fixture
+```
+
 ## Desktop development
 
 ```sh
@@ -23,8 +111,13 @@ an Electron window. React/CSS edits hot-reload; restart the command after changi
 runtime download requires network access.
 
 - Renderer debugging: **View → Toggle Developer Tools** (`Cmd+Option+I` on macOS).
-- Printing: **File → Print…** (`Cmd+P`) on macOS prints the complete current sheet
-  and its before/after notes. There is no toolbar or web print action.
+- Printing: **File → Print…** opens shared choices for the current sheet or all
+  sheets, with independent before/after note toggles (included by default).
+  All sheets print in workbook order, each starting on a new page. The browser's Ordinate menu has the same File command, plus
+  `Cmd/Ctrl+P`; there is no toolbar print button. Both hosts share the print-only
+  HTML layout. Mac uses the native print bridge; browsers use `window.print()`
+  and retain the snapshot until `afterprint`, including cancellation. Browser
+  printing needs no backend or pre-generated PDF.
 - Main-process debugging: `npm run desktop:debug`, then attach a Node debugger to
   `127.0.0.1:9229`. TypeScript source maps are emitted to `desktop-out/`.
 - No `.app` rebuild is required for normal UI development.
@@ -77,9 +170,19 @@ its bundled assets and needs neither Vite nor a network connection. `npm run
 desktop:start` runs the existing local `dist/` and `desktop-out/` build in Electron
 without packaging it again.
 
+The macOS icon source is `resources/Ordinate.icon`, an Icon Composer bundle.
+Packaging uses Xcode 26 or newer to compile its layered artwork into `Assets.car`
+and a traditional ICNS resource. The full Xcode toolchain must be selected;
+Command Line Tools alone do not provide `actool`. To use the standard Xcode
+installation for one build without changing the global toolchain selection:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer npm run app
+```
+
 This is a local, unsigned development build, not a distribution-ready installer.
-It still uses Electron's default icon. Signing, notarization, custom icons,
-installers, auto-update, and Windows/Linux validation are separate release work.
+Signing, notarization, installers, auto-update, and Windows/Linux validation are
+separate release work.
 Do not bypass Gatekeeper warnings; a distributable build needs proper signing.
 
 ## Local files
@@ -95,6 +198,12 @@ Do not bypass Gatekeeper warnings; a distributable build needs proper signing.
   browser imports explicitly confirm replacement of the current document. The
   original spreadsheet is never an autosave target.
 - Full frontend contract: [Spreadsheet interchange](docs/features/spreadsheet-interchange.md).
+- Drop one `.xlsx`, `.csv` or `.tsv` file onto the editor or anywhere inside the
+  import dialog (including **Choose file…**) to prepare the same import preview.
+  A new drop replaces the preview, not the document. Confirmation is still required;
+  parsing blocks repeat drops and invalid/multiple files are rejected before reading.
+  Shared drop receivers route to the nearest registered region, so modal drops never
+  reach the editor behind them. `.ord` uses the editor's Open flow, not Import.
 - Sheet Notes: [In-place editing and rail layout](docs/features/sheet-notes.md).
 - Settings: [Regional date/time display and appearance](docs/features/display-preferences.md).
 
@@ -126,7 +235,6 @@ Do not bypass Gatekeeper warnings; a distributable build needs proper signing.
   document tabs are separate from the sheet tabs inside each document.
 - Quit restores the open workspace next launch, including independent untitled
   drafts. Closing an individual untitled window asks whether to save it first.
-  Dragging a file into the editor is not implemented.
 - Closing/quitting flushes pending edits through the same save pipeline, including
   writes already in flight. Conflicts, failed writes or unresolved recovery keep
   the window open. Reload retains the unload guard. Untitled drafts use Chromium
@@ -178,6 +286,8 @@ npm run typecheck
 npm run desktop:compile
 npm run desktop:test-native # macOS only; hidden window and temporary fixtures
 npm run desktop:test-interchange # real renderer + preload; isolated desktop/web file workflows
+npx electron desktop/interchange-smoke.mjs --browser-print-only # after building; ordinary web + Online print/PDF
+npx electron desktop/interchange-smoke.mjs --double-click-only # after building; real pointer editing on desktop/web
 npm run desktop:build
 ```
 
@@ -185,6 +295,13 @@ Automated tests use isolated temporary files for native UTF-8 read/write, Save A
 cancellation, permissions preservation, stale/concurrent saves, deleted files,
 symlinks, capability rejection, stable recovery identity, and full file-session
 autosave/conflict integration. They never edit real user documents.
+
+Pointer editing tests hold the mouse down across rendering frames, verify that
+selection preserves the pressed cell element, then check both clicks and the
+double-click edit. Directly dispatching `dblclick` would miss renderer replacement
+between down/up. Online smoke also exercises Getting started inputs, results and
+immediate post-scroll editing. Live interaction commands are not column metadata:
+their changing identity must not rebuild every cell renderer.
 
 Native smoke test: open a disposable `.ord` via the menu, edit it, save, inspect
 the disk contents, then Save As to a second file. Repeat in the packaged `.app`

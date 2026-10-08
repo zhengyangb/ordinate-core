@@ -203,6 +203,11 @@ The app should follow this layer model:
 - The row and column rails are separate chrome tracks projected from the real table geometry.
 - The append row and append column slots live at the end of those chrome tracks.
 - Append slots may look visually independent from the rounded rail pill, but their hover/reveal behavior belongs to the same rail chrome layer.
+- Rails reveal in 180ms without a delay. On exit they stay visible for 120ms,
+  then fade over 260ms with the shared quart easing. Re-entry cancels the exit;
+  selection, menus and keyboard focus retain visibility. Only opacity changes,
+  so table geometry stays fixed. Reduced motion retains the reading delay but
+  removes the animated fade.
 - The append column slot must not reserve a permanent right-side table-stage gutter.
 - The append row slot must not create a fake body row or change body-row selection geometry.
 - Header overlays, body cells, selection overlays, and formula-reference overlays must never render fake append cells.

@@ -1,6 +1,6 @@
 import { DocumentState } from "./incremental";
 import { stripCellDisplayMetadata } from "./runtime/parse";
-import { type Diagnostic, type FormatSpec, type RuntimeValue, type StyleSpec } from "./runtime/types";
+import { type Diagnostic, type EvaluationResult, type FormatSpec, type RuntimeValue, type StyleSpec } from "./runtime/types";
 import { formatValue, serializeNumber } from "./runtime/formatting";
 
 export interface DisplayLayer<T> {
@@ -77,8 +77,9 @@ export function resolvePresentationFromText(text: string): PresentationResult {
   return resolveDocumentPresentation(state);
 }
 
-export function resolveDocumentPresentation(state: DocumentState): PresentationResult {
-  const evaluation = state.evaluate();
+/** Callers that already evaluated this state can share that result with the
+ * presentation projection instead of recalculating the whole workbook. */
+export function resolveDocumentPresentation(state: DocumentState, evaluation: EvaluationResult = state.evaluate()): PresentationResult {
   const sheets: SheetPresentation[] = [];
 
   state.sheets.forEach((sheet, sIdx) => {

@@ -88,7 +88,12 @@ preserved. Conversion closes the menu and clears stale cell selection.
 
 ## Layout and scrolling
 
-Notes follow the visible table footprint, with the same white/light paper surface
+Notes follow the visible table footprint within a 480–960px paper-width range.
+The available workspace width takes priority on smaller windows. Upper/lower
+notes, creation placeholders and editor anchors share this rule; no independently
+sized editor or width animation is used. The empty Add note boundary stays limited
+to the table footprint, even when saved paper would be wider or narrower.
+Notes use the same white/light paper surface
 without an outer frame, no yellow tint, no card radius and no gap at the table
 boundary. The upper title is read-only.
 

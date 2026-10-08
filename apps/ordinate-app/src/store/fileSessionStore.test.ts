@@ -114,6 +114,127 @@ async function openHarness() {
   return harness;
 }
 
+describe("imported working copies", () => {
+  it("persists only the active copy, never an archive identified by its input", async () => {
+    const records: Parameters<LocalDraftStore["set"]>[0][] = [];
+    const storage = createMemoryLocalDraftStore();
+    const { store, editor } = createHarness({ localDraftStore: { ...storage, set: async record => {
+      records.push(record); await storage.set(record);
+    } } });
+    store.getState().importUntitled(DOC_A, "A.ord");
+    editor.setText(DOC_B); await store.getState().autosaveNow();
+    store.getState().importUntitled(DOC_C, "B.ord");
+    await store.getState().autosaveNow();
+    expect(records.map(record => record.key)).toEqual(["untitled:untitled-test", "untitled:untitled-test"]);
+    expect(records.every(record => !("sourceUrl" in record))).toBe(true);
+    expect((await storage.get("untitled:untitled-test"))?.text).toBe(DOC_C);
+    expect(store.getState().file).toBeNull();
+    expect(store.getState().documentDirty).toBe("dirty");
+  });
+  it("restores the current copy's name and latest edits on ordinary startup recovery", async () => {
+    const localDraftStore = createMemoryLocalDraftStore();
+    const first = createHarness({ localDraftStore });
+    first.store.getState().importUntitled(DOC_B, "A.ord");
+    await first.store.getState().autosaveNow();
+    const resumed = createHarness({ localDraftStore });
+    resumed.store.getState().initializeUntitled(DOC_A);
+    await resumed.store.getState().loadUntitledDraft();
+    resumed.store.getState().recoverDraft();
+    expect(resumed.store.getState().draftName).toBe("A.ord");
+    expect(resumed.editor.getText()).toBe(DOC_B);
+    expect(resumed.store.getState().documentDirty).toBe("dirty");
+  });
+  it("saves the copy locally and removes its obsolete recovery draft", async () => {
+    const { store, editor, localDraftStore } = createHarness();
+    store.getState().importUntitled(DOC_A, "A.ord");
+    await store.getState().autosaveNow();
+    editor.setText(DOC_D);
+    await store.getState().autosaveNow();
+    await store.getState().saveAs();
+    expect(store.getState().file).not.toBeNull();
+    expect(store.getState().documentDirty).toBe("clean");
+    expect(await localDraftStore.get("untitled:untitled-test")).toBeNull();
+  });
+  it("reports a failed copy autosave without claiming it was persisted", async () => {
+    const localDraftStore = createMemoryLocalDraftStore();
+    const { store } = createHarness({ localDraftStore: { ...localDraftStore, set: async () => { throw new Error("Quota exceeded"); } } });
+    store.getState().importUntitled(DOC_A, "A.ord");
+    await store.getState().autosaveNow();
+    expect(store.getState().localDraftState).toBe("error");
+    expect(store.getState().lastError).toMatchObject({ kind: "write_failed", message: expect.stringContaining("Quota exceeded") });
+    expect(await localDraftStore.get("untitled:untitled-test")).toBeNull();
+  });
+  it("reimporting the same name starts with supplied input, not prior edits", async () => {
+    const { store, editor } = createHarness();
+    store.getState().importUntitled(DOC_A, "A.ord");
+    editor.setText(DOC_B); await store.getState().autosaveNow();
+    store.getState().importUntitled(DOC_A, "A.ord");
+    expect(editor.getText()).toBe(DOC_A);
+    expect(store.getState().localDraftText).toBeNull();
+    expect(store.getState().documentDirty).toBe("dirty");
+  });
+});
+
+describe("pristine untitled documents", () => {
+  it("does not treat the initial table or its recovery draft as a user edit", async () => {
+    const { store } = createHarness();
+    store.getState().initializeUntitled(DOC_A);
+    store.getState().syncEditorSnapshot();
+    await store.getState().autosaveNow();
+    expect(store.getState()).toMatchObject({
+      file: null, backingText: null, untitledBaselineText: DOC_A,
+      documentDirty: "clean", localDraftText: DOC_A,
+    });
+  });
+
+  it("keeps edits dirty even after autosave, and clears them when undone to the initial content", async () => {
+    const { store, editor } = createHarness();
+    store.getState().initializeUntitled(DOC_A);
+    editor.setText(DOC_B);
+    store.getState().syncEditorSnapshot();
+    await store.getState().autosaveNow();
+    expect(store.getState().documentDirty).toBe("dirty");
+    editor.setText(DOC_A);
+    store.getState().syncEditorSnapshot();
+    expect(store.getState().documentDirty).toBe("clean");
+  });
+
+  it.each([DOC_A, DOC_B])("compares recovered content with the new-document baseline", async (text) => {
+    const first = createHarness();
+    first.store.getState().initializeUntitled(DOC_A);
+    first.editor.setText(text);
+    await first.store.getState().autosaveNow();
+    const restored = createHarness({ localDraftStore: first.localDraftStore });
+    restored.store.getState().initializeUntitled(DOC_A);
+    await restored.store.getState().loadUntitledDraft();
+    restored.store.getState().recoverDraft();
+    expect(restored.editor.getText()).toBe(text);
+    expect(restored.store.getState().documentDirty).toBe(text === DOC_A ? "clean" : "dirty");
+  });
+
+  it("protects imported or duplicated content even when it matches the default table", async () => {
+    const { store } = createHarness();
+    store.getState().initializeUntitled(DOC_A);
+    store.getState().importUntitled(DOC_A, "Imported");
+    await store.getState().autosaveNow();
+    expect(store.getState()).toMatchObject({ untitledBaselineText: null, documentDirty: "dirty" });
+  });
+
+  it("replaces the initial baseline with the saved-file baseline on explicit Save", async () => {
+    const { store, editor, adapter } = createHarness();
+    store.getState().initializeUntitled(DOC_A);
+    await store.getState().save();
+    const saved = store.getState();
+    expect(saved.file).not.toBeNull();
+    expect(saved.untitledBaselineText).toBeNull();
+    expect(saved.documentDirty).toBe("clean");
+    expect(adapter.getDiskText(saved.file!.id)).toBe(DOC_A);
+    editor.setText(DOC_B);
+    store.getState().syncEditorSnapshot();
+    expect(store.getState().documentDirty).toBe("dirty");
+  });
+});
+
 describe("importing a new untitled document", () => {
   it("recovers the imported draft name and suggests it on first Save", async () => {
     const first = createHarness();

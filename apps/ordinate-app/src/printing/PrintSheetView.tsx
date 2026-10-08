@@ -2,12 +2,16 @@ import type { CSSProperties } from "react";
 import { groupHeaderSpans, type SheetNote } from "@ordinate/core";
 import { NoteContent } from "../notes/NoteContent";
 import { toColFieldId } from "../utils/appHelpers";
-import type { PrintSheetModel } from "./printSheetModel";
+import type { PrintSheetModel } from "./printDocumentModel";
 import "./printSheet.css";
 
-function PrintNote({ note }: { note: SheetNote }) {
-  if (!note.blocks.length) return null;
+function PrintNote({ note }: { note: SheetNote | null }) {
+  if (!note || !note.blocks.length) return null;
   return <section className="print-note"><NoteContent note={note}/></section>;
+}
+
+export function PrintDocument({ sheets }: { sheets: PrintSheetModel[] }) {
+  return <>{sheets.map(sheet => <PrintSheet key={sheet.name} sheet={sheet} />)}</>;
 }
 
 export function PrintSheet({ sheet }: { sheet: PrintSheetModel }) {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { appKit } from '../desktop-out/desktop/nativeChrome.js';
+import { checkPrintOptions } from './print-options-smoke.mjs';
 
 // The real renderer/preload/IPC path, but never send a job to a physical printer.
 export async function checkPrint(win, { query, wait, capture, directory }) {
@@ -29,6 +30,8 @@ export async function checkPrint(win, { query, wait, capture, directory }) {
   const begin = async () => {
     const previous = jobs;
     win.webContents.send('editor:command', 'print');
+    await wait(win, `document.querySelector('.print-options-dialog')`);
+    await query(win, `document.querySelector('.print-options-dialog .primary').click()`);
     await wait(win, `!!document.querySelector('#ordinate-print-root table')`);
     // IPC now waits for Chromium to paginate the actual PDF before opening PDFKit.
     const deadline = Date.now() + 15000;
@@ -108,6 +111,13 @@ export async function checkPrint(win, { query, wait, capture, directory }) {
     await wait(win, `document.querySelector('[role="dialog"]')?.textContent.includes('Unable to print')`);
     assert.equal(jobs, previous, 'Invalid source never prints an old table');
     assert.equal(await query(win, `!!document.querySelector('#ordinate-print-root')`), false);
+    await query(win, `[...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent === 'OK').click()`);
+    await checkPrintOptions(win, {query,wait,capture,directory}, {
+      open: () => win.webContents.send('editor:command', 'print'),
+      jobCount: () => jobs,
+      finish: () => finish(),
+      host: 'native',
+    });
     console.log('Printing passed: complete rows, formulas, notes, active sheet, source edits, theme isolation, wide columns, cancellation/error cleanup, duplicate and modal guards.');
   } finally {
     appKit.printPDF = originalPrint;

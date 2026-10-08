@@ -42,6 +42,8 @@ export type StorageAdapter = {
 export type DesktopCommand = "open" | "save" | "saveAs" | "undo" | "redo" | "import" | "export" | "print" | "settings";
 export type DocumentRequest = { id: string; kind: "flush" | "save" | "move" | "open" | "duplicate" | "saveAs" | "revert" };
 export type DocumentWrite = { file: FileReference | null; text: string; version: string | null };
+/** Durability of a recovery draft does not mean the user has saved a named file. */
+export type DocumentFlushResult = { needsSave: boolean };
 export type DesktopWindowState = {
   file: FileReference | null;
   edited: boolean;
@@ -63,7 +65,7 @@ export type DesktopBridge = Pick<StorageAdapter, "availability" | "open" | "save
   onCommand: (callback: (command: DesktopCommand) => void) => () => void;
   nativeHistory: (command: "undo" | "redo") => Promise<void>;
   print: () => Promise<void>;
-  onDocumentRequest: (callback: (request: DocumentRequest) => Promise<void>) => () => void;
+  onDocumentRequest: (callback: (request: DocumentRequest) => Promise<DocumentFlushResult>) => () => void;
   commitDocumentRequest: (id: string, write: DocumentWrite) => Promise<StorageResult<FileSnapshot>>;
   readDocumentRequest: (id: string) => Promise<StorageResult<FileSnapshot>>;
 };

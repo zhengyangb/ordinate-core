@@ -448,7 +448,7 @@ async function windowFor(record) {
       newDocuments.push(created);
     },
     createUntitled: async text => { copies.push(await windowFor({ id: `copy-${copies.length}`, filename: null, text })); },
-    isQuitting: () => closing, closed: () => {},
+    quitPhase: () => closing ? 'approved' : 'idle', closed: () => {},
   });
   entries.push(entry);
   entry.win.webContents.setBackgroundThrottling(false);

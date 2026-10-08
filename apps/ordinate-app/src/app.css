@@ -957,19 +957,19 @@ textarea {
 }
 
 .app-modal-action.primary {
-    --action-surface: var(--toolbar-pill);
-    --action-ink: var(--chrome-ink);
+    --action-surface: var(--menu-active-bg);
+    --action-ink: var(--menu-active-ink);
     --action-border: var(--chrome-border);
-    background: color-mix(in oklab, var(--accent-soft) 56%, var(--action-surface));
-    color: color-mix(in oklab, var(--accent-strong) 86%, var(--action-ink));
+    background: var(--action-surface);
+    color: var(--action-ink);
     border-color: color-mix(in oklab, var(--accent) 34%, var(--action-border));
 }
 
 /* Paper stays light in dark chrome. Reuse the capsule and palette, but derive
    its contrast from the surface it actually sits on, not the application theme. */
 .app-modal-action.primary[data-surface="sheet"] {
-    --action-surface: var(--sheet-surface);
-    --action-ink: var(--sheet-ink);
+    --action-surface: color-mix(in oklab, var(--accent-soft) 56%, var(--sheet-surface));
+    --action-ink: color-mix(in oklab, var(--accent-strong) 25%, var(--sheet-ink));
     --action-border: var(--sheet-grid);
 }
 
@@ -1394,6 +1394,15 @@ textarea {
     width: 100%;
     height: 100%;
     overflow: visible;
+}
+
+/* The group owns its icon gutter, including iconless rows. Reuse the same
+   size token and flex gap as real icons, without placeholder text or glyphs. */
+.menu-surface-group[data-icon-gutter] > .menu-surface-option:not(:has(> .menu-surface-option-icon))::before {
+    content: "";
+    width: var(--menu-icon-size);
+    height: var(--menu-icon-size);
+    flex: 0 0 auto;
 }
 
 .menu-surface-divider {
@@ -2066,27 +2075,18 @@ textarea {
 
 .index-rail {
     opacity: 0;
-    transform: translateY(2px);
-    filter: saturate(0.94);
     pointer-events: auto;
-    transition:
-        opacity 220ms var(--ease-out-quint),
-        transform 260ms var(--ease-out-quint),
-        filter 220ms var(--ease-out-quint);
+    /* Leave a reading window after hover, then fade without moving the axes.
+       Re-entry cancels this delay through the visible rule below; no JS timer. */
+    transition: opacity 260ms var(--ease-out-quart) 120ms;
 }
 
-.index-rail.index-rail--visible {
-    opacity: 1;
-    transform: translate(0, 0);
-    filter: none;
-    pointer-events: auto;
-}
-
+.index-rail.index-rail--visible,
 .index-rail:hover,
 .index-rail:focus-within {
     opacity: 1;
-    transform: translate(0, 0);
-    filter: none;
+    transition-duration: 180ms;
+    transition-delay: 0ms;
 }
 
 .index-rail:not(.index-rail--visible) .column-index-track,
@@ -3394,7 +3394,8 @@ textarea {
     gap: 0.28rem;
     min-width: 3.7rem;
     height: 1.55rem;
-    padding: 0 0.58rem;
+    padding-block: 0;
+    padding-inline: 0.38rem 0.78rem;
     border-radius: 999px;
     border: 1px solid transparent;
     font: inherit;

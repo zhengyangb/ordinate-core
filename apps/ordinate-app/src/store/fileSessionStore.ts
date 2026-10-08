@@ -5,6 +5,8 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { type EditorState, useEditorStore } from "./editorStore";
 import { createDesktopStorageAdapter } from "../platform/desktopStorage";
 import { documentSaveName, validateDocumentName } from "../platform/documentName";
+import { isOnlineExperience } from "../platform/experience";
+import { createOnlineDraftStore } from "../online/onlineDraftStore";
 import type {
   FileSessionVersion, FilePermissionState, FileReference, FileSnapshot,
   StorageFailure, StorageResult, StorageCapabilities, StorageAvailability, StorageAdapter,
@@ -77,6 +79,7 @@ export type FileSessionState = {
   draftName: string | null;
   file: FileReference | null;
   backingText: string | null;
+  untitledBaselineText: string | null;
   backingVersion: FileSessionVersion | null;
   externalSnapshot: FileSnapshot | null;
   localDraftText: string | null;
@@ -93,6 +96,7 @@ export type FileSessionState = {
   lastError: StorageFailure | null;
   open: (read?: () => Promise<StorageResult<FileSnapshot>>) => Promise<void>;
   importUntitled: (text: string, name: string) => void;
+  initializeUntitled: (text: string, name?: string) => void;
   save: (options?: { allowInvalidSource?: boolean }) => Promise<void>;
   saveAs: (options?: { allowInvalidSource?: boolean }) => Promise<void>;
   persistTo: (write: (text: string) => Promise<StorageResult<FileSnapshot>>, options?: { allowInvalidSource?: boolean }) => Promise<void>;
@@ -181,10 +185,11 @@ function draftKeyFor(file: FileReference | null, untitledId: string): string {
 }
 
 function recomputeDirtyState(
-  state: Pick<FileSessionState, "file" | "backingText" | "localDraftText" | "conflict" | "externalSnapshot" | "backingFileState">,
+  state: Pick<FileSessionState, "file" | "backingText" | "untitledBaselineText" | "localDraftText" | "conflict" | "externalSnapshot" | "backingFileState">,
   editorText: string,
 ): Pick<FileSessionState, "documentDirty" | "backingFileState" | "localDraftState"> {
-  const documentDirty: DocumentDirtyState = state.backingText === editorText ? "clean" : "dirty";
+  const baseline = state.file ? state.backingText : state.untitledBaselineText;
+  const documentDirty: DocumentDirtyState = baseline === editorText ? "clean" : "dirty";
   const localDraftState: LocalDraftState =
     state.localDraftText == null ? "none" : state.localDraftText === editorText ? "current" : "stale";
 
@@ -213,7 +218,7 @@ function operationMatches(operation: FileOperation | null, expected: FileOperati
   );
 }
 
-function formatStorageFailure(error: StorageFailure): string {
+export function formatStorageFailure(error: StorageFailure): string {
   if (error.kind === "permission_denied") return "File permission was denied.";
   if (error.kind === "not_found") return "The backing file could not be found.";
   if (error.kind === "read_failed") return error.message;
@@ -260,6 +265,7 @@ function createInitialFileSessionState(): Omit<
   FileSessionState,
   | "open"
   | "importUntitled"
+  | "initializeUntitled"
   | "save"
   | "saveAs"
   | "persistTo"
@@ -280,6 +286,7 @@ function createInitialFileSessionState(): Omit<
     file: null,
     draftName: null,
     backingText: null,
+    untitledBaselineText: null,
     backingVersion: null,
     externalSnapshot: null,
     localDraftText: null,
@@ -428,6 +435,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
     set({
       file: snapshot.file,
       draftName: null,
+      untitledBaselineText: null,
       backingText: finalBackingText,
       backingVersion: snapshot.version,
       externalSnapshot: null,
@@ -462,6 +470,21 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       ).localDraftState,
     });
     return { applied: true, needsFollowup };
+  };
+
+  const replaceUntitled = (get: () => FileSessionState, set: (state: Partial<FileSessionState>) => void,
+    text: string, name: string | null, pristine: boolean) => {
+    if (name !== null) validateDocumentName(name);
+    const state = get();
+    if (state.operation || state.conflict || state.recoveryDraft || state.externalSnapshot) {
+      throw new Error("Finish saving or resolve the file notice before replacing the document.");
+    }
+    // Template defaults are a baseline, not unsaved user content. Imports and
+    // duplicates intentionally have no pristine baseline, even before editing.
+    deps.editor.replaceDocumentText(text);
+    set({ ...createInitialFileSessionState(), draftName: name, autosaveEnabled: state.autosaveEnabled,
+      untitledBaselineText: pristine ? deps.editor.getPersistableText().text : null,
+      documentDirty: pristine ? "clean" : "dirty" });
   };
 
   return createStore<FileSessionState>((set, get) => ({
@@ -514,16 +537,12 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       });
     },
 
+    initializeUntitled: (text, name) => replaceUntitled(get, set, text, name ?? null, true),
     importUntitled: (text, name) => {
-      validateDocumentName(name);
-      const state = get();
-      if (state.operation || state.conflict || state.recoveryDraft || state.externalSnapshot) {
-        throw new Error("Finish saving or resolve the file notice before importing.");
-      }
       // Detach the original backing file before any subsequent autosave. The
-      // external spreadsheet is input only, never an Ordinate backing file.
-      deps.editor.replaceDocumentText(text);
-      set({ ...createInitialFileSessionState(), draftName: name, autosaveEnabled: state.autosaveEnabled, documentDirty: "dirty" });
+      // external file (spreadsheet or URL) is input only, never a backing file
+      // or a recovery identity. Only this working copy's draft is persisted.
+      replaceUntitled(get, set, text, name, false);
     },
 
     open: async (read = deps.adapter.open) => {
@@ -555,6 +574,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       set({
         file: result.value.file,
         draftName: null,
+        untitledBaselineText: null,
         backingText: editorText,
         backingVersion: result.value.version,
         externalSnapshot: null,
@@ -742,7 +762,9 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       const dirtyState = recomputeDirtyState(get(), editorSnapshot.text);
       set(dirtyState);
       const state = { ...get(), ...dirtyState };
-      if (state.documentDirty === "clean" && state.localDraftState !== "current") return;
+      // An untitled baseline makes a new document clean, not durable. Keep its
+      // recovery snapshot current, including Undo back to that initial content.
+      if (state.file && state.documentDirty === "clean" && state.localDraftState !== "current") return;
       if (state.operation) {
         set({ pendingAutosave: true });
         return;
@@ -1077,11 +1099,11 @@ export function createMemoryLocalDraftStore(initial?: Record<string, LocalDraftR
   };
 }
 
-export function createLocalStorageDraftStore(storage?: Storage): LocalDraftStore {
+export function createLocalStorageDraftStore(storage?: Storage, namespace = "ordinate:file-draft:"): LocalDraftStore {
   const targetStorage = storage ?? (typeof window === "undefined" ? null : window.localStorage);
   if (!targetStorage) return createMemoryLocalDraftStore();
 
-  const prefix = "ordinate:file-draft:";
+  const prefix = namespace;
   return {
     get: async (key) => {
       const raw = targetStorage.getItem(`${prefix}${key}`);
@@ -1427,7 +1449,7 @@ const defaultFileSessionStore = createFileSessionStore({
   adapter: typeof window !== "undefined" && window.ordinateDesktop
     ? createDesktopStorageAdapter(window.ordinateDesktop)
     : createBrowserStorageAdapter(),
-  localDraftStore: createLocalStorageDraftStore(),
+  localDraftStore: isOnlineExperience() ? createOnlineDraftStore(window) : createLocalStorageDraftStore(),
   editor: {
     getPersistableText: () => getPersistableText(useEditorStore.getState()),
     replaceDocumentText: (text, options) => useEditorStore.getState().replaceDocumentText(text, options),

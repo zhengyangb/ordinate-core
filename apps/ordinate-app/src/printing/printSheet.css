@@ -1,4 +1,4 @@
-/* This root is mounted only for a native print operation. Screen UI is untouched. */
+/* Both hosts mount this complete sheet only during printing. Screen UI is untouched. */
 #ordinate-print-root { display: none; }
 
 @media print {
@@ -26,6 +26,7 @@
         color-scheme: light;
     }
     .print-sheet h1 { font-size: 17pt; line-height: 1.2; margin: 0 0 12pt; break-after: avoid; }
+    .print-sheet + .print-sheet { break-before: page; }
     .print-sheet table { border-collapse: collapse; width: 100%; table-layout: fixed; }
     .print-sheet thead { display: table-header-group; }
     .print-sheet tr { break-inside: avoid; }

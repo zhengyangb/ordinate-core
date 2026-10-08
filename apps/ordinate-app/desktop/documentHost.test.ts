@@ -21,9 +21,9 @@ it("completes a flush only after the editor acknowledges durable content", async
   const saving = host.flush();
   const request = send.mock.calls[0][1];
   expect(request.kind).toBe("flush");
-  host.complete(request.id, null);
-  await saving;
-  expect(() => host.complete(request.id, null)).toThrow("Invalid document completion");
+  host.complete(request.id, null, { needsSave: false });
+  expect(await saving).toEqual({ needsSave: false });
+  expect(() => host.complete(request.id, null, { needsSave: false })).toThrow("Invalid document completion");
   host.dispose();
 });
 it("rejects pending closure if the renderer crashes", async () => {
@@ -33,6 +33,32 @@ it("rejects pending closure if the renderer crashes", async () => {
   host.unavailable("Renderer crashed");
   await expect(saving).rejects.toThrow("Renderer crashed");
   await expect(host.flush()).rejects.toThrow("not ready");
+  host.dispose();
+});
+it("returns the fresh save requirement rather than inferring it from the filename", async () => {
+  const { host, send } = fixture();
+  host.ready();
+  const flushing = host.flush();
+  host.complete(send.mock.calls[0][1].id, null, { needsSave: true });
+  expect(await flushing).toEqual({ needsSave: true });
+  host.dispose();
+});
+it("requires an explicit save requirement before completing a successful flush", async () => {
+  const { host, send } = fixture();
+  host.ready();
+  const flushing = host.flush();
+  const id = send.mock.calls[0][1].id;
+  expect(() => host.complete(id, null, null)).toThrow("Missing document flush result");
+  host.complete(id, null, { needsSave: false });
+  await flushing;
+  host.dispose();
+});
+it("keeps the close blocked when flushing fails", async () => {
+  const { host, send } = fixture();
+  host.ready();
+  const flushing = host.flush();
+  host.complete(send.mock.calls[0][1].id, "Draft could not be written", null);
+  await expect(flushing).rejects.toThrow("Draft could not be written");
   host.dispose();
 });
 it("does not allow renderer-invented write capabilities", async () => {

@@ -1334,7 +1334,7 @@ export default function TableStage({
             aria-hidden="true"
           />
         ) : null}
-        <div ref={noteFooterRef} className="sheet-note-footer" style={{ top: headerOverlayHeight + rowIndexTrackHeight, width: tableFootprint.width }}>
+        <div ref={noteFooterRef} className="sheet-note-footer" style={{ top: headerOverlayHeight + rowIndexTrackHeight }}>
           {afterTableNote}
         </div>
       </div>

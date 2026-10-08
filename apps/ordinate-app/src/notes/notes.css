@@ -1,5 +1,8 @@
 .note-workspace {
   --note-rail-height: calc(var(--index-rail-height-active) + var(--index-rail-gap));
+  /* One paper width for both notes and their editor anchors. The available
+     workspace wins over the readable minimum on small windows. */
+  --note-paper-width: clamp(480px, var(--note-table-width), 960px);
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
@@ -25,7 +28,7 @@
 }
 .sheet-note-intro {
   margin-left: calc(var(--index-rail-width-active) + var(--index-rail-gap));
-  width: min(var(--note-table-width), calc(100% - var(--index-rail-width-active) - var(--index-rail-gap)));
+  width: min(var(--note-paper-width), calc(100% - var(--index-rail-width-active) - var(--index-rail-gap)));
   position: relative;
   z-index: 20;
   /* The grid owns measured width/readiness. Keep intro text out of the first
@@ -133,7 +136,8 @@
   align-items: center;
   justify-content: center;
   position: relative;
-  width: 100%;
+  /* The empty entrance belongs to the table boundary, not the wider paper. */
+  width: min(100%, var(--note-table-width));
   height: 24px;
   margin: -12px 0;
   padding: 0;
@@ -200,6 +204,7 @@
 .sheet-note-footer {
   position: absolute;
   left: 0;
+  width: min(var(--note-paper-width), 100%);
   /* Keep the boundary above pinned body columns, below frozen header rows. */
   z-index: 7;
   transform: translate3d(0,var(--grid-body-track-offset-y),0);

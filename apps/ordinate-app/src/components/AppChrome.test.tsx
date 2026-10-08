@@ -18,13 +18,29 @@ const props: ComponentProps<typeof AppChrome> = {
   settingsOpen: false, onOpenSettings: noop,
   sheetSetupOpen: false, sheetSetupButtonRef: createRef(), onToggleSheetSetup: noop,
   canUndo: false, canRedo: false, undoLabel: null, redoLabel: null, onUndo: noop, onRedo: noop,
-  onNewFile: noop, onOpenFile: noop, onExportFile: noop, onSaveFile: noop, onSaveFileAs: noop, onEnterSourceMode: noop, onExitSourceMode: noop,
+  onNewFile: noop, onOpenFile: noop, onPrintFile: noop, onExportFile: noop, onSaveFile: noop, onSaveFileAs: noop, onEnterSourceMode: noop, onExitSourceMode: noop,
   exportMenuOpen: false, onExportMenuOpenChange: noop, onExportFormat: noop,
   onTooltipEnter: noop, onTooltipLeave: noop, onTooltipSuppress: noop, onTooltipRelease: noop,
   onTabMouseEnter: noop, onTabMouseLeave: noop,
 };
 
 describe("host-specific document title placement", () => {
+  it("adds a browser menu without duplicating the native menu", () => {
+    const markup = renderToStaticMarkup(<AppChrome {...props} />);
+    const trigger = markup.match(/<button[^>]*aria-label="Ordinate menu"[^>]*>(.*?)<\/button>/)?.[1];
+    expect(trigger).toBe('<span class="brand-name">ordinate</span>');
+    expect(markup).toContain('aria-haspopup="menu" aria-expanded="false"');
+    expect(renderToStaticMarkup(<AppChrome {...props} titlePlacement="native" />)).not.toContain('aria-label="Ordinate menu"');
+  });
+  it("limits the Mac shortcut to the online Mac experience", () => {
+    const online = { showExamples: noop, openFromLink: noop, downloadMac: noop, isMac: true };
+    const markup = renderToStaticMarkup(<AppChrome {...props} online={online} />);
+    expect(markup).toContain('aria-label="Get Mac app"');
+    expect(markup.indexOf('aria-label="Get Mac app"')).toBeGreaterThan(markup.indexOf('aria-label="Settings"'));
+    expect(markup.indexOf('aria-label="Get Mac app"')).toBeLessThan(markup.indexOf('class="toolbar-actions"'));
+    expect(renderToStaticMarkup(<AppChrome {...props} />)).not.toContain('aria-label="Get Mac app"');
+    expect(renderToStaticMarkup(<AppChrome {...props} online={{ ...online, isMac: false }} />)).not.toContain('aria-label="Get Mac app"');
+  });
   it("keeps the browser title and branding in their original toolbar position", () => {
     const markup = renderToStaticMarkup(<AppChrome {...props} />);
     expect(markup).not.toContain('class="desktop-titlebar"');

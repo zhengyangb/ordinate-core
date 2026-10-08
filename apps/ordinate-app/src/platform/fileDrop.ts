@@ -25,15 +25,38 @@ export function droppedFileKind(files: readonly File[]): "document" | "import" {
 }
 
 type FileDropActions = {
+  scope: "open" | "import";
   canDrop(): boolean;
   preview(cue: FileDropCue | null): void;
   receive(file: File, kind: "document" | "import"): Promise<void>;
   report(error: unknown): Promise<void>;
 };
 
+// A local receiver owns drags within its region, even when it is temporarily
+// busy. The window receiver must neither consume those drops nor publish an
+// invitation behind a modal. Event paths work across portal boundaries too.
+const dropReceivers = new WeakSet<EventTarget>();
+
 // Capture only external file drags. Text editing and the grid's internal drag
 // gestures keep their own handlers; files must never navigate the browser away.
-export function installFileDrop(target: Window, actions: FileDropActions): () => void {
+export function installFileDrop(target: Window | HTMLElement, actions: FileDropActions): () => void {
+  if (dropReceivers.has(target)) throw new Error("file drop receiver already installed");
+  dropReceivers.add(target);
+  const owns = (event: Event) => event.composedPath().find(node => dropReceivers.has(node)) === target;
+  const lifecycleTarget = "ownerDocument" in target ? target.ownerDocument.defaultView! : target;
+  const acceptKind = (kind: "document" | "import") => {
+    if (kind === "document" && actions.scope === "import") throw new Error("Use Open for .ord documents.");
+    return kind;
+  };
+  const previewCue = (transfer: DataTransfer): FileDropCue => {
+    const next = fileDragCue(transfer);
+    try {
+      if (next.kind === "document" || next.kind === "import") acceptKind(next.kind);
+      return next;
+    } catch (error) {
+      return { kind: "blocked", message: (error as Error).message };
+    }
+  };
   let busy = false;
   let depth = 0;
   let cue: FileDropCue | null = null;
@@ -45,17 +68,20 @@ export function installFileDrop(target: Window, actions: FileDropActions): () =>
   const clear = () => { depth = 0; publish(null); };
   const preview = (event: DragEvent) => {
     if (!event.dataTransfer?.types.includes("Files")) return;
+    if (!owns(event)) { clear(); return; }
     event.preventDefault();
-    const next = !busy && actions.canDrop() ? fileDragCue(event.dataTransfer) : null;
+    const next = !busy && actions.canDrop() ? previewCue(event.dataTransfer) : null;
     publish(next);
     event.dataTransfer.dropEffect = next && next.kind !== "blocked" ? "copy" : "none";
   };
   const dragenter = (event: DragEvent) => {
     if (!event.dataTransfer?.types.includes("Files")) return;
+    if (!owns(event)) { clear(); return; }
     depth++;
     preview(event);
   };
-  const dragleave = () => {
+  const dragleave = (event: DragEvent) => {
+    if (!owns(event)) { clear(); return; }
     depth = Math.max(0, depth - 1);
     if (depth === 0) publish(null);
   };
@@ -65,6 +91,7 @@ export function installFileDrop(target: Window, actions: FileDropActions): () =>
   };
   const drop = (event: DragEvent) => {
     if (!event.dataTransfer?.types.includes("Files")) return;
+    if (!owns(event)) { clear(); return; }
     const alreadyHandled = event.defaultPrevented;
     clear();
     event.preventDefault();
@@ -73,27 +100,29 @@ export function installFileDrop(target: Window, actions: FileDropActions): () =>
     const files = Array.from(event.dataTransfer.files);
     busy = true;
     void (async () => {
-      try { await actions.receive(files[0], droppedFileKind(files)); }
+      try { await actions.receive(files[0], acceptKind(droppedFileKind(files))); }
       catch (error) { await actions.report(error); }
       finally { busy = false; }
     })();
   };
   const options = { capture: true };
-  target.addEventListener("dragenter", dragenter, options);
-  target.addEventListener("dragleave", dragleave, options);
-  target.addEventListener("dragover", dragover, options);
-  target.addEventListener("drop", drop, options);
-  target.addEventListener("dragend", clear, options);
-  target.addEventListener("blur", clear);
-  target.addEventListener("keydown", keydown, options);
+  // Window and element targets share EventTarget, but their typed DOM overloads
+  // differ. Narrow native drag events at this single listener boundary.
+  const dragTarget: EventTarget = target;
+  const listeners = Object.entries({ dragenter, dragleave, dragover, drop }).map(([name, handler]) => {
+    const listener: EventListener = event => handler(event as DragEvent);
+    dragTarget.addEventListener(name, listener, options);
+    return { name, listener };
+  });
+  lifecycleTarget.addEventListener("dragend", clear, options);
+  lifecycleTarget.addEventListener("blur", clear);
+  lifecycleTarget.addEventListener("keydown", keydown, options);
   return () => {
     clear();
-    target.removeEventListener("dragenter", dragenter, options);
-    target.removeEventListener("dragleave", dragleave, options);
-    target.removeEventListener("dragover", dragover, options);
-    target.removeEventListener("drop", drop, options);
-    target.removeEventListener("dragend", clear, options);
-    target.removeEventListener("blur", clear);
-    target.removeEventListener("keydown", keydown, options);
+    dropReceivers.delete(target);
+    for (const { name, listener } of listeners) dragTarget.removeEventListener(name, listener, options);
+    lifecycleTarget.removeEventListener("dragend", clear, options);
+    lifecycleTarget.removeEventListener("blur", clear);
+    lifecycleTarget.removeEventListener("keydown", keydown, options);
   };
 }

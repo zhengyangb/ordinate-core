@@ -216,3 +216,4 @@ __marimo__/
 # Desktop build artifacts
 apps/ordinate-app/desktop-out/
 apps/ordinate-app/release/
+apps/ordinate-app/dist-online/
