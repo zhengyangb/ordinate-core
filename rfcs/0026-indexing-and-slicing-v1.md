@@ -3,6 +3,10 @@
 - Status: Draft
 - Project: Ordinate
 
+> RFC-0052 supersedes the `view[d]` dimensionality and slice-result rules
+> here. One-dimensional arrays remain arrays after slicing; views retain row
+> and column axes even when a slice has only one row or column.
+
 ## Summary
 
 This RFC defines view indexing, view slicing, and bracket syntax for indexing and slicing.

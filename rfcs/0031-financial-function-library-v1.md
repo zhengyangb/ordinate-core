@@ -3,6 +3,10 @@
 - Status: Draft
 - Project: Ordinate
 
+> RFC-0052 supersedes this RFC's runtime `dimension` convention. Cash-flow
+> vectors may be one-dimensional arrays or one-row/one-column views; a 1 × 1
+> view has no separate dimension-0 representation.
+
 ## Summary
 
 This RFC adds deterministic financial functions for time-value-of-money, cash-flow analysis, rate conversion, and depreciation.

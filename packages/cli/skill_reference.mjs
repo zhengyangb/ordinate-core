@@ -29,7 +29,7 @@ export function skillReferences() {
   }
   const functions = commonFunctions.map(name => reference("function", name).function);
   const detail = functions.map(fn => `## ${fn.name}\n\n${fn.summary}\n\n\`\`\`text\n${fn.signatures.map(s => `${fn.name}(${s.parameters.map(p => `${p.name}: ${p.type}`).join(", ")}) -> ${s.returns}`).join("\n")}\n\`\`\`\n\n${fn.signatures.flatMap(s => s.parameters).filter((p, i, all) => all.findIndex(x => x.name === p.name) === i).map(p => `- \`${p.name}\`: ${p.summary}\n`).join("")}${fn.aliases?.length ? `\nAliases: ${fn.aliases.join(", ")}.\n` : ""}`).join("\n");
-  files.set("functions.md", `${generated}\n\n# Common function signatures\n\nThese are the bundled Core's metadata, not Excel signatures. Parameter descriptions\nstate defaults where supported; a signature listing a parameter does not imply\nevery parameter is required. A view is a selected sequence/grid or array; a scalar\nis a single value. Discover all functions with \`ordinate-cli help functions\` and\nexact overloads/examples with \`ordinate-cli help function <name>\`.\n\n${detail}`);
+  files.set("functions.md", `${generated}\n\n# Common function signatures\n\nThese are the bundled Core's metadata, not Excel signatures. Parameter descriptions\nstate defaults where supported; a signature listing a parameter does not imply\nevery parameter is required. An array is one-dimensional; a view is a two-dimensional grid.\nA scalar is a single value. Discover all functions with \`ordinate-cli help functions\` and\nexact overloads/examples with \`ordinate-cli help function <name>\`.\n\n${detail}`);
   return files;
 }
 export async function syncSkillReferences(mode) {

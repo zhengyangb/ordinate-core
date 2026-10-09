@@ -1,9 +1,10 @@
 import { evalScalarComparison } from "../comparison";
 import { isError, makeInternalError } from "../errors";
 import { evaluateIndexing, type RuntimeIndexAxis } from "../indexing";
-import type { ErrorRuntimeValue, NumberRuntimeValue, RuntimeValue, RuntimeView } from "../types";
+import type { ErrorRuntimeValue, NumberRuntimeValue, RuntimeValue, RuntimeCollection } from "../types";
+import { isVectorCollection } from "../view";
 
-export function matchView(value: RuntimeValue, keys: RuntimeView, functionName: string): RuntimeValue {
+export function matchView(value: RuntimeValue, keys: RuntimeCollection, functionName: string): RuntimeValue {
   if (isError(value)) return value;
   for (let index = 0; index < keys.values.length; index += 1) {
     const key = keys.values[index];
@@ -19,11 +20,11 @@ export function matchView(value: RuntimeValue, keys: RuntimeView, functionName: 
 
 export function lookupView(
   key: RuntimeValue,
-  keys: RuntimeView,
-  values: RuntimeView,
+  keys: RuntimeCollection,
+  values: RuntimeCollection,
   functionName: string,
 ): RuntimeValue {
-  if (keys.dimension === 2 || values.dimension === 2) {
+  if (!isVectorCollection(keys) || !isVectorCollection(values)) {
     return makeInternalError("invalid_function_call", {
       function: functionName,
       reason: "lookup_requires_one_dimensional_views",
@@ -43,7 +44,7 @@ export function lookupView(
   return values.values[matched.value as number] ?? makeInternalError("lookup_not_found", { function: functionName });
 }
 
-export function takeValue(target: RuntimeValue | RuntimeView, count: RuntimeValue, functionName: string): RuntimeValue | RuntimeView {
+export function takeValue(target: RuntimeValue | RuntimeCollection, count: RuntimeValue, functionName: string): RuntimeValue | RuntimeCollection {
   const normalizedCount = selectionCount(count, functionName);
   if (isError(normalizedCount)) return normalizedCount;
   const axis = normalizedCount.value >= 0
@@ -52,7 +53,7 @@ export function takeValue(target: RuntimeValue | RuntimeView, count: RuntimeValu
   return evaluateSelectionSlice(target, axis, functionName);
 }
 
-export function dropValue(target: RuntimeValue | RuntimeView, count: RuntimeValue, functionName: string): RuntimeValue | RuntimeView {
+export function dropValue(target: RuntimeValue | RuntimeCollection, count: RuntimeValue, functionName: string): RuntimeValue | RuntimeCollection {
   const normalizedCount = selectionCount(count, functionName);
   if (isError(normalizedCount)) return normalizedCount;
   const axis = normalizedCount.value >= 0
@@ -62,11 +63,11 @@ export function dropValue(target: RuntimeValue | RuntimeView, count: RuntimeValu
 }
 
 function evaluateSelectionSlice(
-  target: RuntimeValue | RuntimeView,
+  target: RuntimeValue | RuntimeCollection,
   axis: RuntimeIndexAxis,
   functionName: string,
-): RuntimeValue | RuntimeView {
-  if (target.kind === "view" && target.dimension === 2) {
+): RuntimeValue | RuntimeCollection {
+  if (target.kind === "view" && target.rowCount > 1 && target.colCount > 1) {
     return evaluateIndexing(target, [axis, sliceAxis(null, null)], functionName);
   }
   return evaluateIndexing(target, [axis], functionName);

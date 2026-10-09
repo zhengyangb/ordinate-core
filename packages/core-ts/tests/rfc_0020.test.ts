@@ -28,7 +28,7 @@ describe("RFC-0020 formula views, broadcasting, and filtering", () => {
     const filter = getStandardFunctionMetadata("FILTER");
     expect(filter?.name).toBe("filter");
     expect(filter?.category).toBe("view");
-    expect(filter?.signatures[0].returns).toBe("view[d=1]");
+    expect(filter?.signatures[0].returns).toBe("array");
   });
 
   it("supports conditional sum through scalar equality broadcasting and filter", () => {

@@ -3,6 +3,10 @@
 - Status: Draft
 - Project: Ordinate
 
+> Runtime shape and identity rules in this historical RFC are superseded by
+> RFC-0052. Reference selections retain source identity for dependencies and
+> edits; evaluated views are two-dimensional value grids.
+
 ## Summary
 
 This RFC defines the conceptual model for multi-cell selection in Ordinate.

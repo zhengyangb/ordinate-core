@@ -5,8 +5,8 @@ import { distributionFunctionDefinitions } from "./distributions";
 import { mathematicalFunctionDefinitions } from "./mathematics";
 import { mathViewFunctionDefinitions } from "./mathViews";
 import { viewIndexFunction } from "../indexing";
-import type { FunctionCall, RuntimeValue, RuntimeView } from "../types";
-import { makeRuntimeView } from "../view";
+import type { FunctionCall, RuntimeValue, RuntimeCollection, RuntimeView } from "../types";
+import { makeRuntimeArray } from "../view";
 import {
   averageView,
   countView,
@@ -16,7 +16,7 @@ import {
   sumsqView,
   sumView,
 } from "./aggregates";
-import { assertArity, assertArityRange, expectBooleanArg, expectNumberArg, expectViewArg, type FunctionEvalContext } from "./args";
+import { assertArity, assertArityRange, expectBooleanArg, expectNumberArg, expectCollectionArg, type FunctionEvalContext } from "./args";
 import { booleanAggregateView, notValue, notView } from "./boolean";
 import { filterView } from "./filter";
 import {
@@ -139,7 +139,7 @@ export type FunctionEvaluator = (
   call: FunctionCall,
   ctx: FunctionEvalContext,
   definition: FunctionDefinition,
-) => RuntimeValue | RuntimeView;
+) => RuntimeValue | RuntimeCollection;
 
 export interface FunctionMetadata {
   name: string;
@@ -162,231 +162,231 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "sum",
     category: "aggregate",
-    summary: "Adds values in a view using the RFC-0006 plus operator rules.",
-    signatures: [signature([param("x", "view[d<=2]", "Values to add. Blanks are ignored by the view evaluator and invalid values fail the call.")], "number")],
+    summary: "Adds values in a one-dimensional array or two-dimensional view using the RFC-0006 plus operator rules.",
+    signatures: [signature([param("x", "array | view", "Values to add. Blanks are ignored; invalid values fail the call.")], "number")],
     examples: [example("sum(@[:,2025])")],
-    evaluator: viewEvaluator((view) => sumView(view)),
+    evaluator: collectionEvaluator((view) => sumView(view)),
   },
   {
     name: "product",
     category: "aggregate",
-    summary: "Multiplies values in a view using the RFC-0006 multiply operator rules.",
-    signatures: [signature([param("x", "view[d<=2]", "Values to multiply using the runtime multiply operator rules.")], "number")],
+    summary: "Multiplies values in an array or view using the RFC-0006 multiply operator rules.",
+    signatures: [signature([param("x", "array | view", "Values to multiply using the runtime multiply operator rules.")], "number")],
     examples: [example("product(@[Factors,:])")],
-    evaluator: viewEvaluator((view) => productView(view)),
+    evaluator: collectionEvaluator((view) => productView(view)),
   },
   {
     name: "average",
     category: "aggregate",
-    summary: "Averages numeric-compatible values in a view, ignoring blanks. For non-error, non-empty numeric-compatible inputs, this is equivalent to sum(x) / count(x).",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to average. Blank cells are ignored.")], "number")],
+    summary: "Averages numeric-compatible values in an array or view, ignoring blanks. For non-error, non-empty numeric-compatible inputs, this is equivalent to sum(x) / count(x).",
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to average. Blank cells are ignored.")], "number")],
     examples: [example("average(@[Revenue,:])")],
-    evaluator: viewEvaluator((view) => averageView(view)),
+    evaluator: collectionEvaluator((view) => averageView(view)),
   },
   {
     name: "min",
     category: "aggregate",
-    summary: "Returns the smallest numeric-compatible value in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to scan for the smallest value.")], "number")],
+    summary: "Returns the smallest numeric-compatible value in an array or view.",
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to scan for the smallest value.")], "number")],
     examples: [example("min(@[#2:#10,#2])")],
-    evaluator: viewEvaluator((view) => minMaxView(view, "min")),
+    evaluator: collectionEvaluator((view) => minMaxView(view, "min")),
   },
   {
     name: "max",
     category: "aggregate",
-    summary: "Returns the largest numeric-compatible value in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to scan for the largest value.")], "number")],
+    summary: "Returns the largest numeric-compatible value in an array or view.",
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to scan for the largest value.")], "number")],
     examples: [example("max(@[#2:#10,#2])")],
-    evaluator: viewEvaluator((view) => minMaxView(view, "max")),
+    evaluator: collectionEvaluator((view) => minMaxView(view, "max")),
   },
   {
     name: "count",
     category: "aggregate",
-    summary: "Counts numeric-compatible values in a view. For non-error inputs, this is equivalent to sum(isNumber(x)) + sum(isBoolean(x)).",
-    signatures: [signature([param("x", "view[d<=2]", "Cells to count when their evaluated value is a number or boolean.")], "number")],
+    summary: "Counts numeric-compatible values in an array or view. For non-error inputs, this is equivalent to sum(isNumber(x)) + sum(isBoolean(x)).",
+    signatures: [signature([param("x", "array | view", "Cells to count when their evaluated value is a number or boolean.")], "number")],
     examples: [example("count(@[:,2025])")],
-    evaluator: viewEvaluator((view) => countView(view, false)),
+    evaluator: collectionEvaluator((view) => countView(view, false)),
   },
   {
     name: "counta",
     category: "aggregate",
-    summary: "Counts non-blank values in a view. For non-error inputs, this is equivalent to sum(not(isBlank(x))).",
-    signatures: [signature([param("x", "view[d<=2]", "Cells to count when their evaluated value is not blank.")], "number")],
+    summary: "Counts non-blank values in an array or view. For non-error inputs, this is equivalent to sum(not(isBlank(x))).",
+    signatures: [signature([param("x", "array | view", "Cells to count when their evaluated value is not blank.")], "number")],
     examples: [example("counta(@[:,2025])")],
-    evaluator: viewEvaluator((view) => countView(view, true)),
+    evaluator: collectionEvaluator((view) => countView(view, true)),
   },
   {
     name: "sumsq",
     category: "aggregate",
-    summary: "Adds the squares of numeric-compatible values in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to square and add. Blank cells are ignored.")], "number")],
+    summary: "Adds the squares of numeric-compatible values in an array or view.",
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to square and add. Blank cells are ignored.")], "number")],
     examples: [example("sumsq(@[Values,:])")],
-    evaluator: viewEvaluator((view) => sumsqView(view)),
+    evaluator: collectionEvaluator((view) => sumsqView(view)),
   },
   {
     name: "countblank",
     category: "statistical",
-    summary: "Counts blank values in a view. For non-error inputs, this is equivalent to sum(isBlank(x)).",
-    signatures: [signature([param("x", "view[d<=2]", "Values to scan for blanks.")], "number")],
+    summary: "Counts blank values in an array or view. For non-error inputs, this is equivalent to sum(isBlank(x)).",
+    signatures: [signature([param("x", "array | view", "Values to scan for blanks.")], "number")],
     examples: [example("countblank(@[:,Score])")],
-    evaluator: viewEvaluator((view) => countBlankView(view)),
+    evaluator: collectionEvaluator((view) => countBlankView(view)),
   },
   {
     name: "median",
     category: "statistical",
-    summary: "Returns the median numeric-compatible value in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    summary: "Returns the median numeric-compatible value in an array or view.",
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("median(@[:,Score])")],
-    evaluator: viewEvaluator((view, _ctx, call) => medianView(view, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => medianView(view, call.name)),
   },
   {
     name: "percentile",
     category: "statistical",
-    summary: "Returns the inclusive percentile of numeric-compatible values in a view.",
+    summary: "Returns the inclusive percentile of numeric-compatible values in an array or view.",
     signatures: [signature([
-      param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored."),
+      param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored."),
       param("p", "Scalar[number]", "Percentile in the inclusive range [0, 1]."),
     ], "number")],
     examples: [example("percentile(@[:,Score], 0.9)")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 2);
       if (arityError) return arityError;
-      const view = expectViewArg(ctx, call.name, call.args[0]);
+      const view = expectCollectionArg(ctx, call.name, call.args[0]);
       if (isError(view as RuntimeValue)) return view as RuntimeValue;
-      return percentileView(view as RuntimeView, ctx.evalScalarArg(call.args[1]), call.name);
+      return percentileView(view as RuntimeCollection, ctx.evalScalarArg(call.args[1]), call.name);
     },
   },
   {
     name: "quartile",
     category: "statistical",
-    summary: "Returns an inclusive quartile of numeric-compatible values in a view.",
+    summary: "Returns an inclusive quartile of numeric-compatible values in an array or view.",
     signatures: [signature([
-      param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored."),
+      param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored."),
       param("q", "Scalar[number]", "Quartile index 0, 1, 2, 3, or 4."),
     ], "number")],
     examples: [example("quartile(@[:,Score], 3)")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 2);
       if (arityError) return arityError;
-      const view = expectViewArg(ctx, call.name, call.args[0]);
+      const view = expectCollectionArg(ctx, call.name, call.args[0]);
       if (isError(view as RuntimeValue)) return view as RuntimeValue;
-      return quartileView(view as RuntimeView, ctx.evalScalarArg(call.args[1]), call.name);
+      return quartileView(view as RuntimeCollection, ctx.evalScalarArg(call.args[1]), call.name);
     },
   },
   {
     name: "variance",
     aliases: ["var"],
     category: "statistical",
-    summary: "Returns the sample variance of numeric-compatible values in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    summary: "Returns the sample variance of numeric-compatible values in an array or view.",
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("variance(@[:,Score])"), example("var(@[:,Score])")],
-    evaluator: viewEvaluator((view, _ctx, call) => varianceView(view, true, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => varianceView(view, true, call.name)),
   },
   {
     name: "variancep",
     aliases: ["varp"],
     category: "statistical",
-    summary: "Returns the population variance of numeric-compatible values in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    summary: "Returns the population variance of numeric-compatible values in an array or view.",
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("variancep(@[:,Score])"), example("varp(@[:,Score])")],
-    evaluator: viewEvaluator((view, _ctx, call) => varianceView(view, false, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => varianceView(view, false, call.name)),
   },
   {
     name: "stdev",
     aliases: ["stddev"],
     category: "statistical",
-    summary: "Returns the sample standard deviation of numeric-compatible values in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    summary: "Returns the sample standard deviation of numeric-compatible values in an array or view.",
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("stdev(@[:,Score])"), example("stddev(@[:,Score])")],
-    evaluator: viewEvaluator((view, _ctx, call) => stdevView(view, true, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => stdevView(view, true, call.name)),
   },
   {
     name: "stdevp",
     aliases: ["stddevp"],
     category: "statistical",
-    summary: "Returns the population standard deviation of numeric-compatible values in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    summary: "Returns the population standard deviation of numeric-compatible values in an array or view.",
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("stdevp(@[:,Score])"), example("stddevp(@[:,Score])")],
-    evaluator: viewEvaluator((view, _ctx, call) => stdevView(view, false, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => stdevView(view, false, call.name)),
   },
   {
     name: "avedev",
     category: "statistical",
     summary: "Returns the average absolute deviation from the mean.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("avedev(@[:,Score])")],
-    evaluator: viewEvaluator((view, _ctx, call) => averageDeviationView(view, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => averageDeviationView(view, call.name)),
   },
   {
     name: "devsq",
     category: "statistical",
     summary: "Returns the sum of squared deviations from the mean.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("devsq(@[:,Score])")],
-    evaluator: viewEvaluator((view, _ctx, call) => devsqView(view, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => devsqView(view, call.name)),
   },
   {
     name: "geomean",
     category: "statistical",
     summary: "Returns the geometric mean of positive numeric-compatible values.",
-    signatures: [signature([param("x", "view[d<=2]", "Positive numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    signatures: [signature([param("x", "array | view", "Positive numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("geomean(@[:,GrowthFactor])")],
-    evaluator: viewEvaluator((view, _ctx, call) => geomeanView(view, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => geomeanView(view, call.name)),
   },
   {
     name: "harmean",
     category: "statistical",
     summary: "Returns the harmonic mean of positive numeric-compatible values.",
-    signatures: [signature([param("x", "view[d<=2]", "Positive numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    signatures: [signature([param("x", "array | view", "Positive numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("harmean(@[:,Rate])")],
-    evaluator: viewEvaluator((view, _ctx, call) => harmeanView(view, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => harmeanView(view, call.name)),
   },
   {
     name: "large",
     category: "statistical",
-    summary: "Returns the k-th largest numeric-compatible value in a view.",
+    summary: "Returns the k-th largest numeric-compatible value in an array or view.",
     signatures: [signature([
-      param("x", "view[d<=2]", "Numbers and booleans to order. Blank cells are ignored."),
+      param("x", "array | view", "Numbers and booleans to order. Blank cells are ignored."),
       param("k", "Scalar[number]", "One-based rank from largest to smallest."),
     ], "number")],
     examples: [example("large(@[:,Score], 3)")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 2);
       if (arityError) return arityError;
-      const view = expectViewArg(ctx, call.name, call.args[0]);
+      const view = expectCollectionArg(ctx, call.name, call.args[0]);
       if (isError(view as RuntimeValue)) return view as RuntimeValue;
-      return largeSmallView(view as RuntimeView, ctx.evalScalarArg(call.args[1]), "large", call.name);
+      return largeSmallView(view as RuntimeCollection, ctx.evalScalarArg(call.args[1]), "large", call.name);
     },
   },
   {
     name: "small",
     category: "statistical",
-    summary: "Returns the k-th smallest numeric-compatible value in a view.",
+    summary: "Returns the k-th smallest numeric-compatible value in an array or view.",
     signatures: [signature([
-      param("x", "view[d<=2]", "Numbers and booleans to order. Blank cells are ignored."),
+      param("x", "array | view", "Numbers and booleans to order. Blank cells are ignored."),
       param("k", "Scalar[number]", "One-based rank from smallest to largest."),
     ], "number")],
     examples: [example("small(@[:,Score], 3)")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 2);
       if (arityError) return arityError;
-      const view = expectViewArg(ctx, call.name, call.args[0]);
+      const view = expectCollectionArg(ctx, call.name, call.args[0]);
       if (isError(view as RuntimeValue)) return view as RuntimeValue;
-      return largeSmallView(view as RuntimeView, ctx.evalScalarArg(call.args[1]), "small", call.name);
+      return largeSmallView(view as RuntimeCollection, ctx.evalScalarArg(call.args[1]), "small", call.name);
     },
   },
   {
     name: "rank",
     category: "statistical",
-    summary: "Returns the one-based rank of a value within a view.",
+    summary: "Returns the one-based rank of a value within an array or view.",
     signatures: [
       signature([
         param("value", "Scalar[number]", "Value to rank."),
-        param("x", "view[d<=2]", "Numbers and booleans to rank against. Blank cells are ignored."),
+        param("x", "array | view", "Numbers and booleans to rank against. Blank cells are ignored."),
       ], "number"),
       signature([
         param("value", "Scalar[number]", "Value to rank."),
-        param("x", "view[d<=2]", "Numbers and booleans to rank against. Blank cells are ignored."),
+        param("x", "array | view", "Numbers and booleans to rank against. Blank cells are ignored."),
         param("ascending", "Scalar[number]", "Use descending rank for 0 and ascending rank for non-zero."),
       ], "number"),
     ],
@@ -396,19 +396,19 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
       if (arityError) return arityError;
       const value = ctx.evalScalarArg(call.args[0]);
       if (isError(value)) return value;
-      const view = expectViewArg(ctx, call.name, call.args[1]);
+      const view = expectCollectionArg(ctx, call.name, call.args[1]);
       if (isError(view as RuntimeValue)) return view as RuntimeValue;
       const ascending = call.args.length === 3 ? ctx.evalScalarArg(call.args[2]) : null;
-      return rankView(value, view as RuntimeView, ascending, call.name);
+      return rankView(value, view as RuntimeCollection, ascending, call.name);
     },
   },
   {
     name: "mode",
     category: "statistical",
     summary: "Returns the most frequent numeric-compatible value, using the smallest value to break ties.",
-    signatures: [signature([param("x", "view[d<=2]", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
+    signatures: [signature([param("x", "array | view", "Numbers and booleans to summarize. Blank cells are ignored.")], "number")],
     examples: [example("mode(@[:,Score])")],
-    evaluator: viewEvaluator((view, _ctx, call) => modeView(view, call.name)),
+    evaluator: collectionEvaluator((view, _ctx, call) => modeView(view, call.name)),
   },
   {
     name: "correl",
@@ -416,55 +416,55 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "statistical",
     summary: "Returns the Pearson correlation coefficient for two same-shape views.",
     signatures: [signature([
-      param("x", "view[d<=2]", "First numeric-compatible view."),
-      param("y", "view[d<=2]", "Second numeric-compatible view with the same shape as x."),
+      param("x", "array | view", "First numeric-compatible view."),
+      param("y", "array | view", "Second numeric-compatible view with the same shape as x."),
     ], "number")],
     examples: [example("correl(@[:,Spend], @[:,Revenue])")],
-    evaluator: twoViewEvaluator((left, right, call) => correlView(left, right, call.name)),
+    evaluator: twoCollectionEvaluator((left, right, call) => correlView(left, right, call.name)),
   },
   {
     name: "covariance",
     category: "statistical",
     summary: "Returns the sample covariance for two same-shape views.",
     signatures: [signature([
-      param("x", "view[d<=2]", "First numeric-compatible view."),
-      param("y", "view[d<=2]", "Second numeric-compatible view with the same shape as x."),
+      param("x", "array | view", "First numeric-compatible view."),
+      param("y", "array | view", "Second numeric-compatible view with the same shape as x."),
     ], "number")],
     examples: [example("covariance(@[:,Spend], @[:,Revenue])")],
-    evaluator: twoViewEvaluator((left, right, call) => covarianceView(left, right, true, call.name)),
+    evaluator: twoCollectionEvaluator((left, right, call) => covarianceView(left, right, true, call.name)),
   },
   {
     name: "covariancep",
     category: "statistical",
     summary: "Returns the population covariance for two same-shape views.",
     signatures: [signature([
-      param("x", "view[d<=2]", "First numeric-compatible view."),
-      param("y", "view[d<=2]", "Second numeric-compatible view with the same shape as x."),
+      param("x", "array | view", "First numeric-compatible view."),
+      param("y", "array | view", "Second numeric-compatible view with the same shape as x."),
     ], "number")],
     examples: [example("covariancep(@[:,Spend], @[:,Revenue])")],
-    evaluator: twoViewEvaluator((left, right, call) => covarianceView(left, right, false, call.name)),
+    evaluator: twoCollectionEvaluator((left, right, call) => covarianceView(left, right, false, call.name)),
   },
   {
     name: "slope",
     category: "statistical",
     summary: "Returns the linear-regression slope for known y values over known x values.",
     signatures: [signature([
-      param("y", "view[d<=2]", "Known y values."),
-      param("x", "view[d<=2]", "Known x values with the same shape as y."),
+      param("y", "array | view", "Known y values."),
+      param("x", "array | view", "Known x values with the same shape as y."),
     ], "number")],
     examples: [example("slope(@[:,Revenue], @[:,Spend])")],
-    evaluator: twoViewEvaluator((left, right, call) => slopeInterceptView(left, right, call.name)),
+    evaluator: twoCollectionEvaluator((left, right, call) => slopeInterceptView(left, right, call.name)),
   },
   {
     name: "intercept",
     category: "statistical",
     summary: "Returns the linear-regression intercept for known y values over known x values.",
     signatures: [signature([
-      param("y", "view[d<=2]", "Known y values."),
-      param("x", "view[d<=2]", "Known x values with the same shape as y."),
+      param("y", "array | view", "Known y values."),
+      param("x", "array | view", "Known x values with the same shape as y."),
     ], "number")],
     examples: [example("intercept(@[:,Revenue], @[:,Spend])")],
-    evaluator: twoViewEvaluator((left, right, call) => slopeInterceptView(left, right, call.name)),
+    evaluator: twoCollectionEvaluator((left, right, call) => slopeInterceptView(left, right, call.name)),
   },
   {
     name: "forecast",
@@ -472,8 +472,8 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Predicts y for x using a linear regression over known y and known x views.",
     signatures: [signature([
       param("x", "Scalar[number]", "Input x value to predict for."),
-      param("knownY", "view[d<=2]", "Known y values."),
-      param("knownX", "view[d<=2]", "Known x values with the same shape as knownY."),
+      param("knownY", "array | view", "Known y values."),
+      param("knownX", "array | view", "Known x values with the same shape as knownY."),
     ], "number")],
     examples: [example("forecast(100, @[:,Revenue], @[:,Spend])")],
     evaluator: (call, ctx) => {
@@ -481,11 +481,11 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
       if (arityError) return arityError;
       const x = ctx.evalScalarArg(call.args[0]);
       if (isError(x)) return x;
-      const knownY = expectViewArg(ctx, call.name, call.args[1]);
+      const knownY = expectCollectionArg(ctx, call.name, call.args[1]);
       if (isError(knownY as RuntimeValue)) return knownY as RuntimeValue;
-      const knownX = expectViewArg(ctx, call.name, call.args[2]);
+      const knownX = expectCollectionArg(ctx, call.name, call.args[2]);
       if (isError(knownX as RuntimeValue)) return knownX as RuntimeValue;
-      return forecastValue(x, knownY as RuntimeView, knownX as RuntimeView, call.name);
+      return forecastValue(x, knownY as RuntimeCollection, knownX as RuntimeCollection, call.name);
     },
   },
   {
@@ -509,31 +509,31 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "view",
     summary: "Returns the values whose corresponding mask entries are true.",
     signatures: [signature([
-      param("values", "view[d<=2]", "Values to filter in row-major order."),
-      param("mask", "view[d<=2]", "Boolean mask with the same shape as values."),
-    ], "view[d=1]")],
+      param("values", "array | view", "Values to filter in row-major order."),
+      param("mask", "array | view", "Boolean mask with the same shape as values."),
+    ], "array")],
     examples: [example("filter(@[:,Revenue], @[:,Region] == \"West\")")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 2);
       if (arityError) return arityError;
-      const values = expectViewArg(ctx, call.name, call.args[0]);
+      const values = expectCollectionArg(ctx, call.name, call.args[0]);
       if (isError(values as RuntimeValue)) return values as RuntimeValue;
-      const mask = expectViewArg(ctx, call.name, call.args[1]);
+      const mask = expectCollectionArg(ctx, call.name, call.args[1]);
       if (isError(mask as RuntimeValue)) return mask as RuntimeValue;
-      return filterView(values as RuntimeView, mask as RuntimeView, call.name);
+      return filterView(values as RuntimeCollection, mask as RuntimeCollection, call.name);
     },
   },
   {
     name: "index",
     category: "view",
-    summary: "Returns a scalar value from a view using zero-based indexes. Negative indexes count from the end.",
+    summary: "Returns a scalar value from an array or view using zero-based indexes. Negative indexes count from the end.",
     signatures: [
       signature([
-        param("x", "view[d<=1]", "Scalar-shaped or one-dimensional view to index in row-major order."),
+        param("x", "array | vector view", "Scalar-shaped or one-dimensional view to index in row-major order."),
         param("n", "Scalar[number]", "Zero-based index. Negative values count from the end."),
       ], "value"),
       signature([
-        param("x", "view[d<=2]", "View to index by row and column."),
+        param("x", "view", "View to index by row and column."),
         param("row", "Scalar[number]", "Zero-based row index. Negative values count from the end."),
         param("col", "Scalar[number]", "Zero-based column index. Negative values count from the end."),
       ], "value"),
@@ -542,47 +542,47 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     evaluator: (call, ctx) => {
       const arityError = assertArityRange(call.name, call.args.length, 2, 3);
       if (arityError) return arityError;
-      const view = expectViewArg(ctx, call.name, call.args[0]);
+      const view = expectCollectionArg(ctx, call.name, call.args[0]);
       if (isError(view as RuntimeValue)) return view as RuntimeValue;
       const indexes = call.args.slice(1).map((arg) => ctx.evalScalarArg(arg));
       const indexError = indexes.find((value) => isError(value));
       if (indexError) return indexError;
-      return viewIndexFunction(view as RuntimeView, indexes, call.name);
+      return viewIndexFunction(view as RuntimeCollection, indexes, call.name);
     },
   },
   {
     name: "shape",
     category: "view",
-    summary: "Returns the two-axis grid shape of a view as [rowCount, columnCount].",
-    signatures: [signature([param("x", "view[d<=2]", "View whose grid shape is returned.")], "view[d=1]")],
+    summary: "Returns [length] for an array or [rowCount, columnCount] for a view.",
+    signatures: [signature([param("x", "array | view", "Collection whose shape is returned.")], "array")],
     examples: [example("shape(@[:,Revenue])[0]", "row count"), example("shape(@[:,Revenue])[1]", "column count")],
-    evaluator: viewEvaluator((view) => shapeView(view)),
+    evaluator: collectionEvaluator((view) => shapeView(view)),
   },
   {
     name: "size",
     category: "view",
-    summary: "Returns the total number of positions in a view, equal to rowCount(x) * columnCount(x).",
-    signatures: [signature([param("x", "view[d<=2]", "View whose positions are counted.")], "number")],
+    summary: "Returns the number of elements in an array or positions in a view.",
+    signatures: [signature([param("x", "array | view", "Collection whose positions are counted.")], "number")],
     examples: [example("size(filter(@[:,Name], @[:,Score] > 90))")],
-    evaluator: viewEvaluator((view) => ({ kind: "number", value: view.rowCount * view.colCount })),
+    evaluator: collectionEvaluator((view) => ({ kind: "number", value: view.values.length })),
   },
   {
     name: "rowCount",
     aliases: ["rows"],
     category: "view",
     summary: "Returns the number of rows in a view. rows(x) is an alias.",
-    signatures: [signature([param("x", "view[d<=2]", "View whose rows are counted.")], "number")],
+    signatures: [signature([param("x", "view", "View whose rows are counted; arrays have no row axis.")], "number")],
     examples: [example("rowCount(@[:,Revenue])"), example("rows(@[:,Revenue])")],
-    evaluator: viewEvaluator((view) => ({ kind: "number", value: view.rowCount })),
+    evaluator: gridViewEvaluator((view) => ({ kind: "number", value: view.rowCount })),
   },
   {
     name: "columnCount",
     aliases: ["columns", "cols"],
     category: "view",
     summary: "Returns the number of columns in a view. columns(x) and cols(x) are aliases.",
-    signatures: [signature([param("x", "view[d<=2]", "View whose columns are counted.")], "number")],
+    signatures: [signature([param("x", "view", "View whose columns are counted; arrays have no column axis.")], "number")],
     examples: [example("columnCount(@[:,Revenue])"), example("cols(@[:,Revenue])")],
-    evaluator: viewEvaluator((view) => ({ kind: "number", value: view.colCount })),
+    evaluator: gridViewEvaluator((view) => ({ kind: "number", value: view.colCount })),
   },
   {
     name: "match",
@@ -590,7 +590,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns the zero-based row-major index of the first exact match in keys.",
     signatures: [signature([
       param("value", "value", "Value to find."),
-      param("keys", "view[d<=2]", "Values to search in row-major order."),
+      param("keys", "array | view", "Values to search in row-major order."),
     ], "number")],
     examples: [example("match(\"Beta\", @[:,Name])", "1")],
     evaluator: (call, ctx) => {
@@ -598,9 +598,9 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
       if (arityError) return arityError;
       const value = ctx.evalScalarArg(call.args[0]);
       if (isError(value)) return value;
-      const keys = expectViewArg(ctx, call.name, call.args[1]);
+      const keys = expectCollectionArg(ctx, call.name, call.args[1]);
       if (isError(keys as RuntimeValue)) return keys as RuntimeValue;
-      return matchView(value, keys as RuntimeView, call.name);
+      return matchView(value, keys as RuntimeCollection, call.name);
     },
   },
   {
@@ -609,8 +609,8 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns the value at values[match(key, keys)] for one-dimensional lookup tables.",
     signatures: [signature([
       param("key", "value", "Key to find."),
-      param("keys", "view[d<=1]", "Lookup keys searched with match(key, keys)."),
-      param("values", "view[d<=1]", "Values indexed by the matched zero-based position."),
+      param("keys", "array | vector view", "Lookup keys searched with match(key, keys)."),
+      param("values", "array | vector view", "Values indexed by the matched zero-based position."),
     ], "value")],
     examples: [example("lookup(\"Beta\", @[:,Name], @[:,Score])"), example("@[:,Score][match(\"Beta\", @[:,Name])]")],
     evaluator: (call, ctx) => {
@@ -618,11 +618,11 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
       if (arityError) return arityError;
       const key = ctx.evalScalarArg(call.args[0]);
       if (isError(key)) return key;
-      const keys = expectViewArg(ctx, call.name, call.args[1]);
+      const keys = expectCollectionArg(ctx, call.name, call.args[1]);
       if (isError(keys as RuntimeValue)) return keys as RuntimeValue;
-      const values = expectViewArg(ctx, call.name, call.args[2]);
+      const values = expectCollectionArg(ctx, call.name, call.args[2]);
       if (isError(values as RuntimeValue)) return values as RuntimeValue;
-      return lookupView(key, keys as RuntimeView, values as RuntimeView, call.name);
+      return lookupView(key, keys as RuntimeCollection, values as RuntimeCollection, call.name);
     },
   },
   {
@@ -635,9 +635,9 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
         param("count", "Scalar[number]", "Integer count. Positive takes from the start; negative takes from the end."),
       ], "text"),
       signature([
-        param("x", "view[d<=2]", "View to slice."),
+        param("x", "array | view", "View to slice."),
         param("count", "Scalar[number]", "Integer count. Positive takes from the start; negative takes from the end."),
-      ], "view[d<=2]"),
+      ], "array | view"),
     ],
     examples: [example("take(@[:,Name], 3)"), example("take(@[:,Name], -3)"), example("take(\"abcdef\", 3)", "\"abc\"")],
     evaluator: (call, ctx) => {
@@ -647,7 +647,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
       if (targetKind === "error") return target as RuntimeValue;
       const count = ctx.evalScalarArg(call.args[1]);
       if (isError(count)) return count;
-      return takeValue(target as RuntimeValue | RuntimeView, count, call.name);
+      return takeValue(target as RuntimeValue | RuntimeCollection, count, call.name);
     },
   },
   {
@@ -660,9 +660,9 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
         param("count", "Scalar[number]", "Integer count. Positive drops from the start; negative drops from the end."),
       ], "text"),
       signature([
-        param("x", "view[d<=2]", "View to slice."),
+        param("x", "array | view", "View to slice."),
         param("count", "Scalar[number]", "Integer count. Positive drops from the start; negative drops from the end."),
-      ], "view[d<=2]"),
+      ], "array | view"),
     ],
     examples: [example("drop(@[:,Name], 1)"), example("drop(@[:,Name], -1)"), example("drop(\"abcdef\", 3)", "\"def\"")],
     evaluator: (call, ctx) => {
@@ -672,7 +672,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
       if (targetKind === "error") return target as RuntimeValue;
       const count = ctx.evalScalarArg(call.args[1]);
       if (isError(count)) return count;
-      return dropValue(target as RuntimeValue | RuntimeView, count, call.name);
+      return dropValue(target as RuntimeValue | RuntimeCollection, count, call.name);
     },
   },
   {
@@ -681,7 +681,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "logical",
     summary: "Returns true when every evaluated boolean operand is true. Scalar operands are evaluated lazily left to right; all(x) is an alias for and(x).",
     signatures: [
-      signature([param("x", "view[d<=2]", "Boolean values that must all evaluate to true.")], "boolean"),
+      signature([param("x", "array | view", "Boolean values that must all evaluate to true.")], "boolean"),
       signature([param("a, b, ...", "Scalar[boolean]", "Boolean operands evaluated lazily from left to right.")], "boolean"),
     ],
     examples: [example("and(@[Flags,:])"), example("and(isNumber(x), number(x) > 0)"), example("all(@[Flags,:])")],
@@ -693,7 +693,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "logical",
     summary: "Returns true when at least one evaluated boolean operand is true. Scalar operands are evaluated lazily left to right; any(x) is an alias for or(x).",
     signatures: [
-      signature([param("x", "view[d<=2]", "Boolean values where at least one value must evaluate to true.")], "boolean"),
+      signature([param("x", "array | view", "Boolean values where at least one value must evaluate to true.")], "boolean"),
       signature([param("a, b, ...", "Scalar[boolean]", "Boolean operands evaluated lazily from left to right.")], "boolean"),
     ],
     examples: [example("or(@[Flags,:])"), example("or(isBlank(x), len(x) == 0)"), example("any(@[Flags,:])")],
@@ -726,7 +726,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns true for numbers and false for every other runtime value.",
     signatures: [
       signature([param("x", "value", "Value to inspect.")], "boolean"),
-      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to inspect element-wise.")], "array | view"),
     ],
     examples: [example("isNumber(@[:,Score])")],
     evaluator: typePredicateEvaluator(isNumberValue),
@@ -737,7 +737,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns true for dates, excluding datetimes, and false for every other runtime value.",
     signatures: [
       signature([param("x", "value", "Value to inspect.")], "boolean"),
-      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to inspect element-wise.")], "array | view"),
     ],
     examples: [example("isDate(2026-03-04)", "true")],
     evaluator: typePredicateEvaluator(isDateValue),
@@ -749,7 +749,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns true for text strings and false for every other runtime value.",
     signatures: [
       signature([param("x", "value", "Value to inspect.")], "boolean"),
-      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to inspect element-wise.")], "array | view"),
     ],
     examples: [example("isText(@[:,Code])")],
     evaluator: typePredicateEvaluator(isTextValue),
@@ -760,7 +760,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns true for booleans and false for every other runtime value.",
     signatures: [
       signature([param("x", "value", "Value to inspect.")], "boolean"),
-      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to inspect element-wise.")], "array | view"),
     ],
     examples: [example("isBoolean(@[:,Flag])")],
     evaluator: typePredicateEvaluator(isBooleanValue),
@@ -771,7 +771,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns true for blank values and false for every other runtime value.",
     signatures: [
       signature([param("x", "value", "Value to inspect.")], "boolean"),
-      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to inspect element-wise.")], "array | view"),
     ],
     examples: [example("isBlank(@[:,Optional])")],
     evaluator: typePredicateEvaluator(isBlankValue),
@@ -782,7 +782,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns true for null values and false for every other runtime value.",
     signatures: [
       signature([param("x", "value", "Value to inspect.")], "boolean"),
-      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to inspect element-wise.")], "array | view"),
     ],
     examples: [example("isNull(@[:,Value])")],
     evaluator: typePredicateEvaluator(isNullValue),
@@ -793,7 +793,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns true for error values and false for every other runtime value.",
     signatures: [
       signature([param("x", "value", "Value to inspect.")], "boolean"),
-      signature([param("x", "view[d<=2]", "Values to inspect element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to inspect element-wise.")], "array | view"),
     ],
     examples: [example("isError(@[:,Value])")],
     evaluator: typePredicateEvaluator(isErrorValue),
@@ -804,7 +804,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Explicitly converts a value to a number.",
     signatures: [
       signature([param("x", "value", "Value to convert.")], "number"),
-      signature([param("x", "view[d<=2]", "Values to convert element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to convert element-wise.")], "array | view"),
     ],
     examples: [example("number(\"12.5\")"), example("average(number(@[:,ImportedAmount]))")],
     evaluator: typeConversionEvaluator(numberValue),
@@ -815,7 +815,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Explicitly converts a value to text.",
     signatures: [
       signature([param("x", "value", "Value to convert.")], "string"),
-      signature([param("x", "view[d<=2]", "Values to convert element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to convert element-wise.")], "array | view"),
     ],
     examples: [example("\"SKU-\" + text(@[:,Code])")],
     evaluator: typeConversionEvaluator(textValue),
@@ -837,7 +837,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Explicitly converts a value to a boolean.",
     signatures: [
       signature([param("x", "value", "Value to convert.")], "boolean"),
-      signature([param("x", "view[d<=2]", "Values to convert element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Values to convert element-wise.")], "array | view"),
     ],
     examples: [example("boolean(\"true\")")],
     evaluator: typeConversionEvaluator(booleanValue),
@@ -848,7 +848,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns the number of characters in text. For views, applies element-wise to text values; it does not return view cardinality.",
     signatures: [
       signature([param("x", "Scalar[string]", "Text whose character count should be returned.")], "number"),
-      signature([param("x", "view[d<=2]", "Text values whose character counts should be returned element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Text values whose character counts should be returned element-wise.")], "array | view"),
     ],
     examples: [example("len(\"hello\")", "5"), example("len(@[:,Name])")],
     evaluator: textUnaryEvaluator(lenText),
@@ -859,7 +859,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Converts text to lowercase. For views, applies element-wise to text values.",
     signatures: [
       signature([param("x", "Scalar[string]", "Text to convert to lowercase.")], "string"),
-      signature([param("x", "view[d<=2]", "Text values to convert element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Text values to convert element-wise.")], "array | view"),
     ],
     examples: [example("lower(\"ABC\")", "\"abc\""), example("lower(@[:,Name])")],
     evaluator: textUnaryEvaluator(lowerText),
@@ -870,7 +870,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Converts text to uppercase. For views, applies element-wise to text values.",
     signatures: [
       signature([param("x", "Scalar[string]", "Text to convert to uppercase.")], "string"),
-      signature([param("x", "view[d<=2]", "Text values to convert element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Text values to convert element-wise.")], "array | view"),
     ],
     examples: [example("upper(\"abc\")", "\"ABC\""), example("upper(@[:,Code])")],
     evaluator: textUnaryEvaluator(upperText),
@@ -881,7 +881,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Removes leading and trailing whitespace from text. For views, applies element-wise to text values.",
     signatures: [
       signature([param("x", "Scalar[string]", "Text to trim.")], "string"),
-      signature([param("x", "view[d<=2]", "Text values to trim element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Text values to trim element-wise.")], "array | view"),
     ],
     examples: [example("trim(\"  abc  \")", "\"abc\""), example("trim(@[:,Name])")],
     evaluator: textUnaryEvaluator(trimText),
@@ -891,9 +891,9 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "text",
     summary: "Returns true when text contains the case-sensitive search text. View arguments broadcast scalars and require exact shape matches.",
     signatures: [signature([
-      param("text", "Scalar[string] | view[d<=2]", "Text to search."),
-      param("search", "Scalar[string] | view[d<=2]", "Case-sensitive search text."),
-    ], "boolean | view[d<=2]")],
+      param("text", "Scalar[string] | array | view", "Text to search."),
+      param("search", "Scalar[string] | array | view", "Case-sensitive search text."),
+    ], "boolean | array | view")],
     examples: [example("contains(\"abc\", \"b\")", "true"), example("contains(lower(@[:,Name]), \"smith\")")],
     evaluator: textBinaryEvaluator(containsText),
   },
@@ -902,9 +902,9 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "text",
     summary: "Returns true when text starts with the case-sensitive prefix. View arguments broadcast scalars and require exact shape matches.",
     signatures: [signature([
-      param("text", "Scalar[string] | view[d<=2]", "Text to inspect."),
-      param("prefix", "Scalar[string] | view[d<=2]", "Case-sensitive prefix."),
-    ], "boolean | view[d<=2]")],
+      param("text", "Scalar[string] | array | view", "Text to inspect."),
+      param("prefix", "Scalar[string] | array | view", "Case-sensitive prefix."),
+    ], "boolean | array | view")],
     examples: [example("startsWith(\"A-001\", \"A-\")", "true"), example("startsWith(@[:,Code], \"A-\")")],
     evaluator: textBinaryEvaluator(startsWithText),
   },
@@ -913,9 +913,9 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "text",
     summary: "Returns true when text ends with the case-sensitive suffix. View arguments broadcast scalars and require exact shape matches.",
     signatures: [signature([
-      param("text", "Scalar[string] | view[d<=2]", "Text to inspect."),
-      param("suffix", "Scalar[string] | view[d<=2]", "Case-sensitive suffix."),
-    ], "boolean | view[d<=2]")],
+      param("text", "Scalar[string] | array | view", "Text to inspect."),
+      param("suffix", "Scalar[string] | array | view", "Case-sensitive suffix."),
+    ], "boolean | array | view")],
     examples: [example("endsWith(\"report.csv\", \".csv\")", "true"), example("endsWith(@[:,File], \".csv\")")],
     evaluator: textBinaryEvaluator(endsWithText),
   },
@@ -924,10 +924,10 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "text",
     summary: "Replaces all literal case-sensitive search text with replacement text. View arguments broadcast scalars and require exact shape matches.",
     signatures: [signature([
-      param("text", "Scalar[string] | view[d<=2]", "Text to edit."),
-      param("search", "Scalar[string] | view[d<=2]", "Non-empty literal text to replace."),
-      param("replacement", "Scalar[string] | view[d<=2]", "Replacement text."),
-    ], "string | view[d<=2]")],
+      param("text", "Scalar[string] | array | view", "Text to edit."),
+      param("search", "Scalar[string] | array | view", "Non-empty literal text to replace."),
+      param("replacement", "Scalar[string] | array | view", "Replacement text."),
+    ], "string | array | view")],
     examples: [example("replace(\"a-b-c\", \"-\", \":\")", "\"a:b:c\""), example("replace(@[:,Code], \" \", \"-\")")],
     evaluator: textTernaryEvaluator(replaceText),
   },
@@ -937,14 +937,14 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns a zero-based, end-exclusive text slice. Negative indexes count from the end. For views, applies element-wise to text values.",
     signatures: [
       signature([
-        param("text", "Scalar[string] | view[d<=2]", "Text to slice."),
+        param("text", "Scalar[string] | array | view", "Text to slice."),
         param("start", "Scalar[number]", "Zero-based start index. Negative values count from the end."),
-      ], "string | view[d<=2]"),
+      ], "string | array | view"),
       signature([
-        param("text", "Scalar[string] | view[d<=2]", "Text to slice."),
+        param("text", "Scalar[string] | array | view", "Text to slice."),
         param("start", "Scalar[number]", "Zero-based start index. Negative values count from the end."),
         param("end", "Scalar[number]", "Exclusive end index. Negative values count from the end."),
-      ], "string | view[d<=2]"),
+      ], "string | array | view"),
     ],
     examples: [example("slice(\"abcdef\", 1, 4)", "\"bcd\""), example("slice(@[:,Code], 0, 3)")],
     evaluator: (call, ctx) => {
@@ -956,10 +956,10 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "join",
     category: "text",
-    summary: "Flattens a text view in row-major order and joins the values with a text separator.",
+    summary: "Joins text values from an array or view in their order (row-major for views).",
     signatures: [signature([
       param("separator", "Scalar[string]", "Text inserted between joined values."),
-      param("x", "view[d<=2]", "Text values to join in row-major order."),
+      param("x", "array | view", "Text values to join in row-major order."),
     ], "string")],
     examples: [example("join(\", \", @[:,Tag])"), example("join(\"-\", text(@[:,Id]))")],
     evaluator: (call, ctx) => {
@@ -967,9 +967,9 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
       if (arityError) return arityError;
       const separator = ctx.evalScalarArg(call.args[0]);
       if (isError(separator)) return separator;
-      const view = expectViewArg(ctx, call.name, call.args[1]);
+      const view = expectCollectionArg(ctx, call.name, call.args[1]);
       if (isError(view as RuntimeValue)) return view as RuntimeValue;
-      return joinTextView(separator, view as RuntimeView, call.name);
+      return joinTextView(separator, view as RuntimeCollection, call.name);
     },
   },
   {
@@ -1355,31 +1355,31 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "npv",
     category: "financial",
-    summary: "Discounts a one-dimensional view of future cash flows by a per-period rate.",
+    summary: "Discounts an array or vector view of future cash flows by a per-period rate.",
     signatures: [signature([
       param("rate", "Scalar[number]", "Per-period discount rate."),
-      param("values", "view[d<=1]", "Future cash flows, including a single value. The first value is discounted by one period."),
+      param("values", "array | vector view", "Future cash flows, including a single value. The first value is discounted by one period."),
     ], "number")],
     examples: [example("npv(0.1, @[:,Cashflow])")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 2);
       if (arityError) return arityError;
-      const values = expectViewArg(ctx, call.name, call.args[1]);
-      if (values.kind !== "view") return values;
+      const values = expectCollectionArg(ctx, call.name, call.args[1]);
+      if (values.kind !== "view" && values.kind !== "array") return values;
       return npvView(expectNumberArg(ctx, call.name, call.args[0]), values, call.name);
     },
   },
   {
     name: "irr",
     category: "financial",
-    summary: "Solves the internal rate of return for a one-dimensional view of periodic cash flows.",
-    signatures: [signature([param("values", "view[d<=1]", "Periodic cash flows whose first value is at period 0.")], "number")],
+    summary: "Solves the internal rate of return for an array or vector view of periodic cash flows.",
+    signatures: [signature([param("values", "array | vector view", "Periodic cash flows whose first value is at period 0.")], "number")],
     examples: [example("irr(@[:,Cashflow])")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 1);
       if (arityError) return arityError;
-      const values = expectViewArg(ctx, call.name, call.args[0]);
-      if (values.kind !== "view") return values;
+      const values = expectCollectionArg(ctx, call.name, call.args[0]);
+      if (values.kind !== "view" && values.kind !== "array") return values;
       return irrView(values, call.name);
     },
   },
@@ -1388,7 +1388,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "financial",
     summary: "Returns the modified internal rate of return using separate finance and reinvestment rates.",
     signatures: [signature([
-      param("values", "view[d<=1]", "Periodic cash flows whose first value is at period 0."),
+      param("values", "array | vector view", "Periodic cash flows whose first value is at period 0."),
       param("financeRate", "Scalar[number]", "Rate paid on negative cash flows."),
       param("reinvestRate", "Scalar[number]", "Rate earned by reinvested positive cash flows."),
     ], "number")],
@@ -1396,8 +1396,8 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 3);
       if (arityError) return arityError;
-      const values = expectViewArg(ctx, call.name, call.args[0]);
-      if (values.kind !== "view") return values;
+      const values = expectCollectionArg(ctx, call.name, call.args[0]);
+      if (values.kind !== "view" && values.kind !== "array") return values;
       return mirrView(values, expectNumberArg(ctx, call.name, call.args[1]), expectNumberArg(ctx, call.name, call.args[2]), call.name);
     },
   },
@@ -1407,17 +1407,17 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Discounts cash flows using actual day offsets from the first supplied date and a 365-day year.",
     signatures: [signature([
       param("rate", "Scalar[number]", "Annual discount rate."),
-      param("values", "view[d<=1]", "Cash flows, including a single value."),
-      param("dates", "view[d<=1]", "Date values matching the cash-flow shape."),
+      param("values", "array | vector view", "Cash flows, including a single value."),
+      param("dates", "array | vector view", "Date values matching the cash-flow shape."),
     ], "number")],
     examples: [example("xnpv(0.1, @[:,Cashflow], @[:,Date])")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 3);
       if (arityError) return arityError;
-      const values = expectViewArg(ctx, call.name, call.args[1]);
-      if (values.kind !== "view") return values;
-      const dates = expectViewArg(ctx, call.name, call.args[2]);
-      if (dates.kind !== "view") return dates;
+      const values = expectCollectionArg(ctx, call.name, call.args[1]);
+      if (values.kind !== "view" && values.kind !== "array") return values;
+      const dates = expectCollectionArg(ctx, call.name, call.args[2]);
+      if (dates.kind !== "view" && dates.kind !== "array") return dates;
       return xnpvView(expectNumberArg(ctx, call.name, call.args[0]), values, dates, call.name);
     },
   },
@@ -1426,17 +1426,17 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "financial",
     summary: "Solves the annual internal rate of return for dated cash flows using the deterministic RFC-0031 root solver.",
     signatures: [signature([
-      param("values", "view[d<=1]", "Cash flows, including a single value."),
-      param("dates", "view[d<=1]", "Date values matching the cash-flow shape."),
+      param("values", "array | vector view", "Cash flows, including a single value."),
+      param("dates", "array | vector view", "Date values matching the cash-flow shape."),
     ], "number")],
     examples: [example("xirr(@[:,Cashflow], @[:,Date])")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 2);
       if (arityError) return arityError;
-      const values = expectViewArg(ctx, call.name, call.args[0]);
-      if (values.kind !== "view") return values;
-      const dates = expectViewArg(ctx, call.name, call.args[1]);
-      if (dates.kind !== "view") return dates;
+      const values = expectCollectionArg(ctx, call.name, call.args[0]);
+      if (values.kind !== "view" && values.kind !== "array") return values;
+      const dates = expectCollectionArg(ctx, call.name, call.args[1]);
+      if (dates.kind !== "view" && dates.kind !== "array") return dates;
       return xirrView(values, dates, call.name);
     },
   },
@@ -1662,18 +1662,18 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
   {
     name: "gcd",
     category: "numeric",
-    summary: "Returns the greatest common divisor of integer values in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Integer values to scan for the greatest common divisor.")], "number")],
+    summary: "Returns the greatest common divisor of integer values in an array or view.",
+    signatures: [signature([param("x", "array | view", "Integer values to scan for the greatest common divisor.")], "number")],
     examples: [example("gcd(@[Values,:])")],
-    evaluator: viewEvaluator((view) => integerAggregateView(view, "gcd")),
+    evaluator: collectionEvaluator((view) => integerAggregateView(view, "gcd")),
   },
   {
     name: "lcm",
     category: "numeric",
-    summary: "Returns the least common multiple of integer values in a view.",
-    signatures: [signature([param("x", "view[d<=2]", "Integer values to scan for the least common multiple.")], "number")],
+    summary: "Returns the least common multiple of integer values in an array or view.",
+    signatures: [signature([param("x", "array | view", "Integer values to scan for the least common multiple.")], "number")],
     examples: [example("lcm(@[Values,:])")],
-    evaluator: viewEvaluator((view) => integerAggregateView(view, "lcm")),
+    evaluator: collectionEvaluator((view) => integerAggregateView(view, "lcm")),
   },
   {
     name: "not",
@@ -1681,7 +1681,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     summary: "Returns the logical negation of a boolean value or boolean view.",
     signatures: [
       signature([param("x", "Scalar[boolean]", "Boolean value to invert.")], "boolean"),
-      signature([param("x", "view[d<=2]", "Boolean values to invert element-wise.")], "view[d<=2]"),
+      signature([param("x", "array | view", "Boolean values to invert element-wise.")], "array | view"),
     ],
     examples: [example("not(true)", "false"), example("not(isNumber(@[:,Score]))")],
     evaluator: (call, ctx) => {
@@ -1689,7 +1689,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
       if (arityError) return arityError;
       const [kind, value] = ctx.evalArgValue(call.args[0]);
       if (kind === "error") return value as RuntimeValue;
-      if (kind === "view") return notView(value as RuntimeView, call.name);
+      if (kind === "collection") return notView(value as RuntimeCollection, call.name);
       return notValue(value as RuntimeValue, call.name);
     },
   },
@@ -1699,25 +1699,25 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
     category: "vector",
     summary: "Multiplies two equal-length numeric vectors pairwise and sums the products.",
     signatures: [signature([
-      param("x", "view[d=1]", "First numeric vector. It must have the same length as y."),
-      param("y", "view[d=1]", "Second numeric vector. It must have the same length as x."),
+      param("x", "array | vector view", "First numeric vector. It must have the same length as y."),
+      param("y", "array | vector view", "Second numeric vector. It must have the same length as x."),
     ], "number")],
     examples: [example("dotProduct(@[Price,:], @[Qty,:])"), example("sumproduct(@[Price,:], @[Qty,:])")],
     evaluator: (call, ctx) => {
       const arityError = assertArity(call.name, call.args.length, 2);
       if (arityError) return arityError;
-      const left = expectViewArg(ctx, call.name, call.args[0]);
+      const left = expectCollectionArg(ctx, call.name, call.args[0]);
       if (isError(left as RuntimeValue)) return left as RuntimeValue;
-      const right = expectViewArg(ctx, call.name, call.args[1]);
+      const right = expectCollectionArg(ctx, call.name, call.args[1]);
       if (isError(right as RuntimeValue)) return right as RuntimeValue;
-      return dotProduct(left as RuntimeView, right as RuntimeView);
+      return dotProduct(left as RuntimeCollection, right as RuntimeCollection);
     },
   },
 ];
 
 const functionRegistry = buildFunctionRegistry(standardFunctionDefinitions);
 
-export function evalFunctionCall(call: FunctionCall, ctx: FunctionEvalContext): RuntimeValue | RuntimeView {
+export function evalFunctionCall(call: FunctionCall, ctx: FunctionEvalContext): RuntimeValue | RuntimeCollection {
   const definition = functionRegistry.get(normalizeFunctionName(call.name));
   if (!definition) {
     return makeInternalError("unknown_function", { function: call.name });
@@ -1780,32 +1780,37 @@ function example(expression: string, result?: string): FunctionExample {
   return result === undefined ? { expression } : { expression, result };
 }
 
-function viewEvaluator(evaluate: (view: RuntimeView, ctx: FunctionEvalContext, call: FunctionCall) => RuntimeValue | RuntimeView): FunctionEvaluator {
+function collectionEvaluator(evaluate: (view: RuntimeCollection, ctx: FunctionEvalContext, call: FunctionCall) => RuntimeValue | RuntimeCollection): FunctionEvaluator {
   return (call, ctx) => {
     const arityError = assertArity(call.name, call.args.length, 1);
     if (arityError) return arityError;
-    const view = expectViewArg(ctx, call.name, call.args[0]);
+    const view = expectCollectionArg(ctx, call.name, call.args[0]);
     if (isError(view as RuntimeValue)) return view as RuntimeValue;
-    return evaluate(view as RuntimeView, ctx, call);
+    return evaluate(view as RuntimeCollection, ctx, call);
   };
 }
 
-function shapeView(view: RuntimeView): RuntimeView {
-  return makeRuntimeView(1, 1, 2, [
-    { kind: "number", value: view.rowCount },
-    { kind: "number", value: view.colCount },
-  ]);
+function gridViewEvaluator(evaluate: (view: RuntimeView, ctx: FunctionEvalContext, call: FunctionCall) => RuntimeValue): FunctionEvaluator {
+  return collectionEvaluator((value, ctx, call) => value.kind === "view"
+    ? evaluate(value, ctx, call)
+    : makeInternalError("invalid_function_call", { function: call.name, argumentKind: "array", reason: "grid_view_required" }));
 }
 
-function twoViewEvaluator(evaluate: (left: RuntimeView, right: RuntimeView, call: FunctionCall, ctx: FunctionEvalContext) => RuntimeValue): FunctionEvaluator {
+function shapeView(view: RuntimeCollection): RuntimeCollection {
+  return makeRuntimeArray(view.kind === "array"
+    ? [{ kind: "number", value: view.values.length }]
+    : [{ kind: "number", value: view.rowCount }, { kind: "number", value: view.colCount }]);
+}
+
+function twoCollectionEvaluator(evaluate: (left: RuntimeCollection, right: RuntimeCollection, call: FunctionCall, ctx: FunctionEvalContext) => RuntimeValue): FunctionEvaluator {
   return (call, ctx) => {
     const arityError = assertArity(call.name, call.args.length, 2);
     if (arityError) return arityError;
-    const left = expectViewArg(ctx, call.name, call.args[0]);
+    const left = expectCollectionArg(ctx, call.name, call.args[0]);
     if (isError(left as RuntimeValue)) return left as RuntimeValue;
-    const right = expectViewArg(ctx, call.name, call.args[1]);
+    const right = expectCollectionArg(ctx, call.name, call.args[1]);
     if (isError(right as RuntimeValue)) return right as RuntimeValue;
-    return evaluate(left as RuntimeView, right as RuntimeView, call, ctx);
+    return evaluate(left as RuntimeCollection, right as RuntimeCollection, call, ctx);
   };
 }
 
@@ -1834,7 +1839,7 @@ function lazyLogicalEvaluator(op: "and" | "or"): FunctionEvaluator {
     if (call.args.length === 1) {
       const [kind, value] = ctx.evalArgValue(call.args[0]);
       if (kind === "error") return value as RuntimeValue;
-      if (kind === "view") return booleanAggregateView(value as RuntimeView, op);
+      if (kind === "collection") return booleanAggregateView(value as RuntimeCollection, op);
       return requireBooleanScalar(value as RuntimeValue, call.name);
     }
 

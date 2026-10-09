@@ -3,6 +3,10 @@
 - Status: Draft
 - Project: Ordinate
 
+> RFC-0052 supersedes the `view[d]` notation in these function contracts.
+> Arrays are one-dimensional; views retain two explicit axes. Functions that
+> consume vectors may accept either where their current runtime contract does.
+
 ## Summary
 
 This RFC defines formula functions for locating values and expressing common selections:

@@ -9,13 +9,18 @@ Text literals use double quotes. Function names are case-insensitive; available
 names and signatures come from help functions / help function <name>.
 
 References: B2; @[Revenue,_]; @[:,Q1]; see help references.
-Array literals: [1, 2, 3] and [[1, 2], [3, 4]].
-Views may be intermediate values, but a cell's final result must be scalar.
-For example, sum([1, 2, 3]) returns 6; [1, 2, 3] alone is not a cell result.
+Array literals: [1, 2, 3] is one-dimensional; [[1, 2, 3]] is a
+two-dimensional 1-by-3 view. Neither spills into cells. A cell's final result
+must be scalar: sum([1, 2, 3]) and sum([[1, 2, 3]]) return 6, while [1] alone
+is not a cell result. shape(array) returns [length]; shape(view) returns
+[rows, columns]. rowCount and columnCount require a view.
 filter(values, mask) uses a boolean mask, not a lambda or Excel criteria string.
-Two views must have identical shapes for comparison; a single-cell reference
-is still a view. To compare a column with a scalar filter key, use
-@[:,Client] == index(@[_,Client], 0), not @[:,Client] == @[_,Client].
+Binary arithmetic and comparisons align collection axes from the right. An
+Array of length N aligns with the columns of an M-by-N View. Axis lengths must
+match or be 1, and at least one operand must already have the result shape;
+outer-product expansion is not supported. A single-cell reference is a 1-by-1
+View and can compare directly with a column: @[:,Client] == @[_,Client].
+Paired inputs to filter(values, mask) still require the same kind and shape.
 Datetime subtraction produces an elapsed duration, including across midnight:
 @[_,End] - @[_,Start]. duration takes components, not total seconds;
 see help function duration for parameter limits.
@@ -60,6 +65,6 @@ assumptions. Check evaluate too, and test changed inputs for dynamic models.
 # Sessions
 | Session || Client | Start | End | Hours | Client hours | Elapsed |
 | --- || --- | --- | --- | --- | --- | --- |
-| First || Atlas | 2027-02-15T23:00:00Z | 2027-02-16T01:30:00Z | 2.5 | = sum(filter(@[:,Hours], @[:,Client] == index(@[_,Client], 0))) | = @[_,End] - @[_,Start] |
-| Second || Beacon | 2027-02-16T09:00:00Z | 2027-02-16T10:00:00Z | 1 | = sum(filter(@[:,Hours], @[:,Client] == index(@[_,Client], 0))) | = @[_,End] - @[_,Start] |
+| First || Atlas | 2027-02-15T23:00:00Z | 2027-02-16T01:30:00Z | 2.5 | = sum(filter(@[:,Hours], @[:,Client] == @[_,Client])) | = @[_,End] - @[_,Start] |
+| Second || Beacon | 2027-02-16T09:00:00Z | 2027-02-16T10:00:00Z | 1 | = sum(filter(@[:,Hours], @[:,Client] == @[_,Client])) | = @[_,End] - @[_,Start] |
 ```

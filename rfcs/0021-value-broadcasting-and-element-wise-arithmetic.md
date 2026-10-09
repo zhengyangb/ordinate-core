@@ -3,6 +3,9 @@
 - Status: Draft
 - Project: Ordinate
 
+> RFC-0053 supersedes this RFC's exact-shape binary-operator rule with
+> anchored broadcasting across scalar, Array, and View values.
+
 ## Summary
 
 This RFC extends Ordinate view-valued formula expressions with element-wise arithmetic broadcasting.

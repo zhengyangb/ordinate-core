@@ -14,6 +14,8 @@ import { matchCalendarSerialConversion } from "./calendarConversionPattern";
 type Domain = "number" | "text" | "boolean" | "unknown";
 interface Term {
   text: string; domain: Domain; precedence: number; rows: number; columns: number;
+  /** Native semantic rank; Excel's rows/columns below encode its physical layout. */
+  nativeRank?: 1 | 2;
   view: boolean; areas?: string[];
   selection?: ExcelSelection;
   // & already performs the conversion expressed by text(x).
@@ -40,7 +42,8 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
   let arrayFormula = false;
   const fail = (message: string): never => { throw new ExcelFailure("unsupported_formula", message, at); };
   const scalarOnly = (term: Term): Term => {
-    if (term.dynamic || term.rows !== 1 || term.columns !== 1) fail("This formula requires one value, not multiple cells.");
+    if (term.nativeRank === 1 || term.dynamic || term.rows !== 1 || term.columns !== 1)
+      fail("This formula requires one value, not an array.");
     return term;
   };
   const arity = (args: Term[], min: number, max = min) => {
@@ -53,6 +56,7 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
   };
   const indexView = (value: Term, indexes: Term[]): Term => {
     if (!value.view) return fail("INDEX requires a view.");
+    if (value.nativeRank === 1 && indexes.length !== 1) return fail("A one-dimensional array has one index axis.");
     if (indexes.length === 1 && value.rows > 1 && value.columns > 1) return fail("A two-dimensional view needs two indices.");
     const position = (index: Term, row: boolean) => {
       scalarOnly(index);
@@ -163,7 +167,7 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
       const temporal = literal ? temporalProjection(literal)
         : kind && ["date", "time", "datetime", "duration"].includes(kind) && declared!.every(result => result === kind)
           ? {kind:kind as TemporalProjection["kind"]} : undefined;
-      return { ...selected, selection: selected, view: true, domain: "unknown", precedence: 100, temporal };
+      return { ...selected, selection: selected, view: true, nativeRank: 2, domain: "unknown", precedence: 100, temporal };
     }
     if (node.kind === "array") {
       const array = node.value as ArrayExpr;
@@ -174,7 +178,7 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
       if (!constants && rows.flat().length > 254) return fail("Temporary array exceeds Excel CHOOSE's argument limit.");
       const text = constants ? "{" + rows.map(row => row.map(item => item.text).join(",")).join(";") + "}"
         : excelChooseArray(rows.map(row => row.map(item => item.text)));
-      return { ...scalar(text), rows: rows.length, columns: rows[0].length, view: true };
+      return { ...scalar(text), rows: rows.length, columns: rows[0].length, view: true, nativeRank: array.depth };
     }
     if (node.kind === "index") {
       const index = node.value as IndexExpr;
@@ -202,7 +206,7 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
         const selected = sliceReference(target.selection, index.axes.map(axis => axis.kind === "scalar"
           ? { kind: "scalar", value: bound(axis.value) }
           : { kind: "slice", start: axis.start === null ? null : bound(axis.start), end: axis.end === null ? null : bound(axis.end) }), at);
-        return { ...selected, selection: selected, domain: "unknown", precedence: 100 };
+        return { ...selected, selection: selected, nativeRank: 2, domain: "unknown", precedence: 100 };
       }
       return indexView(target, index.axes.map(axis => {
         if (axis.kind !== "scalar") throw new Error("Expected a scalar index axis.");
@@ -216,7 +220,8 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
     }
     if (node.kind === "binary") {
       const a = child(node.left!), b = child(node.right!), sourceOp = String(node.value);
-      if (a.view && b.view && (a.rows !== b.rows || a.columns !== b.columns || a.dynamic || b.dynamic)) return fail("View operands must have matching shapes.");
+      if (a.view && b.view && (a.nativeRank !== b.nativeRank || a.rows !== b.rows || a.columns !== b.columns || a.dynamic || b.dynamic))
+        return fail("Array and view operands must have matching kinds and shapes.");
       const op = sourceOp === "+" && (a.domain === "text" || b.domain === "text") ? "&"
         : ({ "**": "^", "==": "=", "!=": "<>" }[sourceOp] ?? sourceOp);
       const precedence = ["=", "<>", "<", ">", "<=", ">="].includes(op) ? 10 : op === "&" ? 20
@@ -235,7 +240,7 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
       const rows = Math.max(a.rows, b.rows), columns = Math.max(a.columns, b.columns);
       if (rows > 1 || columns > 1) arrayFormula = true;
       return { ...scalar(text, op === "&" ? "text" : precedence === 10 ? "boolean" : "number", precedence),
-        rows, columns, view: a.view || b.view, dynamic: a.dynamic || b.dynamic, temporal };
+        rows, columns, view: a.view || b.view, nativeRank: a.nativeRank ?? b.nativeRank, dynamic: a.dynamic || b.dynamic, temporal };
     }
     if (node.kind !== "call") return fail("Unsupported expression '" + node.kind + "'.");
     const source = node.value as FunctionCall, name = getStandardFunctionMetadata(source.name)?.name;
@@ -292,8 +297,14 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
       case "shape": {
         arity(args, 1);
         if (!x.view) return fail("Shape functions require a view.");
+        if (x.nativeRank === 1) {
+          if (name === "rowCount" || name === "columnCount") return fail(name + " requires a two-dimensional view, not an array.");
+          const length = extent(x, false);
+          if (name === "shape") return { ...scalar(length, "number"), view: true, nativeRank: 1 };
+          return scalar(length, "number");
+        }
         const rows = extent(x, true), cols = extent(x, false);
-        if (name === "shape") return { ...scalar("CHOOSE({1,2}," + rows + "," + cols + ")", "number"), view: true, columns: 2 };
+        if (name === "shape") return { ...scalar("CHOOSE({1,2}," + rows + "," + cols + ")", "number"), view: true, nativeRank: 1, columns: 2 };
         return scalar(name === "size" ? rows + "*" + cols : name === "rowCount" ? rows : cols, "number", name === "size" ? 40 : 100);
       }
       case "signature": {
@@ -345,7 +356,7 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
         if (x.rows !== args[1].rows || x.columns !== args[1].columns || x.dynamic || args[1].dynamic) return fail("filter requires equally shaped vectors.");
         const filtered = call("_xlfn._xlws.FILTER", args.map(arg => arg.text));
         // Native filter flattens into a row vector, even for a column input.
-        return { ...scalar(x.rows === 1 ? filtered : call("TRANSPOSE", [filtered])), view: true, dynamic: true,
+        return { ...scalar(x.rows === 1 ? filtered : call("TRANSPOSE", [filtered])), view: true, nativeRank: 1, dynamic: true,
           columns: Math.max(x.rows, x.columns) };
       }
       case "selection": {
@@ -362,7 +373,7 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
         const horizontal = x.rows === 1, size = horizontal ? x.columns : x.rows;
         const count = args[1].domain === "number" ? Number(args[1].text) : NaN;
         const length = Number.isInteger(count) ? name === "take" ? Math.min(size, Math.abs(count)) : Math.max(0, size - Math.abs(count)) : undefined;
-        return { ...scalar(call(`_xlfn.${name.toUpperCase()}`, [x.text, ...(horizontal ? [""] : []), args[1].text])), view: true,
+        return { ...scalar(call(`_xlfn.${name.toUpperCase()}`, [x.text, ...(horizontal ? [""] : []), args[1].text])), view: true, nativeRank: x.nativeRank,
           rows: horizontal ? 1 : length ?? 1, columns: horizontal ? length ?? 1 : x.columns, dynamic: x.dynamic || length === undefined };
       }
       case "predicate":
@@ -371,7 +382,8 @@ export function exportFormula(expression: ExprNode, document: DocumentState, she
         return { ...x, text: call(predicates[name], [x.text]), domain: "boolean", precedence: 100, areas: undefined, concatenand: undefined, selection: undefined };
       case "conditional":
         arity(args, 3); scalarOnly(x);
-        if (args[1].rows !== args[2].rows || args[1].columns !== args[2].columns) return fail("Conditional branches with different shapes are unsupported.");
+        if (args[1].nativeRank !== args[2].nativeRank || args[1].rows !== args[2].rows || args[1].columns !== args[2].columns)
+          return fail("Conditional branches with different kinds or shapes are unsupported.");
         return { ...args[1], text: call("IF", args.map(arg => arg.text)), precedence: 100, areas: undefined, selection: undefined,
           concatenand: undefined, dynamic: args[1].dynamic || args[2].dynamic, view: args[1].view || args[2].view,
           domain: args[1].domain === args[2].domain ? args[1].domain : "unknown",

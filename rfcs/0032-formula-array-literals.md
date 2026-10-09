@@ -3,6 +3,13 @@
 - Status: Draft
 - Project: Ordinate
 
+> RFC-0053 supersedes this RFC's exact-shape binary-operator rule. Array
+> literal syntax and shape validation remain unchanged.
+
+> RFC-0052 supersedes this RFC's runtime representation and scalar-coercion
+> rules. `[a, b]` is a one-dimensional array; `[[a, b]]` is a two-dimensional
+> view. The syntax, rectangular validation, and no-spill rule remain in force.
+
 ## Summary
 
 Current amendment (RFC-0042): array elements now accept A1 references through

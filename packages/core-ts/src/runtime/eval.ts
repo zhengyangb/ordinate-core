@@ -10,7 +10,7 @@ import {
   type ReferenceExpr,
   type RefSelector,
   type RuntimeValue,
-  type RuntimeView,
+  type RuntimeCollection,
   type SheetEvaluation,
   type ViewSelection,
 } from "./types";
@@ -22,19 +22,19 @@ import { evaluateIndexing, type RuntimeIndexAxis } from "./indexing";
 import { negateDurationValue } from "./temporal";
 import type { EvaluatedArgument } from "./functions/args";
 import {
-  isRuntimeView,
-  dimensionForShape,
+  isRuntimeCollection,
+  makeRuntimeArray,
   makeRuntimeView,
+  mapRuntimeBroadcast,
   materializeViewSelection,
   runtimeViewScalarValue,
-  runtimeViewShapeContext,
-  runtimeViewShapesMatch,
+  runtimeCollectionShapeContext,
 } from "./view";
 import { getBoundSheetId, setBoundSheetId } from "./references";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 
-export type ExpressionValue = RuntimeValue | RuntimeView;
+export type ExpressionValue = RuntimeValue | RuntimeCollection;
 
 export type CrossSheetResolver = (
   ref: ReferenceExpr,
@@ -630,10 +630,10 @@ function evalArrayLiteral(
         colIdToIndex,
         crossSheetResolver,
       );
-      if (isRuntimeView(value)) {
+      if (isRuntimeCollection(value)) {
         const scalar = runtimeViewScalarValue(value);
         if (!scalar) {
-          return makeInternalError("invalid_array_literal", { reason: "non_scalar_element", ...runtimeViewShapeContext(value) });
+          return makeInternalError("invalid_array_literal", { reason: "non_scalar_element", ...runtimeCollectionShapeContext(value) });
         }
         values.push(scalar);
         continue;
@@ -645,7 +645,7 @@ function evalArrayLiteral(
     }
   }
 
-  return makeRuntimeView(dimensionForShape(rows.length, width), rows.length, width, values);
+  return array.depth === 1 ? makeRuntimeArray(values) : makeRuntimeView(rows.length, width, values);
 }
 
 function isExplicitErrorLiteral(node: ExprNode): boolean {
@@ -655,18 +655,18 @@ function isExplicitErrorLiteral(node: ExprNode): boolean {
 }
 
 function expressionValueToScalarResult(value: ExpressionValue, reason: string): RuntimeValue {
-  if (!isRuntimeView(value)) {
+  if (!isRuntimeCollection(value)) {
     return value;
   }
   const scalar = runtimeViewScalarValue(value);
   if (scalar) {
     return scalar;
   }
-  return makeInternalError("invalid_view", { reason, ...runtimeViewShapeContext(value) });
+  return makeInternalError("invalid_view", { reason, ...runtimeCollectionShapeContext(value) });
 }
 
 function isExpressionError(value: ExpressionValue): value is RuntimeValue & { kind: "error" } {
-  return !isRuntimeView(value) && isError(value);
+  return !isRuntimeCollection(value) && isError(value);
 }
 
 function evalIndexExpression(
@@ -853,44 +853,7 @@ function evalIndexAxisScalar(
 }
 
 function evalArithmeticExpression(op: string, left: ExpressionValue, right: ExpressionValue): ExpressionValue {
-  const leftIsView = isRuntimeView(left);
-  const rightIsView = isRuntimeView(right);
-
-  if (!leftIsView && !rightIsView) {
-    return evalScalarArithmetic(op, left, right);
-  }
-
-  if (leftIsView && rightIsView) {
-    if (!runtimeViewShapesMatch(left, right)) {
-      return makeInternalError("invalid_view_arithmetic", {
-        operator: op,
-        left: runtimeViewShapeContext(left),
-        right: runtimeViewShapeContext(right),
-      });
-    }
-    return mapArithmeticView(left, right, op);
-  }
-
-  if (leftIsView) {
-    return mapArithmeticView(left, right as RuntimeValue, op);
-  }
-
-  return mapArithmeticView(left as RuntimeValue, right as RuntimeView, op);
-}
-
-function mapArithmeticView(left: RuntimeView | RuntimeValue, right: RuntimeView | RuntimeValue, op: string): ExpressionValue {
-  const view = isRuntimeView(left) ? left : (right as RuntimeView);
-  const values: RuntimeValue[] = [];
-  for (let index = 0; index < view.values.length; index += 1) {
-    const leftValue = isRuntimeView(left) ? left.values[index] : left;
-    const rightValue = isRuntimeView(right) ? right.values[index] : right;
-    if (isError(leftValue)) return leftValue;
-    if (isError(rightValue)) return rightValue;
-    const result = evalScalarArithmetic(op, leftValue, rightValue);
-    if (isError(result)) return result;
-    values.push(result);
-  }
-  return makeRuntimeView(view.dimension, view.rowCount, view.colCount, values);
+  return evalBroadcastExpression(op, left, right, evalScalarArithmetic, "invalid_view_arithmetic");
 }
 
 function evalScalarArithmetic(op: string, left: RuntimeValue, right: RuntimeValue): RuntimeValue {
@@ -901,44 +864,24 @@ function evalScalarArithmetic(op: string, left: RuntimeValue, right: RuntimeValu
 }
 
 function evalComparison(op: string, left: ExpressionValue, right: ExpressionValue): ExpressionValue {
-  const leftIsView = isRuntimeView(left);
-  const rightIsView = isRuntimeView(right);
-
-  if (!leftIsView && !rightIsView) {
-    return evalScalarComparison(op, left, right);
-  }
-
-  if (leftIsView && rightIsView) {
-    if (!runtimeViewShapesMatch(left, right)) {
-      return makeInternalError("invalid_view_comparison", {
-        operator: op,
-        left: runtimeViewShapeContext(left),
-        right: runtimeViewShapeContext(right),
-      });
-    }
-    return mapComparisonView(left, right, op);
-  }
-
-  if (leftIsView) {
-    return mapComparisonView(left, right as RuntimeValue, op);
-  }
-
-  return mapComparisonView(left as RuntimeValue, right as RuntimeView, op);
+  return evalBroadcastExpression(op, left, right, evalScalarComparison, "invalid_view_comparison");
 }
 
-function mapComparisonView(left: RuntimeView | RuntimeValue, right: RuntimeView | RuntimeValue, op: string): ExpressionValue {
-  const view = isRuntimeView(left) ? left : (right as RuntimeView);
-  const values: RuntimeValue[] = [];
-  for (let index = 0; index < view.values.length; index += 1) {
-    const leftValue = isRuntimeView(left) ? left.values[index] : left;
-    const rightValue = isRuntimeView(right) ? right.values[index] : right;
-    if (isError(leftValue)) return leftValue;
-    if (isError(rightValue)) return rightValue;
-    const compared = evalScalarComparison(op, leftValue, rightValue);
-    if (isError(compared)) return compared;
-    values.push(compared);
-  }
-  return makeRuntimeView(view.dimension, view.rowCount, view.colCount, values);
+function evalBroadcastExpression(
+  op: string,
+  left: ExpressionValue,
+  right: ExpressionValue,
+  evaluate: (op: string, left: RuntimeValue, right: RuntimeValue) => RuntimeValue,
+  mismatchError: "invalid_view_arithmetic" | "invalid_view_comparison",
+): ExpressionValue {
+  if (!isRuntimeCollection(left) && !isRuntimeCollection(right)) return evaluate(op, left, right);
+  const result = mapRuntimeBroadcast(left, right, (leftValue, rightValue) => evaluate(op, leftValue, rightValue));
+  if (result !== null) return result;
+  return makeInternalError(mismatchError, {
+    operator: op,
+    left: isRuntimeCollection(left) ? runtimeCollectionShapeContext(left) : { kind: "scalar" },
+    right: isRuntimeCollection(right) ? runtimeCollectionShapeContext(right) : { kind: "scalar" },
+  });
 }
 
 // Resolve a reference expression into a view selection.
@@ -1273,7 +1216,7 @@ function evalArgValue(
     const crossSheet = crossSheetResolver?.(ref, rowIdx, colIdx);
     if (crossSheet) {
       if (isExpressionError(crossSheet)) return ["error", crossSheet];
-      if (isRuntimeView(crossSheet)) return ["view", crossSheet];
+      if (isRuntimeCollection(crossSheet)) return ["collection", crossSheet];
       return ["scalar", crossSheet];
     }
     if (ref.sheetSelector) {
@@ -1295,7 +1238,7 @@ function evalArgValue(
       colIdToIndex,
     );
     if (!view.ok) return ["error", makeInternalError(view.internalKind, view.context)];
-    return ["view", materializeViewSelection(view.view, evalCell)];
+    return ["collection", materializeViewSelection(view.view, evalCell)];
   }
   const value = evalExpressionValue(
     node,
@@ -1315,7 +1258,7 @@ function evalArgValue(
     crossSheetResolver,
   );
   if (isExpressionError(value)) return ["error", value];
-  if (isRuntimeView(value)) return ["view", value];
+  if (isRuntimeCollection(value)) return ["collection", value];
   return ["scalar", value];
 }
 
@@ -1373,7 +1316,7 @@ function evalRawArgValue(
     colIdToIndex,
     crossSheetResolver,
   );
-  if (isRuntimeView(value)) return ["view", value];
+  if (isRuntimeCollection(value)) return ["collection", value];
   return ["scalar", value];
 }
 
@@ -1414,7 +1357,7 @@ function evalScalarArg(
   );
   if (kind === "error") return value as RuntimeValue;
   if (kind === "scalar") return value as RuntimeValue;
-  const view = value as RuntimeView;
+  const view = value as RuntimeCollection;
   const scalar = runtimeViewScalarValue(view);
   if (!scalar) {
     return makeInternalError("invalid_function_call", { function: "scalar_coercion", reason: "view_not_scalar" });

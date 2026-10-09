@@ -117,13 +117,17 @@ case-insensitive. Some native expressions:
 = f"Profit: {B4:,.2f}"
 ```
 
-Views support intermediate selections and element-wise calculation; a cell's
-final result must be scalar. `filter(values, mask)` takes a same-shape boolean
+`[1, 2]` is a one-dimensional array; `[[1, 2]]` is a two-dimensional view.
+Both support intermediate calculation, but a cell's final result must be
+scalar. `sum` accepts either. `filter(values, mask)` returns an array and takes a same-shape boolean
 mask, not a lambda or Excel criteria string. There is no general `map`/lambda
 syntax. Do not assume an Excel function name or argument convention is native.
-Comparing two views requires identical shapes; a single-cell reference is still
-a view. For a scalar filter key, use `@[:,Client] == index(@[_,Client], 0)`,
-not `@[:,Client] == @[_,Client]`.
+Binary arithmetic and comparisons align axes from the right. An Array of
+length N aligns with the columns of an M-by-N View; one operand must already
+have the result shape, so outer-product expansion fails. A single-cell
+reference is a 1-by-1 View and can compare directly with a column:
+`@[:,Client] == @[_,Client]`. `filter(values, mask)` still requires matching
+kinds and shapes.
 Read [formulas](references/formulas.md) for array/slice and cache rules.
 
 Common functions include `sum`, `average`, `count`, `min`, `max`, `if`, `filter`,

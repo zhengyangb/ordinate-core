@@ -1,7 +1,7 @@
 import { isError, makeInternalError } from "../errors";
-import type { RuntimeValue, RuntimeView } from "../types";
-import { runtimeViewShapesMatch } from "../view";
-import { viewValues } from "./aggregates";
+import type { RuntimeValue, RuntimeCollection } from "../types";
+import { runtimeCollectionShapeContext, runtimeCollectionShapesMatch } from "../view";
+import { collectionValues } from "./aggregates";
 
 type NumericInput = number[] | RuntimeValue;
 type PairedInput = { x: number[]; y: number[] } | RuntimeValue;
@@ -13,9 +13,9 @@ export function numericCompatibleScalar(value: RuntimeValue, functionName: strin
   return makeInternalError("invalid_function_call", { function: functionName, argumentKind: value.kind });
 }
 
-export function numericCompatibleValues(view: RuntimeView, functionName: string): NumericInput {
+export function numericCompatibleValues(view: RuntimeCollection, functionName: string): NumericInput {
   const values: number[] = [];
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return value;
     if (value.kind === "blank") continue;
     const numberValue = numericCompatibleScalar(value, functionName);
@@ -25,16 +25,16 @@ export function numericCompatibleValues(view: RuntimeView, functionName: string)
   return values;
 }
 
-export function countBlankView(view: RuntimeView): RuntimeValue {
+export function countBlankView(view: RuntimeCollection): RuntimeValue {
   let count = 0;
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return value;
     if (value.kind === "blank") count += 1;
   }
   return { kind: "number", value: count };
 }
 
-export function medianView(view: RuntimeView, functionName: string): RuntimeValue {
+export function medianView(view: RuntimeCollection, functionName: string): RuntimeValue {
   const values = numericCompatibleValues(view, functionName);
   if (isNumericInputError(values)) return values;
   if (values.length === 0) return emptyNumericInput(functionName);
@@ -46,7 +46,7 @@ export function medianView(view: RuntimeView, functionName: string): RuntimeValu
   return { kind: "number", value: sorted[Math.floor(middle)] };
 }
 
-export function percentileView(view: RuntimeView, p: RuntimeValue, functionName: string): RuntimeValue {
+export function percentileView(view: RuntimeCollection, p: RuntimeValue, functionName: string): RuntimeValue {
   const percentile = numericCompatibleScalar(p, functionName);
   if (isError(percentile)) return percentile;
   const pValue = percentile.value as number;
@@ -60,7 +60,7 @@ export function percentileView(view: RuntimeView, p: RuntimeValue, functionName:
   return { kind: "number", value: percentileFromSorted(sortAscending(values), pValue) };
 }
 
-export function quartileView(view: RuntimeView, quartile: RuntimeValue, functionName: string): RuntimeValue {
+export function quartileView(view: RuntimeCollection, quartile: RuntimeValue, functionName: string): RuntimeValue {
   const q = numericCompatibleScalar(quartile, functionName);
   if (isError(q)) return q;
   const qValue = q.value as number;
@@ -70,19 +70,19 @@ export function quartileView(view: RuntimeView, quartile: RuntimeValue, function
   return percentileView(view, { kind: "number", value: qValue / 4 }, functionName);
 }
 
-export function varianceView(view: RuntimeView, sample: boolean, functionName: string): RuntimeValue {
+export function varianceView(view: RuntimeCollection, sample: boolean, functionName: string): RuntimeValue {
   const values = numericCompatibleValues(view, functionName);
   if (isNumericInputError(values)) return values;
   return varianceFromValues(values, sample, functionName);
 }
 
-export function stdevView(view: RuntimeView, sample: boolean, functionName: string): RuntimeValue {
+export function stdevView(view: RuntimeCollection, sample: boolean, functionName: string): RuntimeValue {
   const variance = varianceView(view, sample, functionName);
   if (isError(variance)) return variance;
   return { kind: "number", value: Math.sqrt(variance.value as number) };
 }
 
-export function averageDeviationView(view: RuntimeView, functionName: string): RuntimeValue {
+export function averageDeviationView(view: RuntimeCollection, functionName: string): RuntimeValue {
   const values = numericCompatibleValues(view, functionName);
   if (isNumericInputError(values)) return values;
   if (values.length === 0) return emptyNumericInput(functionName);
@@ -90,7 +90,7 @@ export function averageDeviationView(view: RuntimeView, functionName: string): R
   return { kind: "number", value: average(values.map((value) => Math.abs(value - mean))) };
 }
 
-export function devsqView(view: RuntimeView, functionName: string): RuntimeValue {
+export function devsqView(view: RuntimeCollection, functionName: string): RuntimeValue {
   const values = numericCompatibleValues(view, functionName);
   if (isNumericInputError(values)) return values;
   if (values.length === 0) return emptyNumericInput(functionName);
@@ -98,7 +98,7 @@ export function devsqView(view: RuntimeView, functionName: string): RuntimeValue
   return { kind: "number", value: values.reduce((total, value) => total + (value - mean) ** 2, 0) };
 }
 
-export function geomeanView(view: RuntimeView, functionName: string): RuntimeValue {
+export function geomeanView(view: RuntimeCollection, functionName: string): RuntimeValue {
   const values = numericCompatibleValues(view, functionName);
   if (isNumericInputError(values)) return values;
   if (values.length === 0) return emptyNumericInput(functionName);
@@ -108,7 +108,7 @@ export function geomeanView(view: RuntimeView, functionName: string): RuntimeVal
   return { kind: "number", value: Math.exp(values.reduce((total, value) => total + Math.log(value), 0) / values.length) };
 }
 
-export function harmeanView(view: RuntimeView, functionName: string): RuntimeValue {
+export function harmeanView(view: RuntimeCollection, functionName: string): RuntimeValue {
   const values = numericCompatibleValues(view, functionName);
   if (isNumericInputError(values)) return values;
   if (values.length === 0) return emptyNumericInput(functionName);
@@ -118,7 +118,7 @@ export function harmeanView(view: RuntimeView, functionName: string): RuntimeVal
   return { kind: "number", value: values.length / values.reduce((total, value) => total + 1 / value, 0) };
 }
 
-export function largeSmallView(view: RuntimeView, k: RuntimeValue, order: "large" | "small", functionName: string): RuntimeValue {
+export function largeSmallView(view: RuntimeCollection, k: RuntimeValue, order: "large" | "small", functionName: string): RuntimeValue {
   const ordinal = positiveInteger(k, functionName, "k");
   if (isError(ordinal)) return ordinal;
   const values = numericCompatibleValues(view, functionName);
@@ -133,7 +133,7 @@ export function largeSmallView(view: RuntimeView, k: RuntimeValue, order: "large
   return { kind: "number", value: sorted[index] };
 }
 
-export function rankView(value: RuntimeValue, view: RuntimeView, ascending: RuntimeValue | null, functionName: string): RuntimeValue {
+export function rankView(value: RuntimeValue, view: RuntimeCollection, ascending: RuntimeValue | null, functionName: string): RuntimeValue {
   const ranked = numericCompatibleScalar(value, functionName);
   if (isError(ranked)) return ranked;
   const values = numericCompatibleValues(view, functionName);
@@ -152,7 +152,7 @@ export function rankView(value: RuntimeValue, view: RuntimeView, ascending: Runt
   return { kind: "number", value: position };
 }
 
-export function modeView(view: RuntimeView, functionName: string): RuntimeValue {
+export function modeView(view: RuntimeCollection, functionName: string): RuntimeValue {
   const values = numericCompatibleValues(view, functionName);
   if (isNumericInputError(values)) return values;
   if (values.length === 0) return emptyNumericInput(functionName);
@@ -173,7 +173,7 @@ export function modeView(view: RuntimeView, functionName: string): RuntimeValue 
   return { kind: "number", value: bestValue ?? values[0] };
 }
 
-export function correlView(xView: RuntimeView, yView: RuntimeView, functionName: string): RuntimeValue {
+export function correlView(xView: RuntimeCollection, yView: RuntimeCollection, functionName: string): RuntimeValue {
   const pair = pairedNumericValues(xView, yView, functionName);
   if (isPairedInputError(pair)) return pair;
   if (pair.x.length < 2) {
@@ -197,7 +197,7 @@ export function correlView(xView: RuntimeView, yView: RuntimeView, functionName:
   return { kind: "number", value: xy / Math.sqrt(xx * yy) };
 }
 
-export function covarianceView(xView: RuntimeView, yView: RuntimeView, sample: boolean, functionName: string): RuntimeValue {
+export function covarianceView(xView: RuntimeCollection, yView: RuntimeCollection, sample: boolean, functionName: string): RuntimeValue {
   const pair = pairedNumericValues(xView, yView, functionName);
   if (isPairedInputError(pair)) return pair;
   if (pair.x.length < (sample ? 2 : 1)) {
@@ -212,13 +212,13 @@ export function covarianceView(xView: RuntimeView, yView: RuntimeView, sample: b
   return { kind: "number", value: total / (sample ? pair.x.length - 1 : pair.x.length) };
 }
 
-export function slopeInterceptView(yView: RuntimeView, xView: RuntimeView, functionName: string): RuntimeValue {
+export function slopeInterceptView(yView: RuntimeCollection, xView: RuntimeCollection, functionName: string): RuntimeValue {
   const line = linearRegression(yView, xView, functionName);
   if (isRegressionError(line)) return line;
   return { kind: "number", value: functionName.toLowerCase() === "intercept" ? line.intercept : line.slope };
 }
 
-export function forecastValue(x: RuntimeValue, yView: RuntimeView, xView: RuntimeView, functionName: string): RuntimeValue {
+export function forecastValue(x: RuntimeValue, yView: RuntimeCollection, xView: RuntimeCollection, functionName: string): RuntimeValue {
   const xValue = numericCompatibleScalar(x, functionName);
   if (isError(xValue)) return xValue;
   const line = linearRegression(yView, xView, functionName);
@@ -240,13 +240,13 @@ export function standardizeValue(x: RuntimeValue, mean: RuntimeValue, stdev: Run
   return { kind: "number", value: ((xValue.value as number) - (meanValue.value as number)) / divisor };
 }
 
-function pairedNumericValues(xView: RuntimeView, yView: RuntimeView, functionName: string): PairedInput {
-  if (!runtimeViewShapesMatch(xView, yView)) {
+function pairedNumericValues(xView: RuntimeCollection, yView: RuntimeCollection, functionName: string): PairedInput {
+  if (!runtimeCollectionShapesMatch(xView, yView)) {
     return makeInternalError("invalid_function_call", {
       function: functionName,
       reason: "shape_mismatch",
-      left: { dimension: xView.dimension, rowCount: xView.rowCount, colCount: xView.colCount },
-      right: { dimension: yView.dimension, rowCount: yView.rowCount, colCount: yView.colCount },
+      left: runtimeCollectionShapeContext(xView),
+      right: runtimeCollectionShapeContext(yView),
     });
   }
 
@@ -268,7 +268,7 @@ function pairedNumericValues(xView: RuntimeView, yView: RuntimeView, functionNam
   return { x, y };
 }
 
-function linearRegression(yView: RuntimeView, xView: RuntimeView, functionName: string): { slope: number; intercept: number } | RuntimeValue {
+function linearRegression(yView: RuntimeCollection, xView: RuntimeCollection, functionName: string): { slope: number; intercept: number } | RuntimeValue {
   const pair = pairedNumericValues(xView, yView, functionName);
   if (isPairedInputError(pair)) return pair;
   if (pair.x.length < 2) {

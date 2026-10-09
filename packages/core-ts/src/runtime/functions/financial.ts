@@ -1,7 +1,7 @@
 import { isError, makeInternalError } from "../errors";
-import type { RuntimeValue, RuntimeView } from "../types";
-import { runtimeViewShapesMatch } from "../view";
-import { viewValues } from "./aggregates";
+import type { RuntimeValue, RuntimeCollection } from "../types";
+import { isVectorCollection, runtimeCollectionShapeContext, runtimeCollectionShapesMatch } from "../view";
+import { collectionValues } from "./aggregates";
 
 const ROOT_MIN_RATE = -0.999999999;
 const ROOT_MAX_RATE = 1_000_000;
@@ -103,7 +103,7 @@ export function ispmtValue(rate: RuntimeValue, per: RuntimeValue, nper: RuntimeV
   return finiteResult(args.value.pv * args.value.rate * (period.value / args.value.nper - 1), functionName);
 }
 
-export function npvView(rate: RuntimeValue, view: RuntimeView, functionName: string): RuntimeValue {
+export function npvView(rate: RuntimeValue, view: RuntimeCollection, functionName: string): RuntimeValue {
   const rateNumber = financialNumber(rate, functionName, "rate");
   if (!rateNumber.ok) return rateNumber.error;
   if (rateNumber.value <= -1) return invalid(functionName, "rate_out_of_range");
@@ -112,7 +112,7 @@ export function npvView(rate: RuntimeValue, view: RuntimeView, functionName: str
   return finiteResult(npvPeriodic(rateNumber.value, values.value, 1), functionName);
 }
 
-export function irrView(view: RuntimeView, functionName: string): RuntimeValue {
+export function irrView(view: RuntimeCollection, functionName: string): RuntimeValue {
   const values = numericViewValues(view, functionName, { requireVector: true });
   if (!values.ok) return values.error;
   const signIssue = requirePositiveAndNegative(values.value, functionName);
@@ -122,7 +122,7 @@ export function irrView(view: RuntimeView, functionName: string): RuntimeValue {
   return finiteResult(solved.value, functionName);
 }
 
-export function mirrView(view: RuntimeView, financeRate: RuntimeValue, reinvestRate: RuntimeValue, functionName: string): RuntimeValue {
+export function mirrView(view: RuntimeCollection, financeRate: RuntimeValue, reinvestRate: RuntimeValue, functionName: string): RuntimeValue {
   const finance = financialNumber(financeRate, functionName, "financeRate");
   if (!finance.ok) return finance.error;
   const reinvest = financialNumber(reinvestRate, functionName, "reinvestRate");
@@ -146,7 +146,7 @@ export function mirrView(view: RuntimeView, financeRate: RuntimeValue, reinvestR
   return finiteResult((-positiveFutureValue / negativePresentValue) ** (1 / last) - 1, functionName);
 }
 
-export function xnpvView(rate: RuntimeValue, valuesView: RuntimeView, datesView: RuntimeView, functionName: string): RuntimeValue {
+export function xnpvView(rate: RuntimeValue, valuesView: RuntimeCollection, datesView: RuntimeCollection, functionName: string): RuntimeValue {
   const rateNumber = financialNumber(rate, functionName, "rate");
   if (!rateNumber.ok) return rateNumber.error;
   if (rateNumber.value <= -1) return invalid(functionName, "rate_out_of_range");
@@ -155,7 +155,7 @@ export function xnpvView(rate: RuntimeValue, valuesView: RuntimeView, datesView:
   return finiteResult(xnpvNumber(rateNumber.value, pair.value.values, pair.value.days), functionName);
 }
 
-export function xirrView(valuesView: RuntimeView, datesView: RuntimeView, functionName: string): RuntimeValue {
+export function xirrView(valuesView: RuntimeCollection, datesView: RuntimeCollection, functionName: string): RuntimeValue {
   const pair = pairedCashflowDates(valuesView, datesView, functionName);
   if (!pair.ok) return pair.error;
   const signIssue = requirePositiveAndNegative(pair.value.values, functionName);
@@ -354,13 +354,12 @@ function xnpvNumber(rate: number, values: readonly number[], days: readonly numb
   return total;
 }
 
-function numericViewValues(view: RuntimeView, functionName: string, options: { requireVector: boolean }): Result<number[]> {
-  // 1x1 selections are native dimension 0, but remain valid single cash flows.
-  if (options.requireVector && view.dimension > 1) {
-    return err(invalid(functionName, "vector_required", { dimension: view.dimension }));
+function numericViewValues(view: RuntimeCollection, functionName: string, options: { requireVector: boolean }): Result<number[]> {
+  if (options.requireVector && !isVectorCollection(view)) {
+    return err(invalid(functionName, "vector_required", runtimeCollectionShapeContext(view)));
   }
   const values: number[] = [];
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return err(value);
     if (value.kind === "blank") continue;
     if (value.kind === "number") {
@@ -378,9 +377,9 @@ function numericViewValues(view: RuntimeView, functionName: string, options: { r
   return ok(values);
 }
 
-function pairedCashflowDates(valuesView: RuntimeView, datesView: RuntimeView, functionName: string): Result<PairedCashflowDates> {
-  if (valuesView.dimension > 1 || datesView.dimension > 1) return err(invalid(functionName, "vector_required"));
-  if (!runtimeViewShapesMatch(valuesView, datesView)) return err(invalid(functionName, "shape_mismatch"));
+function pairedCashflowDates(valuesView: RuntimeCollection, datesView: RuntimeCollection, functionName: string): Result<PairedCashflowDates> {
+  if (!isVectorCollection(valuesView) || !isVectorCollection(datesView)) return err(invalid(functionName, "vector_required"));
+  if (!runtimeCollectionShapesMatch(valuesView, datesView)) return err(invalid(functionName, "shape_mismatch"));
   const values: number[] = [];
   const dates: number[] = [];
   for (let i = 0; i < valuesView.values.length; i += 1) {

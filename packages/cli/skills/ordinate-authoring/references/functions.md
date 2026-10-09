@@ -4,56 +4,56 @@
 
 These are the bundled Core's metadata, not Excel signatures. Parameter descriptions
 state defaults where supported; a signature listing a parameter does not imply
-every parameter is required. A view is a selected sequence/grid or array; a scalar
-is a single value. Discover all functions with `ordinate-cli help functions` and
+every parameter is required. An array is one-dimensional; a view is a two-dimensional grid.
+A scalar is a single value. Discover all functions with `ordinate-cli help functions` and
 exact overloads/examples with `ordinate-cli help function <name>`.
 
 ## sum
 
-Adds values in a view using the RFC-0006 plus operator rules.
+Adds values in a one-dimensional array or two-dimensional view using the RFC-0006 plus operator rules.
 
 ```text
-sum(x: view[d<=2]) -> number
+sum(x: array | view) -> number
 ```
 
-- `x`: Values to add. Blanks are ignored by the view evaluator and invalid values fail the call.
+- `x`: Values to add. Blanks are ignored; invalid values fail the call.
 
 ## average
 
-Averages numeric-compatible values in a view, ignoring blanks. For non-error, non-empty numeric-compatible inputs, this is equivalent to sum(x) / count(x).
+Averages numeric-compatible values in an array or view, ignoring blanks. For non-error, non-empty numeric-compatible inputs, this is equivalent to sum(x) / count(x).
 
 ```text
-average(x: view[d<=2]) -> number
+average(x: array | view) -> number
 ```
 
 - `x`: Numbers and booleans to average. Blank cells are ignored.
 
 ## count
 
-Counts numeric-compatible values in a view. For non-error inputs, this is equivalent to sum(isNumber(x)) + sum(isBoolean(x)).
+Counts numeric-compatible values in an array or view. For non-error inputs, this is equivalent to sum(isNumber(x)) + sum(isBoolean(x)).
 
 ```text
-count(x: view[d<=2]) -> number
+count(x: array | view) -> number
 ```
 
 - `x`: Cells to count when their evaluated value is a number or boolean.
 
 ## min
 
-Returns the smallest numeric-compatible value in a view.
+Returns the smallest numeric-compatible value in an array or view.
 
 ```text
-min(x: view[d<=2]) -> number
+min(x: array | view) -> number
 ```
 
 - `x`: Numbers and booleans to scan for the smallest value.
 
 ## max
 
-Returns the largest numeric-compatible value in a view.
+Returns the largest numeric-compatible value in an array or view.
 
 ```text
-max(x: view[d<=2]) -> number
+max(x: array | view) -> number
 ```
 
 - `x`: Numbers and booleans to scan for the largest value.
@@ -75,7 +75,7 @@ if(condition: Scalar[boolean], thenValue: expression, elseValue: expression) -> 
 Returns the values whose corresponding mask entries are true.
 
 ```text
-filter(values: view[d<=2], mask: view[d<=2]) -> view[d=1]
+filter(values: array | view, mask: array | view) -> array
 ```
 
 - `values`: Values to filter in row-major order.
@@ -86,7 +86,7 @@ filter(values: view[d<=2], mask: view[d<=2]) -> view[d=1]
 Returns the value at values[match(key, keys)] for one-dimensional lookup tables.
 
 ```text
-lookup(key: value, keys: view[d<=1], values: view[d<=1]) -> value
+lookup(key: value, keys: array | vector view, values: array | vector view) -> value
 ```
 
 - `key`: Key to find.
@@ -98,7 +98,7 @@ lookup(key: value, keys: view[d<=1], values: view[d<=1]) -> value
 Returns the zero-based row-major index of the first exact match in keys.
 
 ```text
-match(value: value, keys: view[d<=2]) -> number
+match(value: value, keys: array | view) -> number
 ```
 
 - `value`: Value to find.
@@ -106,11 +106,11 @@ match(value: value, keys: view[d<=2]) -> number
 
 ## index
 
-Returns a scalar value from a view using zero-based indexes. Negative indexes count from the end.
+Returns a scalar value from an array or view using zero-based indexes. Negative indexes count from the end.
 
 ```text
-index(x: view[d<=1], n: Scalar[number]) -> value
-index(x: view[d<=2], row: Scalar[number], col: Scalar[number]) -> value
+index(x: array | vector view, n: Scalar[number]) -> value
+index(x: view, row: Scalar[number], col: Scalar[number]) -> value
 ```
 
 - `x`: Scalar-shaped or one-dimensional view to index in row-major order.
@@ -185,7 +185,7 @@ Returns the number of characters in text. For views, applies element-wise to tex
 
 ```text
 len(x: Scalar[string]) -> number
-len(x: view[d<=2]) -> view[d<=2]
+len(x: array | view) -> array | view
 ```
 
 - `x`: Text whose character count should be returned.
@@ -271,10 +271,10 @@ pmt(rate: Scalar[number], nper: Scalar[number], pv: Scalar[number], fv: Scalar[n
 
 ## npv
 
-Discounts a one-dimensional view of future cash flows by a per-period rate.
+Discounts an array or vector view of future cash flows by a per-period rate.
 
 ```text
-npv(rate: Scalar[number], values: view[d<=1]) -> number
+npv(rate: Scalar[number], values: array | vector view) -> number
 ```
 
 - `rate`: Per-period discount rate.
@@ -282,10 +282,10 @@ npv(rate: Scalar[number], values: view[d<=1]) -> number
 
 ## irr
 
-Solves the internal rate of return for a one-dimensional view of periodic cash flows.
+Solves the internal rate of return for an array or vector view of periodic cash flows.
 
 ```text
-irr(values: view[d<=1]) -> number
+irr(values: array | vector view) -> number
 ```
 
 - `values`: Periodic cash flows whose first value is at period 0.

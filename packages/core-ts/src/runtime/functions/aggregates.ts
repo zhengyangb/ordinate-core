@@ -1,13 +1,13 @@
 import { evalArithmetic } from "../arithmetic";
 import { isError, makeInternalError } from "../errors";
-import type { RuntimeValue, RuntimeView } from "../types";
+import type { RuntimeValue, RuntimeCollection } from "../types";
 
-export function sumView(view: RuntimeView): RuntimeValue {
+export function sumView(view: RuntimeCollection): RuntimeValue {
   if (isEmptyView(view)) {
     return { kind: "number", value: 0 };
   }
   let result: RuntimeValue = { kind: "number", value: 0 };
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return value;
     result = evalArithmetic("+", result, value);
     if (isError(result)) return result;
@@ -15,12 +15,12 @@ export function sumView(view: RuntimeView): RuntimeValue {
   return result;
 }
 
-export function productView(view: RuntimeView): RuntimeValue {
+export function productView(view: RuntimeCollection): RuntimeValue {
   if (isEmptyView(view)) {
     return { kind: "number", value: 1 };
   }
   let result: RuntimeValue = { kind: "number", value: 1 };
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return value;
     result = evalArithmetic("*", result, value);
     if (isError(result)) return result;
@@ -28,10 +28,10 @@ export function productView(view: RuntimeView): RuntimeValue {
   return result;
 }
 
-export function averageView(view: RuntimeView): RuntimeValue {
+export function averageView(view: RuntimeCollection): RuntimeValue {
   let total = 0;
   let count = 0;
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return value;
     if (value.kind === "blank") continue;
     const numberValue = numericCompatibleValue(value);
@@ -47,9 +47,9 @@ export function averageView(view: RuntimeView): RuntimeValue {
   return { kind: "number", value: total / count };
 }
 
-export function minMaxView(view: RuntimeView, op: "min" | "max"): RuntimeValue {
+export function minMaxView(view: RuntimeCollection, op: "min" | "max"): RuntimeValue {
   let result: number | null = null;
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return value;
     if (value.kind === "blank") continue;
     const numberValue = numericCompatibleValue(value);
@@ -64,9 +64,9 @@ export function minMaxView(view: RuntimeView, op: "min" | "max"): RuntimeValue {
   return { kind: "number", value: result };
 }
 
-export function countView(view: RuntimeView, includeAnyNonBlank: boolean): RuntimeValue {
+export function countView(view: RuntimeCollection, includeAnyNonBlank: boolean): RuntimeValue {
   let count = 0;
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return value;
     if (includeAnyNonBlank) {
       if (value.kind !== "blank") count += 1;
@@ -77,9 +77,9 @@ export function countView(view: RuntimeView, includeAnyNonBlank: boolean): Runti
   return { kind: "number", value: count };
 }
 
-export function integerAggregateView(view: RuntimeView, op: "gcd" | "lcm"): RuntimeValue {
+export function integerAggregateView(view: RuntimeCollection, op: "gcd" | "lcm"): RuntimeValue {
   const values: number[] = [];
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return value;
     if (value.kind !== "number" || !Number.isInteger(value.value)) {
       return makeInternalError("invalid_function_call", { function: op, argumentKind: value.kind });
@@ -96,9 +96,9 @@ export function integerAggregateView(view: RuntimeView, op: "gcd" | "lcm"): Runt
   return { kind: "number", value: values.reduce((acc, value) => lcm2(acc, value), 1) };
 }
 
-export function sumsqView(view: RuntimeView): RuntimeValue {
+export function sumsqView(view: RuntimeCollection): RuntimeValue {
   let total = 0;
-  for (const value of viewValues(view)) {
+  for (const value of collectionValues(view)) {
     if (isError(value)) return value;
     if (value.kind === "blank") continue;
     const numberValue = numericCompatibleValue(value);
@@ -110,12 +110,12 @@ export function sumsqView(view: RuntimeView): RuntimeValue {
   return { kind: "number", value: total };
 }
 
-export function viewValues(view: RuntimeView): RuntimeValue[] {
+export function collectionValues(view: RuntimeCollection): RuntimeValue[] {
   return view.values;
 }
 
-function isEmptyView(view: RuntimeView): boolean {
-  return view.rowCount === 0 || view.colCount === 0;
+function isEmptyView(view: RuntimeCollection): boolean {
+  return view.values.length === 0;
 }
 
 function numericCompatibleValue(value: RuntimeValue): number | null {

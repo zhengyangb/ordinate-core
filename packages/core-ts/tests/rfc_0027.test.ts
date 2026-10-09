@@ -76,7 +76,7 @@ describe("RFC-0027 view shape functions", () => {
 | R2 || Beta | 20 | 4 | 5 | 6 | |
 | R3 || Gamma | = error[bad] | 7 | 8 | 9 | |
 | EmptyFilterRows || | | | | | = shape(filter(@[#2:#4,Name], @[#2:#4,A] > 999))[0] |
-| EmptyFilterCols || | | | | | = shape(filter(@[#2:#4,Name], @[#2:#4,A] > 999))[1] |
+| EmptyFilterRank || | | | | | = size(shape(filter(@[#2:#4,Name], @[#2:#4,A] > 999))) |
 | EmptyFilterSize || | | | | | = size(filter(@[#2:#4,Name], @[#2:#4,A] > 999)) |
 | EmptyVectorRows || | | | | | = rowCount(@[#2:#4,A][2:1]) |
 | EmptyVectorCols || | | | | | = columnCount(@[#2:#4,A][2:1]) |
@@ -88,8 +88,8 @@ describe("RFC-0027 view shape functions", () => {
 | ErrorContentsSize || | | | | | = size(@[#2:#4,Score]) |
 `.trim();
 
-    expect(cellValue(doc, "EmptyFilterRows", "Result")).toEqual({ kind: "number", value: 1 });
-    expect(cellValue(doc, "EmptyFilterCols", "Result")).toEqual({ kind: "number", value: 0 });
+    expect(cellValue(doc, "EmptyFilterRows", "Result")).toEqual({ kind: "number", value: 0 });
+    expect(cellValue(doc, "EmptyFilterRank", "Result")).toEqual({ kind: "number", value: 1 });
     expect(cellValue(doc, "EmptyFilterSize", "Result")).toEqual({ kind: "number", value: 0 });
     expect(cellValue(doc, "EmptyVectorRows", "Result")).toEqual({ kind: "number", value: 0 });
     expect(cellValue(doc, "EmptyVectorCols", "Result")).toEqual({ kind: "number", value: 1 });

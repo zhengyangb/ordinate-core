@@ -1,27 +1,27 @@
 import { isError, makeInternalError } from "../errors";
-import type { ExprNode, RuntimeValue, RuntimeView } from "../types";
+import type { ExprNode, RuntimeValue, RuntimeCollection } from "../types";
 
-export type EvaluatedArgument = ["error" | "scalar" | "view", RuntimeValue | RuntimeView];
+export type EvaluatedArgument = ["error" | "scalar" | "collection", RuntimeValue | RuntimeCollection];
 
 export type FunctionEvalContext = {
   evalArgValue: (node: ExprNode) => EvaluatedArgument;
   evalRawArgValue: (node: ExprNode) => EvaluatedArgument;
   evalScalarArg: (node: ExprNode) => RuntimeValue;
-  evalExpressionValue: (node: ExprNode) => RuntimeValue | RuntimeView;
+  evalExpressionValue: (node: ExprNode) => RuntimeValue | RuntimeCollection;
   evalCell: (rowIndex: number, colIndex: number) => RuntimeValue;
 };
 
-export function expectViewArg(
+export function expectCollectionArg(
   ctx: FunctionEvalContext,
   functionName: string,
   node: ExprNode,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const [argKind, argVal] = ctx.evalArgValue(node);
   if (argKind === "error") return argVal as RuntimeValue;
-  if (argKind !== "view") {
+  if (argKind !== "collection") {
     return makeInternalError("invalid_function_call", { function: functionName, argumentKind: argKind });
   }
-  return argVal as RuntimeView;
+  return argVal as RuntimeCollection;
 }
 
 export function expectNumberArg(ctx: FunctionEvalContext, functionName: string, node: ExprNode): RuntimeValue {

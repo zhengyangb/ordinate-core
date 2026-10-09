@@ -39,7 +39,7 @@ test("function discovery returns runtime metadata and resolves aliases/case", ()
     assert.deepEqual(reference("function", name.toUpperCase()).function, fn);
     for (const alias of fn.aliases ?? []) assert.deepEqual(reference("function", alias).function, fn);
   }
-  assert.match(run(["help", "function", "sum"]).stdout, /sum\(x: view/);
+  assert.match(run(["help", "function", "sum"]).stdout, /sum\(x: array \| view/);
 });
 test("unknown topics/functions and incompatible flags fail early", () => {
   for (const args of [["help", "missing"], ["help", "function"], ["help", "function", "not_a_function"], ["help", "syntax", "extra"], ["help", "function", "sum", "extra"], ["help", "formats", "--write"], ["help", "--version"], ["help", "--help", "--json"], ["help", "formulas", "--help"], ["help", "--json", "--json"]]) {
@@ -153,19 +153,18 @@ test("quotes in header source are literal name characters, not selector delimite
   assert.equal(failed.result.data.summary.errorCount, 1);
   assert.equal(failed.result.diagnostics[0].code, "unresolved_reference_label_not_found");
 });
-test("filter scalar keys must be extracted from differently shaped reference views", () => {
+test("single-cell reference views broadcast across columns for filter masks", () => {
   const source = `# Ledger
 | Row || Client | Hours | Total |
 | --- || --- | --- | --- |
-| First || Atlas | 2 | = sum(filter(@[:,Hours], @[:,Client] == index(@[_,Client], 0))) |
+| First || Atlas | 2 | = sum(filter(@[:,Hours], @[:,Client] == @[_,Client])) |
 | Second || Beacon | 3 | |
 `;
   const values = JSON.parse(run(["evaluate", "-", "--sheet", "Ledger", "--json"], source).stdout).result.data.selection.values;
   assert.deepEqual(values[1][3], { kind: "number", value: "2" });
-  const wrong = source.replace("index(@[_,Client], 0)", "@[_,Client]");
-  assert.equal(JSON.parse(run(["validate", "-", "--json"], wrong).stdout).ok, true);
-  const failed = JSON.parse(run(["evaluate", "-", "--json"], wrong, 4).stdout);
-  assert.equal(failed.result.diagnostics[0].code, "invalid_view_comparison");
+  const scalar = source.replace("@[_,Client]", "index(@[_,Client], 0)");
+  const scalarValues = JSON.parse(run(["evaluate", "-", "--sheet", "Ledger", "--json"], scalar).stdout).result.data.selection.values;
+  assert.deepEqual(scalarValues[1][3], values[1][3]);
 });
 test("hierarchical range endpoints do not inherit each other's parent path", () => {
   const source = `# Plan

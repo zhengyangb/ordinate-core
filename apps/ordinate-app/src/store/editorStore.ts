@@ -235,7 +235,7 @@ function bootstrapFromSource(sourceText: string): Pick<
   try {
     const docState = DocumentState.fromText(sourceText);
     const evaluation = docState.evaluate();
-    const presentation = resolveDocumentPresentation(docState);
+    const presentation = resolveDocumentPresentation(docState, evaluation);
     const validation = validateDocument(sourceText);
     const sheetNames = docState.sheets.map((sheet) => sheet.name);
     const sheetIssuesByName = groupSheetValidationErrors(sheetNames, validation.errors);
@@ -274,7 +274,7 @@ function deriveStateFromDocument(
   "sourceText" | "docState" | "evaluation" | "presentation" | "validation" | "sheetIssuesByName" | "activeSheet" | "error"
 > {
   const evaluation = document.evaluate();
-  const presentation = resolveDocumentPresentation(document);
+  const presentation = resolveDocumentPresentation(document, evaluation);
   const sourceText = serializeDocumentState(document);
   const validation = validateDocument(sourceText);
   const sheetNames = document.sheets.map((sheet) => sheet.name);
