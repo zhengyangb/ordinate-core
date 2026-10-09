@@ -25,7 +25,49 @@ Application-specific editor behavior is specified separately under `apps/ordinat
 
 Do not fold app feature behavior into core RFCs unless it changes the `.ord` format or the public core library contract.
 
-Current capabilities:
+[RFC-0048: Agentic Editing and Capability Adapters](rfcs/0048-agentic-editing-and-capability-adapters.md)
+defines a host-independent capability boundary and phased CLI/skill roadmap.
+It does not specify an agent engine or application UI.
+The implemented V1 contracts are
+[RFC-0049: Workbook Capabilities](rfcs/0049-workbook-capability-contract.md) and
+[RFC-0050: CLI](rfcs/0050-command-line-interface.md).
+
+## Headless CLI
+
+Node.js 20+ is required. No global installation or running app is needed:
+
+The package and executable are both named `ordinate-cli` (`ordinate-core` is
+the separate library). No old `ordinate` executable alias is provided.
+
+```sh
+npm --prefix packages/cli install
+npm run build:cli
+npm run cli -- --help
+npm run cli -- validate examples/00-getting-started.ord
+npm run test:cli
+```
+
+For scripts/agents needing clean stdout, run `node packages/cli/dist/ordinate-cli.mjs`
+directly (npm adds its own script banner). It provides `inspect`, `validate`,
+`evaluate`, and atomic `edit`; default calls never modify files. Use `--json`
+for machine-readable reports and `--write` for explicit in-place changes.
+Validation/evaluation errors return nonzero process status even without `--json`.
+Operations may be supplied by file or stdin; no intermediate JSON file is required.
+Discover all 30 operations with `edit --help`, individual payloads with
+`edit --help --operation fill_region`, or the complete schema with `edit --help --schema`.
+See [CLI usage](packages/cli/README.md) and [fresh-context agent trials](packages/cli/AGENT_TRIALS.md).
+
+Queryable language reference is available through `help syntax`, `help formulas`,
+`help references`, `help formats`, `help notes`, `help functions`, and
+`help function <name>` (also with `--json`). The optional
+[workbook authoring skill](packages/cli/skills/ordinate-authoring/SKILL.md) ships
+with the CLI. It teaches direct file authoring as well as tool use; the supporting
+syntax/format references and common function signatures share the help/Core
+sources. It is not installed into an agent automatically.
+[RFC-0051](rfcs/0051-language-discovery-and-authoring-skill.md) defines these
+three discovery layers and their shared maintenance/release policy.
+
+## Core capabilities
 
 - formatted scalar text with `format(value, spec?)` and `f"Total: {B2:,.2f}"`
   syntax sugar, including reference editing and bounded numeric Excel `TEXT`

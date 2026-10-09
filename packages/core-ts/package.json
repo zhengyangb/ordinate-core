@@ -1,5 +1,7 @@
 {
   "name": "ordinate-core",
+  "version": "0.1.0",
+  "exports": "./src/index.ts",
   "private": true,
   "type": "module",
   "scripts": {

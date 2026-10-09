@@ -23,7 +23,7 @@ import { resolveSheetRowStructure } from "./row_structure";
 import { applyFillRegion, type CoreFillMode } from "./core_fill";
 import { isImplicitTextInput } from "./runtime/parse";
 import { cloneDocumentState } from "./document_clone";
-import type { SheetNotePosition } from "./sheet_notes";
+import { SheetNoteError, type SheetNotePosition } from "./sheet_notes";
 import { convertRowsToNote } from "./core_note_rows";
 
 export interface CoreEditError {
@@ -209,8 +209,7 @@ export function applyBatchAtomic(
   for (let i = 0; i < edits.length; i += 1) {
     const edit = edits[i];
     try {
-      applySingleEdit(staged, edit);
-      bindAfterEdit(staged, edit.op);
+      applyCoreEditToStaged(staged, edit);
     } catch (error) {
       if (error instanceof CoreEditFailure) {
         return {
@@ -267,8 +266,7 @@ export function applyBatchWithUndo(
       if (isDocumentHistoryEdit(edit)) {
         const before = captureDocumentHistorySnapshot(staged);
         const beforeSignature = documentSnapshotSignature(before);
-        applySingleEdit(staged, edit);
-        bindAfterEdit(staged, edit.op);
+        applyCoreEditToStaged(staged, edit);
         const after = captureDocumentHistorySnapshot(staged);
         const afterSignature = documentSnapshotSignature(after);
         if (beforeSignature !== afterSignature) {
@@ -286,8 +284,7 @@ export function applyBatchWithUndo(
         const sheet = resolveSheet(staged, sheetNameForEdit(edit));
         const before = sheet.captureHistorySnapshot();
         const beforeSignature = sheetSnapshotSignature(before);
-        applySingleEdit(staged, edit);
-        bindAfterEdit(staged, edit.op);
+        applyCoreEditToStaged(staged, edit);
         const after = sheet.captureHistorySnapshot();
         const afterSignature = sheetSnapshotSignature(after);
         if (beforeSignature !== afterSignature) {
@@ -536,6 +533,17 @@ function copySheetSnapshotReferenceMetadata(source: SheetHistorySnapshot, target
       copyExpressionReferenceMetadata(sourceBody.expression, targetBody.expression);
     });
   });
+}
+
+/** Shared single-step execution on private staged state; unexpected faults propagate. */
+export function applyCoreEditToStaged(document: DocumentState, edit: CoreEdit): void {
+  try {
+    applySingleEdit(document, edit);
+  } catch (error) {
+    if (error instanceof SheetNoteError) throw new CoreEditFailure("invalid_operation", error.message);
+    throw error;
+  }
+  bindAfterEdit(document, edit.op);
 }
 
 function applySingleEdit(document: DocumentState, edit: CoreEdit): void {

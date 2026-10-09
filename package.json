@@ -2,6 +2,9 @@
   "name": "ordinate",
   "private": true,
   "scripts": {
-    "app": "npm --prefix apps/ordinate-app run app"
+    "app": "npm --prefix apps/ordinate-app run app",
+    "build:cli": "npm --prefix packages/cli run build",
+    "cli": "node packages/cli/dist/ordinate-cli.mjs",
+    "test:cli": "npm --prefix packages/cli test"
   }
 }

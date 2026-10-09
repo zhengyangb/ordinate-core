@@ -1025,7 +1025,7 @@ export const standardFunctionDefinitions: readonly FunctionDefinition[] = [
       param("days", "Scalar[number]", "Optional integer day count."),
       param("hours", "Scalar[number]", "Optional integer hour count."),
       param("minutes", "Scalar[number]", "Optional integer minute count."),
-      param("seconds", "Scalar[number]", "Optional second count with millisecond precision."),
+      param("seconds", "Scalar[number]", "Optional seconds component in [0, 60), with millisecond precision; not total elapsed seconds."),
     ], "duration")],
     examples: [example("duration(0, 1, 30)", "PT1H30M"), example("duration(1)", "P1D")],
     evaluator: durationEvaluator(),
