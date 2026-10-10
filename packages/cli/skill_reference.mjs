@@ -9,6 +9,20 @@ export const skillDirectory = resolve(directory, "skills/ordinate-authoring");
 const pkg = JSON.parse(readFileSync(resolve(directory, "package.json"), "utf8"));
 const cli = resolve(directory, pkg.bin[pkg.name]);
 const topics = ["syntax", "formulas", "references", "formats", "notes"];
+const workedWorkbooks = [
+  {
+    source: "00-getting-started.ord",
+    reference: "worked-getting-started.md",
+    title: "Getting started: connected operating workbook",
+    focus: "Six sheets connect inputs, a half-year operating report, invoices, a loan plan, delivery sessions, and review. Read the Operating Report for a complete `@display` frame with column defaults and percentage row defaults.",
+  },
+  {
+    source: "07-inventory-replenishment.ord",
+    reference: "worked-inventory-replenishment.md",
+    title: "Inventory replenishment: operational workbook",
+    focus: "Five sheets connect a 48-item catalog to stock planning, supplier orders, and review. Read the Catalog for column-wide formats and the planning sheets for formulas over larger tables.",
+  },
+];
 const commonFunctions = [
   "sum", "average", "count", "min", "max", "if", "filter", "lookup",
   "match", "index", "round", "floor", "ceil", "ln", "exp", "log10",
@@ -26,6 +40,11 @@ export function skillReferences() {
   for (const topic of topics) {
     const ref = reference(topic);
     files.set(topic + ".md", `${generated}\n\n# ${ref.title}\n\n${ref.body}\n${ref.examples.map(e => `\n## Complete workbook\n\n\`\`\`ord\n${e.source}\`\`\`\n`).join("")}`);
+  }
+  for (const workbook of workedWorkbooks) {
+    const source = readFileSync(resolve(directory, "../../examples", workbook.source), "utf8");
+    files.set(workbook.reference, `${generated}\n\n# ${workbook.title}\n\n${workbook.focus}\n\nThis is copied from the repository's \`examples/${workbook.source}\` when the
+skill references are generated. Edit that source workbook, not this file.\n\n\`\`\`ord\n${source.trimEnd()}\n\`\`\`\n`);
   }
   const functions = commonFunctions.map(name => reference("function", name).function);
   const detail = functions.map(fn => `## ${fn.name}\n\n${fn.summary}\n\n\`\`\`text\n${fn.signatures.map(s => `${fn.name}(${s.parameters.map(p => `${p.name}: ${p.type}`).join(", ")}) -> ${s.returns}`).join("\n")}\n\`\`\`\n\n${fn.signatures.flatMap(s => s.parameters).filter((p, i, all) => all.findIndex(x => x.name === p.name) === i).map(p => `- \`${p.name}\`: ${p.summary}\n`).join("")}${fn.aliases?.length ? `\nAliases: ${fn.aliases.join(", ")}.\n` : ""}`).join("\n");
