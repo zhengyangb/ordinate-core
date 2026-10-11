@@ -257,9 +257,9 @@ describe("RFC-0042 readable import formulas", () => {
 
 describe("RFC-0042 imported literal cells cannot become native syntax", () => {
   it.each([
-    "=1+1", "= @[#1,#1]", "+SUM(A1)", "@display", "---", "# New Sheet", "* Parent", "** Child",
+    "=1+1", "= @[#1,#1]", "+SUM(A1)", "@meta", "---", "# New Sheet", "* Parent", "** Child",
     "a|b", "a||b", 'say "hello"', "C:\\temp\\file", "literal\\n", "first\nsecond", "\nstart\n", "true", "null", "123", "2024-02-29", " leading and trailing ",
-    "---\n# Injected Sheet\n| x |", "@display row 1 {color:red}", "line\u2028separator\u2029paragraph", "[1,2]", "error[type_error]",
+    "---\n# Injected Sheet\n| x |", "@meta row 1 {color:red}", "line\u2028separator\u2029paragraph", "[1,2]", "error[type_error]",
   ])("imports %j as exact inert text and preserves it through native serialization", async literal => {
     const bytes = await workbookBytes(workbook => { workbook.addWorksheet("Literal").getCell("A1").value = literal; });
     const result = await importExcelWorkbook(bytes);

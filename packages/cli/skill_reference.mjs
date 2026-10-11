@@ -14,13 +14,13 @@ const workedWorkbooks = [
     source: "00-getting-started.ord",
     reference: "worked-getting-started.md",
     title: "Getting started: connected operating workbook",
-    focus: "Six sheets connect inputs, a half-year operating report, invoices, a loan plan, delivery sessions, and review. Read the Operating Report for a complete `@display` frame with column defaults and percentage row defaults.",
+    focus: "Six sheets connect inputs, a half-year operating report, invoices, a loan plan, delivery sessions, and review. Read the Operating Report for a complete `@meta` frame with column defaults and percentage row defaults.",
   },
   {
     source: "07-inventory-replenishment.ord",
     reference: "worked-inventory-replenishment.md",
     title: "Inventory replenishment: operational workbook",
-    focus: "Five sheets connect a 48-item catalog to stock planning, supplier orders, and review. Read the Catalog for column-wide formats and the planning sheets for formulas over larger tables.",
+    focus: "Five sheets connect a 48-item catalog to stock planning, supplier orders, and review. Read the Catalog for column-wide formats, the planning sheets for formulas over larger tables, and Purchasing Summary for a deliberate preceding-row reference (@[_-1,_]).",
   },
 ];
 const commonFunctions = [

@@ -104,7 +104,7 @@ const source = `# Sheet
 | * B || 56 | Revenue total |`;
 function index() {
   let projection!: ReturnType<typeof useSheetViewModel>;
-  function Harness() { projection = useSheetViewModel({ ...useEditorStore.getState(), displayCell }); return null; }
+  function Harness() { projection = useSheetViewModel({ ...useEditorStore.getState(), displayCell, columnWidthMode: "standard" }); return null; }
   renderToStaticMarkup(<Harness />);
   const sheet = projection.currentSheetState!;
   return buildSearchCells(projection.allRowData, [], sheet.colIds, sheet.rowIds, "en-US");

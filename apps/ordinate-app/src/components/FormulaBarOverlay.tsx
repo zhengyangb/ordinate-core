@@ -526,9 +526,9 @@ export default function FormulaBarOverlay({
   useEffect(() => {
     if (!formulaBarSnapshot) {
       setDraftInput("");
-      onDraftInputChange("");
+      if (isInputEditable) onDraftInputChange("");
       setDraftError(null);
-      onActiveReferenceTokenChange(null);
+      if (isInputEditable) onActiveReferenceTokenChange(null);
       setIsComposingInput(false);
       appliedPointReferenceRequestIdRef.current = null;
       pointGestureReplacementRef.current = null;
@@ -549,16 +549,16 @@ export default function FormulaBarOverlay({
       editSessionAddressRef.current = null;
     }
     setDraftInput(formulaBarSnapshot.inputText);
-    onDraftInputChange(formulaBarSnapshot.inputText);
+    if (isInputEditable) onDraftInputChange(formulaBarSnapshot.inputText);
     setDraftError(null);
-    onActiveReferenceTokenChange(null);
+    if (isInputEditable) onActiveReferenceTokenChange(null);
     pointGestureReplacementRef.current = null;
     pointTokenReplacementRef.current = null;
     setIsComposingInput(false);
     appliedPointReferenceRequestIdRef.current = null;
     syncedActiveReferenceTokenIdRef.current = null;
     explicitReferenceViewRef.current = null;
-  }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.inputText, isEditingInput, onActiveReferenceTokenChange, onDraftInputChange]);
+  }, [formulaBarSnapshot?.primaryAddress, formulaBarSnapshot?.inputText, isEditingInput, isInputEditable, onActiveReferenceTokenChange, onDraftInputChange]);
 
   useLayoutEffect(() => {
     const pendingSelection = pendingEditorSelectionRef.current;
@@ -620,7 +620,7 @@ export default function FormulaBarOverlay({
   }, [activeReferenceTokenId, draftInput, isEditingInput, onActiveReferenceTokenChange, onDraftInputChange, pointReferenceRequest?.id]);
 
   useEffect(() => {
-    if (isFormulaDraft) return;
+    if (!isInputEditable || isFormulaDraft) return;
     setDraftError(null);
     syncedActiveReferenceTokenIdRef.current = null;
     explicitReferenceViewRef.current = null;
@@ -628,7 +628,7 @@ export default function FormulaBarOverlay({
     pointTokenReplacementRef.current = null;
     onActiveReferenceTokenChange(null);
     onCancelPointPick();
-  }, [isFormulaDraft, onActiveReferenceTokenChange, onCancelPointPick]);
+  }, [isFormulaDraft, isInputEditable, onActiveReferenceTokenChange, onCancelPointPick]);
 
   useEffect(() => {
     setMenuPanelKey(localFormatKey);
@@ -1672,21 +1672,27 @@ export default function FormulaBarOverlay({
               />
               {draftError ? <div className="formula-draft-error" role="alert">{draftError}</div> : null}
               </div>
+            ) : !isInputEditable ? (
+              <div className="formula-source formula-source-button is-read is-readonly" role="textbox" aria-readonly="true"
+                aria-label="Cell input (read-only)" tabIndex={0}>
+                <span className="formula-input-preview">{inputPreview.text}</span>
+                {inputPreview.lineCount > 1 ? <span className="formula-input-line-count">{inputPreview.lineCount} lines</span> : null}
+              </div>
             ) : (
               <button
-                className={isInputEditable ? "formula-source formula-source-button is-editable is-read" : "formula-source formula-source-button is-read"}
+                className="formula-source formula-source-button is-editable is-read"
                 type="button"
                 onClick={beginEditInput}
                 onMouseEnter={(event) => {
-                  if (isInputEditable) onTooltipEnter("Edit cell input", event.currentTarget);
+                  onTooltipEnter("Edit cell input", event.currentTarget);
                 }}
                 onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
                 onFocus={(event) => {
-                  if (isInputEditable) onTooltipEnter("Edit cell input", event.currentTarget);
+                  onTooltipEnter("Edit cell input", event.currentTarget);
                 }}
                 onBlur={(event) => onTooltipRelease(event.currentTarget)}
                 onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
-                aria-label={isInputEditable ? "Edit selected cell input" : "Cell input (read-only)"}
+                aria-label="Edit selected cell input"
               >
                 <span className="formula-input-preview">{inputPreview.text}</span>
                 {inputPreview.lineCount > 1 ? <span className="formula-input-line-count">{inputPreview.lineCount} lines</span> : null}

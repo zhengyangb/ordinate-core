@@ -7,7 +7,7 @@
 
 This RFC defines how Ordinate’s internal document model is serialized to `.ord` text and how `.ord` text is expected to round-trip back into the internal model.
 
-It defines the primary role of the internal model, the serializer’s canonical output direction, cache serialization behavior, quoting behavior, and structural output rules for headers, divider rows, and display control frames.
+It defines the primary role of the internal model, the serializer’s canonical output direction, cache serialization behavior, quoting behavior, and structural output rules for headers, divider rows, and metadata control frames.
 
 ## Goals
 
@@ -20,7 +20,7 @@ This RFC defines:
 - error value serialization behavior
 - label and path serialization rules
 - header and divider serialization rules
-- display control frame serialization rules
+- metadata control frame serialization rules
 
 ## Non-Goals
 
@@ -196,14 +196,14 @@ Illustrative example:
 | Rev  || 100  | 120  | 130  |
 ```
 
-## Display Control Frame Serialization
+## Metadata Control Frame Serialization
 
 Display metadata serialization follows RFC-0014.
 
 Current working direction:
 
-- when column defaults exist, serializer emits a display control frame
-- control frame starts with a row whose first cell is `@display`
+- when column defaults exist, serializer emits a metadata control frame
+- control frame starts with a row whose first cell is `@meta`
 - control row remaining cells map 1:1 to semantic columns and carry metadata-only blocks (or blank)
 - semantic rows are serialized with a leading reserved control-column cell
 - when a header divider row is present, divider dashes must span all serialized columns, including the reserved control column
@@ -260,4 +260,4 @@ Serialization may be performed asynchronously relative to editing, as long as th
 - hierarchy in references is serialized as reference/path syntax
 - canonical quoting is used during serialization
 - divider appears exactly once between header rows and body rows
-- display defaults may serialize through an `@display` control frame
+- display defaults may serialize through an `@meta` control frame

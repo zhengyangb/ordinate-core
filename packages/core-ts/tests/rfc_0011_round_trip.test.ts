@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { DocumentState, formatDocument, serializeDocumentState } from "../src";
-import { parseDocument } from "../src/parser";
+import { parseDocument, withOrdFormatFrontMatter } from "../src/parser";
 
 type RoundTripCase = {
   name: string;
@@ -73,7 +73,7 @@ describe("RFC-0011 serialization round-trip", () => {
         state.evaluate();
       }
       const output = serializeDocumentState(state);
-      const expected = formatDocument(`${spec.expect}\n`);
+      const expected = formatDocument(`${withOrdFormatFrontMatter(null)}\n\n${spec.expect}\n`);
       expect(output).toBe(expected);
     }
   });

@@ -15,6 +15,7 @@ export { CapabilityRequestError, WORKBOOK_LIMITS, decodeEditRequest, listWorkboo
   type CellQuery, type EvaluationOptions, type EditRequest, type WorkbookOperation,
   type RowSelector, type ColumnSelector, type CellTarget, type RegionTarget,
   type IndexWindow, type PortableFormatSpec } from "./capability_schema";
+export { importWorkbook, type WorkbookImportRequest, type WorkbookImportResult, type WorkbookImportReport } from "./import_capability";
 export { groupHeaderSpans } from "./presentation";
 export { parseSheetNote, serializeSheetNote, matchNoteListItem, SheetNoteError, type SheetNote, type SheetNotePosition, type NoteBlock, type NoteInline, type NoteDiagnostic } from "./sheet_notes";
 export { previewRowsToNote, type RowsToNotePreview } from "./core_note_rows";
@@ -50,7 +51,7 @@ export {
   type TableIR,
   type RowIR,
 } from "./ir";
-export { DocumentParseError, parseHierarchyLabel } from "./parser";
+export { DocumentParseError, ORD_FORMAT_VERSION, parseHierarchyLabel } from "./parser";
 
 export {
   evaluateDocument,

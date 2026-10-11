@@ -2,7 +2,10 @@
 
 # Workbook syntax
 
-An .ord workbook is UTF-8 text. A # heading starts a sheet. Each sheet has
+An .ord workbook is UTF-8 text. Core writes ord-format: "0.1" as
+the first front-matter content line when serializing. This is the file format
+version, not an App or CLI version. Directly authored source may omit the envelope;
+the next Core serialization adds it. A # heading starts a sheet. Each sheet has
 one pipe table and optional notes above/below it. Sheet names should be unique.
 A divider row separates header rows from body rows. A doubled pipe || marks
 the boundary between header columns (row labels) and data columns.
@@ -14,13 +17,17 @@ Empty cells are blank. Numbers, true/false, and ISO temporal literals are typed.
 Ordinate is not arbitrary Markdown: use supported sheet notes, not another table
 or arbitrary HTML inside a note. See help notes.
 
-Coordinates refer to the semantic table. Markdown dividers and the @display
+Coordinates refer to the semantic table. Markdown dividers and the @meta
 frame are not cells. Formula A1/#1 coordinates are one-based; CLI indexes and
 formula bracket indexes are zero-based. See help references and help formats.
 
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Plan
 | Item || Q1 | Q2 |
 | --- || --- | --- |
@@ -32,6 +39,10 @@ formula bracket indexes are zero-based. See help references and help formats.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Operations
 | Item || 2025 | 2025 |
 | || H1 | H2 |

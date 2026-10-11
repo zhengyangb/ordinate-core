@@ -51,6 +51,7 @@ export type DesktopWindowState = {
   chromeColor: string;
 };
 export type DesktopBridge = Pick<StorageAdapter, "availability" | "open" | "save" | "saveAs" | "readCurrent"> & {
+  agent: import("../agent/contracts.js").AgentBridge;
   watch: NonNullable<StorageAdapter["watch"]>;
   readonly windowChrome: "native";
   readonly sessionId: string;

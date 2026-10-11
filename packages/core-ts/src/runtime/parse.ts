@@ -27,11 +27,11 @@ import { FSTRING_LIMITS, scanFString } from "./fStringSyntax";
 
 const THIS_ROW_RE = /^thisRow\((-?\d+)\)$/;
 
-/** Shared metadata-only grammar for either axis of the @display frame. */
-export function parseDisplayControlCell(raw: string): ParsedDisplayMetadata {
+/** Shared metadata-only grammar for either axis of the @meta frame. */
+export function parseMetaControlCell(raw: string): ParsedDisplayMetadata {
   const parsed = parseCellInput(raw);
   if (stripCellDisplayMetadata(raw).trim() !== "" || !parsed.localDisplay) {
-    return {valid:false,rawBlock:raw.trim(),issue:{code:"display_control_cell_requires_metadata_only",context:{}}};
+    return {valid:false,rawBlock:raw.trim(),issue:{code:"meta_control_cell_requires_metadata_only",context:{}}};
   }
   return parsed.localDisplay;
 }

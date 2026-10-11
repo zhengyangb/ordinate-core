@@ -259,7 +259,7 @@ describe("RFC-0049 portable source capabilities", () => {
     expect(() => decodeEditRequest({ baseRevision: "bad", operations: [] })).toThrow();
   });
   it("keeps multi-header/control-frame coordinates aligned with semantic cells", async () => {
-    const source = "# Plan\n| @display | || {:,.2f} | {:,.2f} |\n| | || 2026 | 2026 |\n| | Item || H1 | H2 |\n| | --- || --- | --- |\n| | Revenue || 10 | 20 |";
+    const source = "# Plan\n| @meta | || {:,.2f} | {:,.2f} |\n| | || 2026 | 2026 |\n| | Item || H1 | H2 |\n| | --- || --- | --- |\n| | Revenue || 10 | 20 |";
     const view = data(await inspectWorkbook(source, { sheet: "Plan" })).selection!;
     expect(view.cells).toHaveLength(3);
     expect(view.cells[2][1].input).toBe("10");

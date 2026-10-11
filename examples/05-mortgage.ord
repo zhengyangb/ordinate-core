@@ -1,3 +1,7 @@
+---
+ord-format: "0.1"
+---
+
 # Loan
 **Home purchase | fixed-rate mortgage and ownership budget**
 
@@ -33,7 +37,7 @@ Each payment is split between interest and principal. The balance falls graduall
 
 Amounts are displayed to cents; the planning schedule retains full precision and may differ slightly from a lender's cents-rounded statement.
 
-| @display |  || {:%Y-%m-%d} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
+| @meta |  || {:%Y-%m-%d} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
 |  | Payment no || Due date | Opening balance | Payment | Interest | Principal paid | Closing balance | Interest to date | Principal to date |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- |
 |  | 1 || 2027-01-31 | = @["Loan"::["Principal","Value"]] | = @["Loan"::["Monthly principal and interest","Value"]] | = -ipmt(@["Loan"::["Monthly rate","Value"]], A2, @["Loan"::["Payment periods","Value"]], @["Loan"::["Principal","Value"]]) | = D2 - E2 | = C2 - F2 | = sum(E2:E2) | = sum(F2:F2) |
@@ -402,7 +406,7 @@ Amounts are displayed to cents; the planning schedule retains full precision and
 
 The annual view separates the repayment of debt from interest expense and recurring ownership costs. Property tax, insurance and maintenance are held flat for comparison; actual renewal costs should be reviewed each year.
 
-| @display |  || {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
+| @meta |  || {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
 |  | Year || Opening balance | Loan payments | Interest | Principal | Closing balance | Property tax | Insurance | Maintenance | Total cash cost |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | 2027 || = @[Amortization::C2] | = sum(@[Amortization::D2:D13]) | = sum(@[Amortization::E2:E13]) | = sum(@[Amortization::F2:F13]) | = @[Amortization::G13] | = @["Loan"::["Annual property tax","Value"]] | = @["Loan"::["Annual insurance","Value"]] | = @["Loan"::["Annual maintenance reserve","Value"]] | = C2 + G2 + H2 + I2 |
@@ -465,7 +469,7 @@ The first-year and lifetime totals reconcile the payment schedule to the contrac
 
 The same purchase deposit is used at each rate. Shorter terms reduce lifetime interest but increase the monthly commitment. Closing costs and annual ownership costs are not included in this comparison.
 
-| @display |  || {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
+| @meta |  || {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
 |  | Annual rate || 15-year payment | 30-year payment | 15-year interest | 30-year interest | Monthly difference |
 |  | --- || --- | --- | --- | --- | --- |
 |  | 3.0% || = -pmt(0.03/12, 180, @["Loan"::["Principal","Value"]]) | = -pmt(0.03/12, 360, @["Loan"::["Principal","Value"]]) | = B2 * 180 - @["Loan"::["Principal","Value"]] | = C2 * 360 - @["Loan"::["Principal","Value"]] | = B2 - C2 |

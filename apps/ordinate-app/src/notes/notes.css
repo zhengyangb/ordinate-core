@@ -1,20 +1,82 @@
+.note-workspace-frame {
+  --note-rail-height: calc(var(--index-rail-height-active) + 2 * var(--index-rail-gap));
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
 .note-workspace {
-  --note-rail-height: calc(var(--index-rail-height-active) + var(--index-rail-gap));
   /* One paper width for both notes and their editor anchors. The available
      workspace wins over the readable minimum on small windows. */
   --note-paper-width: clamp(480px, var(--note-table-width), 960px);
   height: 100%;
+  padding-inline-start: var(--index-rail-gap);
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
   overscroll-behavior: contain;
+  overflow-anchor: none;
 }
 .note-workspace::-webkit-scrollbar { display: none; }
+.note-scrollbar,
+.note-horizontal-scrollbar {
+  opacity: 0;
+  transition: opacity 180ms cubic-bezier(.25, 1, .5, 1);
+  visibility: hidden;
+  pointer-events: none;
+}
+.note-scrollbar {
+  position: absolute;
+  z-index: 26;
+  top: var(--note-rail-height);
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scrollbar-color: color-mix(in oklab, var(--sheet-soft) 42%, transparent) transparent;
+}
+.note-workspace-frame.has-composite-scrollbar .note-scrollbar { visibility: visible; pointer-events: auto; }
+.note-workspace-frame.has-composite-scrollbar:is(:hover, .scrollbar-active) .note-scrollbar,
+.note-workspace-frame.has-composite-scrollbar .note-scrollbar:focus-visible { opacity: 1; }
+.note-workspace-frame.has-composite-scrollbar .ag-body-vertical-scroll { visibility: hidden; }
+.note-workspace-frame.has-composite-scrollbar .ag-body-viewport { overflow-anchor: none; }
+.note-workspace-frame.has-horizontal-scrollbar .note-scrollbar { bottom: 15px; }
+.note-workspace-frame.has-horizontal-scrollbar .ag-body-horizontal-scroll { opacity: 0; pointer-events: none; }
+.note-horizontal-scrollbar {
+  position: absolute;
+  z-index: 27;
+  bottom: 0;
+  height: 15px;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-color: color-mix(in oklab, var(--sheet-soft) 42%, transparent) transparent;
+  background: var(--sheet-surface);
+}
+.note-workspace-frame.has-horizontal-scrollbar .note-horizontal-scrollbar { visibility: visible; pointer-events: auto; }
+.note-workspace-frame.has-horizontal-scrollbar:is(:hover, .scrollbar-active) .note-horizontal-scrollbar,
+.note-workspace-frame.has-horizontal-scrollbar .note-horizontal-scrollbar:focus-visible { opacity: 1; }
+.note-horizontal-scrollbar > div { height: 1px; }
+.note-horizontal-scrollbar::-webkit-scrollbar,
+.note-horizontal-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.note-scrollbar::-webkit-scrollbar,
+.note-scrollbar::-webkit-scrollbar-track { background: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  .note-scrollbar,
+  .note-horizontal-scrollbar { transition: none; }
+}
+@media (forced-colors: active) {
+  .note-workspace-frame.has-composite-scrollbar .note-scrollbar,
+  .note-workspace-frame.has-horizontal-scrollbar .note-horizontal-scrollbar { opacity: 1; }
+}
 .note-rail-host {
   position: sticky;
   top: 0;
   z-index: 25;
   height: var(--note-rail-height);
+  padding-top: var(--index-rail-gap);
   background: var(--sheet-surface);
 }
 .note-column-rail {

@@ -12,6 +12,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const noop = () => {};
 const props: ComponentProps<typeof AppChrome> = {
+  agentOpen: false, agentPreviewActive: false, onToggleAgent: noop,
   mode: "table", fileName: "Quarterly Report.ord", fileStatus: "Saved", fileStatusTone: "neutral",
   activeSheet: "Sheet", sheetNames: ["Sheet"], sheetHealthByName: {},
   setActiveSheet: noop, onInsertSheet: noop, onDeleteSheet: noop, onMoveSheet: noop, onRenameSheet: () => null,
@@ -40,6 +41,39 @@ describe("host-specific document title placement", () => {
     expect(markup.indexOf('aria-label="Get Mac app"')).toBeLessThan(markup.indexOf('class="toolbar-actions"'));
     expect(renderToStaticMarkup(<AppChrome {...props} />)).not.toContain('aria-label="Get Mac app"');
     expect(renderToStaticMarkup(<AppChrome {...props} online={{ ...online, isMac: false }} />)).not.toContain('aria-label="Get Mac app"');
+  });
+  it("shows AI between search and source only outside Online", () => {
+    const raw = renderToStaticMarkup(<AppChrome {...props} />);
+    expect(raw.indexOf('aria-label="Open AI assistant"')).toBeGreaterThan(raw.indexOf('aria-label="Search'));
+    expect(raw.indexOf('aria-label="Open AI assistant"')).toBeLessThan(raw.indexOf('aria-label="Open source mode"'));
+    const online = { showExamples: noop, openFromLink: noop, downloadMac: noop, isMac: false };
+    expect(renderToStaticMarkup(<AppChrome {...props} online={online} />)).not.toContain('aria-label="Open AI assistant"');
+    const simulator = renderToStaticMarkup(<AppChrome {...props} agentDebugMode />);
+    expect(simulator).toContain('aria-label="Open assistant simulator"');
+    expect(simulator).not.toContain('aria-label="Open AI assistant"');
+  });
+  it("marks the assistant toolbar button active when its panel is open", () => {
+    const markup = renderToStaticMarkup(<AppChrome {...props} agentOpen />);
+    expect(markup).toContain('class="tool-button agent-button active"');
+    expect(markup).toContain('aria-label="Close AI assistant" aria-expanded="true"');
+  });
+  it("keeps safe commands available and disables document changes during an AI preview", () => {
+    const markup = renderToStaticMarkup(<AppChrome {...props} agentOpen agentPreviewActive canUndo canRedo titlePlacement="native" />);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="New document"/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Open file"/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Sheet setup"/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Undo"/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Redo"/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Close AI assistant"/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Open source mode"/);
+    expect(markup).toMatch(/<button[^>]*aria-label="Settings"[^>]*>/);
+    expect(markup).toContain('aria-label="Export a copy"');
+    expect(markup).not.toContain('AI preview not included');
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*aria-label="Settings"/);
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*aria-label="Export a copy"/);
+    const browserMarkup = renderToStaticMarkup(<AppChrome {...props} agentPreviewActive />);
+    expect(browserMarkup).toContain('aria-label="Save file"');
+    expect(browserMarkup).toContain('aria-label="Save as"');
   });
   it("keeps the browser title and branding in their original toolbar position", () => {
     const markup = renderToStaticMarkup(<AppChrome {...props} />);

@@ -4,7 +4,7 @@ import {
   evaluateAndFormatDocument, evaluateDocument, formatDocument, parseDocumentModel,
   serializeDocumentState, validateDocument,
 } from "../src";
-import { parseDocument } from "../src/parser";
+import { parseDocument, withOrdFormatFrontMatter } from "../src/parser";
 
 const body = "# Sheet\n| Name || Value |\n| ---- || ----- |\n| Cash || 10 |\n| Total || = @[Cash, Value] + 2 |\n";
 const envelope = "---\n# Ghost\n| not | a table |\nunknown: !future &anchor\n  nested: [one, two]\nmultiline: |\n  # Also not a sheet\n  ---\n  | neither | a table |\n# comments and trailing spaces stay  \n---";
@@ -32,21 +32,21 @@ describe("RFC-0040 opaque YAML front matter", () => {
     const doc = DocumentState.fromText(source);
     expect(doc.frontMatter).toBe(raw);
     const saved = serializeDocumentState(doc);
-    expect(saved.startsWith(`${raw}\n\n# Sheet\n`)).toBe(true);
+    expect(saved.startsWith(`${withOrdFormatFrontMatter(raw)}\n\n# Sheet\n`)).toBe(true);
     expect(serializeDocumentState(DocumentState.fromText(saved))).toBe(saved);
     const evaluated = evaluateAndFormatDocument(source);
-    expect(evaluated.startsWith(`${raw}\n\n`)).toBe(true);
+    expect(evaluated.startsWith(`${withOrdFormatFrontMatter(raw)}\n\n`)).toBe(true);
     expect(evaluateAndFormatDocument(evaluated)).toBe(evaluated);
   });
 
-  it("distinguishes empty front matter from absent front matter without inventing YAML fields", () => {
+  it("distinguishes empty front matter from absent front matter", () => {
     for (const raw of ["---\n---", "---\n\n---", "---\nthis: [is not valid YAML\n---", '---\nfuture: "hello\u2028---\u2028world"\n---']) {
       expect(DocumentState.fromText(`${raw}\n${body}`).frontMatter).toBe(raw);
       expect(validateDocument(`${raw}\n${body}`).ok).toBe(true);
     }
     expect(parseDocument(body).frontMatter).toBeNull();
     expect(parseDocumentModel(body).frontMatter).toBeNull();
-    expect(serializeDocumentState(DocumentState.fromText(body))).not.toMatch(/^---/);
+    expect(serializeDocumentState(DocumentState.fromText(body))).toMatch(/^---\nord-format: "0\.1"\n---\n/);
     expect(formatDocument(`\uFEFF${body}`)).toBe(formatDocument(body));
   });
 
@@ -83,7 +83,7 @@ describe("RFC-0040 opaque YAML front matter", () => {
     expect(result.nextDocument.frontMatter).toBe(envelope);
     expect(result.nextDocument.evaluate().sheets[0].values[1][1]).toMatchObject({ kind: "number", value: 27 });
     const after = serializeDocumentState(result.nextDocument);
-    expect(after.startsWith(`${envelope}\n\n`)).toBe(true);
+    expect(after.startsWith(`${withOrdFormatFrontMatter(envelope)}\n\n`)).toBe(true);
     const undo = applyCoreEditMemento(result.nextDocument, result.memento, "undo");
     if (!undo.ok) throw new Error(undo.error.message);
     expect(serializeDocumentState(undo.nextDocument)).toBe(before);
@@ -93,6 +93,6 @@ describe("RFC-0040 opaque YAML front matter", () => {
     expect(serializeDocumentState(redo.nextDocument)).toBe(after);
     const renamed = applyBatchWithUndo(redo.nextDocument, [{ op: "rename_sheet", sheet: "Sheet", newName: "Renamed" }]);
     if (!renamed.ok) throw new Error(renamed.error.message);
-    expect(serializeDocumentState(renamed.nextDocument).startsWith(`${envelope}\n\n# Renamed\n`)).toBe(true);
+    expect(serializeDocumentState(renamed.nextDocument).startsWith(`${withOrdFormatFrontMatter(envelope)}\n\n# Renamed\n`)).toBe(true);
   });
 });

@@ -22,7 +22,7 @@ future: opaque
 ---
 # Data
 Notes outside the table.
-| @display |         || {:.1f} {::bold} | {:d} |
+| @meta |         || {:.1f} {::bold} | {:d} |
 |          | Item    || 2024 | 2025 |
 |          | ------- || ---- | ---- |
 |          | Parent  || 12.345 | 20 |

@@ -159,7 +159,7 @@ sheets closes the reader; each sheet retains its own extraction/header choices.
 Import compaction extracts shared column defaults, then shared row defaults
 (RFC 0045), retaining cell exceptions. Cell > row > column precedence resolves
 each style property independently. Row defaults use the left control column
-of the serialization-only `@display` frame, including on unheaded sheets.
+of the serialization-only `@meta` frame, including on unheaded sheets.
 Numeric row formats are not promoted across unheaded text labels: that would
 change their format validity. Setting appropriate header columns can therefore
 allow further numeric-format compaction. Metadata counts shrink, but source

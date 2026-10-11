@@ -1,4 +1,4 @@
-import { DocumentParseError, deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow, type Sheet, type Table } from "./parser";
+import { DocumentParseError, deriveHierarchyRows, parseDocument, parseTableRow, stripMetaControlFrame, type ParsedRow, type Sheet, type Table } from "./parser";
 import {
   parseCellInput,
   stripCellDisplayMetadata,
@@ -8,7 +8,7 @@ import {
   type RuntimeValue,
 } from "./runtime";
 import { describeDisplayMetadataDiagnostic } from "./runtime/displayMetadata";
-import { parseDisplayControlCell } from "./runtime/parse";
+import { parseMetaControlCell } from "./runtime/parse";
 import { isError } from "./runtime/errors";
 
 const SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
@@ -126,15 +126,15 @@ function pushDiagnosticValidationError(
 
 function validateTable(result: ValidationResult, sheet: string, table: Table): SheetSummary {
   const parsedRowsAll: ParsedRow[] = table.rows.map((r) => parseTableRow(r));
-  const controlFrame = stripDisplayControlFrame(parsedRowsAll);
+  const controlFrame = stripMetaControlFrame(parsedRowsAll);
   const parsedRows = controlFrame.rows;
 
   if (controlFrame.hasControlFrame) {
-    validateDisplayControlFrame(result, sheet, controlFrame.controlRow);
+    validateMetaControlFrame(result, sheet, controlFrame.controlRow);
   }
 
   if (parsedRows.length === 0) {
-    result.errors.push({ message: "Table has no semantic rows after stripping display control frame.", sheet });
+    result.errors.push({ message: "Table has no semantic rows after stripping metadata control frame.", sheet });
     return {
       name: sheet,
       rowCount: 0,
@@ -186,7 +186,7 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
 
   const [headerRowCount, headerColumnCount] = headerCounts(parsedRows, columnCount);
   parsedRows.forEach((row, index) => {
-    const raw = row.displayControl?.trim();
+    const raw = row.metaControl?.trim();
     if (!raw) return;
     if (isSeparatorRow(row.cells) && SEPARATOR_CELL_RE.test(raw)) return;
     if (index < headerRowCount || isSeparatorRow(row.cells)) {
@@ -196,7 +196,7 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
     if (headerColumnCount > 0 && parseCellInput(row.rawCells[0] ?? "").localDisplay) {
       pushValidationError(result, {sheet,row:index+1,message:"Row display defaults must have a single source: control cell or label."});
     }
-    const parsed = parseDisplayControlCell(raw);
+    const parsed = parseMetaControlCell(raw);
     if (!parsed.valid) pushDiagnosticValidationError(result, {sheet,row:index+1,issue:parsed.issue,
       message:`Row ${index+1}: invalid row display metadata (${describeDisplayMetadataDiagnostic(parsed.issue)}).`});
   });
@@ -214,23 +214,23 @@ function validateTable(result: ValidationResult, sheet: string, table: Table): S
   };
 }
 
-function validateDisplayControlFrame(
+function validateMetaControlFrame(
   result: ValidationResult,
   sheet: string,
   controlRow: ParsedRow | null,
 ): void {
   if (!controlRow) return;
-  if (controlRow.cells.length === 0 || controlRow.cells[0] !== "@display") {
-    result.errors.push({ message: "Invalid display control frame marker.", sheet, row: 1, col: 1 });
+  if (controlRow.cells.length === 0 || controlRow.cells[0] !== "@meta") {
+    result.errors.push({ message: "Invalid metadata control frame marker.", sheet, row: 1, col: 1 });
     return;
   }
   for (let c = 1; c < controlRow.rawCells.length; c += 1) {
     const raw = controlRow.rawCells[c];
     if (raw.trim() === "") continue;
-    const parsed = parseDisplayControlCell(raw);
-    if (!parsed.valid && parsed.issue.code === "display_control_cell_requires_metadata_only") {
+    const parsed = parseMetaControlCell(raw);
+    if (!parsed.valid && parsed.issue.code === "meta_control_cell_requires_metadata_only") {
       pushValidationError(result, {
-        message: `Row 1, col ${c + 1}: display control cell must contain only display metadata.`,
+        message: `Row 1, col ${c + 1}: metadata control cell must contain only display metadata.`,
         sheet,
         row: 1,
         col: c + 1,

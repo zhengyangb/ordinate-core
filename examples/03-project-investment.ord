@@ -1,3 +1,7 @@
+---
+ord-format: "0.1"
+---
+
 # Project Inputs
 **Acme Workshop | automated assembly cell investment**
 
@@ -34,7 +38,7 @@ Utilization rises from 55% to 91% over the equipment life. Selling prices and op
 
 Working capital is funded at commissioning and recovered when the cell is retired. Residual proceeds equal the remaining book value.
 
-| @display |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
+| @meta |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
 |  | Metric || 2027 | 2028 | 2029 | 2030 | 2031 | 2032 | 2033 | 2034 | 2035 | 2036 |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | Year || 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
@@ -64,7 +68,7 @@ Working capital is funded at commissioning and recovered when the cell is retire
 
 Commissioning expenditure is paid before the first production year. The cumulative column tracks the recovery of the upfront investment; the final year includes inventory release and equipment disposal.
 
-| @display |  || {:%Y-%m-%d} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
+| @meta |  || {:%Y-%m-%d} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
 |  | Period || Date | Capital outlay | Working capital outlay | Operating cash | Recovery | Net cash flow | Cumulative cash |
 |  | --- || --- | --- | --- | --- | --- | --- | --- |
 |  | Commissioning || 2026-12-31 | = @["Project Inputs"::["Initial capital","Value"]] {:,.2f} {::>} | = @["Operating Plan"::["Working capital","2027"]] {:,.2f} {::>} | 0 | 0 | = -C2 - D2 | = G2 |
@@ -107,7 +111,7 @@ The base case clears the return hurdle, but authorization remains conditional on
 
 The downside grid holds operating performance unchanged and increases equipment, installation and training expenditure. It is intended to support the contingency allowance discussion, not replace a separate utilization downside case.
 
-| @display |  || {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
+| @meta |  || {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
 |  | Discount rate || 0% overrun | 5% overrun | 10% overrun | 15% overrun | 20% overrun | 25% overrun |
 |  | --- || --- | --- | --- | --- | --- | --- |
 |  | 8% || = @["Cash Flows"::G2] - @["Project Inputs"::["Initial capital","Value"]] * 0 + npv(0.08, @["Cash Flows"::G3:G12]) | = @["Cash Flows"::G2] - @["Project Inputs"::["Initial capital","Value"]] * 0.05 + npv(0.08, @["Cash Flows"::G3:G12]) | = @["Cash Flows"::G2] - @["Project Inputs"::["Initial capital","Value"]] * 0.1 + npv(0.08, @["Cash Flows"::G3:G12]) | = @["Cash Flows"::G2] - @["Project Inputs"::["Initial capital","Value"]] * 0.15 + npv(0.08, @["Cash Flows"::G3:G12]) | = @["Cash Flows"::G2] - @["Project Inputs"::["Initial capital","Value"]] * 0.2 + npv(0.08, @["Cash Flows"::G3:G12]) | = @["Cash Flows"::G2] - @["Project Inputs"::["Initial capital","Value"]] * 0.25 + npv(0.08, @["Cash Flows"::G3:G12]) |

@@ -269,7 +269,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("resolves effective presentation with cell > column > default precedence", () => {
     const doc = `
 # Sheet
-| @display |      || {:,.1f} {::>,bold} | {:d} {::>,bold} | {:,.2f} {::>,blue,bold} |
+| @meta |      || {:,.1f} {::>,bold} | {:d} {::>,bold} | {:,.2f} {::>,blue,bold} |
 |          | Item || Price          | Qty         | Total                |
 | -------- | ---- || ----           | ---         | -----                |
 |          | A    || 1234.5         | 2           | = B2 * C2            |
@@ -410,7 +410,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("applies column defaults from control frame without header rows", () => {
     const doc = `
 # Raw
-| @display |        | {:,.2f} | {::>} |
+| @meta |        | {:,.2f} | {::>} |
 |          | A      | 12.3    | 7     |
 |          | B      | 45      | 9     |
 `.trim();
@@ -433,7 +433,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("applies column defaults from control frame without header row and header column", () => {
     const doc = `
 # Raw
-| @display | {:,.2f} | {::>} |
+| @meta | {:,.2f} | {::>} |
 |          | 12.3    | 7     |
 |          | 45      | 9     |
 `.trim();
@@ -456,7 +456,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("fails validation when a control-frame cell is not metadata-only", () => {
     const doc = `
 # Sheet
-| @display | oops || {:,.2f} |
+| @meta | oops || {:,.2f} |
 |          | Item || Val     |
 | -------- | ---- || ---     |
 |          | A    || 12.3    |
@@ -464,7 +464,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
 
     const result = validateDocument(doc);
     expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.message.includes("display control cell must contain only display metadata"))).toBe(
+    expect(result.errors.some((e) => e.message.includes("metadata control cell must contain only display metadata"))).toBe(
       true,
     );
   });
@@ -472,7 +472,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
   it("reports invalid cell and control-frame display metadata through validateDocument", () => {
     const doc = `
 # Sheet
-| @display | {:bad fmt} | {::purple} |
+| @meta | {:bad fmt} | {::purple} |
 | Label    | Value      | Out         |
 | -------  | -----      | ---         |
 | A        | 12.5 {:bad fmt} | = B2 + 1 {::purple} |
@@ -550,7 +550,7 @@ describe("RFC-0014 temporal/display metadata (v1 core slice)", () => {
         state.evaluate();
       }
       const output = serializeDocumentState(state);
-      const expected = formatDocument(`${spec.expect}\n`);
+      const expected = formatDocument(`---\nord-format: "0.1"\n---\n\n${spec.expect}\n`);
       expect(output).toBe(expected);
 
       if (spec.targetRow && spec.targetCol) {

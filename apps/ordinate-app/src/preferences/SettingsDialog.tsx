@@ -8,29 +8,33 @@ import "./settings.css";
 const PAGES = [
   { value: "appearance", label: "Appearance" },
   { value: "datetime", label: "Date & time" },
+  { value: "advanced", label: "Advanced" },
 ] as const;
 type SettingsPage = typeof PAGES[number]["value"];
 type SettingsProps = {
   preferences: Preferences; systemLocale: string; update: (patch: Partial<Preferences>) => void; onClose: () => void; titleId?: string;
+  showAgentDiagnostics: boolean; onOpenAgentLogs: () => Promise<void>;
 };
 
-export function SettingsContent({ preferences, systemLocale, update, onClose, titleId, page, onPageChange }: SettingsProps & {
+export function SettingsContent({ preferences, systemLocale, update, onClose, titleId, page, onPageChange, showAgentDiagnostics, onOpenAgentLogs }: SettingsProps & {
   page: SettingsPage; onPageChange: (page: SettingsPage) => void;
 }) {
   const id = useId();
+  const [logsError, setLogsError] = useState("");
+  const pages = showAgentDiagnostics ? PAGES : PAGES.slice(0, 2);
   const format = createCellDisplayFormatter(preferences.dateTimeDisplay, systemLocale);
   return <div className="app-modal-content settings-content">
     <aside className="settings-sidebar">
       <h2 id={titleId}>Settings</h2>
       <div className="settings-tabs" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
-        {PAGES.map((item, index) => <button key={item.value} type="button" role="tab" id={`${id}-tab-${item.value}`}
+        {pages.map((item, index) => <button key={item.value} type="button" role="tab" id={`${id}-tab-${item.value}`}
           aria-controls={`${id}-panel-${item.value}`} aria-selected={page === item.value} tabIndex={page === item.value ? 0 : -1}
           onClick={() => onPageChange(item.value)} onKeyDown={event => {
             if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
-            const next = event.key === "Home" ? 0 : event.key === "End" ? PAGES.length - 1
-              : (index + (event.key === "ArrowDown" ? 1 : -1) + PAGES.length) % PAGES.length;
-            onPageChange(PAGES[next].value);
+            const next = event.key === "Home" ? 0 : event.key === "End" ? pages.length - 1
+              : (index + (event.key === "ArrowDown" ? 1 : -1) + pages.length) % pages.length;
+            onPageChange(pages[next].value);
             event.currentTarget.parentElement!.querySelectorAll<HTMLButtonElement>("button")[next].focus();
           }}>{item.label}</button>)}
       </div>
@@ -43,6 +47,12 @@ export function SettingsContent({ preferences, systemLocale, update, onClose, ti
             <h4>Theme</h4>
             <SegmentedChoice label="Appearance" value={preferences.appearance}
               options={[{ value: "auto", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} onChange={appearance => update({ appearance })} />
+          </div>
+          <div className="settings-field">
+            <h4>Table width</h4>
+            <SegmentedChoice label="Automatic table width" value={preferences.columnWidthMode}
+              options={[{ value: "standard", label: "Standard" }, { value: "wide", label: "Wide" }]} onChange={columnWidthMode => update({ columnWidthMode })} />
+            <p className="settings-caption">Standard keeps columns compact and wraps long headings. Wide gives headings and text more room.</p>
           </div>
           <div className="settings-appearance-preview" role="img" aria-label="Current appearance preview">
             <div className="settings-preview-chrome" aria-hidden="true"><span>ordinate</span><span className="settings-preview-tools"><i /><i /><i /></span></div>
@@ -72,6 +82,20 @@ export function SettingsContent({ preferences, systemLocale, update, onClose, ti
           </dl>
           <p className="settings-caption">Custom formats stay unchanged.</p>
         </section>
+        {showAgentDiagnostics && <section className="settings-panel" role="tabpanel" id={`${id}-panel-advanced`} aria-labelledby={`${id}-tab-advanced`} hidden={page !== "advanced"} tabIndex={0}>
+          <header className="settings-page-heading"><h3>Advanced</h3><p>Assistant diagnostics.</p></header>
+          <div className="settings-field">
+            <h4>Assistant diagnostics</h4>
+            <SegmentedChoice label="Assistant diagnostics level" value={preferences.agentDiagnosticLevel}
+              options={[{ value: "off", label: "Off" }, { value: "timing", label: "Timing" }, { value: "trace", label: "Trace" }, { value: "debug", label: "Debug" }]}
+              onChange={agentDiagnosticLevel => update({ agentDiagnosticLevel })} />
+            <p className="settings-caption">Timing records item durations and tokens. Trace adds command types and working-copy line changes. Debug also records commands and tool and CLI output (up to 32 KB each), which may contain workbook text, paths, or secrets.</p>
+            <p className="settings-caption">Logs stay on this Mac; only the last five requests are kept. Chat messages and reasoning text are not saved.</p>
+            {preferences.agentDiagnosticLevel === "debug" && <p className="settings-diagnostic-warning">Debug is sensitive. Review the log before sharing it.</p>}
+          </div>
+          <button type="button" className="settings-open-logs" onClick={() => { setLogsError(""); void onOpenAgentLogs().catch(error => setLogsError(String(error))); }}>Show logs…</button>
+          {logsError && <p role="alert" className="settings-caption">{logsError}</p>}
+        </section>}
       </div>
       <footer className="app-modal-actions settings-actions"><button type="button" className="app-modal-action primary" onClick={onClose}>Done</button></footer>
     </div>

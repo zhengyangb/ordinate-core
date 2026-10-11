@@ -7,6 +7,7 @@ import { resolveBooleanCellView } from "../utils/booleanCell";
 import { resolveColumnLayouts } from "../utils/columnLayout";
 import { compactColLabel, isVisiblePath } from "../utils/sheetView";
 import type { CellDisplayFormatter } from "../preferences/temporalDisplay";
+import type { ColumnWidthMode } from "../preferences/preferences";
 
 export function projectSheetRows(
   currentSheet: NonNullable<EditorState["evaluation"]>["sheets"][number] | null,
@@ -77,8 +78,8 @@ export function projectSheetRows(
       });
 }
 
-type Options = Pick<EditorState, "docState" | "evaluation" | "presentation" | "activeSheet" | "sheetIssuesByName"> & { displayCell: CellDisplayFormatter };
-export function useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName, displayCell }: Options) {
+type Options = Pick<EditorState, "docState" | "evaluation" | "presentation" | "activeSheet" | "sheetIssuesByName"> & { displayCell: CellDisplayFormatter; columnWidthMode: ColumnWidthMode };
+export function useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName, displayCell, columnWidthMode }: Options) {
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const expandRowPath = useCallback((rowPath: string) => {
     setCollapsedPaths(current => {
@@ -204,8 +205,8 @@ export function useSheetViewModel({ docState, evaluation, presentation, activeSh
     [allRowData, collapsedPaths],
   );
   const columnLayouts = useMemo(
-    () => resolveColumnLayouts(allRowData, headerLeafLabels, headerColCount),
-    [allRowData, headerLeafLabels, headerColCount],
+    () => resolveColumnLayouts(allRowData, headerLeafLabels, headerColCount, columnWidthMode),
+    [allRowData, headerLeafLabels, headerColCount, columnWidthMode],
   );
 
   return {

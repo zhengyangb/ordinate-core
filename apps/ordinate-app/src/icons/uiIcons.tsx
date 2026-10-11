@@ -131,6 +131,15 @@ export function PlusIcon() {
   );
 }
 
+export function MicrophoneIcon() {
+  return (
+    <ToolbarIcon>
+      <rect x="7.2" y="2.8" width="5.6" height="9" rx="2.8" fill="none" stroke="currentColor" strokeWidth="1.45" />
+      <path d="M5.2 9.5a4.8 4.8 0 0 0 9.6 0M10 14.4v2.7m-3.1 0h6.2" fill="none" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
+    </ToolbarIcon>
+  );
+}
+
 export function ChevronLeftIcon() {
   return (
     <ToolbarIcon>
@@ -200,6 +209,13 @@ export function CodeIcon() {
       />
     </ToolbarIcon>
   );
+}
+
+export function SparklesIcon() {
+  return <ToolbarIcon>
+    <path d="m9.7 2.6 1.5 5.2 5.2 1.5-5.2 1.5-1.5 5.2-1.5-5.2L3 9.3l5.2-1.5 1.5-5.2Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.3" />
+    <path d="m15.7 13.4.5 1.7 1.7.5-1.7.5-.5 1.7-.5-1.7-1.7-.5 1.7-.5.5-1.7Z" fill="currentColor" />
+  </ToolbarIcon>;
 }
 
 export function OpenIcon() {

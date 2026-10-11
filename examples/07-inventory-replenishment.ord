@@ -1,3 +1,7 @@
+---
+ord-format: "0.1"
+---
+
 # Catalog
 **Acme Parts | stocked components and supplier terms**
 
@@ -5,7 +9,7 @@ The catalog contains 48 stocked components across six families. Unit costs exclu
 
 Supplier lead times are working days. Review the catalog before placing orders if quoted prices or availability have changed.
 
-| @display |  ||  |  |  | {:,.2f} {::>} | {:.0f} | {:.0f} | {:.1%} |
+| @meta |  ||  |  |  | {:,.2f} {::>} | {:.0f} | {:.0f} | {:.1%} |
 |  | SKU || Description | Family | Supplier | Unit cost | Pack size | Lead days | Service target |
 |  | --- || --- | --- | --- | --- | --- | --- | --- |
 |  | ACME-101 || Corner bracket | Brackets | North Components | 2.5 | 20 | 5 | 0.95 |
@@ -62,7 +66,7 @@ Supplier lead times are working days. Review the catalog before placing orders i
 
 Weekly issues are summarized from warehouse dispatches. The daily estimate assumes five trading days per week. Variability is translated from weekly demand under an independent-day planning assumption; promotions and customer project spikes require a separate review.
 
-| @display |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.2f} | {:.2f} |
+| @meta |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.2f} | {:.2f} |
 |  | SKU || Week 1 | Week 2 | Week 3 | Week 4 | Week 5 | Week 6 | Week 7 | Week 8 | Week 9 | Week 10 | Week 11 | Week 12 | Daily mean | Daily SD |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | ACME-101 || 77 | 88 | 99 | 81 | 92 | 103 | 86 | 97 | 79 | 90 | 101 | 83 | = average(B2:M2) / 5 | = stdev(B2:M2) / sqrt(5) |
@@ -121,7 +125,7 @@ Inventory position includes stock on hand and inbound purchase orders, less cust
 
 The service target is a cycle-service probability, not a unit fill rate. Items flagged for expediting need an availability check before the routine order is released.
 
-| @display |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.2f} | {:.2f} | {:.0f} | {:.0f} | {:.1%} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:,.2f} {::>} |  | {:,.2f} {::>} |  |
+| @meta |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.2f} | {:.2f} | {:.0f} | {:.0f} | {:.1%} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:,.2f} {::>} |  | {:,.2f} {::>} |  |
 |  | SKU || On hand | On order | Allocated | Inventory position | Daily mean | Daily SD | Lead days | Review days | Service target | Safety stock | Reorder point | Target stock | Pack size | Order units | Order cost | Supplier | Inventory value | Priority |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | ACME-101 || 100 | 60 | 0 | = B2 + C2 - D2 | = lookup(A2, @["Demand History"::A2:A49], @["Demand History"::N2:N49]) | = lookup(A2, @["Demand History"::A2:A49], @["Demand History"::O2:O49]) | = lookup(A2, @[Catalog::A2:A49], @[Catalog::G2:G49]) | 5 | = lookup(A2, @[Catalog::A2:A49], @[Catalog::H2:H49]) | = ceil(normalInv(J2) * G2 * sqrt(H2)) | = ceil(F2 * H2 + K2) | = ceil(F2 * (H2 + I2) + normalInv(J2) * G2 * sqrt(H2 + I2)) | = lookup(A2, @[Catalog::A2:A49], @[Catalog::F2:F49]) | = if(E2 < L2, ceilMultiple(M2 - E2, N2), 0) | = O2 * lookup(A2, @[Catalog::A2:A49], @[Catalog::E2:E49]) | = lookup(A2, @[Catalog::A2:A49], @[Catalog::D2:D49]) | = B2 * lookup(A2, @[Catalog::A2:A49], @[Catalog::E2:E49]) | = if(B2 - D2 < F2 * H2, "Expedite review", "Routine") |
@@ -178,7 +182,7 @@ The service target is a cycle-service probability, not a unit fill rate. Items f
 
 The purchasing coordinator consolidates pack-rounded requirements into supplier orders. Planned spend excludes freight and tax. Expedite requests are handled separately from standard weekly releases.
 
-| @display |  || {:.0f} | {:.0f} | {:,.2f} {::>} | {:,.2f} {::>} | {:.0f} |  |  |
+| @meta |  || {:.0f} | {:.0f} | {:,.2f} {::>} | {:,.2f} {::>} | {:.0f} |  |  |
 |  | Supplier || Stocked SKUs | Order units | Planned spend | Stock value | Order lines | Terms | Buyer note |
 |  | --- || --- | --- | --- | --- | --- | --- | --- |
 |  | North Components || = count(filter(@["Stock Plan"::A2:A49], @["Stock Plan"::Q2:Q49] == A2[0])) | = sum(filter(@["Stock Plan"::O2:O49], @["Stock Plan"::Q2:Q49] == A2[0])) | = sum(filter(@["Stock Plan"::P2:P49], @["Stock Plan"::Q2:Q49] == A2[0])) | = sum(filter(@["Stock Plan"::R2:R49], @["Stock Plan"::Q2:Q49] == A2[0])) | = count(filter(filter(@["Stock Plan"::O2:O49], @["Stock Plan"::Q2:Q49] == A2[0]), filter(@["Stock Plan"::O2:O49], @["Stock Plan"::Q2:Q49] == A2[0]) > 0)) | Net 30 | Standard weekly release |
@@ -202,6 +206,8 @@ The review distinguishes available inventory from purchase commitments. Orders s
 | Units on hand || = sum(@["Stock Plan"::B2:B49]) |
 | Inbound units || = sum(@["Stock Plan"::C2:C49]) |
 | Allocated units || = sum(@["Stock Plan"::D2:D49]) |
+| Available before allocation || = @["Units on hand",_] + @["Inbound units",_] |
+| Net available units || = @[_-1,_] - @["Allocated units",_] |
 | Expedite reviews || = count(filter(@["Stock Plan"::A2:A49], @["Stock Plan"::S2:S49] == "Expedite review")) |
 | Supplier count || 6 |
 | SKU count || 48 |

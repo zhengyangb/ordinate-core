@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 export async function checkRowFormatting(win,{query,wait,capture}) {
   win.setSize(1060,800);win.show();win.focus();
   const host=await query(win,"window.ordinateDesktop ? 'native' : 'web'");
-  const source='# Row formatting\n| @display | | {::>} | |\n| {::bold} | Total | 120 | 140 {::normal} |\n| | Detail | 30 | 40 |';
+  const source='# Row formatting\n| @meta | | {::>} | |\n| {::bold} | Total | 120 | 140 {::normal} |\n| | Detail | 30 | 40 |';
   await query(win,"document.querySelector('.source-button').click()");
   await wait(win,"document.querySelector('.source-shell textarea')");
   await query(win,`(()=>{const el=document.querySelector('.source-shell textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,${JSON.stringify(source)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
@@ -31,7 +31,7 @@ export async function checkRowFormatting(win,{query,wait,capture}) {
   await query(win,"document.querySelector('.source-button').click()");
   await wait(win,"document.querySelector('.source-shell textarea')");
   const saved=await query(win,"document.querySelector('.source-shell textarea').value");
-  assert.ok(saved.includes('@display')&&saved.match(/\{::bold\}/g).length===2);
+  assert.ok(saved.includes('@meta')&&saved.match(/\{::bold\}/g).length===2);
   assert.ok(saved.includes('{::normal}'),'Cell exception survives row edits');
   await query(win,"document.querySelector('.source-button').click()");
   console.log(host+': row formatting works without header columns; explicit row/column indicators, style edit, both themes and canonical source passed.');

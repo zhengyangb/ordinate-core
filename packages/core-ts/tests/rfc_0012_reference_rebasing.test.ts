@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { DocumentState, formatDocument, serializeDocumentState } from "../src";
+import { withOrdFormatFrontMatter } from "../src/parser";
 
 describe("RFC-0012 reference rebasing (tentative)", () => {
   const expectSerialized = (state: DocumentState, expected: string) => {
     const output = serializeDocumentState(state);
-    expect(output).toBe(formatDocument(`${expected}\n`));
+    expect(output).toBe(formatDocument(`${withOrdFormatFrontMatter(null)}\n\n${expected}\n`));
   };
 
   it("inserting a row shifts # references but keeps _ offsets", () => {

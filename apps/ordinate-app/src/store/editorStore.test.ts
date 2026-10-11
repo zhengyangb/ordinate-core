@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { serializeDocumentState, type FormatSpec } from "@ordinate/core";
+import { ORD_FORMAT_VERSION, serializeDocumentState, type FormatSpec } from "@ordinate/core";
 
 import { useEditorStore } from "./editorStore";
 
@@ -39,16 +39,17 @@ function canonicalStoreDocument(): string {
 describe("external document replacement", () => {
   it("opens front matter in table mode and keeps it through edits, history, and source-mode saves", () => {
     const metadata = "---\n# not a sheet\nfuture:\n  title: unknown field  \n---";
+    const serializedMetadata = `---\nord-format: "${ORD_FORMAT_VERSION}"\n# not a sheet\nfuture:\n  title: unknown field  \n---`;
     useEditorStore.getState().replaceDocumentText(`${metadata}\n\n${TEST_DOC}`);
     expect(useEditorStore.getState()).toMatchObject({ mode: "table", error: null, activeSheet: "Sheet" });
     expect(useEditorStore.getState().docState?.frontMatter).toBe(metadata);
     useEditorStore.getState().setCellInput({ kind: "index", sheet: "Sheet", rowIndex: 2, colIndex: 1 }, "10");
-    expect(canonicalStoreDocument().startsWith(`${metadata}\n\n`)).toBe(true);
+    expect(canonicalStoreDocument().startsWith(`${serializedMetadata}\n\n`)).toBe(true);
     useEditorStore.getState().undo();
-    expect(canonicalStoreDocument().startsWith(`${metadata}\n\n`)).toBe(true);
+    expect(canonicalStoreDocument().startsWith(`${serializedMetadata}\n\n`)).toBe(true);
     useEditorStore.getState().redo();
     useEditorStore.getState().enterSourceMode();
-    expect(useEditorStore.getState().sourceText.startsWith(`${metadata}\n\n`)).toBe(true);
+    expect(useEditorStore.getState().sourceText.startsWith(`${serializedMetadata}\n\n`)).toBe(true);
     useEditorStore.getState().exitSourceMode();
     expect(useEditorStore.getState().docState?.frontMatter).toBe(metadata);
   });
@@ -71,6 +72,47 @@ describe("external document replacement", () => {
 describe("editor store history", () => {
   beforeEach(() => {
     resetStore();
+  });
+
+  it("applies an AI document rewrite as one undoable change and preserves earlier history", () => {
+    const before = canonicalStoreDocument();
+    useEditorStore.getState().setCellInput({ kind: "index", sheet: "Sheet", rowIndex: 2, colIndex: 1 }, "10");
+    const edited = canonicalStoreDocument();
+    const rewritten = edited.replace("| * B   || 3", "| * B   || 30");
+    useEditorStore.getState().applyDocumentTextChange("AI edit", rewritten);
+    expect(useEditorStore.getState()).toMatchObject({ undoLabel: "AI edit", canUndo: true });
+    expect(canonicalStoreDocument()).toContain("| * B   || 30");
+    useEditorStore.getState().undo();
+    expect(canonicalStoreDocument()).toBe(edited);
+    useEditorStore.getState().undo();
+    expect(canonicalStoreDocument()).toBe(before);
+    useEditorStore.getState().redo();
+    useEditorStore.getState().redo();
+    expect(canonicalStoreDocument()).toContain("| * B   || 30");
+  });
+
+  it("keeps exact source text through an AI rewrite, undo, and redo", () => {
+    useEditorStore.getState().enterSourceMode();
+    const before = `${TEST_DOC}\n\n`;
+    const after = `${TEST_DOC.replace("| * B   || 3", "| * B   || 30")}\n\n`;
+    useEditorStore.getState().setSourceText(before);
+    useEditorStore.getState().applyDocumentTextChange("AI edit", after);
+    expect(useEditorStore.getState()).toMatchObject({ mode: "source", sourceText: after });
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().sourceText).toBe(before);
+    useEditorStore.getState().redo();
+    expect(useEditorStore.getState().sourceText).toBe(after);
+  });
+
+  it("focuses a newly proposed sheet and restores that focus through redo", () => {
+    const before = canonicalStoreDocument();
+    const after = `${before}\n# Assistant Demo\n| Item || Value |\n| --- || --- |\n| Revenue || 42 |\n`;
+    useEditorStore.getState().applyDocumentTextChange("AI edit", after, "Assistant Demo");
+    expect(useEditorStore.getState().activeSheet).toBe("Assistant Demo");
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().activeSheet).toBe("Sheet");
+    useEditorStore.getState().redo();
+    expect(useEditorStore.getState().activeSheet).toBe("Assistant Demo");
   });
 
   it("pushes commands and round-trips undo and redo", () => {

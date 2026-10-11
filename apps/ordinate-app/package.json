@@ -1,7 +1,7 @@
 {
   "name": "ordinate-app",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "main": "desktop-out/desktop/main.js",
   "description": "Ordinate structured document editor",
@@ -15,7 +15,7 @@
     "preview:online": "vite preview --mode online",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "desktop:compile": "tsc -p tsconfig.desktop.json && node desktop/build-native.mjs",
+    "desktop:compile": "npm --prefix ../../packages/cli run build && tsc -p tsconfig.desktop.json && node desktop/build-native.mjs",
     "desktop:test-native": "npm run desktop:compile && node desktop/build-native.mjs --test && electron desktop/document-smoke.mjs",
     "desktop:test-workspace": "npm run build && npm run desktop:compile && electron desktop/workspace-smoke.mjs",
     "desktop:test-interchange": "npm run build && npm run desktop:compile && electron desktop/interchange-smoke.mjs",
@@ -37,6 +37,16 @@
       "desktop-out/**/*",
       "!desktop-out/native/document-test.node",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../packages/cli/dist/ordinate-cli.mjs",
+        "to": "agent/ordinate-cli.mjs"
+      },
+      {
+        "from": "../../packages/cli/skills/ordinate-authoring",
+        "to": "agent/skills/ordinate-authoring"
+      }
     ],
     "mac": {
       "icon": "resources/Ordinate.icon",
@@ -80,6 +90,8 @@
     "ag-grid-react": "^33.3.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

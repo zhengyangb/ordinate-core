@@ -39,11 +39,11 @@ describe("regional temporal display", () => {
     expect(() => us({ kind: "duration", value: "invalid" }, null)).toThrow("Invalid duration");
   });
   it("shares one projection for grid, search and print; explicit cascade formats win", () => {
-    const source = '# Dates\n| @display | | {:%F} |\n| | 2026-06-07 | 2026-06-07 |\n| {:%Y} | 2026-06-07 | 2026-06-07 |\n| | 2026-06-07 {:%d/%m/%Y} | 2026-06-07 {:%d/%m/%Y} |';
+    const source = '# Dates\n| @meta | | {:%F} |\n| | 2026-06-07 | 2026-06-07 |\n| {:%Y} | 2026-06-07 | 2026-06-07 |\n| | 2026-06-07 {:%d/%m/%Y} | 2026-06-07 {:%d/%m/%Y} |';
     useEditorStore.getState().replaceDocumentText(source);
     const state = useEditorStore.getState(), before = state.sourceText;
     let projection!: ReturnType<typeof useSheetViewModel>;
-    function Harness() { projection = useSheetViewModel({ ...state, displayCell: us }); return null; }
+    function Harness() { projection = useSheetViewModel({ ...state, displayCell: us, columnWidthMode: "standard" }); return null; }
     renderToStaticMarkup(<Harness />);
     const rows = projection.allRowData;
     expect(rows.map(row => [row.col_0, row.col_1])).toEqual([

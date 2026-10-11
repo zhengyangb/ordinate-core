@@ -21,7 +21,8 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | {
   [key: string]: JsonValue;
 };
 export type CapabilityDiagnostic = {
-  phase: "validation" | "evaluation";
+  phase: "validation" | "evaluation" | "import";
+  severity?: "warning" | "error";
   code: string;
   message: string;
   location?: {
@@ -41,7 +42,7 @@ export type CapabilityDiagnostic = {
   details?: Record<string, JsonValue>;
 };
 export type CapabilityFailure = {
-  stage: "request" | "validation" | "resolve" | "edit" | "serialize";
+  stage: "request" | "validation" | "resolve" | "edit" | "serialize" | "import";
   code: string;
   message: string;
   operationIndex?: number;

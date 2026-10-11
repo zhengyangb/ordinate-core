@@ -1,6 +1,7 @@
 import { FORMATS, IMPORT_FORMATS, validateImport } from "../interchange/contracts";
+import { checkAttachmentSelection } from "../agent/attachments";
 
-export type FileDropCue = { kind: "document" | "import" | "unknown" } | { kind: "blocked"; message: string };
+export type FileDropCue = { kind: "document" | "import" | "unknown" | "attachment" } | { kind: "blocked"; message: string };
 
 // Files are protected until drop in most browsers. MIME can identify an import,
 // but text/plain is ambiguous (ORD and CSV), so do not guess from it.
@@ -24,13 +25,21 @@ export function droppedFileKind(files: readonly File[]): "document" | "import" {
   return kind;
 }
 
-type FileDropActions = {
+type StandardFileDropActions = {
   scope: "open" | "import";
   canDrop(): boolean;
   preview(cue: FileDropCue | null): void;
   receive(file: File, kind: "document" | "import"): Promise<void>;
   report(error: unknown): Promise<void>;
 };
+type AssistantFileDropActions = {
+  scope: "assistant";
+  canDrop(): boolean;
+  preview(cue: FileDropCue | null): void;
+  receive(file: File, kind: "attachment"): Promise<void>;
+  report(error: unknown): Promise<void>;
+};
+type FileDropActions = StandardFileDropActions | AssistantFileDropActions;
 
 // A local receiver owns drags within its region, even when it is temporarily
 // busy. The window receiver must neither consume those drops nor publish an
@@ -49,6 +58,14 @@ export function installFileDrop(target: Window | HTMLElement, actions: FileDropA
     return kind;
   };
   const previewCue = (transfer: DataTransfer): FileDropCue => {
+    if (actions.scope === "assistant") {
+      const files = Array.from(transfer.files);
+      try {
+        if (files.length) checkAttachmentSelection(files);
+        else if (Array.from(transfer.items).filter(item => item.kind === "file").length !== 1) throw new Error("Drop one attachment at a time.");
+        return { kind: "attachment" };
+      } catch (error) { return { kind: "blocked", message: error instanceof Error ? error.message : String(error) }; }
+    }
     const next = fileDragCue(transfer);
     try {
       if (next.kind === "document" || next.kind === "import") acceptKind(next.kind);
@@ -100,7 +117,13 @@ export function installFileDrop(target: Window | HTMLElement, actions: FileDropA
     const files = Array.from(event.dataTransfer.files);
     busy = true;
     void (async () => {
-      try { await actions.receive(files[0], acceptKind(droppedFileKind(files))); }
+      try {
+        if (actions.scope === "assistant") {
+          if (files.length !== 1) throw new Error("Drop one attachment at a time.");
+          checkAttachmentSelection(files);
+          await actions.receive(files[0], "attachment");
+        } else await actions.receive(files[0], acceptKind(droppedFileKind(files)));
+      }
       catch (error) { await actions.report(error); }
       finally { busy = false; }
     })();

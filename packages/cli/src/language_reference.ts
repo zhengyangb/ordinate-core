@@ -1,17 +1,24 @@
-import { getStandardFunctionMetadata, listStandardFunctionMetadata, type FunctionMetadata } from "ordinate-core";
+import { ORD_FORMAT_VERSION, getStandardFunctionMetadata, listStandardFunctionMetadata, type FunctionMetadata } from "ordinate-core";
 
 type Example = { source: string; sheet: string; checks: { row: number; column: number; kind: string; value: string }[] };
 type Topic = { title: string; body: string; examples: Example[] };
 const plan = (profit: string) => `# Plan\n| Item || Q1 | Q2 |\n| --- || --- | --- |\n| Revenue || 100 | 120 |\n| Costs || 40 | 50 |\n| Profit || ${profit} | = C2 - C3 |\n`;
 const profitCheck = { row: 3, column: 1, kind: "number", value: "60" };
-const example = (source: string, checks: Example["checks"], sheet = "Plan"): Example => ({ source, sheet, checks });
+const example = (source: string, checks: Example["checks"], sheet = "Plan"): Example => ({
+  source: `---\nord-format: "${ORD_FORMAT_VERSION}"\n---\n\n${source}`,
+  sheet,
+  checks,
+});
 
 // These are author-facing explanations, not another parser or function registry.
 // Examples are exposed with the reference and exercised against the bundled Core.
 const topics: Record<string, Topic> = {
   syntax: {
     title: "Workbook syntax",
-    body: `An .ord workbook is UTF-8 text. A # heading starts a sheet. Each sheet has
+    body: `An .ord workbook is UTF-8 text. Core writes ord-format: "${ORD_FORMAT_VERSION}" as
+the first front-matter content line when serializing. This is the file format
+version, not an App or CLI version. Directly authored source may omit the envelope;
+the next Core serialization adds it. A # heading starts a sheet. Each sheet has
 one pipe table and optional notes above/below it. Sheet names should be unique.
 A divider row separates header rows from body rows. A doubled pipe || marks
 the boundary between header columns (row labels) and data columns.
@@ -23,7 +30,7 @@ Empty cells are blank. Numbers, true/false, and ISO temporal literals are typed.
 Ordinate is not arbitrary Markdown: use supported sheet notes, not another table
 or arbitrary HTML inside a note. See help notes.
 
-Coordinates refer to the semantic table. Markdown dividers and the @display
+Coordinates refer to the semantic table. Markdown dividers and the @meta
 frame are not cells. Formula A1/#1 coordinates are one-based; CLI indexes and
 formula bracket indexes are zero-based. See help references and help formats.`,
     examples: [
@@ -176,7 +183,7 @@ For data cells, precedence is cell > row > column > automatic. Style axes
 inherit independently; a numeric/temporal format is one atomic specification.
 Header surfaces do not inherit body-cell presentation.
 
-@display is a metadata frame, not an extra logical row/column. Its top row
+@meta is a metadata frame, not an extra logical row/column. Its top row
 holds column defaults; its left control column holds body-row defaults. These
 control cells contain metadata only, never values/formulas. Use defaults when
 an entire data row/column shares presentation; use local suffixes for exceptions.
@@ -188,7 +195,7 @@ Style patch: {"weight":"bold","align":"right"}. Omitted axes stay unchanged;
 null clears an axis. Use clear_*_format to remove a format and inherit again.
 Exact payload schema: edit --help --operation set_column_default_format
 or edit --help --operation set_cell_local_style.`,
-    examples: [example(`# Plan\n| @display | | {:,.2f} |\n| | Item || Value |\n| --- | --- || --- |\n| | Revenue || 1234.5 |\n| {::bold} | Margin || 0.583 {:.1%} |\n| | Date || 2026-01-02 {:%Y-%m-%d} |\n| | Elapsed || PT26H {:%[h] hr} |\n`, [
+    examples: [example(`# Plan\n| @meta | | {:,.2f} |\n| | Item || Value |\n| --- | --- || --- |\n| | Revenue || 1234.5 |\n| {::bold} | Margin || 0.583 {:.1%} |\n| | Date || 2026-01-02 {:%Y-%m-%d} |\n| | Elapsed || PT26H {:%[h] hr} |\n`, [
       { row: 1, column: 1, kind: "number", value: "1234.5" },
       { row: 2, column: 1, kind: "number", value: "0.583" },
     ])],

@@ -37,7 +37,7 @@ const RICH_SHEET_DOC = `
 # Beta
 Intro paragraph that must survive.
 
-| @display | Item || {:,.1f} {::>,blue,bold} | |
+| @meta | Item || {:,.1f} {::>,blue,bold} | |
 |          | Item || Value                    | Out |
 | -------- | ---- || -----                    | --- |
 |          | Row  || 12.34 {::green}          | = @[Row,Value] |

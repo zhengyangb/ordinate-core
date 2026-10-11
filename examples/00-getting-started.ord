@@ -1,3 +1,7 @@
+---
+ord-format: "0.1"
+---
+
 # Start Here
 **👋 Welcome to Ordinate**
 
@@ -5,7 +9,7 @@ A connected planning workbook for Acme Manufacturing. Edit an input on the left 
 
 **Try it:** double-click 12,000,000 and enter 15000000. Watch 2027 revenue become 16,200,000. Select a result to inspect its formula.
 
-| @display |  || {::>} |  | {:,.0f} {::>,bold} |
+| @meta |  || {::>} |  | {:,.0f} {::>,bold} |
 |  | Input || Value | Live result | Result |
 |  | --- || --- | --- | --- |
 |  | Annual revenue || 12000000 {:,.0f} | 2027 revenue | = @["Annual revenue","Value"] * (1 + @["Revenue growth","Value"]) |
@@ -37,7 +41,7 @@ Amounts are dollars. The six periods include the prior year, the current plan an
 
 **Try it:** collapse Revenue or Cost of sales using the green arrow. The repeated year labels form a single header over each pair of half-years. Select a total row and open its Format or Style menu from the row rail.
 
-| @display |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
+| @meta |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
 |  |  || 2025 | 2025 | 2026 | 2026 | 2027 | 2027 |
 |  | Line item || H1 | H2 | H1 | H2 | H1 | H2 |
 |  | --- || --- | --- | --- | --- | --- | --- |
@@ -162,7 +166,7 @@ These results are calculated from the other five sheets. They are not pasted sum
 
 **Try it:** open Sales Ledger and change invoice ACME-003. Return here to see the lookup result change. Then change an input in Start Here and compare the plan and financing results.
 
-| @display |  || {:,.2f} |
+| @meta |  || {:,.2f} |
 |  | Measure || Value |
 |  | --- || --- |
 |  | 2026 planned revenue || = @["Operating Report"::["Total revenue","2026.H1"]] + @["Operating Report"::["Total revenue","2026.H2"]] |

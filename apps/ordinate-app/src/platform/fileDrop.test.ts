@@ -25,10 +25,10 @@ describe("file drop routing", () => {
   });
 });
 
-function setup(scope: "open" | "import" = "open") {
+function setup(scope: "open" | "import" | "assistant" = "open") {
   const target = new EventTarget();
   const actions = {scope, canDrop: vi.fn(() => true), preview: vi.fn(), receive: vi.fn(async () => {}), report: vi.fn(async () => {})};
-  const dispose = installFileDrop(target as Window, actions);
+  const dispose = installFileDrop(target as Window, actions as Parameters<typeof installFileDrop>[1]);
   const dispatch = (type: string, files = [new File(['42'], 'file.csv')], types = ['Files'], prevented = false) => {
     const event = new Event(type, {cancelable: true});
     const transfer = {files, types, items: files.map(file => ({kind: 'file', type: file.type})), dropEffect: 'unset'};
@@ -40,6 +40,15 @@ function setup(scope: "open" | "import" = "open") {
   return {target, actions, dispose, dispatch};
 }
 describe("file drop event lifecycle", () => {
+  it("routes a PDF to the assistant instead of opening or importing it", async () => {
+    const f = setup("assistant");
+    const file = new File(["%PDF-1.7"], "report.pdf");
+    expect(f.dispatch("dragenter", [file]).transfer.dropEffect).toBe("copy");
+    expect(f.actions.preview).toHaveBeenLastCalledWith({ kind: "attachment" });
+    f.dispatch("drop", [file]);
+    await vi.waitFor(() => expect(f.actions.receive).toHaveBeenCalledWith(file, "attachment"));
+    f.dispose();
+  });
   it("restricts an import receiver consistently on hover and drop, before reading", async () => {
     const f = setup("import");
     const files = [new File([], 'report.ord')];

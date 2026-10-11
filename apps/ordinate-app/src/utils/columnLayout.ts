@@ -1,4 +1,5 @@
 import type { GridRow } from "../types/ui";
+import type { ColumnWidthMode } from "../preferences/preferences";
 
 type ColumnLayout = { width: number; wrapText: boolean; autoHeight: boolean };
 
@@ -32,10 +33,13 @@ export function resolveColumnLayouts(
   rows: GridRow[],
   headers: string[],
   headerColCount: number,
+  mode: ColumnWidthMode,
 ): ColumnLayout[] {
   if (!Number.isInteger(headerColCount) || headerColCount < 0 || headerColCount > headers.length) {
     throw new Error("invalid header column count for column layout");
   }
+  if (mode !== "standard" && mode !== "wide") throw new Error("invalid column width mode");
+  const compact = mode === "standard";
   const profiles = headers.map((header, colIndex) => {
     const widths: number[] = [];
     let hasText = false;
@@ -71,11 +75,14 @@ export function resolveColumnLayouts(
     // single outlier. Measure the projected display, including locale/format,
     // rather than the underlying ISO value. Temporal columns do not inherit
     // the dense report's numeric width cap or widen unrelated numeric peers.
-    const desired = Math.max(textWidth(header), representative, numeric || hasTemporal ? scalarContentWidth : 0) + 32;
-    const width = isHeader ? boundedWidth(desired, 176, 256)
+    // In standard mode a long heading may wrap; actual scalar displays still
+    // contribute their full measured width. Row-label columns retain more room.
+    const headingWidth = compact && !isHeader ? Math.min(textWidth(header), 80) : textWidth(header);
+    const desired = Math.max(headingWidth, representative, numeric || hasTemporal ? scalarContentWidth : 0) + (compact ? 24 : 32);
+    const width = isHeader ? boundedWidth(desired, compact ? 160 : 176, compact ? 224 : 256)
       : hasTemporal ? boundedWidth(desired, MIN_DATA_COLUMN_WIDTH, 320)
-      : hasText && !numeric ? boundedWidth(desired, 144, 320)
-      : hasBoolean && !hasNumber ? boundedWidth(desired, 96, 144)
+      : hasText && !numeric ? boundedWidth(desired, compact ? 112 : 144, compact ? 256 : 320)
+      : hasBoolean && !hasNumber ? boundedWidth(desired, compact ? 80 : 96, 144)
       : boundedWidth(desired, MIN_DATA_COLUMN_WIDTH, 176);
     return { width, numeric, hasTemporal, desired, empty: widths.length === 0, wrapText: hasText, autoHeight: hasText };
   });

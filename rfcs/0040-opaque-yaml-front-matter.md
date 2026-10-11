@@ -1,13 +1,14 @@
 # RFC-0040: Opaque YAML Front Matter
 
-- Status: Draft (TypeScript implemented; frozen Python reference unchanged)
+- Status: Draft (TypeScript implemented; format marker specified by RFC 0054)
 - Extends: RFC-0002 and RFC-0011
 
 ## Purpose
 
 An `.ord` document may begin with YAML front matter. This reserves an envelope
-for future document metadata and lets today's readers open and edit files that
-carry that envelope. No field names, schema, values, or behavior are defined.
+for document metadata and lets readers open and edit files that carry that
+envelope. This RFC does not define individual fields; RFC 0054 reserves the
+first content line for `ord-format`.
 
 ```text
 ---
@@ -39,13 +40,15 @@ future-key: any value
 
 ## Opaque contents
 
-The contents are not parsed as YAML in this revision. They are not used for
+Apart from the RFC 0054 format marker, contents are not parsed as YAML. They are not used for
 validation, evaluation, references, formatting defaults, or editing behavior.
 Unknown fields, YAML comments, nested structures, tags, anchors, and text that
 resembles Ordinate headings or tables are preserved without interpretation.
 Even a payload that would fail a YAML parser is opaque to this reader.
 
-In particular, a field named `version` has no special meaning. No YAML library,
+In particular, a field named `version` has no special meaning. The first-line
+`ord-format` field has the exact syntax and compatibility behavior of RFC 0054.
+No YAML library,
 object construction, tag resolution, or external resource loading is involved.
 Future RFCs may define YAML validation and the meaning of specific fields.
 
@@ -56,13 +59,15 @@ Future RFCs may define YAML validation and the meaning of specific fields.
 including its delimiters, but excluding the closing line's line ending and the
 optional file BOM. `null` means absent; an empty block remains present.
 
-Formatting and serialization preserve the block verbatim, including internal
+Formatting preserves the block verbatim. Serialization preserves its other
+contents but inserts the canonical `ord-format` first content line if absent.
+This includes internal
 line endings, indentation, comments, trailing spaces, and closing delimiter.
 When a body follows, canonical output places one blank LF line between the block
 and the first sheet. Normal canonical formatting applies only to the body.
 Formatting must be idempotent. Saving after edits, evaluation, undo, redo, or
-sheet lifecycle operations must retain the block. Files without front matter
-keep their existing serialization behavior.
+sheet lifecycle operations must retain the other front-matter contents. Files
+without front matter gain the RFC 0054 envelope when Core serializes them.
 
 Front-matter editing is not a new core edit operation or dedicated UI control.
 An existing whole-source editor may change it by reparsing the document.

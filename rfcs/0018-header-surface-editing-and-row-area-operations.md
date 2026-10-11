@@ -237,5 +237,5 @@ native header cells do not support it; it must not turn into whole-row formattin
 Undo restores it. Existing row-header conversion uses the same literal cleanup.
 
 Promotion of a column containing formulas or invalid input fails atomically.
-RFC 0045 moves canonical row defaults to the `@display` control column, so
+RFC 0045 moves canonical row defaults to the `@meta` control column, so
 removing the final label column preserves row formatting.

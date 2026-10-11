@@ -18,13 +18,14 @@ type Options = Pick<EditorState, "mode" | "revision" | "sourceText" | "docState"
   requestConfirmation: (config: ConfirmationDialogConfig) => Promise<boolean>;
   prepareForPersistence: () => void;
   hasPendingCellEdit: boolean;
+  assistantWorking: boolean;
   onImport: (file?: ImportFile) => void;
   onExport: () => void;
   onPrint: () => Promise<void>;
   onSettings: () => void;
   onBrowserOpen: (openDocument: () => void) => void;
 };
-export function useFileSessionController({ initialText, mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence, hasPendingCellEdit, onImport, onExport, onPrint, onBrowserOpen, onSettings }: Options) {
+export function useFileSessionController({ initialText, mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence, hasPendingCellEdit, assistantWorking, onImport, onExport, onPrint, onBrowserOpen, onSettings }: Options) {
   const prepareRef = useRef(prepareForPersistence);
   useLayoutEffect(() => { prepareRef.current = prepareForPersistence; }, [prepareForPersistence]);
   const editingRef = useRef(hasPendingCellEdit);
@@ -191,12 +192,13 @@ export function useFileSessionController({ initialText, mode, revision, sourceTe
     await openFile(file ? () => readUploadedDocument(file) : undefined);
   }, [openFile, requestConfirmation, prepareDocumentSwitch]);
 
-  const dropActions = useRef({ handleOpenDocument, onImport, requestConfirmation, initializationStatus });
+  const dropActions = useRef({ handleOpenDocument, onImport, requestConfirmation, initializationStatus, assistantWorking });
   useLayoutEffect(() => {
-    dropActions.current = { handleOpenDocument, onImport, requestConfirmation, initializationStatus };
-  }, [handleOpenDocument, onImport, requestConfirmation, initializationStatus]);
+    dropActions.current = { handleOpenDocument, onImport, requestConfirmation, initializationStatus, assistantWorking };
+  }, [handleOpenDocument, onImport, requestConfirmation, initializationStatus, assistantWorking]);
   useEffect(() => {
     const canDrop = () => dropActions.current.initializationStatus === "ready"
+      && !dropActions.current.assistantWorking
       && !document.querySelector('[role="dialog"][aria-modal="true"]')
       && !defaultFileSessionStore.getState().operation;
     return installFileDrop(window, {
@@ -267,6 +269,7 @@ export function useFileSessionController({ initialText, mode, revision, sourceTe
   }, [resolveManualSaveOptions, saveFileAs]);
 
   useEffect(() => window.ordinateDesktop?.onCommand((command) => {
+    if (assistantWorking && ["open", "undo", "redo", "import"].includes(command)) return;
     if ((command === "undo" || command === "redo")
       && (mode === "source" || isNativeTextEditingTarget(document.activeElement))) {
       void window.ordinateDesktop!.nativeHistory(command);
@@ -277,7 +280,7 @@ export function useFileSessionController({ initialText, mode, revision, sourceTe
     if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
     const handlers = { open: handleOpenFile, save: handleSaveFile, saveAs: handleSaveFileAs, undo, redo, import: onImport, export: onExport, print: onPrint, settings: onSettings };
     void handlers[command]();
-  }), [handleOpenFile, handleSaveFile, handleSaveFileAs, mode, undo, redo, onImport, onExport, onPrint, onSettings]);
+  }), [assistantWorking, handleOpenFile, handleSaveFile, handleSaveFileAs, mode, undo, redo, onImport, onExport, onPrint, onSettings]);
 
 
   return { initializationStatus, fileDropCue, fileName, fileStatus, handleNewFile, handleOpenFile, handleOpenDocumentText, handleSaveFile, handleSaveFileAs };

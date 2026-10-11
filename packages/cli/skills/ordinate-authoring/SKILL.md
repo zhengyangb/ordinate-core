@@ -1,6 +1,6 @@
 ---
 name: ordinate-authoring
-description: Create or edit plain-text Ordinate (.ord) workbooks, including native tables, formulas, named and relative references, notes, and display formats. Use direct text editing or ordinate-cli operations to author and check workbooks, not to develop the Ordinate application.
+description: Create or edit Ordinate (.ord) workbooks, including importing Excel/CSV/TSV sources, native tables, formulas, named and relative references, notes, and display formats. Use direct text editing or ordinate-cli operations to author and check workbooks, not to develop the Ordinate application.
 ---
 
 # Ordinate workbook authoring
@@ -8,30 +8,45 @@ description: Create or edit plain-text Ordinate (.ord) workbooks, including nati
 An `.ord` file is the editable workbook: UTF-8 text with one table per sheet.
 You can write it directly, like Markdown; the CLI is a complementary tool, not
 a prerequisite for authoring. Preserve calculations as formulas, not snapshots.
+Core serialization writes `ord-format: "0.1"` as the first front-matter line;
+the field versions the ORD file format, not the workbook's content. Directly
+authored source may omit it, but an unsupported explicit version is rejected.
 
 Before composing a formula, identify its target `(sheet, row path, column)` and
-each dependency in those same terms. Translate dependencies to
-`@[row,column]` **row first**; `_` means the target's own row or column, so a
-selector that resolves back to the target is a cycle. Name both axes in a
-cross-sheet reference. After `validate` and `evaluate`, check the *requested
+each dependency. Choose the reference that expresses the relationship: named
+`@[row,column]` (**row first**) for business labels, A1 (`B2`) when the exact
+coordinates are known and the layout is stable (including when a long
+hierarchical selector would make the formula harder to write or check),
+absolute `@[#n,_]` for a stable row position in the current column,
+or relative `@[_-1,_]` when the preceding row in that column is intentional.
+`_` means the target's own row or column, so a selector that
+resolves back to the target is a cycle. Name both axes in a cross-sheet
+reference. After `evaluate`, check the *requested
 dependency*, not only the displayed answer: if a decision is specified for
 2028 Net income, its formula must not instead test a three-year total. Use an
 input probe that makes those two possible sources disagree.
 
 ## Write a working workbook
 
-A `#` heading starts a sheet. The divider separates header rows from body rows;
-`||` separates header columns (row labels) from data columns. Keep every table
-row rectangular. Notes belong before or after the table, not in another table.
+A `#` heading starts a sheet. Header rows and header columns are optional and
+independent: a divider separates header rows from body rows; `||` separates
+header columns (row labels) from data columns. Without `||`, column A is data,
+not an implicit row-label column. Keep every table row rectangular. Notes
+belong before or after the table, not in another table.
 Every table row, including the last one before a note or sheet boundary, ends
 with `|`.
 
 <canonical_workbook>
-This complete three-sheet workbook is the context for the syntax contrasts
+This complete four-sheet workbook is the context for the syntax contrasts
 below. It uses numeric year headers, hierarchical rows, forecasts, a sales
-ledger, and cross-sheet results. Enter formulas without cached values.
+ledger, cross-sheet results, and a sheet with no headers. Enter formulas
+without cached values.
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Plan
 
 **Acme Manufacturing — operating plan.** Amounts are in thousands of dollars;
@@ -75,6 +90,11 @@ ledger, and cross-sheet results. Enter formulas without cached values.
 | Highest annual profit || = max(@["Plan"::["Net income","2026":"2028"]]) {:,.2f} |
 | Order total || = sum(@["Sales Ledger"::["AC-1":"AC-4","Line total"]]) {:,.2f} |
 | Decision || = if(@["Net income growth",_] > 0, "On track", "Review") |
+
+# Scratch Grid
+
+| 1 | 2 | 3 |
+|   |   |   |
 ```
 </canonical_workbook>
 
@@ -82,17 +102,25 @@ The 2026 Gross profit is 730; Net income is 435. The 2028 Total revenue is
 1426.08; Net income is 551.8335. Review's Order total is 178. Changing 2026
 Equipment revenue must propagate through later years and Review; it must not
 merely change a displayed cache.
+Scratch Grid has neither a divider nor `||`: it has zero header rows and zero
+header columns. Its first row is three data cells, A1 = 1, B1 = 2, C1 = 3;
+column A must not be left blank just because another sheet uses row labels.
+When editing an existing table, check its actual structure: a divider can
+mark an empty header row (making A2:C2 the first body row), but only `||`
+creates a header column. Do not reserve column A by convention.
 
 For full-size source workbooks beyond the compact example above, read the
 relevant worked example rather than extrapolating from an isolated cell:
 
 - [Getting started](references/worked-getting-started.md) is a six-sheet
-  Acme Manufacturing plan. Its Operating Report shows the entire `@display`
+  Acme Manufacturing plan. Its Operating Report shows the entire `@meta`
   frame, column defaults, percentage row defaults, hierarchical totals, and
   formulas that connect to inputs and the other sheets.
 - [Inventory replenishment](references/worked-inventory-replenishment.md) is
   a five-sheet operational model with a 48-item catalog, column formats,
-  replenishment calculations, supplier orders, and review.
+  replenishment calculations, supplier orders, and review. Its Purchasing
+  Summary calculates Net available units from the preceding row with
+  `@[_-1,_]`, avoiding a long row label when adjacency is the actual intent.
 
 Both are complete `.ord` source files copied from the repository's examples
 when the skill is generated. Read the one that matches the structure you are
@@ -170,6 +198,7 @@ produces 730 **in B10**:
   column: `_` means B here, because the formula is in column B.
 - `= @["Total revenue","2026"] - @["Total cost of sales","2026"]` — both row
   and column are explicitly named.
+- `= @[#5,_] - @[#9,_]` — fixed row positions, current column.
 - `= B5 - B9` — positional A1 references to those same input cells.
 
 In Sales Ledger, AC-1's Line total is D2. B2 holds Quantity 2 and C2 holds
@@ -182,12 +211,16 @@ Unit price 15. These likewise all produce 30 **in D2**:
 
 The alternatives agree at these particular cells, not under every edit. A
 formula using `_` follows its own row or column when reused elsewhere;
-explicit names keep targeting the named row or column; A1 positions can drift
-after direct text insertion or movement.
+explicit names keep targeting the named row or column; `#n` and A1 positions
+can drift after direct text insertion or movement.
 </same_cell_references>
 
 Other useful forms:
-- Preceding row in the current column: `@[_-1,_]`. For a forecast that grows
+- Preceding row in the current column: `@[_-1,_]`. In Inventory replenishment's
+  Purchasing Summary, `Net available units` uses
+  `= @[_-1,_] - @["Allocated units",_]`: its preceding row is
+  `Available before allocation`, so inserting an unrelated row between them
+  would change the meaning. For a forecast that grows
   the **same** product from 2026 to 2027, use `@[_,"2026"]` in the product's
   2027 cell, not `@[_-1,"2026"]` (the preceding product row).
 - Position with copy behavior: `C2`, `$C$2`, `C$2`, `$C2`, or `@[#2,#3]`.
@@ -228,7 +261,7 @@ to `88`:
 ```ord
 # Membership forecast
 
-| @display | | | |
+| @meta | | | |
 | | Metric || 2026 | 2027 |
 | --- | --- || --- | --- |
 | | Members || 80 | = @["Members","2026"] * (1 + @["Annual growth","2027"]) |
@@ -239,10 +272,10 @@ to `88`:
 Replacing the 2027 `0.1` with bare `10%` makes it text; the formula then fails
 at evaluation. Use a row default when a whole row shares one format, a column
 default when a whole column does, and a cell suffix for an exception. Formatting
-changes only the display, not the value. In the `@display` frame above, the
+changes only the display, not the value. In the `@meta` frame above, the
 header control cell (`| | Metric`) is empty: row defaults belong only beside
 body rows, never beside a header row. A row-default control cell also requires
-the `@display` frame and its extra control column; do not prepend
+the `@meta` frame and its extra control column; do not prepend
 `| {:.1%} |` to a row of an ordinary table.
 For a whole report using this pattern, see the Operating Report in
 [Getting started](references/worked-getting-started.md).
@@ -266,10 +299,20 @@ For a whole report using this pattern, see the Operating Report in
 <reason>A cross-sheet reference has exactly one outer `@[...]`: the sheet name, `::`, then a two-axis `[row,column]` selector inside it. Do not omit or nest that outer envelope.</reason>
 </contrast>
 <contrast name="hierarchy-path">
+<cell>Plan's B5 Total revenue sums the two indented accounts under Revenue.</cell>
+<invalid>= @["Equipment",_] + @["Service",_]</invalid>
+<valid>= @["Revenue"."Equipment",_] + @["Revenue"."Service",_]</valid>
 <invalid>@["Plan"::[Equipment,"2026"]]</invalid>
 <invalid>@["Plan"::["Revenue.Equipment","2026"]]</invalid>
 <valid>@["Plan"::["Revenue"."Equipment","2026"]]</valid>
-<reason>Equipment is a child under Revenue in Plan. Quote each path segment separately; the dot is structural, not part of one label. Omit the source `*` marker.</reason>
+<reason>Equipment and Service are children under Revenue in Plan, not top-level rows. A bare child label fails to resolve even if it is currently unique and visible in the table; use its complete parent-to-child path in both same-sheet and cross-sheet formulas. Quote each path segment separately: the dot is structural, not part of one label. Omit the source `*` marker. Evaluate after writing formulas; validation alone cannot detect this unresolved reference.</reason>
+</contrast>
+<contrast name="nested-hierarchy-selector">
+<cell>Plan's B5, the 2026 Total revenue cell; B3 is Equipment and B4 is Service.</cell>
+<invalid>= @[@["Revenue"]."Equipment",_] + @[@["Revenue"]."Service",_]</invalid>
+<valid>= @["Revenue"."Equipment",_] + @["Revenue"."Service",_]</valid>
+<also_valid>= B3 + B4</also_valid>
+<reason>The invalid formula nests `@[...]` inside another selector; `@["Revenue"]` is not a row-path segment, and evaluation rejects this as `invalid_reference_selector_syntax`. A hierarchical path has one outer `@[row,column]` and separately quoted parent and child labels joined by a dot. A1 targets the same cells in this stable layout and is a reasonable simpler choice when a path becomes cumbersome; recheck B3 and B4 after inserting or moving rows.</reason>
 </contrast>
 <contrast name="one-argument-for-max">
 <invalid>max(@["Plan"::["Net income","2026"]], @["Plan"::["Net income","2028"]])</invalid>
@@ -285,13 +328,17 @@ For a whole report using this pattern, see the Operating Report in
 
 A1 and `#n` coordinates are one-based semantic table coordinates, including
 headers. Postfix brackets and CLI indexes are zero-based; their slice ends are
-exclusive. Markdown dividers and `@display` controls do not count as cells.
-When directly editing text, prefer row/column names for business relationships:
+exclusive. In a table with one header row, `@[#1,_]` selects a header cell;
+the first data row is `#2`. Markdown dividers and `@meta` controls do not
+count as cells.
+When directly editing text, use row/column names for business relationships:
 `@[Revenue.Equipment,_]` still finds Equipment after another row is inserted above it;
 `@[_,Quantity]` still finds Quantity after columns are reordered. Positional
-`B2`/`#n` and relative offsets such as `_-1` can silently select a different
-target after a text insertion or move. Use them when position/adjacency is the
-intended meaning, or preserve their targets with structured Core operations;
+`B2`/`#n` are also appropriate when the intended first, second, or other row
+has a stable position; relative offsets such as `_-1` are appropriate when
+adjacency itself is the dependency. Positional and relative references can
+select a different target after a text insertion or move, so check them after
+structural edits or preserve their targets with structured Core operations;
 do not rewrite existing references merely for style.
 
 Names must resolve uniquely: use full row paths for repeated labels, such as
@@ -355,12 +402,12 @@ Formats preserve the value: `1234.5 {:,.2f}`, `0.08 {:.1%}`,
 text instead; do not use them when a downstream formula needs a numeric value.
 
 For consistent presentation, prefer row/column defaults to repeated cell
-suffixes. This complete `@display` frame has a currency-like column default,
+suffixes. This complete `@meta` frame has a currency-like column default,
 one bold row default, and a local percentage exception:
 
 ```ord
 # Summary
-| @display | | {:,.2f} |
+| @meta | | {:,.2f} |
 | | Item || Value |
 | --- | --- || --- |
 | | Revenue || 1234.5 |
@@ -368,7 +415,7 @@ one bold row default, and a local percentage exception:
 | | Margin || = @[Profit,_] / @[Revenue,_] {:.1%} |
 ```
 
-`@display` is a nonsemantic frame: its top row sets column defaults, its left
+`@meta` is a nonsemantic frame: its top row sets column defaults, its left
 column sets body-row defaults, and its control cells contain metadata only.
 For data cells: cell > row > column > automatic; individual style axes inherit
 independently. Headers do not inherit body presentation. Read
@@ -388,20 +435,48 @@ use `node packages/cli/dist/ordinate-cli.mjs` instead. Do not assume a global
 installation. No executable means you can still edit text, but cannot claim
 CLI validation or evaluation was performed.
 
+When the user supplies an Excel `.xlsx`, CSV, or TSV file, prefer the import
+capability to manually transcribing its cells. It uses the same Core conversion
+as Ordinate's file import, preserves the source file, and reports unsupported
+or lossy content. Import to a **new** `.ord` working file, inspect the resulting
+headers and formulas, then edit that file. Import is not proof that translated
+formulas produce the intended business results; evaluate and spot-check them.
+The MCP tool `ordinate_import` exposes the same conversion for hosts using MCP.
+
+```sh
+ordinate-cli import source.xlsx --format xlsx --output working.ord --json
+ordinate-cli import source.csv --format csv --options import-options.json --output working.ord --json
+```
+
+For that CSV command, `import-options.json` can contain
+`{"sheetName":"Data","valueMode":"infer","headers":[{"sheetName":"Data","headerRows":1,"headerColumns":0}]}`.
+CSV/TSV fields remain text unless `valueMode: "infer"` is explicitly chosen;
+choose header rows/columns from the actual file, not a convention. XLSX import
+rejects unsupported content by default; `unsupportedContent: "preserve-text"`
+is an explicit lossy choice that requires reviewing its diagnostics. The
+command never overwrites an existing output. Use `import --help` for options.
+
 ```sh
 ordinate-cli inspect model.ord --sheet Plan --notes --json
-ordinate-cli validate model.ord
-ordinate-cli evaluate model.ord --sheet Plan --json
-ordinate-cli edit --help --operation set_cell_input
-ordinate-cli edit --help --schema
+ordinate-cli evaluate model.ord --json
+ordinate-cli evaluate model.ord --sheet Plan --rows 9:10 --columns 1:2 --json
+ordinate-cli edit --help --operation move_rows
 ```
 
 Choose direct text editing for new tables, notes, formulas, and coherent bulk
 authoring. Choose structured insert/move/duplicate/fill operations when Core
 should preserve reference targets and presentation. Set explicit inputs with
 `set_cell_input`/`set_region`; use default/local format and style operations for
-presentation. Inspect before selecting named paths or indexes. Discover the
-exact payload from operation help, not guessed field names.
+presentation. Use the current workbook snapshot when it already shows the
+needed headers, paths, and indexes; inspect when those facts are missing or
+stale. Take exact payloads from the tested examples below for common
+operations. Use `edit --help --operation NAME` only for an operation or detail
+not covered here.
+When adding a calculated column to an existing table, prefer one seed formula
+plus `fill_region` in the same edit batch over repeating that formula in every
+`set_cell_input` or `set_region` value. This is especially concise with `_`:
+each filled cell refers to its own row/column without an A1-style number to
+rewrite. A whole new table authored as text can still use direct editing.
 
 Keep the current workbook in view. Before editing, read the affected source
 table or inspect it with its headers, row paths, formulas, notes, and display
@@ -442,15 +517,102 @@ submit it via `ordinate-cli edit model.ord --operations - --write`:
 Keep source text literal in the shell: `<<'JSON'` preserves dollar signs and
 backticks inside formulas; unquoted shell input can change them before parsing.
 
-Validate structure, then evaluate formulas; both report failures with nonzero
-exit status. `validate` checks syntax and table structure, not formula dependency
-cycles: even a direct self-reference can pass validation. `evaluate` detects
-direct and indirect cycles, so run both checks before calling a workbook done.
-`--json` returns machine-readable reports: check status and `ok`, not just
-`error: null`. Successful `edit` does not imply successful calculation.
-Evaluation ignores stored caches; `evaluate --write` refreshes them explicitly.
-Do not invent caches or replace formulas with cached results.
-If checks fail, use the diagnostics to repair and rerun them; if you cannot
+<batch_row_example context="canonical_workbook Sales Ledger">
+To append AC-5 with quantity 2 at unit price 18, insert a body row at gap `5`
+after the header and four existing body rows. The next operation writes its
+four cells as a `1 × 4` matrix; region bounds are end-exclusive. The note is
+part of the same atomic request. Use the current revision from `inspect`.
+
+```json
+{
+  "baseRevision": "REVISION_FROM_INSPECT",
+  "operations": [
+    {"op":"insert_row","sheet":"Sales Ledger","area":"body","rowGapIndex":5,"depth":0},
+    {"op":"set_region","target":{"sheet":"Sales Ledger","rows":{"start":5,"end":6},"columns":{"start":0,"end":4}},"values":[["AC-5","2","18","= @[_,\"Quantity\"] * @[_,\"Unit price\"]"]]},
+    {"op":"set_sheet_note","sheet":"Sales Ledger","position":"afterTable","markdown":"AC-5 was added after the original four items."}
+  ]
+}
+```
+
+The row label occupies column `0`; data start at column `1`. Keep matrix
+dimensions equal to the target region. If the change is to an existing
+rectangle, omit `insert_row` and use `set_region` directly. For a repeated
+formula across many rows, use the one-seed `fill_region` batch below instead
+of listing that formula in every matrix entry.
+</batch_row_example>
+
+<batch_column_example context="canonical_workbook Sales Ledger">
+Suppose the complete Sales Ledger above needs a `Net after fee` column equal
+to 95% of each row's Line total. After inspecting that sheet for its current
+revision and dimensions, submit this **one** `edit --operations - --write`
+request. The zero-based, end-exclusive row range `2:5` is AC-2 through AC-4;
+row `1` is the seed AC-1. The new column is index `4` after Line total.
+
+```json
+{
+  "baseRevision": "REVISION_FROM_INSPECT",
+  "operations": [
+    {"op":"insert_column","sheet":"Sales Ledger","colIndex":4},
+    {"op":"set_cell_input","target":{"sheet":"Sales Ledger","row":{"kind":"index","index":0},"column":{"kind":"index","index":4}},"input":"Net after fee"},
+    {"op":"set_cell_input","target":{"sheet":"Sales Ledger","row":{"kind":"index","index":1},"column":{"kind":"index","index":4}},"input":"= @[_,\"Line total\"] * 0.95"},
+    {"op":"fill_region","source":{"sheet":"Sales Ledger","rows":{"start":1,"end":2},"columns":{"start":4,"end":5}},"target":{"sheet":"Sales Ledger","rows":{"start":2,"end":5},"columns":{"start":4,"end":5}},"mode":"copy"}
+  ]
+}
+```
+
+All four resulting cells use the same `= @[_,"Line total"] * 0.95` formula:
+`_` binds to AC-1, AC-2, AC-3, or AC-4 in its own row. Repeating the formula as four
+separate values in a `set_region` matrix or four `set_cell_input` operations is
+unnecessary. `fill_region` materializes those per-cell inputs in the `.ord`
+file; it is a batch editing operation, not a single shared array formula.
+</batch_column_example>
+
+<batch_edit_failure_contrasts context="canonical_workbook Sales Ledger">
+<contrast name="format-in-cell-input">
+<invalid>`set_cell_input` with `input: '= @[_,"Line total"] * 0.95 {:,.2f}'`</invalid>
+<valid>`set_cell_input` with `input: '= @[_,"Line total"] * 0.95'`</valid>
+<reason>The edit API's `input` contains only the cell value or formula, not a
+serialized display suffix. Use a separate `set_cell_local_format` or
+`set_column_default_format` operation for presentation; an existing local
+format is preserved when changing only the input.</reason>
+</contrast>
+<contrast name="fill-gap-after-seed">
+<invalid>`fill_region` from rows `1:2` to rows `3:5` in column `4`</invalid>
+<valid>`fill_region` from rows `1:2` to rows `2:5` in column `4`</valid>
+<reason>CLI bounds are zero-based and end-exclusive: row `2` immediately
+follows the seed row `1`. The source and target must touch along the fill
+axis and match on the other axis. A skipped row makes the whole edit batch
+fail; seed each disjoint block separately or use `set_region`. Recheck staged
+indexes after earlier insertions in the same batch.</reason>
+</contrast>
+</batch_edit_failure_contrasts>
+
+For a completed workbook, run `evaluate --json` as the final check. If you want
+to review computed results throughout an agent-owned working copy, use
+`evaluate --write --json` instead, then read that copy with its refreshed
+caches; this is one evaluation, not an extra pass. It performs
+the same syntax and structure validation as `validate` first, then recalculates
+every sheet and detects formula errors and cycles. A validation failure appears
+in its diagnostics with nonzero exit status; do not run `validate` immediately
+before `evaluate` on unchanged source. Use `validate` alone only for an interim
+structure-only check while drafting. Successful `edit` does not imply successful
+calculation.
+
+Without `--sheet`, evaluation JSON contains status, summary, and diagnostics,
+not every cell value. Add `--sheet` and narrow `--rows`/`--columns` to return
+specific computed values; these options limit the response, not the calculation.
+For example, the Plan command above selects B10 in the canonical workbook:
+`result.data.selection.values[0][0]` is `{"kind":"number","value":"730"}`.
+For a spot check, read that JSON value and compare it with the expected
+business result. For a broader review, prefer the materialized working copy
+over returning every cell in JSON; a file-writing JSON report contains the
+write status and evaluation summary, not the full workbook source.
+Zero formula errors alone does not prove the numbers are right. Check status
+and `ok`, not just `error: null`. Evaluation ignores stored caches and does not
+change the file by default; `evaluate --write` refreshes caches in the working
+copy. Do not use it on the user's original file merely for inspection. Do not
+invent caches or replace formulas with results.
+If evaluation fails, repair from its diagnostics and rerun it; if you cannot
 finish, report the remaining failure instead of claiming completion. An unknown
 selector or function does not by itself prove the requested feature is unsupported.
 

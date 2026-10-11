@@ -125,7 +125,7 @@ into ordinary document errors. Adapters report an internal failure separately.
 
 All `*Index` fields are zero-based. Semantic rows include headers and body rows;
 semantic columns include header/label columns. Markdown divider rows and the
-display control frame do not occupy semantic coordinates. Source line numbers
+metadata control frame do not occupy semantic coordinates. Source line numbers
 and user-visible spreadsheet addresses are separate concepts.
 
 ```ts
@@ -509,7 +509,7 @@ dependency belongs in the shared runner.
 
 Required tests cover:
 
-- inspection coordinates with multiple headers, dividers, display control frames,
+- inspection coordinates with multiple headers, dividers, metadata control frames,
   hierarchy, and absent headers; paging and exact range bounds;
 - quoted labels, dots in path components, missing/ambiguous targets, and no ID leakage;
 - revision changes for whitespace, line endings, caches, and content changes;

@@ -1,3 +1,7 @@
+---
+ord-format: "0.1"
+---
+
 # Drivers
 **Acme Cloud | three-year subscription operating plan**
 
@@ -28,7 +32,7 @@ The base case assumes month-end customer counts contribute a full month of recur
 
 Organic and referral channels are expected to supply 55% of new customers. Paid acquisition fills the remaining requirement. Trial volumes are sized from the conversion assumption, and spending includes the fully loaded cost across channels.
 
-| @display |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:,.2f} {::>} |
+| @meta |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:,.2f} {::>} |
 |  | Month || New accounts | Organic | Referral | Paid | Required trials | Acquisition spend |
 |  | --- || --- | --- | --- | --- | --- | --- |
 |  | 2026-01 || = round(@["Drivers"::["New customers per month","Value"]] * power(1 + @["Drivers"::["Monthly acquisition growth","Value"]], 0), 0) | = round(B2 * @["Drivers"::["Organic share","Value"]], 0) | = round(B2 * @["Drivers"::["Referral share","Value"]], 0) | = B2 - C2 - D2 | = ceil(B2 / @["Drivers"::["Trial conversion","Value"]]) | = B2 * @["Drivers"::["Acquisition cost per customer","Value"]] |
@@ -75,7 +79,7 @@ Churn is rounded to whole accounts and applied to the opening customer base. Pri
 
 The first-year focus is cash discipline while new acquisition capacity is established; subsequent hiring is paced against recurring gross profit.
 
-| @display |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
+| @meta |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
 |  | Month || Opening | New | Churned | Closing | ARPA | MRR | ARR | Gross profit | Acquisition spend | CAC | Payroll | Overhead | Operating cash | Opening cash | Closing cash |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | 2026-01 || = @["Drivers"::["Opening customers","Value"]] | = @["Acquisition Plan"::["2026-01","New accounts"]] | = ceil(B2 * @["Drivers"::["Monthly churn rate","Value"]]) | = B2 + C2 - D2 | = @["Drivers"::["Monthly revenue per customer","Value"]] * power(1 + @["Drivers"::["Annual price growth","Value"]], 0) | = E2 * F2 | = G2 * 12 | = G2 * @["Drivers"::["Gross margin","Value"]] | = @["Acquisition Plan"::["2026-01","Acquisition spend"]] | = J2 / C2 | = @["Drivers"::["Monthly payroll","Value"]] * power(1 + @["Drivers"::["Annual payroll growth","Value"]], 0) | = @["Drivers"::["Monthly overhead","Value"]] | = I2 - J2 - L2 - M2 | = @["Drivers"::["Opening cash","Value"]] | = O2 + N2 |
@@ -120,7 +124,7 @@ The first-year focus is cash discipline while new acquisition capacity is establ
 
 Each row starts with the acquired accounts in that month and follows twelve months of expected retention. These are prospective retention curves, not observed cohort outcomes. Expansion revenue and reactivations are excluded.
 
-| @display |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} |
+| @meta |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:.0f} |
 |  | Cohort || Acquired | Month 0 | Month 1 | Month 2 | Month 3 | Month 4 | Month 5 | Month 6 | Month 7 | Month 8 | Month 9 | Month 10 | Month 11 |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | 2026-01 || = @["Customer Plan"::["2026-01","New"]] | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 0)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 1)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 2)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 3)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 4)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 5)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 6)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 7)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 8)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 9)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 10)) | = floor(B2 * power(1 - @["Drivers"::["Monthly churn rate","Value"]], 11)) |
@@ -153,7 +157,7 @@ Each row starts with the acquired accounts in that month and follows twelve mont
 
 The year-end ARR is an annualized run rate, not revenue recognized during the year. Revenue and spending sum the twelve monthly periods; ending customers and cash are December balances.
 
-| @display |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
+| @meta |  || {:.0f} | {:.0f} | {:.0f} | {:.0f} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |
 |  | Year || Opening customers | New customers | Churned customers | Ending customers | Revenue | Ending ARR | Gross profit | Acquisition spend | Payroll | Operating cash | Ending cash |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | 2026 || = @["Customer Plan"::B2] | = sum(@["Customer Plan"::C2:C13]) | = sum(@["Customer Plan"::D2:D13]) | = @["Customer Plan"::E13] | = sum(@["Customer Plan"::G2:G13]) | = @["Customer Plan"::H13] | = sum(@["Customer Plan"::I2:I13]) | = sum(@["Customer Plan"::J2:J13]) | = sum(@["Customer Plan"::L2:L13]) | = sum(@["Customer Plan"::N2:N13]) | = @["Customer Plan"::P13] |

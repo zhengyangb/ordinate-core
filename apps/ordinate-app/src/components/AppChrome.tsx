@@ -8,7 +8,7 @@ import type { OnlineChrome } from "../platform/experience";
 import { ChoiceMenu } from "./ChoiceMenu";
 import { FORMATS, type ExportFormat } from "../interchange/contracts";
 
-import { ChevronLeftIcon, ChevronRightIcon, CodeIcon, ExportIcon, NewDocumentIcon, OpenIcon, SheetSetupIcon, SettingsIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
+import { ChevronLeftIcon, ChevronRightIcon, CodeIcon, ExportIcon, NewDocumentIcon, OpenIcon, SheetSetupIcon, SettingsIcon, SparklesIcon, PlusIcon, RedoIcon, SaveAsIcon, SaveIcon, UndoIcon } from "../icons/uiIcons";
 import { MenuDivider, MenuGroup, MenuHead, MenuOption, MenuSurface, MenuTitle } from "./MenuSurface";
 import type { SheetHealth } from "../types/ui";
 import {
@@ -28,6 +28,10 @@ type AppChromeProps = {
   onImportFile?: () => void;
   titlePlacement?: "toolbar" | "native";
   mode: "table" | "source";
+  agentOpen: boolean;
+  agentPreviewActive: boolean;
+  agentDebugMode?: boolean;
+  onToggleAgent: () => void;
   fileName: string;
   fileStatus: string;
   fileStatusTone: FileStatusTone;
@@ -149,6 +153,10 @@ export default function AppChrome({
   onImportFile,
   titlePlacement = "toolbar",
   mode,
+  agentOpen,
+  agentPreviewActive,
+  agentDebugMode = false,
+  onToggleAgent,
   fileName,
   fileStatus,
   fileStatusTone,
@@ -518,27 +526,30 @@ export default function AppChrome({
   );
   const fileError = fileStatusTone === "error" ? fileStatus : null;
   const openFileTooltip = fileError ? `Open file · ${fileError}` : "Open file";
+  const saveTooltip = "Save file";
+  const saveAsTooltip = "Save as";
+  const exportTooltip = "Export a copy";
   const applicationGroups: ApplicationMenuGroup[] = [
     { label: "File", items: [
-      { label: "New document", run: onNewFile, icon: <NewDocumentIcon /> },
+      { label: "New document", run: onNewFile, disabled: agentPreviewActive, icon: <NewDocumentIcon /> },
       ...(online ? [{ label: "Examples…", run: online.showExamples }, ...(online.resetExample ? [{ label: "Reset example…", run: online.resetExample }] : [])] : []),
-      { label: "Open…", run: onOpenFile, icon: <OpenIcon /> },
+      { label: "Open…", run: onOpenFile, disabled: agentPreviewActive, icon: <OpenIcon /> },
       ...(online ? [{ label: "Open from link…", run: online.openFromLink }] : []),
       { label: "Save", run: onSaveFile, icon: <SaveIcon /> },
       { label: "Save as…", run: onSaveFileAs, icon: <SaveAsIcon /> },
-      ...(onImportFile ? [{ label: "Import spreadsheet…", run: onImportFile }] : []),
+      ...(onImportFile ? [{ label: "Import spreadsheet…", run: onImportFile, disabled: agentPreviewActive }] : []),
       ...Object.entries(FORMATS).map(([format, info]) => ({ label: `Export ${info.label}…`, run: () => onExportFormat(format as ExportFormat), icon: <ExportIcon /> })),
       { label: "Print…", run: onPrintFile, disabled: !activeSheet },
     ] },
     { label: "Edit", items: [
-      { label: "Undo", run: onUndo, disabled: mode !== "table" || !canUndo, icon: <UndoIcon /> },
-      { label: "Redo", run: onRedo, disabled: mode !== "table" || !canRedo, icon: <RedoIcon /> },
+      { label: "Undo", run: onUndo, disabled: agentPreviewActive || mode !== "table" || !canUndo, icon: <UndoIcon /> },
+      { label: "Redo", run: onRedo, disabled: agentPreviewActive || mode !== "table" || !canRedo, icon: <RedoIcon /> },
       { label: "Settings…", run: onOpenSettings, icon: <SettingsIcon /> },
     ] },
     { label: "View", items: [
       ...(search ? [{ label: "Find in document…", run: search.show, disabled: !search.enabled }] : []),
-      { label: mode === "table" ? "Source mode" : "Table view", run: mode === "table" ? onEnterSourceMode : onExitSourceMode, icon: <CodeIcon /> },
-      { label: "Sheet setup…", run: onToggleSheetSetup, disabled: mode !== "table" || !activeSheet, icon: <SheetSetupIcon /> },
+      { label: mode === "table" ? "Source mode" : "Table view", run: mode === "table" ? onEnterSourceMode : onExitSourceMode, disabled: agentPreviewActive, icon: <CodeIcon /> },
+      { label: "Sheet setup…", run: onToggleSheetSetup, disabled: agentPreviewActive || mode !== "table" || !activeSheet, icon: <SheetSetupIcon /> },
     ] },
     { label: "Help", items: [
       ...(online ? [{ label: "Get Mac app…", run: online.downloadMac }] : []),
@@ -559,6 +570,7 @@ export default function AppChrome({
           {hasNativeTitle && <button
             className="tool-button file-command-button"
             type="button"
+            disabled={agentPreviewActive}
             onClick={onNewFile}
             aria-label="New document"
             onMouseEnter={(event) => onTooltipEnter("New document in tab", event.currentTarget)}
@@ -572,6 +584,7 @@ export default function AppChrome({
           <button
             className="tool-button file-command-button"
             type="button"
+            disabled={agentPreviewActive}
             onClick={onOpenFile}
             aria-label="Open file"
             aria-describedby={fileError ? "file-error-status" : undefined}
@@ -592,10 +605,10 @@ export default function AppChrome({
             className="tool-button file-command-button"
             type="button"
             onClick={onSaveFile}
-            aria-label="Save file"
-            onMouseEnter={(event) => onTooltipEnter("Save file", event.currentTarget)}
+            aria-label={saveTooltip}
+            onMouseEnter={(event) => onTooltipEnter(saveTooltip, event.currentTarget)}
             onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-            onFocus={(event) => onTooltipEnter("Save file", event.currentTarget)}
+            onFocus={(event) => onTooltipEnter(saveTooltip, event.currentTarget)}
             onBlur={(event) => onTooltipRelease(event.currentTarget)}
             onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
           >
@@ -608,10 +621,10 @@ export default function AppChrome({
             className="tool-button file-command-button"
             type="button"
             onClick={onSaveFileAs}
-            aria-label="Save as"
-            onMouseEnter={(event) => onTooltipEnter("Save as", event.currentTarget)}
+            aria-label={saveAsTooltip}
+            onMouseEnter={(event) => onTooltipEnter(saveAsTooltip, event.currentTarget)}
             onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-            onFocus={(event) => onTooltipEnter("Save as", event.currentTarget)}
+            onFocus={(event) => onTooltipEnter(saveAsTooltip, event.currentTarget)}
             onBlur={(event) => onTooltipRelease(event.currentTarget)}
             onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
           >
@@ -623,10 +636,10 @@ export default function AppChrome({
           <ChoiceMenu open={exportMenuOpen} onOpenChange={open => open ? onExportFile() : onExportMenuOpenChange(false)}
             onChoose={onExportFormat} label="Export format" portal
             options={Object.entries(FORMATS).map(([value, format]) => ({ value: value as ExportFormat, label: format.label, detail: `.${value}` }))}
-            buttonProps={{ className: `tool-button file-command-button${exportMenuOpen ? " active" : ""}`, "aria-label": "Export a copy",
-              onMouseEnter: event => { if (!exportMenuOpen) onTooltipEnter("Export a copy", event.currentTarget); },
+            buttonProps={{ className: `tool-button file-command-button${exportMenuOpen ? " active" : ""}`, "aria-label": exportTooltip,
+              onMouseEnter: event => { if (!exportMenuOpen) onTooltipEnter(exportTooltip, event.currentTarget); },
               onMouseLeave: event => onTooltipRelease(event.currentTarget),
-              onFocus: event => { if (!exportMenuOpen) onTooltipEnter("Export a copy", event.currentTarget); },
+              onFocus: event => { if (!exportMenuOpen) onTooltipEnter(exportTooltip, event.currentTarget); },
               onBlur: event => onTooltipRelease(event.currentTarget),
               onMouseDown: event => onTooltipSuppress(event.currentTarget),
               children: <span className="tool-icon"><ExportIcon /></span>,
@@ -638,7 +651,7 @@ export default function AppChrome({
             ref={sheetSetupButtonRef}
             className={sheetSetupOpen ? "tool-button sheet-setup-button active" : "tool-button sheet-setup-button"}
             type="button"
-            disabled={mode !== "table" || !activeSheet}
+            disabled={agentPreviewActive || mode !== "table" || !activeSheet}
             onClick={onToggleSheetSetup}
             aria-label="Sheet setup"
             aria-haspopup="menu"
@@ -661,7 +674,7 @@ export default function AppChrome({
           <button
             className="tool-button history-button"
             type="button"
-            disabled={mode !== "table" || !canUndo}
+            disabled={agentPreviewActive || mode !== "table" || !canUndo}
             onClick={onUndo}
             aria-label={undoLabel ? `Undo ${undoLabel}` : "Undo"}
             title={undoLabel ? `Undo ${undoLabel}` : "Undo"}
@@ -679,7 +692,7 @@ export default function AppChrome({
           <button
             className="tool-button history-button"
             type="button"
-            disabled={mode !== "table" || !canRedo}
+            disabled={agentPreviewActive || mode !== "table" || !canRedo}
             onClick={onRedo}
             aria-label={redoLabel ? `Redo ${redoLabel}` : "Redo"}
             title={redoLabel ? `Redo ${redoLabel}` : "Redo"}
@@ -717,8 +730,23 @@ export default function AppChrome({
         {online?.isMac && <MacDownloadButton onClick={online.downloadMac} />}
         <div className="toolbar-actions">
           <SearchButton />
+          {!online && <button
+            className={agentOpen ? "tool-button agent-button active" : "tool-button agent-button"}
+            type="button"
+            disabled={agentPreviewActive}
+            onClick={onToggleAgent}
+            aria-label={agentOpen ? (agentDebugMode ? "Close assistant simulator" : "Close AI assistant") : (agentDebugMode ? "Open assistant simulator" : "Open AI assistant")}
+            aria-expanded={agentOpen}
+            aria-controls="ordinate-agent-panel"
+            onMouseEnter={(event) => onTooltipEnter(agentDebugMode ? "Assistant simulator" : "AI assistant", event.currentTarget)}
+            onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
+            onFocus={(event) => onTooltipEnter(agentDebugMode ? "Assistant simulator" : "AI assistant", event.currentTarget)}
+            onBlur={(event) => onTooltipRelease(event.currentTarget)}
+            onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
+          ><span className="tool-icon"><SparklesIcon /></span></button>}
           <button
             className={mode === "source" ? "tool-button source-button active" : "tool-button source-button"}
+            disabled={agentPreviewActive}
             onClick={mode === "source" ? onExitSourceMode : onEnterSourceMode}
             aria-label={mode === "source" ? "Return to table view" : "Open source mode"}
             onMouseEnter={(event) => onTooltipEnter(mode === "source" ? "Return to table view" : "Open source mode", event.currentTarget)}

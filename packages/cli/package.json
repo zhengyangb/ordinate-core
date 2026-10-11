@@ -3,9 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
-  "bin": { "ordinate-cli": "dist/ordinate-cli.mjs" },
-  "files": ["dist", "skills"],
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "ordinate-cli": "dist/ordinate-cli.mjs",
+    "ordinate-mcp": "dist/ordinate-mcp.mjs"
+  },
+  "files": [
+    "dist",
+    "skills"
+  ],
   "scripts": {
     "build": "node build.mjs",
     "sync:skill": "npm run build && node skill_reference.mjs --write",
@@ -13,6 +21,15 @@
     "prepack": "npm run build && npm run check:skill",
     "test": "npm run build && node --test tests/*.test.mjs"
   },
-  "dependencies": { "ordinate-core": "file:../core-ts" },
-  "devDependencies": { "esbuild": "0.21.5", "typescript": "^5.6.0", "@types/node": "22.19.15" }
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.3.1",
+    "ordinate-core": "file:../core-ts",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.3.1",
+    "@types/node": "22.19.15",
+    "esbuild": "0.21.5",
+    "typescript": "^5.6.0"
+  }
 }

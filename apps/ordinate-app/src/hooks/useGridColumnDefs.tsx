@@ -1,5 +1,5 @@
 import type { ColDef } from "ag-grid-community";
-import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import BooleanCellCapsule from "../components/BooleanCellCapsule";
 import ErrorCellChip from "../components/ErrorCellChip";
 import { SearchText } from "../search/SheetSearch";
@@ -17,12 +17,13 @@ type Options = Pick<ReturnType<typeof useSheetViewModel>, "currentSheet" | "curr
   axisColumnDragPreview: Extract<AxisDragPreview, { axis: "column" }> | null;
   activateBooleanLiteralAt: (row: GridRow, colIndex: number, value: boolean) => void;
   formulaPointPickActive: boolean;
+  renderCellAdornment?: (row: GridRow, colIndex: number) => ReactNode;
 };
 export function useGridColumnDefs({
   currentSheet, currentSheetState, sheetColCount, headerColCount, headerRowCount, frozenColumnCount,
   columnLayouts, headerLeafLabels, headerSemanticLabels, toggleCollapse, uiLocale, showTooltip,
   clearTooltip, selectedColumnAxisSelection, axisColumnDragPreview, activateBooleanLiteralAt,
-  formulaPointPickActive, revision,
+  formulaPointPickActive, renderCellAdornment, revision,
 }: Options) {
   // Grid definitions describe presentation; live interaction commands are not
   // column metadata. Selection changes replace the Boolean activation callback,
@@ -37,6 +38,8 @@ export function useGridColumnDefs({
   }, []);
   const columnDefs = useMemo<ColDef<GridRow>[]>(() => {
     if (!currentSheet || !currentSheetState || sheetColCount === 0) return [];
+
+    const decorate = (row: GridRow, colIndex: number, content: ReactNode) => <>{content}{renderCellAdornment?.(row, colIndex)}</>;
 
     const realColumnDefs = Array.from({ length: sheetColCount }, (_, colIndex) => {
       const field = toColFieldId(colIndex);
@@ -60,7 +63,7 @@ export function useGridColumnDefs({
           headerClass: "line-item-header",
           cellClass: colIndex === 0 ? "line-item-cell" : "header-column-cell",
           cellRenderer: (params: { data?: GridRow; value?: unknown }) => params.data
-            ? <SearchText row={params.data.__absoluteRowNumber} col={colIndex} text={String(params.value ?? "")} /> : null,
+            ? decorate(params.data, colIndex, <SearchText row={params.data.__absoluteRowNumber} col={colIndex} text={String(params.value ?? "")} />) : null,
         };
 
         if (colIndex === 0) {
@@ -100,7 +103,7 @@ export function useGridColumnDefs({
               <span className="tree-inline-pad" aria-hidden="true" />
             );
 
-            return (
+            return decorate(data, colIndex,
               <div className="tree-cell" style={{ paddingLeft }}>
                 {leadingSlot}
                 <span className={data.__hasChildren ? "tree-label section" : "tree-label"}>
@@ -131,8 +134,8 @@ export function useGridColumnDefs({
             if (typeof value !== "boolean" || typeof interactive !== "boolean") {
               throw new Error(`missing boolean metadata for column ${colIndex}`);
             }
-            if (!interactive) return <SearchText row={row} col={colIndex} text={text} />;
-            return <SearchText row={row} col={colIndex} text={text}>{formulaPointPickActive ? (
+            if (!interactive) return decorate(params.data, colIndex, <SearchText row={row} col={colIndex} text={text} />);
+            return decorate(params.data, colIndex, <SearchText row={row} col={colIndex} text={text}>{formulaPointPickActive ? (
               <BooleanCellCapsule value={value} interactive={false} />
             ) : (
               <BooleanCellCapsule
@@ -140,13 +143,13 @@ export function useGridColumnDefs({
                 interactive
                 onToggle={() => activateBoolean(params.data!, colIndex, value)}
               />
-            )}</SearchText>;
+            )}</SearchText>);
           }
           if (kind !== "error") {
             const content = <SearchText row={row} col={colIndex} text={text} />;
-            if (kind === "string") return <span className="cell-text">{content}</span>;
-            if (kind === "number") return <span title={text}>{content}</span>;
-            return content;
+            if (kind === "string") return decorate(params.data, colIndex, <span className="cell-text">{content}</span>);
+            if (kind === "number") return decorate(params.data, colIndex, <span title={text}>{content}</span>);
+            return decorate(params.data, colIndex, content);
           }
 
           const externalKind = params.data?.[`__error_external_${colIndex}`];
@@ -156,7 +159,7 @@ export function useGridColumnDefs({
             throw new Error(`missing error metadata for column ${colIndex}`);
           }
 
-          return (
+          return decorate(params.data, colIndex,
             <SearchText row={row} col={colIndex} text={text}>
             <ErrorCellChip
               locale={uiLocale}
@@ -226,6 +229,7 @@ export function useGridColumnDefs({
     axisColumnDragPreview,
     activateBoolean,
     formulaPointPickActive,
+    renderCellAdornment,
     revision,
   ]);
 

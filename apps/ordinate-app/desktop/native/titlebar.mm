@@ -49,8 +49,39 @@ static napi_value SetChrome(napi_env env, napi_callback_info info) {
   return result;
 }
 
+// AppKit owns the Dictation session and inserts recognized text through the
+// focused textarea's normal input path. Stop it explicitly when that text is sent.
+static napi_value SystemDictation(napi_env env, napi_callback_info info, bool start) {
+  size_t argc = 0;
+  if (napi_get_cb_info(env, info, &argc, nullptr, nullptr, nullptr) != napi_ok || argc != 0) {
+    napi_throw_type_error(env, nullptr, "System dictation takes no arguments");
+    return nullptr;
+  }
+  if (![NSThread isMainThread]) {
+    napi_throw_error(env, nullptr, "System dictation must start on the main thread");
+    return nullptr;
+  }
+  SEL action = NSSelectorFromString(start ? @"startDictation:" : @"stopDictation:");
+  if (![NSApp sendAction:action to:NSApp from:nil]) {
+    napi_throw_error(env, nullptr, start ? "macOS Dictation is unavailable. Enable it in System Settings > Keyboard." : "Could not stop macOS Dictation.");
+    return nullptr;
+  }
+  napi_value result;
+  napi_get_undefined(env, &result);
+  return result;
+}
+
+static napi_value StartSystemDictation(napi_env env, napi_callback_info info) {
+  return SystemDictation(env, info, true);
+}
+
+static napi_value StopSystemDictation(napi_env env, napi_callback_info info) {
+  return SystemDictation(env, info, false);
+}
+
 void RegisterDocuments(napi_env env, napi_value exports);
 void RegisterPrinting(napi_env env, napi_value exports);
+void RegisterAssistantPDF(napi_env env, napi_value exports);
 NAPI_MODULE_INIT() {
   napi_value callback;
   if (napi_create_function(env, "setChrome", NAPI_AUTO_LENGTH, SetChrome, nullptr, &callback) != napi_ok ||
@@ -58,7 +89,18 @@ NAPI_MODULE_INIT() {
     napi_throw_error(env, nullptr, "Cannot initialize native titlebar bridge");
     return nullptr;
   }
+  if (napi_create_function(env, "startSystemDictation", NAPI_AUTO_LENGTH, StartSystemDictation, nullptr, &callback) != napi_ok ||
+      napi_set_named_property(env, exports, "startSystemDictation", callback) != napi_ok) {
+    napi_throw_error(env, nullptr, "Cannot initialize native dictation bridge");
+    return nullptr;
+  }
+  if (napi_create_function(env, "stopSystemDictation", NAPI_AUTO_LENGTH, StopSystemDictation, nullptr, &callback) != napi_ok ||
+      napi_set_named_property(env, exports, "stopSystemDictation", callback) != napi_ok) {
+    napi_throw_error(env, nullptr, "Cannot initialize native dictation bridge");
+    return nullptr;
+  }
   RegisterDocuments(env, exports);
   RegisterPrinting(env, exports);
+  RegisterAssistantPDF(env, exports);
   return exports;
 }

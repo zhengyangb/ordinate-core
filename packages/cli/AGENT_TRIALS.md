@@ -25,7 +25,7 @@ choices, not methods agents were required to use.
 - Direct editing is useful, not a test failure. Agents naturally chose it for
   small textual changes and bulk formula authoring, while using structured edits
   for copies and display metadata. None was forced into a tool-only workflow.
-- The forecast agent initially attempted a second display control row for row
+- The forecast agent initially attempted a second metadata control row for row
   percentage formatting. Validation rejected it because that control row requires
   metadata-only cells. The agent recovered using four local format operations.
   Correctness was preserved, but format grammar/defaults need clearer guidance.
@@ -155,7 +155,7 @@ that a tool is better for every task: the monthly-extension agent authored
 the sequence directly instead of choosing the existing fill operation.
 
 Repeated recoverable mistakes involved swapped reference axes, unquoted or
-single-quoted labels/sheet names, display-frame syntax, and Excel-style
+single-quoted labels/sheet names, metadata-frame syntax, and Excel-style
 `max(0, amount)` instead of native `max([0, amount])`. One agent also guessed
 an insertion gap incorrectly and repaired it. After the frozen main round,
 the skill and shared CLI reference were clarified with horizontal-versus-vertical

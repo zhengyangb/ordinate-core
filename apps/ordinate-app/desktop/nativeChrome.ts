@@ -3,6 +3,9 @@ import type { BrowserWindow } from "electron";
 import type { NativePDFPrinter } from "./printing.js";
 
 type AppKit = NativePDFPrinter & {
+  extractAssistantPDF: (pdf: Buffer) => { text: string; pageCount: number; images: Buffer[] };
+  startSystemDictation: () => void;
+  stopSystemDictation: () => void;
   setDocumentOpenHandler: (callback: (id: number, kind: "open", filename: string) => void) => void;
   completeDocumentOpen: (request: number, host: number, error: string) => void;
   setChrome: (handle: Buffer, red: number, green: number, blue: number) => void;

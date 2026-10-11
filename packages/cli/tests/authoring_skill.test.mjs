@@ -24,10 +24,11 @@ const report = (command, source, sheet) => JSON.parse(run([
 ], source));
 const value = (source, sheet, row, column) => report("evaluate", source, sheet).result.data.selection.values[row][column];
 
-test("package, executable, version and command help share the ordinate-cli name", () => {
+test("package, CLI executable, version and command help share the ordinate-cli name", () => {
   assert.equal(pkg.name, "ordinate-cli");
-  assert.deepEqual(Object.keys(pkg.bin), [pkg.name]);
+  assert.deepEqual(Object.keys(pkg.bin), [pkg.name, "ordinate-mcp"]);
   assert.equal(pkg.bin[pkg.name], "dist/ordinate-cli.mjs");
+  assert.equal(pkg.bin["ordinate-mcp"], "dist/ordinate-mcp.mjs");
   assert.match(run(["--version"]), /^ordinate-cli /);
   assert.match(run(["--help"]), /Usage: ordinate-cli /);
   assert.doesNotMatch(run(["--help"]), /\bordinate (?:help|inspect|validate|evaluate|edit)/);
@@ -79,7 +80,82 @@ test("quickstart results follow changed inputs across sheets and preserve formul
   assert.equal(view.cells[17][1].localDisplay.format.type, "%");
 });
 
-test("worked named, contextual, and A1 formulas agree at the stated cells", () => {
+test("the canonical headerless sheet uses all three columns as first-row data", () => {
+  const source = blocks(skill, "ord")[0];
+  const sheet = report("validate", source).result.data.summary.sheets.find(item => item.name === "Scratch Grid");
+  assert.ok(sheet);
+  assert.equal(sheet.headerRowCount, 0);
+  assert.equal(sheet.headerColumnCount, 0);
+  const selection = report("inspect", source, "Scratch Grid").result.data.selection;
+  assert.deepEqual(selection.cells[0].map(cell => cell.input), ["1", "2", "3"]);
+  assert.deepEqual(report("evaluate", source, "Scratch Grid").result.data.selection.values[0], [
+    { kind: "number", value: "1" }, { kind: "number", value: "2" }, { kind: "number", value: "3" },
+  ]);
+});
+
+test("documented one-seed fill batch adds a calculated column without repeated formula inputs", async () => {
+  const source = blocks(skill, "ord")[0];
+  const example = skill.match(/<batch_column_example[^>]*>[\s\S]*?```json\n([\s\S]*?)\n```[\s\S]*?<\/batch_column_example>/);
+  assert.ok(example);
+  const request = JSON.parse(example[1]);
+  request.baseRevision = report("inspect", source).input.revision;
+  assert.equal(request.operations.filter(operation => operation.op === "set_cell_input" && operation.input.startsWith("= ")).length, 1);
+  assert.equal(request.operations.filter(operation => operation.op === "fill_region").length, 1);
+  const directory = await mkdtemp(join(tmpdir(), "ordinate-skill-fill-"));
+  try {
+    const file = join(directory, "sales.ord");
+    await writeFile(file, source);
+    const applied = JSON.parse(run(["edit", file, "--operations", "-", "--write", "--json"], JSON.stringify(request)));
+    assert.equal(applied.ok, true);
+    assert.equal(applied.result.data.operationCount, 4);
+    const edited = await readFile(file, "utf8");
+    const cells = report("inspect", edited, "Sales Ledger").result.data.selection.cells;
+    for (let row = 1; row <= 4; row++) assert.equal(cells[row][4].input, '= @[_,"Line total"] * 0.95');
+    const values = report("evaluate", edited, "Sales Ledger").result.data.selection.values;
+    [28.5, 45.6, 57, 38].forEach((expected, index) => {
+      const cell = values[index + 1][4];
+      assert.equal(cell.kind, "number");
+      assert.ok(Math.abs(Number(cell.value) - expected) < 1e-9);
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("documented row batch inserts, writes a rectangular region, and adds a note", async () => {
+  const source = blocks(skill, "ord")[0];
+  const example = skill.match(/<batch_row_example[^>]*>[\s\S]*?```json\n([\s\S]*?)\n```[\s\S]*?<\/batch_row_example>/);
+  assert.ok(example);
+  const request = JSON.parse(example[1]);
+  request.baseRevision = report("inspect", source).input.revision;
+  const directory = await mkdtemp(join(tmpdir(), "ordinate-skill-row-"));
+  try {
+    const file = join(directory, "sales.ord");
+    await writeFile(file, source);
+    const applied = JSON.parse(run(["edit", file, "--operations", "-", "--write", "--json"], JSON.stringify(request)));
+    assert.equal(applied.ok, true);
+    assert.equal(applied.result.data.operationCount, 3);
+    const edited = await readFile(file, "utf8");
+    const selection = report("inspect", edited, "Sales Ledger").result.data.selection;
+    assert.deepEqual(selection.cells[5].map(cell => cell.input),
+      ["AC-5", "2", "18", '= @[_,Quantity] * @[_,"Unit price"]']);
+    assert.deepEqual(value(edited, "Sales Ledger", 5, 3), { kind: "number", value: "36" });
+    assert.match(edited, /AC-5 was added after the original four items\./);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a narrow evaluation returns a computed sanity-check value without writing", () => {
+  const source = blocks(skill, "ord")[0];
+  const result = JSON.parse(run(["evaluate", "-", "--sheet", "Plan", "--rows", "9:10", "--columns", "1:2", "--json"], source));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.result.data.selection.values, [[{ kind: "number", value: "730" }]]);
+  assert.equal(result.result.data.candidate, null);
+  assert.equal(result.write.status, "not_requested");
+});
+
+test("worked named, contextual, absolute, and A1 formulas agree at the stated cells", () => {
   const source = blocks(skill, "ord")[0];
   assert.deepEqual(value(source, "Plan", 4, 1), { kind: "number", value: "1200" });
   assert.deepEqual(value(source, "Plan", 8, 1), { kind: "number", value: "470" });
@@ -88,6 +164,7 @@ test("worked named, contextual, and A1 formulas agree at the stated cells", () =
   for (const alternative of [
     planFormula,
     '= @["Total revenue","2026"] - @["Total cost of sales","2026"]',
+    '= @[#5,_] - @[#9,_]',
     '= B5 - B9',
   ]) {
     assert.deepEqual(value(source.replace(planFormula, alternative), "Plan", 9, 1),
@@ -141,6 +218,26 @@ test("year labels, multiword labels, and hierarchy paths match the skill's contr
   });
   assert.equal(dottedResult.status, 4);
   assert.ok(JSON.parse(dottedResult.stdout).result.diagnostics.some(diagnostic =>
+    diagnostic.code === "unresolved_reference_label_not_found"));
+});
+
+test("the documented short account names fail while full hierarchical paths sum correctly", () => {
+  const source = blocks(skill, "ord")[0];
+  const contrast = skill.match(/<contrast name="hierarchy-path">([\s\S]*?)<\/contrast>/)?.[1];
+  assert.ok(contrast);
+  const invalid = contrast.match(/<invalid>(= [^<]+)<\/invalid>/)?.[1];
+  const valid = contrast.match(/<valid>(= [^<]+)<\/valid>/)?.[1];
+  assert.ok(invalid);
+  assert.ok(valid);
+  assert.ok(source.includes(valid));
+  assert.deepEqual(value(source, "Plan", 4, 1), { kind: "number", value: "1200" });
+  const broken = source.replace(valid, invalid);
+  assert.equal(report("validate", broken).ok, true);
+  const evaluation = spawnSync(process.execPath, [cli, "evaluate", "-", "--json"], {
+    input: broken, encoding: "utf8", timeout: 10000,
+  });
+  assert.equal(evaluation.status, 4);
+  assert.ok(JSON.parse(evaluation.stdout).result.diagnostics.some(diagnostic =>
     diagnostic.code === "unresolved_reference_label_not_found"));
 });
 
@@ -200,7 +297,7 @@ test("separately quoted hierarchy labels calculate", () => {
   assert.ok(Math.abs(Number(value(source, "Plan", 2, 2).value) - 110) < 1e-9);
 });
 
-test("display-frame example separates column, row and local metadata without shifting references", () => {
+test("metadata-frame example separates column, row and local metadata without shifting references", () => {
   const source = blocks(skill, "ord")[2];
   const view = report("inspect", source, "Summary").result.data.selection;
   assert.equal(view.cells[0][0].input, "Item");
@@ -277,6 +374,7 @@ test("documented batch updates by name and evaluation explicitly materializes ca
     assert.equal(await readFile(file, "utf8"), changed);
     const calculated = JSON.parse(run(["evaluate", file, "--write", "--json"]));
     assert.equal(calculated.write.status, "written");
+    assert.equal("candidate" in calculated.result.data, false);
     const materialized = await readFile(file, "utf8");
     assert.match(materialized, /830 = @\["Total revenue",_\] - @\["Total cost of sales",_\]/);
     assert.match(materialized, /"On track" = if\(@\["Net income growth",_\] > 0, "On track", "Review"\)/);

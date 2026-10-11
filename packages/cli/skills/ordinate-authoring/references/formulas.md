@@ -38,6 +38,10 @@ assumptions. Check evaluate too, and test changed inputs for dynamic models.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Plan
 | Item || Q1 | Q2 |
 | --- || --- | --- |
@@ -49,6 +53,10 @@ assumptions. Check evaluate too, and test changed inputs for dynamic models.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Expressions
 | Example || Result |
 | --- || --- |
@@ -62,6 +70,10 @@ assumptions. Check evaluate too, and test changed inputs for dynamic models.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Sessions
 | Session || Client | Start | End | Hours | Client hours | Elapsed |
 | --- || --- | --- | --- | --- | --- | --- |

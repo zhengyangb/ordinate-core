@@ -218,7 +218,7 @@ describe("RFC-0018 header surface editing and row area operations", () => {
     expect(presentation.sheets[0].cells[0][1].displayText).toBe("12.3");
 
     const output = serializeDocumentState(result.nextDocument);
-    expect(output).toContain("@display");
+    expect(output).toContain("@meta");
     const roundTripped = DocumentState.fromText(output);
     expect(roundTripped.sheets[0].columnDisplayMetadata[1]?.valid).toBe(true);
   });
@@ -226,7 +226,7 @@ describe("RFC-0018 header surface editing and row area operations", () => {
   it("patches and clears column default style independently from format", () => {
     const state = DocumentState.fromText(`
 # Sheet
-| @display |      || {:,.1f} {::>,blue,bold} |
+| @meta |      || {:,.1f} {::>,blue,bold} |
 |          | Item || Price                |
 | -------- | ---- || -----                |
 |          | A    || 12.34                |
@@ -340,7 +340,7 @@ describe("RFC-0018 header surface editing and row area operations", () => {
     expect(presentation.sheets[0].cells[0][0].errors).toEqual([]);
 
     const output = serializeDocumentState(result.nextDocument);
-    expect(output).toContain("@display");
+    expect(output).toContain("@meta");
     expect(output).toContain("{:,.1f} {::>,blue}");
     const roundTripped = DocumentState.fromText(output);
     const roundTrippedRowDefault = roundTripped.sheets[0].rowDisplayMetadata[1];
@@ -353,7 +353,7 @@ describe("RFC-0018 header surface editing and row area operations", () => {
   it("cascades display metadata as cell local over row default over column default", () => {
     const state = DocumentState.fromText(`
 # Sheet
-| @display |      || {:,.0f} | {:,.0f} |
+| @meta |      || {:,.0f} | {:,.0f} |
 |          | Item || Price   | Qty     |
 | -------- | ---- || -----   | ---     |
 |          | A    || 12.34 {:.2f} | 2.34 |

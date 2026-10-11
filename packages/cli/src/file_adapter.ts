@@ -98,6 +98,9 @@ export class FileAdapter {
       throw new CliError("usage", "invalid_arguments", "Use --write to replace the source file.", sourcePath ?? undefined);
   }
   async read(stdin: Readable): Promise<string> {
+    return decodeUtf8(await this.readBytes(stdin, WORKBOOK_LIMITS.sourceBytes), this.sourcePath ?? undefined);
+  }
+  async readBytes(stdin: Readable, limit: number): Promise<Buffer> {
     if (this.phase !== "initial")
       throw new CliError("internal", "invalid_adapter_state", "Source may only be read once per command.");
     this.phase = "reading";
@@ -129,11 +132,10 @@ export class FileAdapter {
         io(e, "read_failed", this.sourcePath);
       }
     }
-    this.snapshot = this.sourcePath ? await readFileLimited(this.canonicalSource ?? this.sourcePath, WORKBOOK_LIMITS.sourceBytes) : await readStream(stdin, WORKBOOK_LIMITS.sourceBytes, this.signal);
+    this.snapshot = this.sourcePath ? await readFileLimited(this.canonicalSource ?? this.sourcePath, limit) : await readStream(stdin, limit, this.signal);
     checkInterrupted(this.signal);
-    const source = decodeUtf8(this.snapshot, this.sourcePath ?? undefined);
     this.phase = "ready";
-    return source;
+    return this.snapshot;
   }
   private async checkSnapshot(): Promise<void> {
     const path = this.canonicalSource!;

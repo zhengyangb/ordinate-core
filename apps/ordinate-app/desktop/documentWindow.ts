@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, Menu, nativeTheme, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNativeStorage } from "./fileStorage.js";
@@ -15,6 +15,12 @@ import type { DocumentSession } from "./workspaceSession.js";
 import type { FileSnapshot, StorageResult } from "../src/platform/storage.js";
 import { documentSaveName, validateDocumentName } from "../src/platform/documentName.js";
 import type { QuitPhase } from "./quitCoordinator.js";
+import { AgentSession } from "./agentSession.js";
+import { agentDiagnosticDirectory } from "./agentDiagnostics.js";
+import { mkdir } from "node:fs/promises";
+import { MAX_AGENT_ATTACHMENTS, verifyAttachmentBytes, type AgentAttachment } from "../src/agent/attachments.js";
+import { isAgentDiagnosticLevel } from "../src/agent/diagnosticLevel.js";
+import { isAgentReasoningEffort } from "../src/agent/reasoningEffort.js";
 
 type Options = {
   record: DocumentSession;
@@ -42,6 +48,46 @@ export function createDocumentWindow(options: Options) {
     },
   });
   const ipc = createWindowIpc(win, rendererUrl);
+  const agent = new AgentSession(event => { if (!win.isDestroyed()) win.webContents.send("agent:event", event); });
+  ipc.handle("agent:connection", () => agent.connection());
+  ipc.handle("agent:login", () => agent.login());
+  ipc.handle("agent:models", () => agent.models());
+  ipc.handle("agent:openDiagnosticsFolder", async () => {
+    const directory = agentDiagnosticDirectory(app.getPath("userData"));
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const error = await shell.openPath(directory);
+    if (error) throw new Error(`Could not open assistant diagnostics: ${error}`);
+  });
+  ipc.handle("agent:startSystemDictation", () => {
+    if (!appKit) throw new Error("System Dictation requires macOS.");
+    if (!win.isFocused()) throw new Error("Focus the Ordinate window before starting Dictation.");
+    appKit.startSystemDictation();
+  });
+  ipc.handle("agent:stopSystemDictation", () => {
+    if (!appKit) throw new Error("System Dictation requires macOS.");
+    appKit.stopSystemDictation();
+  });
+  ipc.handle("agent:openLink", (_event, value: unknown) => {
+    if (typeof value !== "string") throw new TypeError("Invalid assistant link");
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Only web links can be opened from assistant messages.");
+    return shell.openExternal(url.href);
+  });
+  ipc.handle("agent:send", (_event, input: unknown) => {
+    if (!input || typeof input !== "object") throw new TypeError("Invalid AI request");
+    const value = input as Record<string, unknown>;
+    if (typeof value.sessionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.sessionId) ||
+        typeof value.message !== "string" || typeof value.sourceText !== "string" || typeof value.model !== "string" ||
+        typeof value.untouchedDefault !== "boolean" || !isAgentDiagnosticLevel(value.diagnosticLevel) || !isAgentReasoningEffort(value.reasoningEffort) ||
+        !(value.activeSheet === null || typeof value.activeSheet === "string") || !Array.isArray(value.attachments)) throw new TypeError("Invalid AI request");
+    const attachments = value.attachments as AgentAttachment[];
+    if (attachments.length > MAX_AGENT_ATTACHMENTS) throw new Error("Attach up to four files at a time.");
+    attachments.forEach(verifyAttachmentBytes);
+    return agent.send({ sessionId: value.sessionId, message: value.message, sourceText: value.sourceText, activeSheet: value.activeSheet as string | null,
+      untouchedDefault: value.untouchedDefault, model: value.model, attachments, diagnosticLevel: value.diagnosticLevel, reasoningEffort: value.reasoningEffort });
+  });
+  ipc.handle("agent:stop", () => agent.stop());
+  ipc.handle("agent:resolveProposal", () => agent.resolveProposal());
   ipc.handle("document:print", createSheetPrinter(win, appKit));
   const interchange = createNativeInterchange({
     open: async () => {
@@ -231,7 +277,7 @@ export function createDocumentWindow(options: Options) {
   });
   // Creation/loading never presents a window. The workspace decides whether
   // this document becomes a standalone window or joins an existing tab group.
-  win.on("closed", () => { stopWatch(); host.dispose(); ipc.dispose(); options.closed(); });
+  win.on("closed", () => { void agent.dispose(); stopWatch(); host.dispose(); ipc.dispose(); options.closed(); });
   return { win, host, record, prepareToClose, showVersions, reportError, load: () => win.loadURL(rendererUrl) };
 }
 

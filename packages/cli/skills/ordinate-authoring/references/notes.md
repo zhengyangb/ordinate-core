@@ -19,6 +19,10 @@ a supported note. In structured edit, use set_sheet_note and its exact schema.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Plan
 | Item || Q1 | Q2 |
 | --- || --- | --- |

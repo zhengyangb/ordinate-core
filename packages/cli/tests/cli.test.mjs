@@ -29,13 +29,36 @@ function edit(operations, options=[], status=0, text=source) { return json(["edi
 async function leftovers() { return (await fs.readdir(directory)).filter(p=>p.endsWith(".lock") || p.endsWith(".tmp")); }
 
 test("help/version and operation schemas work without a source", () => {
-  for (const args of [["-h"],["--version"],["edit","--help"],["edit","--help","--operation","fill_region"]]) {
+  for (const args of [["-h"],["--version"],["edit","--help"],["edit","--help","--operation","fill_region"],["import","--help"]]) {
     const result = run(args); assert.equal(result.status,0,result.stderr); assert.equal(result.stderr,""); assert.ok(result.stdout.length);
   }
   const help = run(["edit","--help"]).stdout;
   assert.ok(help.includes("duplicate_columns")); assert.ok(help.includes("--operation")); assert.ok(help.length<12000);
   const schema = JSON.parse(run(["edit","--help","--schema"]).stdout);
   assert.equal(schema.additionalProperties,false); assert.ok(schema.required.includes("baseRevision"));
+});
+test("import converts CSV to a new workbook without overwriting either file", async () => {
+  const csv = join(directory,"data.csv"), output = join(directory,"data.ord"), options = join(directory,"import.json");
+  await fs.writeFile(csv,"id,amount\n001,12\n002,7\n");
+  await fs.writeFile(options,JSON.stringify({sheetName:"Data",headers:[{sheetName:"Data",headerRows:1,headerColumns:0}]}));
+  const converted = json(["import",csv,"--format","csv","--options",options,"--output",output]);
+  assert.equal(converted.result.data.sheetCount,1);
+  assert.equal(converted.write.status,"written");
+  assert.equal("candidate" in converted.result.data,false);
+  assert.equal(await fs.readFile(csv,"utf8"),"id,amount\n001,12\n002,7\n");
+  const imported = await fs.readFile(output,"utf8");
+  assert.match(imported,/# Data/);
+  assert.equal(json(["inspect",output,"--sheet","Data"]).result.data.sheets[0].headerColumnCount,0);
+  assert.equal(json(["import",csv,"--format","csv","--options",options,"--output",output],undefined,7).error.code,"output_exists");
+  assert.deepEqual(await leftovers(),[]);
+});
+test("import requires an explicit format and refuses invalid or lossy input", async () => {
+  const csv = join(directory,"data.csv"), options = join(directory,"import.json");
+  await fs.writeFile(csv,"a,b\n1,2\n");
+  await fs.writeFile(options,JSON.stringify({sheetName:"Data"}));
+  assert.equal(json(["import",csv,"--options",options],undefined,2).error.code,"invalid_arguments");
+  assert.equal(json(["import",csv,"--format","xlsx"],undefined,5).result.status,"rejected");
+  assert.equal(json(["import",csv,"--format","csv","--options",options]).result.status,"completed");
 });
 test("overview and selected inputs use public coordinates, not physical IDs", () => {
   const overview = json(["inspect",file]); assert.equal(overview.input.revision,revision(source)); assert.equal(overview.result.data.selection,undefined);
@@ -48,6 +71,21 @@ test("validation failure has nonzero status, visible stderr and a failed stdout 
   const result = run(["validate",file]); assert.equal(result.status,3); assert.match(result.stdout,/Validation failed/); assert.ok(result.stderr.length);
   const report = json(["validate",file],undefined,3); assert.equal(report.result.status,"completed"); assert.equal(report.result.data.valid,false);
 });
+test("evaluate includes structural diagnostics and keeps unselected JSON compact", async () => {
+  const summary = json(["evaluate",file]);
+  assert.equal(summary.result.data.summary.sheetCount,1);
+  assert.equal(summary.result.data.selection,undefined);
+  assert.equal(summary.result.data.candidate,null);
+  const selected = json(["evaluate",file,"--sheet","Plan","--rows","3:4","--columns","1:2"]);
+  assert.deepEqual(selected.result.data.selection.values,[[{kind:"number",value:"60"}]]);
+
+  await fs.writeFile(file,source.replace("100","= ("));
+  const validation = json(["validate",file],undefined,3);
+  const evaluation = json(["evaluate",file],undefined,3);
+  assert.equal(evaluation.result.status,"rejected");
+  assert.equal(evaluation.result.failure.stage,"validation");
+  assert.deepEqual(evaluation.result.diagnostics,validation.result.diagnostics);
+});
 test("piping does not silently switch human output to JSON", () => {
   const result = run(["validate",file]); assert.equal(result.status,0); assert.match(result.stdout,/Validation passed/); assert.throws(()=>JSON.parse(result.stdout));
 });
@@ -56,6 +94,28 @@ test("evaluate ignores poisoned caches and never writes by default", async () =>
   const report = json(["evaluate",file,"--sheet","Plan"]);
   assert.deepEqual(report.result.data.selection.values[3][1],{kind:"number",value:"60"});
   assert.equal(report.result.data.candidate,null); assert.equal(await fs.readFile(file,"utf8"),poisoned);
+});
+test("file-writing JSON reports omit candidate source but retain results and write metadata", async () => {
+  const evaluated = json(["evaluate",file,"--write"]);
+  assert.equal(evaluated.result.data.summary.errorCount,0);
+  assert.equal(evaluated.write.status,"written");
+  assert.equal("candidate" in evaluated.result.data,false);
+  assert.match(await fs.readFile(file,"utf8"),/60 = B2 - B3/);
+
+  const output = join(directory,"copy.ord");
+  const copied = json(["evaluate",file,"--output",output]);
+  assert.equal(copied.write.status,"written");
+  assert.equal("candidate" in copied.result.data,false);
+  assert.equal(await fs.readFile(output,"utf8"),await fs.readFile(file,"utf8"));
+
+  const operations = [{op:"set_cell_input",target:target(1,1),input:"200"}];
+  const current = await fs.readFile(file,"utf8");
+  assert.equal(typeof edit(operations,[],0,current).result.data.candidate.source,"string");
+  const edited = edit(operations,["--write"],0,current);
+  assert.equal(edited.write.status,"written");
+  assert.equal(edited.result.data.operationCount,1);
+  assert.equal("candidate" in edited.result.data,false);
+  assert.equal(revision(await fs.readFile(file,"utf8")),edited.write.revision);
 });
 test("whole-workbook evaluation errors prevent writes, even outside selection", async () => {
   const bad = source.replace("= C2 - C3","= 1 / 0"); await fs.writeFile(file,bad);

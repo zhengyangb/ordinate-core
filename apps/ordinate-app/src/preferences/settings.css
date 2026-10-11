@@ -1,5 +1,5 @@
 .settings-dialog { width: min(39rem, calc(100vw - 2rem)); }
-.settings-content { grid-template-columns: 154px minmax(0, 1fr); gap: 0; padding: 0; height: min(28rem, calc(100dvh - 32px)); background: var(--menu-surface-bg); }
+.settings-content { grid-template-columns: 154px minmax(0, 1fr); gap: 0; padding: 0; height: min(36rem, calc(100dvh - clamp(2rem, 8vw, 5rem))); background: var(--menu-surface-bg); }
 .settings-sidebar { padding: 28px 12px; border-right: 1px solid var(--chrome-border); background: var(--chrome-bg-strong); }
 .settings-sidebar h2 { margin: 0 12px 24px; font-size: .9rem; font-weight: 650; letter-spacing: -.02em; }
 .settings-tabs { display: grid; gap: 5px; }
@@ -23,6 +23,10 @@
 .settings-preview dt { color: var(--chrome-soft); }
 .settings-preview dd { margin: 0; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .settings-caption { margin: 0; color: var(--chrome-soft); font-size: .74rem; line-height: 1.5; }
+.settings-diagnostic-warning { margin: 8px 0 0; color: var(--warning-ink); font-size: .74rem; line-height: 1.5; }
+.settings-open-logs { justify-self: start; padding: 6px 0; border: 0; background: transparent; color: var(--menu-active-ink); font: inherit; font-size: .8rem; cursor: pointer; }
+.settings-open-logs:hover { text-decoration: underline; }
+.settings-open-logs:focus-visible { outline: 2px solid var(--selection-ring-color); outline-offset: 3px; }
 .settings-actions { margin: 0; padding: 12px 28px 20px; }
 .settings-content .app-modal-action.primary { color: var(--menu-active-ink); background: var(--menu-active-bg); }
 .settings-appearance-preview { border: 1px solid var(--chrome-border); border-radius: var(--menu-item-radius); overflow: hidden; }

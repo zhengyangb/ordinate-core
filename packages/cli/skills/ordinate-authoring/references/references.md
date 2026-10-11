@@ -58,6 +58,10 @@ an outdated layout or an operation log alone.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Plan
 | Item || Q1 | Q2 |
 | --- || --- | --- |
@@ -69,6 +73,10 @@ an outdated layout or an operation log alone.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Coordinates
 | Item || Q1 | Q2 | Result |
 | --- || --- | --- | --- |
@@ -80,6 +88,10 @@ an outdated layout or an operation log alone.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Ledger
 | Order || Quantity | Unit price | Line total |
 | --- || --- | --- | --- |
@@ -90,6 +102,10 @@ an outdated layout or an operation log alone.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Years
 | Item || 2026 | 2027 |
 | Basis || Forecast | Forecast |
@@ -101,6 +117,10 @@ an outdated layout or an operation log alone.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Plan
 | Item || Q1 | Q2 |
 | --- || --- | --- |
@@ -112,6 +132,10 @@ an outdated layout or an operation log alone.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Products
 | SKU || Price |
 | --- || --- |

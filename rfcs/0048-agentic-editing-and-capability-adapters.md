@@ -82,7 +82,7 @@ Arrows below indicate dependency, not document ownership or execution order.
                            ^
                            |
                Shared Capability Boundary
-             inspect / validate / evaluate / edit
+             inspect / validate / evaluate / edit / import
                     ^      ^      ^
                    /       |       \
                   /        |        \
@@ -108,6 +108,16 @@ require a particular application layout or agent implementation. MCP is an
 optional transport, not a prerequisite for CLI or in-process use.
 
 ## Capability Families
+
+### Import
+
+Convert XLSX, CSV, or TSV bytes through the existing Core interchange APIs into
+a validated `.ord` candidate. The shared request chooses the format explicitly;
+CSV/TSV type inference and XLSX preservation of unsupported content are explicit
+options, not silent fallbacks. Return conversion diagnostics and the candidate
+revision. File-backed adapters own reading and publishing a new file without
+overwriting the input or an existing destination. The CLI and optional MCP
+transport project this same capability; neither implements a second importer.
 
 ### Inspect
 

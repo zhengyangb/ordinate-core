@@ -20,7 +20,7 @@ beforeEach(() => {
 function view() {
   let result!: ReturnType<typeof useSheetViewModel>;
   function Harness() {
-    result = useSheetViewModel({ ...useEditorStore.getState(), displayCell });
+    result = useSheetViewModel({ ...useEditorStore.getState(), displayCell, columnWidthMode: "standard" });
     return null;
   }
   renderToStaticMarkup(<Harness />);

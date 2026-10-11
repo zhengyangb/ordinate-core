@@ -9,7 +9,7 @@ const appearance=(d:DocumentState)=>view(d).map(row=>row.map(c=>({text:c.display
 
 describe('RFC 0045 row defaults',()=>{
  it('resolves cell > row > column independently without changing A1 coordinates',()=>{
-  const d=load(['@display | {::>,red} | {::>,red} | {::>,red}', '{::bold} | 1 | 2 {::normal,blue} | = A1 + B1']);
+  const d=load(['@meta | {::>,red} | {::>,red} | {::>,red}', '{::bold} | 1 | 2 {::normal,blue} | = A1 + B1']);
   const cells=view(reload(d))[0];
   expect(d.sheets[0].colCount).toBe(3);expect(d.sheets[0].rowCount).toBe(1);
   expect(cells[0].styleLayer.effective).toEqual({align:'right',color:'red',weight:'bold'});
@@ -18,18 +18,18 @@ describe('RFC 0045 row defaults',()=>{
  });
  it('serializes label shorthand into the same canonical control frame',()=>{
   const d=load(['Total {::bold} || 1 | 2']);const text=serializeDocumentState(d);
-  expect(text).toContain('@display');expect(text).not.toContain('Total {::bold}');
+  expect(text).toContain('@meta');expect(text).not.toContain('Total {::bold}');
   expect(appearance(reload(d))).toEqual(appearance(d));
   expect(serializeDocumentState(reload(d))).toBe(text);
  });
  it('rejects duplicate carriers and defaults on header rows',()=>{
-  expect(()=>load(['@display | ||','{::bold} | Total {::normal} || 1'])).toThrow('single source');
-  expect(()=>load(['@display |','{::bold} | Year','--- | ---','| 2025'])).toThrow('body row');
-  expect(load(['@display |','text | 1']).sheets[0].rowDisplayMetadata[0]?.valid).toBe(false);
-  expect(validateDocument('# Data\n| @display | |\n| text | 1 | 2 |').errors.length).toBeGreaterThan(0);
+  expect(()=>load(['@meta | ||','{::bold} | Total {::normal} || 1'])).toThrow('single source');
+  expect(()=>load(['@meta |','{::bold} | Year','--- | ---','| 2025'])).toThrow('body row');
+  expect(load(['@meta |','text | 1']).sheets[0].rowDisplayMetadata[0]?.valid).toBe(false);
+  expect(validateDocument('# Data\n| @meta | |\n| text | 1 | 2 |').errors.length).toBeGreaterThan(0);
  });
  it('moves row defaults with stable rows and undoes as one operation',()=>{
-  const d=load(['@display | |','{::bold} | 1 | 2','| 3 | 4']);
+  const d=load(['@meta | |','{::bold} | 1 | 2','| 3 | 4']);
   const edit=applyBatchWithUndo(d,[{op:'move_rows',sheet:'Data',rowIds:[d.sheets[0].rowIds[0]],targetGapIndex:1}],{recalculate:true});
   if(!edit.ok)throw new Error(edit.error.message);
   const moved=reload(edit.nextDocument);expect(view(moved)[1][0].styleLayer.effective?.weight).toBe('bold');
@@ -45,7 +45,7 @@ describe('RFC 0045 row defaults',()=>{
   expect(serializeDocumentState(configureImportedDocument(compact))).toBe(serializeDocumentState(compact));
  });
  it('materializes a minority column default when a new row default would override it',()=>{
-  const d=load(['@display | | | | | {::normal}','| 1 {::bold} | 2 {::bold} | 3 {::bold} | 4 {::bold} | 5','| 6 | 7 | 8 | 9 | 10']);
+  const d=load(['@meta | | | | | {::normal}','| 1 {::bold} | 2 {::bold} | 3 {::bold} | 4 {::bold} | 5','| 6 | 7 | 8 | 9 | 10']);
   const compact=configureImportedDocument(d);
   expect(compact.sheets[0].rowDisplayMetadata[0]).toMatchObject({style:{weight:'bold'}});
   expect(compact.sheets[0].cells[0][4].localDisplay).toMatchObject({style:{weight:'normal'}});
@@ -54,7 +54,7 @@ describe('RFC 0045 row defaults',()=>{
  it('does not override automatic exceptions or promote already-inherited column formats',()=>{
   const d=load(['1 {::bold} | 2 {::bold} | 3 {::bold} | 4 {::bold} | 5']);
   expect(configureImportedDocument(d).sheets[0].rowDisplayMetadata[0]).toBeNull();
-  const inherited=load(['@display | {:.2f} | {:.2f} | {:.2f}','| 1 | 2 | 3']);
+  const inherited=load(['@meta | {:.2f} | {:.2f} | {:.2f}','| 1 | 2 | 3']);
   expect(configureImportedDocument(inherited).sheets[0].rowDisplayMetadata[0]).toBeNull();
  });
  it('compacts numeric row formats atomically and exports effective cell styles',async()=>{

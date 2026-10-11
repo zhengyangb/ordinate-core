@@ -1,6 +1,6 @@
 import { DocumentState, SheetState } from "./incremental";
 import { cloneDocumentState } from "./document_clone";
-import { escapeCellText, parseHierarchyLabel } from "./parser";
+import { escapeCellText, hasNonFormatFrontMatter, parseHierarchyLabel } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import type { RuntimeValue } from "./runtime/types";
 import { encodeStringLiteral } from "./text_encoding";
@@ -146,7 +146,7 @@ export function exportDelimitedSheet(document: DocumentState, options: Delimited
     if (sheet.sourceBlocks.filter(block => block.kind === "table").length > 1) {
       throw new DelimitedFailure("multiple_tables", "The selected sheet contains additional table blocks that cannot be silently omitted.", sheetLocation);
     }
-    if (document.frontMatter !== null) report.warn("front_matter_omitted", "Document front matter is not represented in delimited text.", sheetLocation);
+    if (hasNonFormatFrontMatter(document.frontMatter)) report.warn("front_matter_omitted", "Document front matter is not represented in delimited text.", sheetLocation);
     for (const block of sheet.sourceBlocks) {
       if (block.kind === "note" || (block.kind === "unparsed" && block.lines.some(line => line.trim() !== ""))) {
         report.warn("sheet_content_omitted", "Sheet notes and non-table content are omitted.", sheetLocation);

@@ -7,7 +7,7 @@
 
 This RFC defines the current direction for temporal value types, inline display metadata, and table-level default display metadata in Ordinate.
 
-It introduces `date`, `time`, `datetime`, and `duration` value types, adopts native ISO 8601-oriented literal parsing for them, defines offset terminology (`offset-qualified` vs `offset-naive`) for temporal parsing, defines inline cell-level format and style syntax using `{: ... }`, and defines canonical metadata serialization via a display control frame (`@display`) that is stripped from semantic table content.
+It introduces `date`, `time`, `datetime`, and `duration` value types, adopts native ISO 8601-oriented literal parsing for them, defines offset terminology (`offset-qualified` vs `offset-naive`) for temporal parsing, defines inline cell-level format and style syntax using `{: ... }`, and defines canonical metadata serialization via a metadata control frame (`@meta`) that is stripped from semantic table content.
 
 ## Goals
 
@@ -44,7 +44,7 @@ Current working direction:
 - format defines how a value is rendered into display text
 - style defines how that display text is visually presented
 - column display defaults are stored as column metadata in the internal model
-- display control frame is a serialization convention, not semantic table content
+- metadata control frame is a serialization convention, not semantic table content
 
 ## Supported Value Types
 
@@ -227,14 +227,14 @@ Current working direction:
 
 This means column display metadata does **not** semantically belong to ordinary table rows, even though canonical `.ord` may carry it in serialization-only control frame cells.
 
-## Display Control Frame Serialization
+## Metadata Control Frame Serialization
 
-Canonical serialization uses a display control frame when any column default metadata is present.
+Canonical serialization uses a metadata control frame when any column default metadata is present.
 
 Current working direction:
 
 - first row is a control row
-- first cell in that row is `@display`
+- first cell in that row is `@meta`
 - remaining cells in that row correspond to semantic columns and carry metadata-only blocks such as `{:,.2f}` or `{::>}`
 - every semantic row is serialized with a leading reserved control column cell
 - when a header divider exists, divider dashes must include the control-column cell
@@ -270,7 +270,7 @@ Future versions may consider optional display-text caching as an implementation 
 ## Full Example
 
 ```text
-| @display |      || {:,.1f} {::>} | {:(),.2f} {::red} | {:.1%} {::^} | {:,.2f} {::>} |
+| @meta |      || {:,.1f} {::>} | {:(),.2f} {::red} | {:.1%} {::^} | {:,.2f} {::>} |
 |          | Item || Rev       | Cost          | Margin   | Total      |
 | -------- | ---- || --------- | ------------- | -------- | ---------- |
 |          | A    || 1234.5    | -456.7        | 0.125    | = sum(@[#1,#1:#2]) {:,.2f} {::>} |
@@ -334,7 +334,7 @@ Formula-cache note:
 - style supports `weight` with `bold` and `normal`, and `normal` is distinct from unspecified
 - column display metadata is internal column metadata
 - cell inline display metadata overrides column display metadata
-- canonical serialization emits display defaults through an `@display` control frame (control row + reserved control column)
+- canonical serialization emits display defaults through an `@meta` control frame (control row + reserved control column)
 - control frame is stripped before semantic table processing
 - canonical style serialization uses shorthand tokens and may reorder style items
 - caches store values, not rendered strings

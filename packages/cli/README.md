@@ -1,7 +1,8 @@
 # Ordinate CLI
 
-A headless file adapter for the same Core used by the editor. Both the npm package
-and executable are named `ordinate-cli`; there is no `ordinate` command alias.
+A headless file adapter for the same Core used by the editor. The package and
+CLI executable are named `ordinate-cli`; it also builds `ordinate-mcp` for
+MCP hosts. There is no `ordinate` command alias.
 Requires Node.js
 20 or newer. No GUI, API key, global npm install, or agent skill is required.
 
@@ -61,12 +62,38 @@ node packages/cli/dist/ordinate-cli.mjs evaluate model.ord --sheet Plan --json
 Inspection without `--sheet` gives an overview and an exact `input.revision`.
 Selection ranges use **zero-based semantic coordinates** and half-open ends:
 `--rows 1:4 --columns 1:3`. Headers and label columns count; Markdown dividers
-and display control cells do not. Default selection is the first 50 rows and
+and metadata control cells do not. Default selection is the first 50 rows and
 20 columns; explicit ranges must be in bounds. No guessed/clipped matches.
 
 Validation checks syntax and structure, not formula results. Evaluation
 recalculates the entire workbook, ignoring stored caches, even when the returned
 selection is small. Inspect and evaluate do not change files by default.
+
+## Import Excel and delimited files
+
+The `import` command projects the same Core XLSX/CSV/TSV conversion used by the
+editor into a new `.ord` workbook. The input is never changed. Choose the format
+explicitly; no file-extension guessing occurs.
+
+```sh
+node packages/cli/dist/ordinate-cli.mjs import source.xlsx --format xlsx --output working.ord --json
+node packages/cli/dist/ordinate-cli.mjs import source.csv --format csv --options import.json --output working.ord --json
+```
+
+For the second command, `import.json` might contain
+`{"sheetName":"Data","valueMode":"infer","headers":[{"sheetName":"Data","headerRows":1,"headerColumns":0}]}`.
+CSV/TSV requires an explicit sheet name in `--options`; fields remain text unless
+`valueMode: "infer"` is selected. XLSX rejects unsupported content by default;
+`unsupportedContent: "preserve-text"` is an explicit lossy option. Conversion
+diagnostics are returned for review. Without `--output`, the command returns a
+candidate; `--output -` prints raw `.ord` text. A named output refuses to replace
+an existing file. Inspect and evaluate the imported workbook before further edits.
+
+An optional stdio MCP server is built as `dist/ordinate-mcp.mjs`. It exposes
+`ordinate_import` with absolute input/output paths and the same Core import
+semantics; it also refuses to replace an existing output. The agent host must
+explicitly register this executable as an MCP server. The desktop assistant
+continues to use the CLI; MCP registration is not automatic.
 
 ## Atomic edits
 
@@ -135,6 +162,9 @@ No destination means no mutation, including `edit` (a proposal only).
 without replacing anything already there. `--output -` emits raw candidate
 source and cannot be combined with `--json`. Evaluation materializes caches only
 when a destination is requested and no calculation errors occurred.
+For `--write --json` or a named `--output` with `--json`, the report retains
+evaluation summaries, diagnostics, and write metadata but omits the candidate
+source text. Read the written file to review all refreshed caches.
 
 In-place writes use a sibling exclusive lock, exact snapshot recheck, staged
 file, and atomic replacement; symlinks/multiple hard links are rejected. Identical
@@ -156,7 +186,7 @@ records any known commit.
 | 2 | Usage, request schema, limits, or query selection |
 | 3 | Validation failure |
 | 4 | Calculation errors |
-| 5 | Edit target/invariant failure |
+| 5 | Edit target/invariant or import conversion failure |
 | 6 | Stale revision, lock, or source conflict |
 | 7 | File/stream I/O failure |
 | 8 | Unexpected internal failure |

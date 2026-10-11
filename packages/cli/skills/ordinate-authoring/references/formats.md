@@ -20,7 +20,7 @@ For data cells, precedence is cell > row > column > automatic. Style axes
 inherit independently; a numeric/temporal format is one atomic specification.
 Header surfaces do not inherit body-cell presentation.
 
-@display is a metadata frame, not an extra logical row/column. Its top row
+@meta is a metadata frame, not an extra logical row/column. Its top row
 holds column defaults; its left control column holds body-row defaults. These
 control cells contain metadata only, never values/formulas. Use defaults when
 an entire data row/column shares presentation; use local suffixes for exceptions.
@@ -36,8 +36,12 @@ or edit --help --operation set_cell_local_style.
 ## Complete workbook
 
 ```ord
+---
+ord-format: "0.1"
+---
+
 # Plan
-| @display | | {:,.2f} |
+| @meta | | {:,.2f} |
 | | Item || Value |
 | --- | --- || --- |
 | | Revenue || 1234.5 |

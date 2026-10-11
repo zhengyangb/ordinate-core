@@ -1,3 +1,7 @@
+---
+ord-format: "0.1"
+---
+
 # Rates
 **Acme Studio | autumn delivery programme and agreed rates**
 
@@ -5,7 +9,7 @@ The quarter covers eight workstreams for four clients. Hourly rates and fee enve
 
 Internal reviews, rework and proposal development are recorded but not charged. Changes to scope require client approval rather than automatic billing.
 
-| @display |  ||  | {:,.2f} {::>} | {:.1f} |  |  |
+| @meta |  ||  | {:,.2f} {::>} | {:.1f} |  |  |
 |  | Project || Client | Hourly rate | Budget hours | Purchase order | Terms |
 |  | --- || --- | --- | --- | --- | --- |
 |  | Discovery || Acme Manufacturing | 110 | 70 | PO-26-410 | Net 30 |
@@ -24,7 +28,7 @@ The ledger records 120 delivery sessions, including two out-of-hours launch hand
 
 Managers review the ledger before invoices are released. Sessions crossing midnight remain assigned to the month in which the work began.
 
-| @display |  ||  | {:%Y-%m-%d %H:%M} | {:%Y-%m-%d %H:%M} | {:%[h]:%M} | {:.2f} |  | {:,.2f} {::>} |  | {:.0f} |  |
+| @meta |  ||  | {:%Y-%m-%d %H:%M} | {:%Y-%m-%d %H:%M} | {:%[h]:%M} | {:.2f} |  | {:,.2f} {::>} |  | {:.0f} |  |
 |  | Session || Project | Start | End | Elapsed | Hours | Billable | Fee | Client code | Month | Work performed |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | ACME-001 || Discovery | 2026-09-01T09:00:00Z | 2026-09-01T10:30:00Z | = D2 - C2 | = (unixMillis(D2) - unixMillis(C2)) / 3600000 | true | = if(G2, F2 * lookup(B2, @[Rates::A2:A9], @[Rates::C2:C9]), 0) | = slice(A2, 0, 4) | 9 | Stakeholder interview and findings |
@@ -153,7 +157,7 @@ Managers review the ledger before invoices are released. Sessions crossing midni
 
 Budget hours define the commissioned fee envelope. Unbilled effort reduces realization even when the invoice stays within budget. Project leads should distinguish agreed non-chargeable work from rework when reviewing the next phase.
 
-| @display |  ||  | {:.1f} | {:,.2f} {::>} | {:.2f} | {:.2f} | {:.2f} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:.1%} |  |
+| @meta |  ||  | {:.1f} | {:,.2f} {::>} | {:.2f} | {:.2f} | {:.2f} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} | {:.1%} |  |
 |  | Project || Client | Budget hours | Rate | Total hours | Billable hours | Unbilled hours | Fees | Fee envelope | Remaining fees | Realization | Review |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | Discovery || = lookup(A2, @[Rates::A2:A9], @[Rates::B2:B9]) | = lookup(A2, @[Rates::A2:A9], @[Rates::D2:D9]) | = lookup(A2, @[Rates::A2:A9], @[Rates::C2:C9]) | = sum(filter(@[Sessions::F2:F121], @[Sessions::B2:B121] == A2[0])) | = sum(filter(filter(@[Sessions::F2:F121], @[Sessions::B2:B121] == A2[0]), filter(@[Sessions::G2:G121], @[Sessions::B2:B121] == A2[0]))) | = E2 - F2 | = sum(filter(@[Sessions::H2:H121], @[Sessions::B2:B121] == A2[0])) | = C2 * D2 | = I2 - H2 | = F2 / E2 | = if(J2 < 0, "Scope review", "Within envelope") |
@@ -189,7 +193,7 @@ The register consolidates the quarter's client billing for the finance review; s
 
 Finance reconciles fees to the approved project ledger before sending consolidated statements. Remaining envelopes are committed capacity, not an invitation to bill unused hours.
 
-| @display |  || {:.2f} | {:.2f} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |  |  |
+| @meta |  || {:.2f} | {:.2f} | {:,.2f} {::>} | {:,.2f} {::>} | {:,.2f} {::>} |  |  |
 |  | Client || Billable hours | Unbilled hours | Quarter fees | Fee envelope | Remaining envelope | Owner | Next action |
 |  | --- || --- | --- | --- | --- | --- | --- | --- |
 |  | Acme Manufacturing || = @["Project Review"::F2] + @["Project Review"::F6] | = @["Project Review"::G2] + @["Project Review"::G6] | = @["Project Review"::H2] + @["Project Review"::H6] | = @["Project Review"::I2] + @["Project Review"::I6] | = @["Project Review"::J2] + @["Project Review"::J6] | Finance contact | Next phase scope review |

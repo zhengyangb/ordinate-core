@@ -172,6 +172,6 @@ describe("RFC-0013 dual reference styles", () => {
 | ---- || --- | --- |
 | A    || 1  | = @[Revenue,#2] |
 `.trim() + "\n");
-    expect(output).toBe(expected);
+    expect(output).toBe(`---\nord-format: "0.1"\n---\n\n${expected}`);
   });
 });

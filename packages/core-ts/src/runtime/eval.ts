@@ -1,4 +1,4 @@
-import { deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "../parser";
+import { deriveHierarchyRows, parseDocument, parseTableRow, stripMetaControlFrame, type ParsedRow } from "../parser";
 import { parseCellInput, stripCellDisplayMetadata } from "./parse";
 import {
   type ArrayExpr,
@@ -79,7 +79,7 @@ function evaluateSheet(name: string, rows: string[]): SheetEvaluation {
 
 function buildEvalSheetContext(sheetId: number, name: string, rows: string[]): EvalSheetContext {
   const parsedRows: ParsedRow[] = rows.map((r) => parseTableRow(r));
-  const semanticRows = stripDisplayControlFrame(parsedRows).rows;
+  const semanticRows = stripMetaControlFrame(parsedRows).rows;
   if (semanticRows.length === 0) {
     return emptyEvalSheetContext(sheetId, name);
   }

@@ -16,7 +16,7 @@ const HISTORY_DOC = `
 
 const DISPLAY_DOC = `
 # Sheet
-| @display | Item || {:,.1f} {::>,blue,bold} | {::>} | |
+| @meta | Item || {:,.1f} {::>,blue,bold} | {::>} | |
 |          | Item || Price                    | Qty   | Out |
 | -------- | ---- || -----                    | ---   | --- |
 |          | A    || 12.34 {::green}          | 2     | = B2 * C2 {:,.2f} |

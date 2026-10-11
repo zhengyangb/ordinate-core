@@ -2,7 +2,7 @@ import { formatDocument } from "./formatter";
 import { encodeStringLiteral } from "./text_encoding";
 import { encodeNumberLiteral } from "./number_encoding";
 import { type DocumentState, type SheetState } from "./incremental";
-import { escapeCellText } from "./parser";
+import { escapeCellText, withOrdFormatFrontMatter } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import { type ExprNode, type FormatSpec, type ParsedDisplayMetadata, type ReferenceExpr, type RefSelector, type RuntimeValue, type StyleSpec } from "./runtime/types";
 import { isError, isValidExternalErrorKind } from "./runtime/errors";
@@ -24,7 +24,7 @@ export function serializeDocumentState(state: DocumentState): string {
   });
 
   const intermediate = `${lines.join("\n").replace(/(?:\n[ \t]*)+$/, "")}\n`;
-  return formatDocument(state.frontMatter === null ? intermediate : `${state.frontMatter}\n\n${intermediate}`);
+  return formatDocument(`${withOrdFormatFrontMatter(state.frontMatter)}\n\n${intermediate}`);
 }
 
 function serializeSheetBodyLines(sheet: SheetState, formulaRenderContext: FormulaRenderContext): string[] {
@@ -68,7 +68,7 @@ function serializeCurrentTableLines(sheet: SheetState, formulaRenderContext: For
 
   const boundary = sheet.logicalRows.length > 0 ? sheet.logicalRows[0].boundary : null;
   const headerCount = sheet.headerRowCount;
-  const includeDisplayControlFrame = [...sheet.columnDisplayMetadata, ...sheet.rowDisplayMetadata].some((meta) => meta !== null);
+  const includeMetaControlFrame = [...sheet.columnDisplayMetadata, ...sheet.rowDisplayMetadata].some((meta) => meta !== null);
   const rowIdToIndex = buildIdIndexMap(sheet.rowIds);
   const colIdToIndex = buildIdIndexMap(sheet.colIds);
   const rowLabelPathsByIndex = Array.from({ length: sheet.rowCount }, (_, rowIndex) =>
@@ -76,11 +76,11 @@ function serializeCurrentTableLines(sheet: SheetState, formulaRenderContext: For
   );
   const lines: string[] = [];
 
-  if (includeDisplayControlFrame) {
-    const controlCells = ["@display"];
+  if (includeMetaControlFrame) {
+    const controlCells = ["@meta"];
     for (let c = 0; c < sheet.colCount; c += 1) {
       const meta = sheet.columnDisplayMetadata[c] ?? null;
-      controlCells.push(meta ? renderDisplayControlCell(meta) : " ");
+      controlCells.push(meta ? renderMetaControlCell(meta) : " ");
     }
     const controlBoundary = boundary === null ? null : boundary + 1;
     lines.push(buildRow(controlCells, controlBoundary));
@@ -88,15 +88,15 @@ function serializeCurrentTableLines(sheet: SheetState, formulaRenderContext: For
 
   for (let rAbs = 0; rAbs < sheet.logicalRows.length; rAbs += 1) {
     if (headerCount > 0 && rAbs === headerCount) {
-      const dividerCells = Array.from({ length: sheet.colCount + (includeDisplayControlFrame ? 1 : 0) }, () => "---");
-      const dividerBoundary = boundary === null ? null : boundary + (includeDisplayControlFrame ? 1 : 0);
+      const dividerCells = Array.from({ length: sheet.colCount + (includeMetaControlFrame ? 1 : 0) }, () => "---");
+      const dividerBoundary = boundary === null ? null : boundary + (includeMetaControlFrame ? 1 : 0);
       lines.push(buildRow(dividerCells, dividerBoundary));
     }
 
     const row = sheet.logicalRows[rAbs];
-    const rowBoundary = row.boundary === null ? null : row.boundary + (includeDisplayControlFrame ? 1 : 0);
+    const rowBoundary = row.boundary === null ? null : row.boundary + (includeMetaControlFrame ? 1 : 0);
     const rowDefaultDisplay = sheet.rowDisplayMetadata[rAbs] ?? null;
-    const cells: string[] = includeDisplayControlFrame ? [rowDefaultDisplay ? renderDisplayControlCell(rowDefaultDisplay) : " "] : [];
+    const cells: string[] = includeMetaControlFrame ? [rowDefaultDisplay ? renderMetaControlCell(rowDefaultDisplay) : " "] : [];
     for (let c = 0; c < sheet.colCount; c += 1) {
       const cellState = sheet.cells[rAbs][c];
       if (rAbs < sheet.headerRowCount || c < sheet.headerColCount) {
@@ -231,7 +231,7 @@ function renderDisplayBlock(display: ParsedDisplayMetadata | null): string {
   return ` ${blocks.join(" ")}`;
 }
 
-function renderDisplayControlCell(display: ParsedDisplayMetadata): string {
+function renderMetaControlCell(display: ParsedDisplayMetadata): string {
   if (!display.valid) {
     return display.rawBlock ?? "";
   }

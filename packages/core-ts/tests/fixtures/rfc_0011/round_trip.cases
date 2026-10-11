@@ -185,16 +185,16 @@ evaluate: true
 === display_control_frame_round_trip_with_header
 [doc]
 # Sheet
-| @display |      || {:,.1f} {::>} | {::>,blue} |
+| @meta |      || {:,.1f} {::>} | {::>,blue} |
 |          | Item || Val       | Out        |
-| -------- | ---- || ---       | ---        |
+| ----- | ---- || ---       | ---        |
 |          | A    || 12.3      | = B2       |
 [/doc]
 [expect]
 # Sheet
-| @display |      || {:,.1f} {::>} | {::>,blue} |
+| @meta |      || {:,.1f} {::>} | {::>,blue} |
 |          | Item || Val       | Out        |
-| -------- | ---- || --------- | ---------- |
+| ----- | ---- || --------- | ---------- |
 |          | A    || 12.3      | 12.3 = B2  |
 [/expect]
 evaluate: true
@@ -202,13 +202,13 @@ evaluate: true
 === display_control_frame_round_trip_without_headers
 [doc]
 # Raw
-| @display | {:,.2f} | {::>} |
+| @meta | {:,.2f} | {::>} |
 |          | 12.3    | 7     |
 |          | 45      | 9     |
 [/doc]
 [expect]
 # Raw
-| @display | {:,.2f} | {::>} |
+| @meta | {:,.2f} | {::>} |
 |          | 12.3    | 7     |
 |          | 45      | 9     |
 [/expect]

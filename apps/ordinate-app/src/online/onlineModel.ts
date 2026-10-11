@@ -1,5 +1,5 @@
 import type { FileSessionState } from "../store/fileSessionStore";
-import { CANONICAL_BLANK_DOCUMENT } from "../platform/blankDocument";
+import { isUntouchedDefaultDocument } from "../platform/blankDocument";
 
 export type Example = {
   featured?: boolean;
@@ -9,7 +9,7 @@ export type Example = {
 
 /** Only the untouched default new document warrants automatic onboarding. */
 export function shouldOfferExamples(state: Pick<FileSessionState, "file" | "documentDirty" | "untitledBaselineText">): boolean {
-  return state.file === null && state.documentDirty === "clean" && state.untitledBaselineText === CANONICAL_BLANK_DOCUMENT;
+  return isUntouchedDefaultDocument(state);
 }
 
 export function exampleById(examples: Example[], id: string): Example {

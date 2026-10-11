@@ -52,7 +52,7 @@ function list is maintained. Alias/case resolution uses the same Core registry.
 Language explanations reside in one CLI reference module. The format topic
 explains both source suffixes and portable JSON, with operation-specific schemas
 remaining authoritative for complete payloads. Distinguish semantic A1/#n,
-zero-based brackets/CLI selectors, and the nonsemantic display frame. Include
+zero-based brackets/CLI selectors, and the nonsemantic metadata frame. Include
 the limits of notes, formula caches, and final scalar results.
 
 All reference commands are read-only and offline, accept no workbook operand,
