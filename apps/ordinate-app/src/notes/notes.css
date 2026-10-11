@@ -41,6 +41,12 @@
 .note-workspace-frame.has-composite-scrollbar:is(:hover, .scrollbar-active) .note-scrollbar,
 .note-workspace-frame.has-composite-scrollbar .note-scrollbar:focus-visible { opacity: 1; }
 .note-workspace-frame.has-composite-scrollbar .ag-body-vertical-scroll { visibility: hidden; }
+.note-workspace-frame:not(.has-composite-scrollbar) .ag-body-vertical-scroll {
+  opacity: 0;
+  transition: opacity 180ms cubic-bezier(.25, 1, .5, 1);
+}
+.note-workspace-frame:not(.has-composite-scrollbar):is(:hover, .scrollbar-active) .ag-body-vertical-scroll,
+.note-workspace-frame:not(.has-composite-scrollbar) .ag-body-vertical-scroll:focus-within { opacity: 1; }
 .note-workspace-frame.has-composite-scrollbar .ag-body-viewport { overflow-anchor: none; }
 .note-workspace-frame.has-horizontal-scrollbar .note-scrollbar { bottom: 15px; }
 .note-workspace-frame.has-horizontal-scrollbar .ag-body-horizontal-scroll { opacity: 0; pointer-events: none; }
@@ -65,11 +71,13 @@
 .note-scrollbar::-webkit-scrollbar-track { background: transparent; }
 @media (prefers-reduced-motion: reduce) {
   .note-scrollbar,
-  .note-horizontal-scrollbar { transition: none; }
+  .note-horizontal-scrollbar,
+  .note-workspace-frame .ag-body-vertical-scroll { transition: none; }
 }
 @media (forced-colors: active) {
   .note-workspace-frame.has-composite-scrollbar .note-scrollbar,
-  .note-workspace-frame.has-horizontal-scrollbar .note-horizontal-scrollbar { opacity: 1; }
+  .note-workspace-frame.has-horizontal-scrollbar .note-horizontal-scrollbar,
+  .note-workspace-frame:not(.has-composite-scrollbar) .ag-body-vertical-scroll { opacity: 1; }
 }
 .note-rail-host {
   position: sticky;
