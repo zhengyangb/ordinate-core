@@ -25,16 +25,16 @@ expect_format_grouping: true
 === column_inline_metadata_spaces_canonicalized
 [doc]
 # Sheet
-| @display |      || {:,.1f} {::>} | {:d} {::>} |        |
+| @meta |      || {:,.1f} {::>} | {:d} {::>} |        |
 |          | Item || Price         | Qty      | Total  |
-| -------- | ---- || -----         | ---      | -----  |
+| ----- | ---- || -----         | ---      | -----  |
 |          | A    || 1234.5        | 2        | = B2 * C2 |
 [/doc]
 [expect]
 # Sheet
-| @display |      || {:,.1f} {::>} | {:d} {::>} |       |
+| @meta |      || {:,.1f} {::>} | {:d} {::>} |       |
 |          | Item || Price     | Qty    | Total |
-| -------- | ---- || --------- | ------ | ----- |
+| ----- | ---- || --------- | ------ | ----- |
 |          | A    || 1234.5    | 2      | 2469 = B2 * C2 |
 [/expect]
 evaluate: true
@@ -100,16 +100,16 @@ expect_has_errors: false
 === cache_not_rounded_by_column_format
 [doc]
 # Sheet
-| @display |      ||        | {:,.2f} |
+| @meta |      ||        | {:,.2f} |
 |          | Item || Val    | Out     |
-| -------- | ---- || ---    | ---     |
+| ----- | ---- || ---    | ---     |
 |          | A    || 12.345 | = B2    |
 [/doc]
 [expect]
 # Sheet
-| @display |      ||     | {:,.2f} |
+| @meta |      ||     | {:,.2f} |
 |          | Item || Val | Out     |
-| -------- | ---- || --- | ------- |
+| ----- | ---- || --- | ------- |
 |          | A    || 12.345 | 12.345 = B2 |
 [/expect]
 evaluate: true
@@ -277,17 +277,17 @@ expect_has_errors: false
 === style_cascade_partial_and_normal_override
 [doc]
 # Sheet
-| @display |      ||     | {::>,bold,blue} |
+| @meta |      ||     | {::>,bold,blue} |
 |          | Item || Val | Out             |
-| -------- | ---- || --- | ---             |
+| ----- | ---- || --- | ---             |
 |          | A    || 2   | = B2 {::green}  |
 |          | B    || 3   | = B3 {::normal} |
 [/doc]
 [expect]
 # Sheet
-| @display |      ||     | {::>,bold,blue} |
+| @meta |      ||     | {::>,bold,blue} |
 |          | Item || Val | Out             |
-| -------- | ---- || --- | --------------- |
+| ----- | ---- || --- | --------------- |
 |          | A    || 2   | 2 = B2 {::green} |
 |          | B    || 3   | 3 = B3 {::normal} |
 [/expect]
@@ -306,16 +306,16 @@ expect_has_errors: false
 === style_cascade_normal_is_not_unspecified
 [doc]
 # Sheet
-| @display |      ||     | {::>,bold,blue} |
+| @meta |      ||     | {::>,bold,blue} |
 |          | Item || Val | Out             |
-| -------- | ---- || --- | ---             |
+| ----- | ---- || --- | ---             |
 |          | A    || 3   | = B2 {::normal} |
 [/doc]
 [expect]
 # Sheet
-| @display |      ||     | {::>,bold,blue} |
+| @meta |      ||     | {::>,bold,blue} |
 |          | Item || Val | Out             |
-| -------- | ---- || --- | --------------- |
+| ----- | ---- || --- | --------------- |
 |          | A    || 3   | 3 = B2 {::normal} |
 [/expect]
 evaluate: true
@@ -333,13 +333,13 @@ expect_has_errors: false
 === control_frame_no_header_row_no_header_column
 [doc]
 # Raw
-| @display | {:,.2f} | {::>} |
+| @meta | {:,.2f} | {::>} |
 |          | 12.3    | 7     |
 |          | 45      | 9     |
 [/doc]
 [expect]
 # Raw
-| @display | {:,.2f} | {::>} |
+| @meta | {:,.2f} | {::>} |
 |          | 12.3    | 7     |
 |          | 45      | 9     |
 [/expect]

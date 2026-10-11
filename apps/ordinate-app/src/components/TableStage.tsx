@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 
-import { AgGridReact } from "ag-grid-react";
 import { createPortal } from "react-dom";
-import { SearchText } from "../search/SheetSearch";
 import {
   type ColDef,
   type ColGroupDef,
@@ -13,7 +11,6 @@ import {
   type GridReadyEvent,
   type ModelUpdatedEvent,
   type TabToNextCellParams,
-  themeQuartz,
 } from "ag-grid-community";
 
 import { shouldAnimateTableStructure } from "../config/motion";
@@ -41,6 +38,8 @@ import { readGridBodyOverlayHosts, type GridBodyOverlayHosts } from "../grid/bod
 import { waitForInitialGridLayout } from "../grid/initialGridLayout";
 import { tabToNextBodyCell } from "../grid/tabNavigation";
 import type { FillHandleController } from "../fill/useFillHandle";
+import { SheetGrid } from "./SheetGrid";
+import { HeaderMatrixCell } from "./HeaderMatrixCell";
 
 type FormulaReferenceOverlay = {
   tokenId: string;
@@ -48,8 +47,6 @@ type FormulaReferenceOverlay = {
   colorIndex: number;
   active: boolean;
 };
-
-const keepConfiguredPinning = () => [];
 
 type TableStageProps = {
   columnRailHost: HTMLDivElement;
@@ -296,17 +293,6 @@ export default function TableStage({
     [tableStageStyle, previewColumnWidth, afterTableNoteHeight],
   );
   const railsPhaseClass = `index-rail index-rail--${indexRailsPhase}`;
-  const defaultColDef = useMemo<ColDef<GridRow>>(() => ({
-    editable: false,
-    sortable: false,
-    filter: false,
-    resizable: false,
-    suppressMovable: true,
-  }), []);
-  const getRowId = useCallback((params: { data: GridRow }) => params.data.__rowKey, []);
-  const rowClassRules = useMemo(() => ({
-    "group-row": (params: { data?: GridRow }) => Boolean(params.data?.__hasChildren),
-  }), []);
   const selectedRowNumber = selectedCell?.logical.rAbs ?? null;
   const activeColumnIndex = selectedColumnIndex ?? selectedCell?.logical.cAbs ?? null;
   const pinnedOverlayCells = headerOverlayCells.filter((cell) => cell.endCol < frozenColumnCount);
@@ -766,7 +752,6 @@ export default function TableStage({
         cell.rowNumber >= axisSelection.rowStart &&
         cell.rowNumber <= axisSelection.rowEnd);
     const className = [
-      "header-matrix-cell",
       selectedSlot >= 0 ? "has-slot-selection" : "",
       isAxisSelected ? "is-axis-selected" : "",
       isAxisSelected && isRowAxisSelectionInvalid("header") ? "is-axis-selection-invalid" : "",
@@ -787,13 +772,10 @@ export default function TableStage({
     }
 
     return (
-      <button
+      <HeaderMatrixCell
         key={cell.key}
+        cell={cell}
         className={className}
-        data-row-number={cell.rowNumber}
-        data-start-col={cell.startCol}
-        data-end-col={cell.endCol}
-        type="button"
         style={style}
         onPointerDown={(event) => {
           event.preventDefault();
@@ -822,9 +804,7 @@ export default function TableStage({
           const selectedColIndex = selectedSlot >= 0 ? cell.startCol + selectedSlot : cell.startCol + spanSize - 1;
           handleHeaderOverlayKeyDown(event.nativeEvent, cell.rowNumber, selectedColIndex);
         }}
-      >
-        <span><SearchText row={cell.rowNumber} col={cell.startCol} text={cell.label} /></span>
-      </button>
+      />
     );
   };
 
@@ -1289,8 +1269,9 @@ export default function TableStage({
           ref={mountGridRoot}
           data-has-header={showGridHeader}
         >
-          <AgGridReact<GridRow>
+          <SheetGrid
             key={gridInstanceKey}
+            mode="editor"
             rowData={rowData}
             columnDefs={columnDefs}
             animateRows={animateTableStructure}
@@ -1299,18 +1280,6 @@ export default function TableStage({
             // - `.grid-wrap` reserves that vertical space with padding-top
             // - AG Grid's native header must stay at 0 height, otherwise
             //   header space gets counted twice and body rows are pushed down
-            headerHeight={0}
-            groupHeaderHeight={0}
-            defaultColDef={defaultColDef}
-            getRowId={getRowId}
-            suppressScrollOnNewData
-            suppressMovableColumns
-            suppressDragLeaveHidesColumns
-            suppressColumnVirtualisation
-            // Pinning is owned by our shared viewport geometry, including overlays.
-            processUnpinnedColumns={keepConfiguredPinning}
-            suppressContextMenu
-            theme={themeQuartz}
             onGridReady={onGridReady}
             onFirstDataRendered={onFirstDataRendered}
             onModelUpdated={handleModelUpdated}
@@ -1320,7 +1289,6 @@ export default function TableStage({
             onCellDoubleClicked={handleCellDoubleClicked}
             onCellKeyDown={handleCellKeyDown}
             tabToNextCell={handleTabToNextCell}
-            rowClassRules={rowClassRules}
           />
         </div>
         {tableFootprint.trailingCanvas ? (

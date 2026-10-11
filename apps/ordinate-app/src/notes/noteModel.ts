@@ -38,9 +38,8 @@ export function savesNote(event: {
     || (event.key === "Enter" && (event.ctrlKey || event.metaKey)));
 }
 
-/** Wheel travel hides/reveals the intro, then passes through to the native grid. */
-export function distributeNoteScroll(delta: number, intro: number, introMax: number, grid: number) {
-  const introDelta = delta > 0 ? Math.min(delta, Math.max(0, introMax - intro))
-    : grid <= 0 ? Math.max(delta, -intro) : 0;
-  return { intro: intro + introDelta, remaining: delta - introDelta };
+/** The visible scrollbar treats the note and grid as one continuous document. */
+export function splitNoteScroll(position: number, introMax: number, gridMax: number) {
+  const clamped = Math.min(Math.max(position, 0), introMax + gridMax);
+  return { intro: Math.min(clamped, introMax), grid: Math.max(0, clamped - introMax) };
 }

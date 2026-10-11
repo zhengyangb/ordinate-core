@@ -105,13 +105,19 @@ export interface ViewSelection {
   colIndices: number[];
 }
 
+export interface RuntimeArray {
+  kind: "array";
+  values: RuntimeValue[];
+}
+
 export interface RuntimeView {
   kind: "view";
-  dimension: 0 | 1 | 2;
   rowCount: number;
   colCount: number;
   values: RuntimeValue[];
 }
+
+export type RuntimeCollection = RuntimeArray | RuntimeView;
 
 export interface FunctionCall {
   name: string;

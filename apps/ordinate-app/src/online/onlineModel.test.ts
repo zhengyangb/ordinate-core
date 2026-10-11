@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { exampleAssetUrl, exampleById, isMacPlatform, macDownloadUrl, shouldOfferExamples, type Example } from "./onlineModel";
 import { CANONICAL_BLANK_DOCUMENT } from "../platform/blankDocument";
 import { buildExampleAssets } from "../../tooling/onlineExamples";
+import { ORD_FORMAT_VERSION } from "@ordinate/core";
 
 describe("online examples and release configuration", () => {
   it("publishes all authoritative workbooks with calculated previews", async () => {
@@ -11,7 +12,7 @@ describe("online examples and release configuration", () => {
     expect(examples.filter(item => item.featured).map(item => item.id)).toEqual(["getting-started"]);
     expect(examples.reduce((total, item) => total + item.sheets, 0)).toBe(44);
     for (const example of examples) {
-      expect(assets.get(`examples/${example.file}`)).toMatch(/^# /);
+      expect(assets.get(`examples/${example.file}`)?.startsWith(`---\nord-format: "${ORD_FORMAT_VERSION}"\n---\n\n# `)).toBe(true);
       expect(example.preview.rows).toHaveLength(5);
       expect(example.preview.rows.flat().some(cell => cell.startsWith("="))).toBe(false);
     }

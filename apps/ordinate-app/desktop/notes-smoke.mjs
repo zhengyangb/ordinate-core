@@ -302,13 +302,20 @@ export async function checkNotes(win, {query,wait,capture}) {
     await capture(win,`${host}-sheet-notes-${theme}`);
     const geometry = await query(win,`(() => {
       const bounds=s=>document.querySelector(s).getBoundingClientRect().toJSON();
-      return {intro:bounds('.sheet-note-intro'),grid:bounds('.grid-shell'),rail:bounds('.row-index-strip'),footer:bounds('.sheet-note-footer'),columns:bounds('.note-rail-host')};
+      return {
+        intro:bounds('.sheet-note-intro'),grid:bounds('.grid-shell'),rail:bounds('.row-index-strip'),
+        footer:bounds('.sheet-note-footer'),columns:bounds('.note-rail-host'),
+        chrome:bounds('.app-chrome'),columnTrack:bounds('.column-index-track'),
+        railGap:Number.parseFloat(getComputedStyle(document.querySelector('.workspace-shell')).getPropertyValue('--index-rail-gap')),
+      };
     })()`);
     assert.ok(Math.abs(geometry.intro.left-geometry.grid.left)<1,'Note and table share left edge');
     assert.ok(Math.abs(geometry.intro.width-geometry.footer.width)<1,'Notes share table footprint');
     assert.ok(geometry.rail.top>=geometry.intro.bottom,'Row rail never includes note text');
     assert.ok(Math.abs(geometry.grid.top-geometry.intro.bottom)<1,'Note joins the table without a rail gap');
     assert.ok(geometry.columns.bottom<=geometry.intro.top+1,'Column rail is above the note');
+    assert.ok(Math.abs(geometry.columnTrack.top-geometry.chrome.bottom-geometry.railGap)<1,'Column rail clears the sheet tabs by the shared rail gap');
+    assert.ok(Math.abs(geometry.columns.bottom-geometry.columnTrack.bottom-geometry.railGap)<1,'Column rail keeps the same gap below its track');
     assert.ok(await query(win,`(() => {
       const note=document.querySelector('.sheet-note-intro .sheet-note'),title=note.querySelector('.sheet-note-title');
       const n=note.getBoundingClientRect(),t=title.getBoundingClientRect();
@@ -361,6 +368,55 @@ export async function checkNotes(win, {query,wait,capture}) {
   await query(win,`document.querySelector('.grid-wrap').dispatchEvent(new WheelEvent('wheel',{deltaY:300,bubbles:true,cancelable:true}))`);
   await wait(win,`document.querySelector('.note-workspace').scrollTop>0 && document.querySelector('.ag-body-viewport').scrollTop>0`);
   assert.ok(await query(win,`Math.abs(document.querySelector('.table-stage').getBoundingClientRect().top-document.querySelector('.note-rail-host').getBoundingClientRect().bottom)<1`),'Grid reaches the fixed column rail after intro scrolls away');
+  const reverseWheel = await query(win,`(() => {
+    const intro=document.querySelector('.note-workspace');
+    const grid=document.querySelector('.ag-body-viewport');
+    const track=document.querySelector('.note-scrollbar');
+    const position=()=>intro.scrollTop+grid.scrollTop;
+    const before=position();
+    track.dispatchEvent(new WheelEvent('wheel',{deltaY:-60,bubbles:true,cancelable:true}));
+    const reversed=position();
+    track.dispatchEvent(new WheelEvent('wheel',{deltaY:60,bubbles:true,cancelable:true}));
+    return {before,reversed,restored:position(),track:track.scrollTop};
+  })()`);
+  assert.ok(reverseWheel.reversed<reverseWheel.before-50,'Wheel reversal over the visible scrollbar immediately moves the sheet upward');
+  assert.ok(Math.abs(reverseWheel.restored-reverseWheel.before)<1 && Math.abs(reverseWheel.track-reverseWheel.restored)<1,
+    'Back-to-back scrollbar wheel events preserve the single composite position');
+  const wheelTravel = await query(win, `(async () => {
+    const intro=document.querySelector('.note-workspace');
+    const grid=document.querySelector('.ag-body-viewport');
+    const track=document.querySelector('.note-scrollbar');
+    const target=document.querySelector('.grid-wrap');
+    const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const position=()=>intro.scrollTop+grid.scrollTop;
+    const samples=[];
+    for(const direction of [1,-1]) {
+      const positions=[];
+      for(let i=0;i<30;i++) {
+        target.dispatchEvent(new WheelEvent('wheel',{deltaY:direction*200,bubbles:true,cancelable:true}));
+        await frame();
+        positions.push({position:position(),intro:intro.scrollTop,grid:grid.scrollTop,track:track.scrollTop,
+          fake:document.querySelector('.ag-body-vertical-scroll-viewport')?.scrollTop,
+          fakeMax:document.querySelector('.ag-body-vertical-scroll-viewport').scrollHeight-document.querySelector('.ag-body-vertical-scroll-viewport').clientHeight,
+          introMax:intro.scrollHeight-intro.clientHeight,gridMax:grid.scrollHeight-grid.clientHeight});
+      }
+      samples.push({direction,positions});
+    }
+    return {samples,atTop:position(),track:track.scrollTop,
+      max:intro.scrollHeight-intro.clientHeight+grid.scrollHeight-grid.clientHeight};
+  })()`);
+  for (const {direction,positions} of wheelTravel.samples) {
+    for (let index=1;index<positions.length;index++) {
+      assert.ok(direction*(positions[index].position-positions[index-1].position)>=-1,
+        `Wheel travel must not rebound at either edge: ${JSON.stringify({direction,index,nearby:positions.slice(Math.max(0,index-2),index+2)})}`);
+    }
+  }
+  assert.ok(Math.abs(wheelTravel.samples[0].positions.at(-1).position-wheelTravel.max)<1,
+    `Repeated downward wheel movement reaches the footer: ${JSON.stringify({reached:wheelTravel.samples[0].positions.at(-1),max:wheelTravel.max})}`);
+  assert.ok(Math.abs(wheelTravel.atTop)<1 && Math.abs(wheelTravel.track)<1,
+    `Repeated upward wheel movement returns both scroll positions to the top: ${JSON.stringify(wheelTravel)}`);
+  await query(win,`(() => {const track=document.querySelector('.note-scrollbar');track.scrollTop=(track.scrollHeight-track.clientHeight)/2;})()`);
+  await wait(win,`(() => {const intro=document.querySelector('.note-workspace'),grid=document.querySelector('.ag-body-viewport'),track=document.querySelector('.note-scrollbar');return Math.abs(intro.scrollTop+grid.scrollTop-track.scrollTop)<1 && track.scrollTop>100;})()`);
   await query(win,`const v=document.querySelector('.ag-body-viewport');v.scrollTop=v.scrollHeight`);
   await wait(win,`document.querySelector('.sheet-note-footer').getBoundingClientRect().top < document.querySelector('.grid-shell').getBoundingClientRect().bottom`);
   await capture(win,`${host}-sheet-notes-scroll-end`);

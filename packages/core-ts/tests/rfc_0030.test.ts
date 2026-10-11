@@ -341,7 +341,7 @@ describe("RFC-0030 temporal display formatting", () => {
   it("applies temporal column defaults to compatible cells and reports incompatible cells independently", () => {
     const doc = `
 # Sheet
-| @display |      || {:%F} |
+| @meta |      || {:%F} |
 |          | Item || Value |
 | -------- | ---- || ----- |
 |          | A    || 2026-03-24 |

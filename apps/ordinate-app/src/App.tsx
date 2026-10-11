@@ -1,6 +1,4 @@
 import {
-  AllCommunityModule,
-  ModuleRegistry,
   type CellDoubleClickedEvent,
   type CellMouseDownEvent,
   type FirstDataRenderedEvent,
@@ -12,7 +10,6 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 
 import {
-  groupHeaderSpans,
   type SheetEvaluation,
   type SheetPresentation
 } from "@ordinate/core";
@@ -41,12 +38,16 @@ import { usePrintDocument } from "./printing/usePrintDocument";
 import { useGridColumnDefs } from "./hooks/useGridColumnDefs";
 import { useSheetStructureCommands } from "./hooks/useSheetStructureCommands";
 import { useSheetViewModel } from "./hooks/useSheetViewModel";
+import { buildHeaderOverlayCells } from "./utils/headerOverlayCells";
 import { useStructureTransition } from "./hooks/useStructureTransition";
 import { useTooltips } from "./hooks/useTooltips";
 import { resolveUiLocale } from "./i18n/messages";
 import { useWindowAppearance } from "./platform/useWindowAppearance";
 import { usePreferences } from "./preferences/preferencesStore";
 import { SettingsDialog } from "./preferences/SettingsDialog";
+import { AgentPanel } from "./agent/AgentPanel";
+import { AgentWorkbookPreview } from "./agent/AgentWorkbookPreview";
+import { createBrowserDebugAgentBridge } from "./agent/browserDebugAgent";
 import { finishStartup } from "./platform/startupScreen";
 import { useEditorStore } from "./store/editorStore";
 import { buildDocumentSearchCells } from "./search/searchModel";
@@ -162,8 +163,6 @@ import {
   compactColLabel
 } from "./utils/sheetView";
 import { isNativeTextEditingTarget } from "./utils/textEditingTarget";
-ModuleRegistry.registerModules([AllCommunityModule]);
-
 type AutoPanTarget = {
   key: string;
   displayedRowIndex: number;
@@ -312,9 +311,35 @@ export default function App({ initialText, online, onSessionReady }: {
   onSessionReady?: (commands: import("./platform/experience").OnlineEditorCommands) => void;
 } = {}) {
   const { preferences, update: updatePreferences, systemLocale, displayCell } = usePreferences();
+  const browserDebugAgent = useMemo(() => !window.ordinateDesktop && !online ? createBrowserDebugAgentBridge() : null, [online]);
+  const agentBridge = window.ordinateDesktop?.agent ?? browserDebugAgent;
   const themeMode = preferences.appearance;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentPreview, setAgentPreview] = useState<{ text: string; initialSheet: string | null } | null>(null);
+  const assistantWorking = agentPreview !== null;
+  const onAgentPreviewChange = useCallback((preview: { text: string; initialSheet: string | null } | null) => setAgentPreview(preview), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  useEffect(() => {
+    if (!assistantWorking) return;
+    const editor = document.querySelector<HTMLElement>(".workspace-editor");
+    if (!editor) throw new Error("Assistant preview requires a workspace.");
+    const originalSurfaces = [...editor.children].filter(child => !child.classList.contains("agent-live-preview")) as HTMLElement[];
+    for (const element of originalSurfaces) element.inert = true;
+    const preventEditorShortcuts = (event: KeyboardEvent) => {
+      if (event.target instanceof Element && event.target.closest(".agent-panel, .app-chrome, .app-modal-shell, [role='menu'], [role='dialog']")) return;
+      if (["Tab", "Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "Escape"].includes(event.key)) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") return;
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key === ",") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", preventEditorShortcuts, true);
+    return () => {
+      for (const element of originalSurfaces) element.inert = false;
+      window.removeEventListener("keydown", preventEditorShortcuts, true);
+    };
+  }, [assistantWorking]);
   const notes = useNoteEditor();
   const [noteTableWidth, setNoteTableWidth] = useState(0);
   const [noteFooterHeight, setNoteFooterHeight] = useState(0);
@@ -492,7 +517,7 @@ export default function App({ initialText, online, onSessionReady }: {
     rowData,
     columnLayouts,
     toggleCollapse, expandRowPath,
-  } = useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName, displayCell });
+  } = useSheetViewModel({ docState, evaluation, presentation, activeSheet, sheetIssuesByName, displayCell, columnWidthMode: preferences.columnWidthMode });
 
 
   const columnHasLocalConfig = useMemo<boolean[]>(() => {
@@ -714,6 +739,7 @@ export default function App({ initialText, online, onSessionReady }: {
   useEffect(() => {
     const handleHistoryKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      if (assistantWorking) return;
       if (mode === "source") return;
       if (isNativeTextEditingTarget(event.target)) return;
       const key = event.key.toLowerCase();
@@ -735,10 +761,11 @@ export default function App({ initialText, online, onSessionReady }: {
 
     window.addEventListener("keydown", handleHistoryKeyDown);
     return () => window.removeEventListener("keydown", handleHistoryKeyDown);
-  }, [mode, canUndo, canRedo, undo, redo]);
+  }, [assistantWorking, mode, canUndo, canRedo, undo, redo]);
 
   useEffect(() => {
     const handleEnterToEdit = (event: KeyboardEvent) => {
+      if (assistantWorking) return;
       if (event.key !== "Enter") return;
       if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.repeat) return;
@@ -765,7 +792,7 @@ export default function App({ initialText, online, onSessionReady }: {
 
     window.addEventListener("keydown", handleEnterToEdit);
     return () => window.removeEventListener("keydown", handleEnterToEdit);
-  }, [mode, isActiveSheetBlocked, selection, formulaInputMode, settingsOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
+  }, [assistantWorking, mode, isActiveSheetBlocked, selection, formulaInputMode, settingsOpen, sheetSetupOpen, selectionMenuOpen, railMenuOpen]);
 
   useEffect(() => {
     if (mode === "source" || isActiveSheetBlocked) return;
@@ -1107,37 +1134,7 @@ export default function App({ initialText, online, onSessionReady }: {
       return [];
     }
 
-    const nextCells: HeaderOverlayCell[] = [];
-
-    for (let rowOffset = 0; rowOffset < headerOverlayRows; rowOffset += 1) {
-      for (const { start: startIndex, end, label } of groupHeaderSpans(columnMetrics, headerMatrix[rowOffset] ?? [], headerColCount)) {
-        const start = columnMetrics[startIndex];
-
-        const left = Math.round(start.left);
-        const rightMetric = columnMetrics[end];
-        const right = Math.round(rightMetric.left + rightMetric.width);
-        const width = Math.max(0, right - left);
-        if (width > 0.5) {
-          const startCol = start.colIndex + 1;
-          const endCol = rightMetric.colIndex + 1;
-          const rowNumber = rowOffset + 1;
-          nextCells.push({
-            key: `r${rowNumber}-c${startCol}-${endCol}`,
-            rowNumber,
-            label,
-            startCol: start.colIndex,
-            endCol: rightMetric.colIndex,
-            left,
-            width,
-            top: rowOffset * GRID_HEADER_HEIGHT,
-            height: GRID_HEADER_HEIGHT,
-          });
-        }
-
-      }
-    }
-
-    return nextCells;
+    return buildHeaderOverlayCells(columnMetrics, headerMatrix, headerColCount);
   }, [mode, isActiveSheetBlocked, headerOverlayRows, sheetColCount, columnMetrics, headerMatrix, headerColCount]);
 
   const searchCells = useMemo(() => buildDocumentSearchCells(
@@ -1145,7 +1142,7 @@ export default function App({ initialText, online, onSessionReady }: {
   ), [docState, evaluation, presentation, sheetIssuesByName, uiLocale, displayCell]);
   const sheetSearch = useSheetSearch({
     cells: searchCells, scope: activeSheet ?? "",
-    enabled: mode === "table",
+    enabled: mode === "table" && !assistantWorking,
     gridApiRef, displayedRows: absoluteRowToDisplayedIndex, expandRowPath,
     activateSheet: setActiveSheet,
   });
@@ -3484,6 +3481,7 @@ export default function App({ initialText, online, onSessionReady }: {
   }, [openSettings]);
   const { initializationStatus, fileDropCue, fileName, fileStatus, handleNewFile, handleOpenFile, handleOpenDocumentText, handleSaveFileAs, handleSaveFile } = useFileSessionController({
     initialText, mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence,
+    assistantWorking,
     hasPendingCellEdit: formulaInputMode === "edit" || notes.draft !== null,
     onImport: interchange.openImport, onExport: interchange.openExport, onPrint: printing.openPrint, onBrowserOpen: interchange.openBrowserFile, onSettings: openSettings,
   });
@@ -3664,12 +3662,16 @@ export default function App({ initialText, online, onSessionReady }: {
   return (
     <SheetSearchContext.Provider value={sheetSearch}>
     <div className="page">
-      <div className={mode === "source" ? "app-window source-mode" : "app-window"}>
+      <div className={["app-window", mode === "source" ? "source-mode" : "", agentPreview ? "has-agent-preview" : ""].filter(Boolean).join(" ")}>
         <AppChrome
           online={onlineChrome}
           onImportFile={interchange.openImport}
           titlePlacement={window.ordinateDesktop ? "native" : "toolbar"}
           mode={mode}
+          agentOpen={agentOpen}
+          agentPreviewActive={assistantWorking}
+          agentDebugMode={!window.ordinateDesktop}
+          onToggleAgent={() => setAgentOpen(open => !open)}
           fileName={fileName}
           fileStatus={fileStatus.label}
           fileStatusTone={fileStatus.tone}
@@ -3725,6 +3727,8 @@ export default function App({ initialText, online, onSessionReady }: {
           </div>
         ) : null}
 
+        <div className="workspace-area">
+        <div className="workspace-editor">
         <ViewHandoff viewKey={mode === "source" ? "source" : gridInstanceKey ?? "empty"}
           waitForLayout={mode === "table" && initializationStatus !== "loading" && shouldRenderGrid}>
         {mode === "source" ? (
@@ -3824,7 +3828,7 @@ export default function App({ initialText, online, onSessionReady }: {
           </section>
         )}
         </ViewHandoff>
-        <FormulaBarOverlay
+        {!agentPreview && <FormulaBarOverlay
           locale={uiLocale}
           mode={mode}
           phase={notes.draft ? "hidden" : cellChromeVisibilityPhase}
@@ -3851,10 +3855,20 @@ export default function App({ initialText, online, onSessionReady }: {
           onTooltipLeave={clearTooltip}
           onTooltipSuppress={suppressTooltipForTarget}
           onTooltipRelease={releaseTooltipForTarget}
-        />
+        />}
+        {agentPreview && <AgentWorkbookPreview text={agentPreview.text} initialSheet={agentPreview.initialSheet} displayCell={displayCell} columnWidthMode={preferences.columnWidthMode}
+          locale={uiLocale} onTooltipEnter={showTooltip} onTooltipLeave={clearTooltip}
+          onTooltipSuppress={suppressTooltipForTarget} onTooltipRelease={releaseTooltipForTarget} />}
+        </div>
+        {!onlineChrome && agentBridge && <AgentPanel bridge={agentBridge} debugMode={!window.ordinateDesktop} open={agentOpen} onClose={() => setAgentOpen(false)} editingBlocked={formulaInputMode === "edit" || notes.draft !== null} onPreviewChange={onAgentPreviewChange} />}
+        </div>
       </div>
 
-      <SettingsDialog open={settingsOpen} onClose={closeSettings} preferences={preferences} systemLocale={systemLocale} update={updatePreferences} />
+      <SettingsDialog open={settingsOpen} onClose={closeSettings} preferences={preferences} systemLocale={systemLocale} update={updatePreferences}
+        showAgentDiagnostics={Boolean(window.ordinateDesktop)} onOpenAgentLogs={() => {
+          if (!window.ordinateDesktop) throw new Error("Assistant diagnostics require the desktop app.");
+          return window.ordinateDesktop.agent.openDiagnosticsFolder();
+        }} />
       <OverlayPortals
         rowNoteActions={rowNoteActions}
         railMenuOpen={railMenuOpen}

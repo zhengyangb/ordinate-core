@@ -1,6 +1,6 @@
 import { isError, makeInternalError } from "../errors";
-import type { RuntimeValue, RuntimeView } from "../types";
-import { makeRuntimeView } from "../view";
+import type { RuntimeValue, RuntimeCollection } from "../types";
+import { mapRuntimeCollection } from "../view";
 import type { FunctionEvalContext } from "./args";
 
 type TypePredicate = (value: RuntimeValue) => boolean;
@@ -81,7 +81,7 @@ export function evaluateTypePredicate(
   ctx: FunctionEvalContext,
   node: Parameters<FunctionEvalContext["evalRawArgValue"]>[0],
   predicate: TypePredicate,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const [kind, value] = ctx.evalRawArgValue(node);
   return mapTypeArgument(kind, value, (item) => ({ kind: "boolean", value: predicate(item) }), false);
 }
@@ -91,17 +91,17 @@ export function evaluateTypeConversion(
   functionName: string,
   node: Parameters<FunctionEvalContext["evalRawArgValue"]>[0],
   convert: TypeConversion,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const [kind, value] = ctx.evalRawArgValue(node);
   return mapTypeArgument(kind, value, (item) => convert(item, functionName), true);
 }
 
 function mapTypeArgument(
-  kind: "error" | "scalar" | "view",
-  value: RuntimeValue | RuntimeView,
+  kind: "error" | "scalar" | "collection",
+  value: RuntimeValue | RuntimeCollection,
   mapValue: (value: RuntimeValue) => RuntimeValue,
   propagateErrors: boolean,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   if (kind === "error") {
     const errorValue = value as RuntimeValue;
     return propagateErrors ? errorValue : mapValue(errorValue);
@@ -111,7 +111,7 @@ function mapTypeArgument(
     return propagateErrors && isError(scalar) ? scalar : mapValue(scalar);
   }
 
-  const view = value as RuntimeView;
+  const view = value as RuntimeCollection;
   const values: RuntimeValue[] = [];
   for (const item of view.values) {
     if (propagateErrors && isError(item)) return item;
@@ -119,5 +119,5 @@ function mapTypeArgument(
     if (isError(mapped)) return mapped;
     values.push(mapped);
   }
-  return makeRuntimeView(view.dimension, view.rowCount, view.colCount, values);
+  return mapRuntimeCollection(view, values);
 }

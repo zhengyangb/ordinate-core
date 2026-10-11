@@ -44,7 +44,48 @@ function expectInvalidFormula(input: string, internalKind: string): void {
 }
 
 describe("RFC-0032 formula array literals", () => {
-  it("evaluates one-dimensional arrays, empty arrays, and scalar-shaped arrays", () => {
+  it("keeps array rank separate from two-axis views while sharing aggregate inputs", () => {
+    const doc = `
+# Array and view shapes
+| Item || Result |
+| ---- || ------ |
+| ArrayRank || = size(shape([1, 2, 3])) |
+| ArrayLength || = shape([1, 2, 3])[0] |
+| ViewRank || = size(shape([[1, 2, 3]])) |
+| ViewRows || = shape([[1, 2, 3]])[0] |
+| ViewColumns || = shape([[1, 2, 3]])[1] |
+| ArraySum || = sum([1, 2, 3]) |
+| ViewSum || = sum([[1, 2, 3]]) |
+| MatrixSum || = sum([[1, 2], [3, 4]]) |
+| ArrayRows || = rowCount([1, 2, 3]) |
+| ArrayColumns || = columnCount([1, 2, 3]) |
+| ArrayTwoAxes || = [1, 2, 3][0, 1] |
+| ArraySliceRank || = size(shape([1, 2, 3][1:])) |
+| ViewSliceRank || = size(shape([[1, 2, 3]][0, 1:])) |
+| FilterRank || = size(shape(filter([1, 2, 3], [true, false, true]))) |
+| FilterLength || = shape(filter([1, 2, 3], [true, false, true]))[0] |
+| MixedKind || = sum([1, 2, 3] + [[1, 2, 3]]) |
+`.trim();
+
+    expectNumber(doc, "ArrayRank", "Result", 1);
+    expectNumber(doc, "ArrayLength", "Result", 3);
+    expectNumber(doc, "ViewRank", "Result", 2);
+    expectNumber(doc, "ViewRows", "Result", 1);
+    expectNumber(doc, "ViewColumns", "Result", 3);
+    expectNumber(doc, "ArraySum", "Result", 6);
+    expectNumber(doc, "ViewSum", "Result", 6);
+    expectNumber(doc, "MatrixSum", "Result", 10);
+    expectErrorReason(doc, "ArrayRows", "Result", "grid_view_required");
+    expectErrorReason(doc, "ArrayColumns", "Result", "grid_view_required");
+    expectErrorReason(doc, "ArrayTwoAxes", "Result", "array_requires_one_axis");
+    expectNumber(doc, "ArraySliceRank", "Result", 1);
+    expectNumber(doc, "ViewSliceRank", "Result", 2);
+    expectNumber(doc, "FilterRank", "Result", 1);
+    expectNumber(doc, "FilterLength", "Result", 2);
+    expectNumber(doc, "MixedKind", "Result", 12);
+  });
+
+  it("evaluates one-dimensional arrays and empty arrays without scalar coercion", () => {
     const doc = `
 # Arrays
 | Item || Result |
@@ -70,7 +111,7 @@ describe("RFC-0032 formula array literals", () => {
     expectNumber(doc, "CountEmpty", "Result", 0);
     expectErrorReason(doc, "AverageEmpty", "Result", "empty_numeric_input");
     expectErrorReason(doc, "EmptyIndex", "Result", "index_out_of_bounds");
-    expectNumber(doc, "ScalarArray", "Result", 1);
+    expectErrorReason(doc, "ScalarArray", "Result", "final_result");
   });
 
   it("evaluates two-dimensional arrays and preserves shape through shape functions", () => {
@@ -213,7 +254,7 @@ describe("RFC-0032 formula array literals", () => {
     expectErrorReason(doc, "VectorFinal", "Result", "final_result");
     expectErrorReason(doc, "SliceFinal", "Result", "final_result");
     expectErrorReason(doc, "MatrixFinal", "Result", "final_result");
-    expectNumber(doc, "ScalarVectorFinal", "Result", 1);
+    expectErrorReason(doc, "ScalarVectorFinal", "Result", "final_result");
     expectNumber(doc, "ScalarMatrixFinal", "Result", 1);
   });
 

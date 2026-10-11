@@ -204,6 +204,16 @@ describe("fresh static-result projection is a loss policy, not cache substitutio
 });
 
 describe("source notation has no separate export bypass", () => {
+  it("exports one-dimensional array shape without inventing a row axis", async () => {
+    const size = native("size(shape([1,2]))");
+    expect(size.evaluate().sheets[0].values[0][0]).toEqual({kind:"number",value:1});
+    expect((await load(size)).cell.formula).toBe("COLUMNS(COLUMNS({1,2}))");
+
+    const length = native("shape([1,2])[0]");
+    expect(length.evaluate().sheets[0].values[0][0]).toEqual({kind:"number",value:2});
+    expect((await load(length)).cell.formula).toBe("INDEX(COLUMNS({1,2}),1,1)");
+  });
+
   it.each([
     'f"Total {2+3:.2f}"', 'f"Date {2025-06-29:%F}"', 'f"Time {12:34:56:%T}"',
     'f"Date/time {2025-06-29T12:34:56:%FT%T}"',

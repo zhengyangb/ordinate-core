@@ -1,3 +1,7 @@
+---
+ord-format: "0.1"
+---
+
 # Acme Results
 **Acme Manufacturing | quarterly operating review, 2022–2026**
 
@@ -5,7 +9,7 @@ Amounts in $000 except unit and headcount measures. The 2026 fourth quarter is t
 
 Service renewals and replacement-part sales are supporting margin expansion. Procurement is reviewing the increased component commitment ahead of the next production cycle.
 
-| @display |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
+| @meta |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
 |  |  || 2022 | 2022 | 2022 | 2022 | 2023 | 2023 | 2023 | 2023 | 2024 | 2024 | 2024 | 2024 | 2025 | 2025 | 2025 | 2025 | 2026 | 2026 | 2026 | 2026 |
 |  | Line item || Q1 | Q2 | Q3 | Q4 | Q1 | Q2 | Q3 | Q4 | Q1 | Q2 | Q3 | Q4 | Q1 | Q2 | Q3 | Q4 | Q1 | Q2 | Q3 | Q4 |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -59,7 +63,7 @@ Service renewals and replacement-part sales are supporting margin expansion. Pro
 
 Quarterly management accounts are consolidated below. Revenue growth reflects the shift toward recurring service work, while capital expenditure supports capacity rather than acquisitions.
 
-| @display |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
+| @meta |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
 |  | Metric || 2022 | 2023 | 2024 | 2025 | 2026 |
 |  | --- || --- | --- | --- | --- | --- |
 |  | Total revenue || = sum(@["Acme Results"::B7:E7]) | = sum(@["Acme Results"::F7:I7]) | = sum(@["Acme Results"::J7:M7]) | = sum(@["Acme Results"::N7:Q7]) | = sum(@["Acme Results"::R7:U7]) |
@@ -89,7 +93,7 @@ Quarterly management accounts are consolidated below. Revenue growth reflects th
 
 Receivables, inventories and trade payables are planning balances linked to quarterly sales. Cash rolls forward from a $2.4m opening balance and retained free cash flow; no distributions or new borrowing are assumed.
 
-| @display |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
+| @meta |  || {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} | {:,.0f} {::>} |
 |  |  || 2022 | 2022 | 2022 | 2022 | 2023 | 2023 | 2023 | 2023 | 2024 | 2024 | 2024 | 2024 | 2025 | 2025 | 2025 | 2025 | 2026 | 2026 | 2026 | 2026 |
 |  | Metric || Q1 | Q2 | Q3 | Q4 | Q1 | Q2 | Q3 | Q4 | Q1 | Q2 | Q3 | Q4 | Q1 | Q2 | Q3 | Q4 | Q1 | Q2 | Q3 | Q4 |
 |  | --- || --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

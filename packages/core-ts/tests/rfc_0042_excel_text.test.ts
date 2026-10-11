@@ -119,8 +119,8 @@ describe("RFC-0042 SUBSTITUTE import uses native literal replacement", () => {
   });
 
   it("preserves pipe, backslash, quotes, newline and native syntax as ordinary string content", async () => {
-    const result = await imported("SUBSTITUTE(A1,B1,C1)", ['| \\ "\n# Sheet\n@display', "Sheet", "Table"]);
-    const expected = '| \\ "\n# Table\n@display';
+    const result = await imported("SUBSTITUTE(A1,B1,C1)", ['| \\ "\n# Sheet\n@meta', "Sheet", "Table"]);
+    const expected = '| \\ "\n# Table\n@meta';
     expectValue(value(result.value), expected);
     expectValue(value(DocumentState.fromText(serializeDocumentState(result.value))), expected);
   });

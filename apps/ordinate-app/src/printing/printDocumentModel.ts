@@ -59,7 +59,7 @@ export function preparePrintDocument(editor: Pick<EditorState, "mode" | "sourceT
         if (!evaluation || !presentation) throw new Error(`${sheet.name} could not be evaluated for printing.`);
         const rows = projectSheetRows(evaluation, sheet, presentation, sheet.colCount, sheet.headerColCount, new Set(), displayCell);
         const headers = buildHeaderMatrix(sheet, evaluation, presentation, sheet.colCount, sheet.headerRowCount);
-        const layouts = resolveColumnLayouts(rows, Array.from({ length: sheet.colCount }, (_, col) => headers.at(-1)?.[col] ?? ""), sheet.headerColCount);
+        const layouts = resolveColumnLayouts(rows, Array.from({ length: sheet.colCount }, (_, col) => headers.at(-1)?.[col] ?? ""), sheet.headerColCount, "standard");
         return {
           name: sheet.name, headers, headerColCount: sheet.headerColCount, rows,
           widths: layouts.map(layout => layout.width),

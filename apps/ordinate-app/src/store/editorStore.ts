@@ -29,13 +29,15 @@ import { nextSheetName } from "../utils/sheetTabs";
 
 export type EditorMode = "source" | "table";
 
-interface EditorHistoryEntry {
+interface EditorHistoryBase {
   id: number;
   label: string;
-  memento: CoreEditHistoryMemento;
   activeSheetBefore: string | null;
   activeSheetAfter: string | null;
 }
+type EditorHistoryEntry =
+  | (EditorHistoryBase & { kind: "core"; memento: CoreEditHistoryMemento })
+  | (EditorHistoryBase & { kind: "document"; beforeText: string; afterText: string; beforeDocument: DocumentState; afterDocument: DocumentState });
 
 export interface EditorState {
   mode: EditorMode;
@@ -59,6 +61,7 @@ export interface EditorState {
   isDirty: boolean;
   setSourceText: (text: string) => void;
   replaceDocumentText: (text: string, options?: { preserveView: boolean }) => void;
+  applyDocumentTextChange: (label: string, text: string, activeSheetHint?: string) => void;
   setActiveSheet: (sheetName: string) => void;
   applyCoreEdits: (label: string, edits: CoreEdit[], nextActiveSheetHint?: string | null, replaceHistoryId?: number) => void;
   undo: () => void;
@@ -178,7 +181,7 @@ const sampleDocument = `# Management Report
 | Gross Margin % || = @["Revenue Total",_] / 120 | = @["Revenue Total",_] / 130 | = @["Revenue Total",_] / 140 | = @["Revenue Total",_] / 150 | = @["Revenue Total",_] / 160 | = @["Revenue Total",_] / 170 | = @["Revenue Total",_] / 180 | = @["Revenue Total",_] / 190 |
 
 # A1 Style Demo
-| @display     |      || {:,.1f} {::<,blue} | {:(),.2f} {::<} | {:.1%} {::<} | {::<} | {:,.2f} {::<,blue,bold} |
+| @meta     |      || {:,.1f} {::<,blue} | {:(),.2f} {::<} | {:.1%} {::<} | {::<} | {:,.2f} {::<,blue,bold} |
 |              | Item || Revenue         | Cost        | Margin   | Notes | Calc                |
 | -------- | ---- || -------         | ----        | ------   | ----- | ----                |
 |              | Product A    || 1234.5 {::red}         | -456.7            | 0.125          | "color override" | = B2 + C2 {::red} |
@@ -235,7 +238,7 @@ function bootstrapFromSource(sourceText: string): Pick<
   try {
     const docState = DocumentState.fromText(sourceText);
     const evaluation = docState.evaluate();
-    const presentation = resolveDocumentPresentation(docState);
+    const presentation = resolveDocumentPresentation(docState, evaluation);
     const validation = validateDocument(sourceText);
     const sheetNames = docState.sheets.map((sheet) => sheet.name);
     const sheetIssuesByName = groupSheetValidationErrors(sheetNames, validation.errors);
@@ -274,7 +277,7 @@ function deriveStateFromDocument(
   "sourceText" | "docState" | "evaluation" | "presentation" | "validation" | "sheetIssuesByName" | "activeSheet" | "error"
 > {
   const evaluation = document.evaluate();
-  const presentation = resolveDocumentPresentation(document);
+  const presentation = resolveDocumentPresentation(document, evaluation);
   const sourceText = serializeDocumentState(document);
   const validation = validateDocument(sourceText);
   const sheetNames = document.sheets.map((sheet) => sheet.name);
@@ -353,6 +356,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ...emptyHistoryState(get().revision + 1),
     });
   },
+  applyDocumentTextChange: (label, text, activeSheetHint) => {
+    const state = get();
+    if (!state.docState) throw new Error("cannot replace a document without an active document state");
+    const beforeText = state.mode === "source" ? state.sourceText : serializeDocumentState(state.docState);
+    if (beforeText === text) return;
+    const afterDocument = DocumentState.fromText(text);
+    const next = deriveStateFromDocument(afterDocument, activeSheetHint ?? state.activeSheet);
+    const sourceMatchesState = beforeText === serializeDocumentState(state.docState);
+    const beforeDocument = sourceMatchesState ? state.docState : DocumentState.fromText(beforeText);
+    const retained = sourceMatchesState ? state.history.slice(0, state.historyCursor) : [];
+    const savedHistoryCursor = state.savedHistoryCursor > retained.length ? -1 : state.savedHistoryCursor;
+    const history: EditorHistoryEntry[] = [...retained, {
+      kind: "document", id: state.nextHistoryId, label,
+      beforeText, afterText: text, beforeDocument, afterDocument,
+      activeSheetBefore: state.activeSheet, activeSheetAfter: next.activeSheet,
+    }];
+    const historyCursor = history.length;
+    set({
+      ...next,
+      ...(state.mode === "source" ? { sourceText: text } : {}),
+      mode: state.mode, history, historyCursor, savedHistoryCursor,
+      nextHistoryId: state.nextHistoryId + 1, revision: state.revision + 1,
+      ...historyStatus(history, historyCursor, savedHistoryCursor),
+    });
+  },
   setActiveSheet: (sheetName) => set({ activeSheet: sheetName }),
   applyCoreEdits: (label, edits, nextActiveSheetHint, replaceHistoryId) => {
     const state = get();
@@ -362,11 +390,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
 
     const previous = replaceHistoryId === undefined ? undefined : state.history[state.historyCursor - 1];
-    if (replaceHistoryId !== undefined && (previous?.id !== replaceHistoryId || state.historyCursor !== state.history.length)) {
+    if (replaceHistoryId !== undefined && (previous?.id !== replaceHistoryId || previous.kind !== "core" || state.historyCursor !== state.history.length)) {
       throw new Error("cannot replace a stale history entry");
     }
     let baseDocument = docState;
-    if (previous) {
+    if (previous?.kind === "core") {
       const restored = applyCoreEditMemento(docState, previous.memento, "undo", { recalculate: false });
       if (!restored.ok) throw new Error(restored.error.message);
       baseDocument = restored.nextDocument;
@@ -393,6 +421,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const nextHistory: EditorHistoryEntry[] = [
       ...retainedHistory,
       {
+        kind: "core",
         id: previous?.id ?? state.nextHistoryId,
         label,
         memento: result.memento,
@@ -419,13 +448,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!state.docState) {
       throw new Error("cannot undo without an active document state");
     }
-    const result = applyCoreEditMemento(state.docState, entry.memento, "undo", { recalculate: false });
-    if (!result.ok) {
-      throw new Error(`[${result.error.category}] ${result.error.message}`);
-    }
+    const nextDocument = entry.kind === "document" ? entry.beforeDocument : (() => {
+      const result = applyCoreEditMemento(state.docState!, entry.memento, "undo", { recalculate: false });
+      if (!result.ok) throw new Error(`[${result.error.category}] ${result.error.message}`);
+      return result.nextDocument;
+    })();
     const historyCursor = state.historyCursor - 1;
     set({
-      ...deriveStateFromDocument(result.nextDocument, entry.activeSheetBefore),
+      ...deriveStateFromDocument(nextDocument, entry.activeSheetBefore),
+      ...(state.mode === "source" && entry.kind === "document" ? { sourceText: entry.beforeText } : {}),
       mode: state.mode,
       historyCursor,
       revision: state.revision + 1,
@@ -439,13 +470,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!state.docState) {
       throw new Error("cannot redo without an active document state");
     }
-    const result = applyCoreEditMemento(state.docState, entry.memento, "redo", { recalculate: false });
-    if (!result.ok) {
-      throw new Error(`[${result.error.category}] ${result.error.message}`);
-    }
+    const nextDocument = entry.kind === "document" ? entry.afterDocument : (() => {
+      const result = applyCoreEditMemento(state.docState!, entry.memento, "redo", { recalculate: false });
+      if (!result.ok) throw new Error(`[${result.error.category}] ${result.error.message}`);
+      return result.nextDocument;
+    })();
     const historyCursor = state.historyCursor + 1;
     set({
-      ...deriveStateFromDocument(result.nextDocument, entry.activeSheetAfter),
+      ...deriveStateFromDocument(nextDocument, entry.activeSheetAfter),
+      ...(state.mode === "source" && entry.kind === "document" ? { sourceText: entry.afterText } : {}),
       mode: state.mode,
       historyCursor,
       revision: state.revision + 1,

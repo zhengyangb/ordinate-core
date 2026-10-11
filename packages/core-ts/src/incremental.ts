@@ -1,7 +1,7 @@
-import { parseDocument, parseHierarchyLabel, parseTableRow, stripDisplayControlFrame, type ParsedRow, type UnparsedBlock } from "./parser";
+import { parseDocument, parseHierarchyLabel, parseTableRow, stripMetaControlFrame, type ParsedRow, type UnparsedBlock } from "./parser";
 import { assertNotePosition, parseSheetNote, SheetNoteError, type SheetNote, type SheetNotePosition, type NoteSourceBlock } from "./sheet_notes";
 import { trimCellText } from "./text_encoding";
-import { getCellTextView, parseCellInput, parseDisplayControlCell, stripCellDisplayMetadata } from "./runtime/parse";
+import { getCellTextView, parseCellInput, parseMetaControlCell, stripCellDisplayMetadata } from "./runtime/parse";
 import { describeDisplayMetadataDiagnostic, validateFormatSpec } from "./runtime/displayMetadata";
 import { parseTemporalFormatSpec } from "./runtime/temporalFormat";
 import { renderFormulaExpression, type FormulaRenderContext } from "./runtime/renderFormula";
@@ -199,7 +199,7 @@ export class SheetState {
     const primaryIndex = normalizedPrimary === -1 ? null : normalizedPrimary;
 
     const parsedRows = rows.map((r) => parseTableRow(r));
-    const controlFrame = stripDisplayControlFrame(parsedRows);
+    const controlFrame = stripMetaControlFrame(parsedRows);
     const semanticRows = controlFrame.rows;
     const sepIndex = separatorRowIndex(semanticRows);
     const logicalRows = semanticRows.filter((_, idx) => idx !== sepIndex);
@@ -1629,7 +1629,7 @@ function extractColumnDisplayMetadataFromControlRow(
   for (let c = 0; c < colCount; c += 1) {
     const raw = c + 1 < controlRow.rawCells.length ? controlRow.rawCells[c + 1] : "";
     if (raw.trim() === "") continue;
-    output[c] = parseDisplayControlCell(raw);
+    output[c] = parseMetaControlCell(raw);
   }
   return output;
 }
@@ -1642,7 +1642,7 @@ function extractRowDisplayMetadata(
   const output: Array<ParsedDisplayMetadata | null> = Array.from({ length: logicalRows.length }, () => null);
   for (let rAbs = 0; rAbs < logicalRows.length; rAbs += 1) {
     const row = logicalRows[rAbs];
-    const control = row.displayControl?.trim() ?? "";
+    const control = row.metaControl?.trim() ?? "";
     if (rAbs < bodyStart) {
       if (control) throw new Error("Row display defaults require a body row.");
       continue;
@@ -1650,7 +1650,7 @@ function extractRowDisplayMetadata(
     const label = headerColCount > 0 ? parseCellInput(row.rawCells[0] ?? "").localDisplay : null;
     if (control) {
       if (label) throw new Error("Row display defaults must have a single source: control cell or label.");
-      output[rAbs] = parseDisplayControlCell(control);
+      output[rAbs] = parseMetaControlCell(control);
     } else output[rAbs] = label;
   }
   return output;

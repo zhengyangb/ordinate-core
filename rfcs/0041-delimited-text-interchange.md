@@ -88,7 +88,7 @@ Empty input creates an empty sheet (the same core state as a newly created sheet
 
 `text` preserves every decoded field as a string, including empty strings,
 leading/trailing spaces, `00123`, `true`, dates, `null`, `=SUM(A1:A2)`, cached
-formula-looking text, pipes, backslashes, `@display`, `---`, and `* Label`.
+formula-looking text, pipes, backslashes, `@meta`, `---`, and `* Label`.
 Values are encoded as explicit Ordinate string literals and then table-escaped,
 using existing core encoding functions. CSV quoting is not Ordinate quoting.
 
@@ -118,7 +118,7 @@ new document only; it does not merge into an existing document or touch history.
 The caller selects exactly one sheet by name. All its logical rows and columns
 are exported, including header rows, label columns, hierarchy parents and
 children. Folded/hidden UI state is irrelevant. Serialization-only separator
-rows and display control frames are not data and are excluded.
+rows and metadata control frames are not data and are excluded.
 
 Structural header/label cells use their semantic label text, not formula
 evaluation. The first label column removes hierarchy markers. Other cells use

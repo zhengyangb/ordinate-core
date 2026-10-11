@@ -31,7 +31,7 @@ const FORMAT_GROUPED_2F: FormatSpec = {
 
 const API_DOC = `
 # Sheet
-| @display |      || {:,.1f} {::>,blue,bold} | {::>,bold} |         |
+| @meta |      || {:,.1f} {::>,blue,bold} | {::>,bold} |         |
 |          | Item || Price                | Qty        | Out     |
 | -------- | ---- || -----                | ---        | ---     |
 |          | A    || 12.345 {::green}     | 2          | = B2 * C2 {:,.2f} |
@@ -195,7 +195,7 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
 
     state.evaluate();
     const output = serializeDocumentState(state);
-    expect(output).toContain("| -------- | ---- ||");
+    expect(output).toContain("| @meta |");
     expect(output).toContain("= sum(B2");
     expect(output).toContain("error[parse_error] = B3");
   });
@@ -234,13 +234,13 @@ describe("RFC-0017 core edit contract: cell read surfaces", () => {
     });
   });
 
-  it("strips display control frame from IR semantic rows", () => {
+  it("strips metadata control frame from IR semantic rows", () => {
     const ir = parseDocumentModel(API_DOC);
     const table = ir.sheets[0].table;
     expect(table).not.toBeNull();
     if (!table) return;
     const labels = table.rows.map((r) => r.label);
-    expect(labels.includes("@display")).toBe(false);
+    expect(labels.includes("@meta")).toBe(false);
     expect(labels[0]).toBe("A");
     expect(labels[1]).toBe("Bad");
   });
@@ -996,7 +996,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
       if (spec.expectOk) {
         if (!result.ok) throw new Error(`case '${spec.name}' should have succeeded`);
         const output = serializeDocumentState(result.nextDocument);
-        const expected = formatDocument(`${spec.expect}\n`);
+        const expected = formatDocument(`---\nord-format: "0.1"\n---\n\n${spec.expect}\n`);
         expect(output, spec.name).toBe(expected);
       } else {
         if (result.ok) throw new Error(`case '${spec.name}' should have failed`);
@@ -1004,7 +1004,7 @@ describe("RFC-0017 core edit contract: atomic write surfaces", () => {
           expect(result.error.category, spec.name).toBe(spec.expectErrorCategory);
         }
         const output = serializeDocumentState(state);
-        const expected = formatDocument(`${spec.expect}\n`);
+        const expected = formatDocument(`---\nord-format: "0.1"\n---\n\n${spec.expect}\n`);
         expect(output, spec.name).toBe(expected);
       }
     }

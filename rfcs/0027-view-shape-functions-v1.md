@@ -3,6 +3,10 @@
 - Status: Draft
 - Project: Ordinate
 
+> RFC-0052 supersedes array and filtered-result shape rules here. `shape`
+> returns a one-dimensional array: `[length]` for arrays and `[rows, columns]`
+> for views. Row/column count functions require a view.
+
 ## Summary
 
 This RFC defines scalar shape inspection functions for views and one shape-vector function:

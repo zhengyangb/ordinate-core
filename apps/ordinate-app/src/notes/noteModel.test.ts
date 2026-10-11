@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { DocumentState, serializeDocumentState } from "@ordinate/core";
-import { readNote, savesNote, distributeNoteScroll, noteColumns } from "./noteModel";
+import { readNote, savesNote, splitNoteScroll, noteColumns } from "./noteModel";
 import { parseSheetNote } from "@ordinate/core";
 import { useEditorStore } from "../store/editorStore";
 
@@ -46,11 +46,11 @@ describe('sheet note UI model', () => {
     expect(savesNote({key,shiftKey,ctrlKey,metaKey,isComposing})).toBe(expected);
   });
   it.each([
-    [60,0,100,0,60,0], [160,0,100,0,100,60], [60,100,100,20,100,60],
-    [-60,100,100,0,40,0], [-160,100,100,0,0,-60], [-60,100,100,200,100,-60],
-    [60,0,0,0,0,60], [-60,0,0,0,0,-60], [0,50,100,0,50,0],
-  ])('routes wheel %s at intro %s/%s and grid %s', (delta,intro,max,grid,next,remaining) => {
-    expect(distributeNoteScroll(delta,intro,max,grid)).toEqual({intro:next,remaining});
+    [-20, 100, 200, 0, 0], [60, 100, 200, 60, 0],
+    [100, 100, 200, 100, 0], [140, 100, 200, 100, 40],
+    [340, 100, 200, 100, 200],
+  ])('maps unified scrollbar position %s to note and grid scroll', (position,introMax,gridMax,intro,grid) => {
+    expect(splitNoteScroll(position,introMax,gridMax)).toEqual({intro,grid});
   });
 });
 

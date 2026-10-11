@@ -32,7 +32,7 @@ const ROW_DOC = `
 
 const COLUMN_DISPLAY_DOC = `
 # Sheet
-| @display |      || {:,.1f} {::>,blue,bold} | {::>} | {::green} | |
+| @meta |      || {:,.1f} {::>,blue,bold} | {::>} | {::green} | |
 |          | Item || A                        | B     | C         | D |
 | -------- | ---- || ----                     | ----  | ----      | ---- |
 |          | R1   || 1 {::red}                | 2     | 3         | 4 |

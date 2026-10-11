@@ -1,4 +1,4 @@
-import { deriveHierarchyRows, parseDocument, parseTableRow, stripDisplayControlFrame, type ParsedRow } from "./parser";
+import { deriveHierarchyRows, parseDocument, parseTableRow, stripMetaControlFrame, type ParsedRow } from "./parser";
 import type { NoteSourceBlock } from "./sheet_notes";
 import type { UnparsedBlock } from "./parser";
 
@@ -46,7 +46,7 @@ export function parseDocumentModel(text: string): DocumentIR {
       irSheets.push({ name: sheet.name, notes, table: null, hasMultipleTables: sheet.hasMultipleTables });
       continue;
     }
-    const parsedRows: ParsedRow[] = stripDisplayControlFrame(
+    const parsedRows: ParsedRow[] = stripMetaControlFrame(
       sheet.table.rows.map((row) => parseTableRow(row)),
     ).rows;
     const widths = new Set(parsedRows.map((r) => r.cells.length));

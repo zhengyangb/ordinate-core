@@ -13,7 +13,7 @@ describe("RFC-0039 multiline text", () => {
     const expected = input.replace(/\r\n?/g, "\n");
     expect(value(result.nextDocument)).toMatchObject({ kind: "literal", inputText: expected, literal: { kind: "string", value: expected } });
     const text = serializeDocumentState(result.nextDocument);
-    expect(text.trimEnd().split("\n")).toHaveLength(5);
+    expect(text.trimEnd().split("\n")).toHaveLength(9);
     const reopened = DocumentState.fromText(text);
     expect(value(reopened)).toMatchObject({ kind: "literal", inputText: expected, literal: { kind: "string", value: expected } });
     expect(serializeDocumentState(reopened)).toBe(text);
@@ -30,7 +30,7 @@ describe("RFC-0039 multiline text", () => {
     const doc = DocumentState.fromText(`# Sheet\n| ${escapeCellText(`= ${input}`)} |`);
     expect(doc.evaluate().sheets[0].values[0][0]).toEqual({ kind: "string", value: 'first\nsecond \\ " |' });
     const serialized = serializeDocumentState(doc);
-    expect(serialized.trimEnd().split("\n")).toHaveLength(2);
+    expect(serialized.trimEnd().split("\n")).toHaveLength(6);
     expect(DocumentState.fromText(serialized).evaluate().sheets[0].values[0][0]).toEqual(doc.evaluate().sheets[0].values[0][0]);
     expect(parseCellText(String.raw`"bad\q"`).body).toMatchObject({ literal: { kind: "error" } });
   });

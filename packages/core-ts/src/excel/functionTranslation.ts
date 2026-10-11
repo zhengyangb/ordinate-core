@@ -31,7 +31,7 @@ const future = (...args: Parameters<typeof signature>): FunctionTranslation => (
 
 export const functionTranslations: Readonly<Record<string, FunctionTranslation>> = {
   ...Object.fromEntries(mathViewOperations.map(operation => [operation.name,
-    signature(operation.excel, operation.parameters.map(p => p.type), operation.parameters.length, [], operation.variadic)])),
+    signature(operation.excel, operation.parameters.map(p => p.type === "scalar" ? "scalar" : "view"), operation.parameters.length, [], operation.variadic)])),
   ...distributionExports,
   ...Object.fromEntries(mathOperations.map(operation => [operation.name, {
     ...scalar(operation.excel, operation.parameters.filter(p => p.default === undefined && p.defaultFrom === undefined).length, operation.parameters.length),

@@ -16,7 +16,7 @@ if (process.platform === 'darwin') {
     '-mmacosx-version-min=12.0', '-DNAPI_VERSION=8', '-framework', 'Cocoa', '-framework', 'PDFKit',
     ...(testing ? ['-DORDINATE_NATIVE_TEST=1'] : []),
     '-I', require('node-api-headers').include_dir,
-    ...['titlebar.mm', 'document.mm', 'printing.mm'].map(file => path.join(root, 'desktop/native', file)), '-o', output,
+    ...['titlebar.mm', 'document.mm', 'printing.mm', 'assistantPdf.mm'].map(file => path.join(root, 'desktop/native', file)), '-o', output,
   ], { stdio: 'inherit' });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Native titlebar build failed (${result.status})`);

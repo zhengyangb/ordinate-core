@@ -65,15 +65,15 @@ function date(value: string): RuntimeValue {
 }
 
 function vector(values: RuntimeValue[]): RuntimeView {
-  return makeRuntimeView(1, values.length, 1, values);
+  return makeRuntimeView(values.length, 1, values);
 }
 
 function rowVector(values: RuntimeValue[]): RuntimeView {
-  return makeRuntimeView(1, 1, values.length, values);
+  return makeRuntimeView(1, values.length, values);
 }
 
 function matrix(values: RuntimeValue[]): RuntimeView {
-  return makeRuntimeView(2, 2, 2, values);
+  return makeRuntimeView(2, 2, values);
 }
 
 function cellValue(doc: string, rowPath: string, colLabel: string): RuntimeValue {
@@ -115,9 +115,9 @@ function expectCellErrorReason(doc: string, rowPath: string, colLabel: string, r
 }
 
 describe("single cash-flow views", () => {
-  it("accepts the native dimension-0 representation without admitting matrices", () => {
-    const cashflow = makeRuntimeView(0, 1, 1, [n(100)]);
-    const dates = makeRuntimeView(0, 1, 1, [date("2024-01-01")]);
+  it("accepts a single-cell view without admitting matrices", () => {
+    const cashflow = makeRuntimeView(1, 1, [n(100)]);
+    const dates = makeRuntimeView(1, 1, [date("2024-01-01")]);
     expectNumber(npvView(n(0.1), cashflow, "npv"), 100 / 1.1);
     expectNumber(xnpvView(n(0.1), cashflow, dates, "xnpv"), 100);
     expect(irrView(cashflow, "irr").kind).toBe("error");

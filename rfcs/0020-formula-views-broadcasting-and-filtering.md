@@ -3,6 +3,13 @@
 - Status: Draft
 - Project: Ordinate
 
+> RFC-0053 supersedes this RFC's exact-shape comparison rule. `filter` still
+> requires matching kinds and shapes.
+
+> RFC-0052 supersedes this RFC's `view[d]` runtime notation and filtered-view
+> result shape. `filter` now produces a one-dimensional array; views have two
+> explicit axes. Scalar and exact-shape element-wise rules remain in force.
+
 ## Summary
 
 This RFC extends Ordinate formula evaluation with view-valued intermediate expressions, scalar broadcasting for comparisons, element-wise comparison over views, boolean masks, and a `filter(...)` function.

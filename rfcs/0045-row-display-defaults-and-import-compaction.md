@@ -22,12 +22,12 @@ labels and do not inherit data-cell presentation.
 
 ## Source representation
 
-Use the existing serialization-only `@display` frame symmetrically: top row
+Use the existing serialization-only `@meta` frame symmetrically: top row
 contains column defaults, left column contains body-row defaults.
 
 ```
 # Results
-| @display  |              | {:.0f} | {:.0f} |
+| @meta  |              | {:.0f} | {:.0f} |
 |           | Revenue      | 100    | 120    |
 | {::bold}  | Total        | 100    | 120    |
 ```

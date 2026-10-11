@@ -4,7 +4,7 @@ import { getBoundSheetId } from "../runtime/references";
 import { renderFormulaExpression } from "../runtime/renderFormula";
 import { columnAddress } from "../runtime/spreadsheetAddress";
 import { evaluateIndexing, type RuntimeIndexAxis } from "../runtime/indexing";
-import { dimensionForShape, isRuntimeView, makeRuntimeView } from "../runtime/view";
+import { isRuntimeView, makeRuntimeView } from "../runtime/view";
 import type { ReferenceExpr, RefSelector } from "../runtime/types";
 import { ExcelFailure, type ExcelLocation } from "./contracts";
 
@@ -102,8 +102,7 @@ function renderSelection(sourceSheet: SheetState, rows: number[], cols: number[]
 /** Slice address positions using the native indexing rules, never cell values. */
 export function sliceReference(selection: ExcelSelection, axes: RuntimeIndexAxis[], at: FormulaLocation): ExcelSelection {
   const positions = selection.cells.flat().map((_, value) => ({ kind: "number" as const, value }));
-  const indexed = evaluateIndexing(makeRuntimeView(dimensionForShape(selection.rows, selection.columns),
-    selection.rows, selection.columns, positions), axes, "Excel export");
+  const indexed = evaluateIndexing(makeRuntimeView(selection.rows, selection.columns, positions), axes, "Excel export");
   if (!isRuntimeView(indexed)) throw new ExcelFailure("unsupported_formula", "Invalid reference slice dimensions or bounds.", at);
   if (!indexed.rowCount || !indexed.colCount) throw new ExcelFailure("unsupported_formula", "Excel has no empty reference range.", at);
   const sourcePositions = indexed.values.map(value => {

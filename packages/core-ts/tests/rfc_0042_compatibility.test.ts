@@ -39,6 +39,7 @@ describe("RFC-0042 explicit compatibility decisions", () => {
       if (/time/.test(type)) return "12:34:56";
       if (/Scalar\[string\]|text/.test(type)) return '"abcd"';
       if (/Scalar\[boolean\]/.test(type)) return "true";
+      if (type === "view") return "[[1,2]]";
       if (/view/.test(type) && !/Scalar/.test(type)) return "[1,2]";
       return "2";
     });
@@ -50,7 +51,7 @@ describe("RFC-0042 explicit compatibility decisions", () => {
     if (metadata.name === "filter") args = ["[1,2]","[true,false]"];
     return [metadata.name, ...(metadata.aliases ?? [])].map(name => {
       const call = `${name}(${args.join(",")})`;
-      const formula = /^view/.test(signature.returns) ? `${call}[0]` : call;
+      const formula = /^(view|array)/.test(signature.returns) ? `${call}[0]` : call;
       return [name, formula, policy.status] as const;
     });
   });

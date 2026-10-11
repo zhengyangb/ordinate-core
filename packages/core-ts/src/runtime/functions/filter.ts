@@ -1,14 +1,14 @@
 import { isError, makeInternalError } from "../errors";
-import type { RuntimeValue, RuntimeView } from "../types";
-import { makeRuntimeView, runtimeViewShapesMatch } from "../view";
+import type { RuntimeValue, RuntimeCollection } from "../types";
+import { makeRuntimeArray, runtimeCollectionShapeContext, runtimeCollectionShapesMatch } from "../view";
 
-export function filterView(values: RuntimeView, mask: RuntimeView, functionName: string): RuntimeValue | RuntimeView {
-  if (!runtimeViewShapesMatch(values, mask)) {
+export function filterView(values: RuntimeCollection, mask: RuntimeCollection, functionName: string): RuntimeValue | RuntimeCollection {
+  if (!runtimeCollectionShapesMatch(values, mask)) {
     return makeInternalError("invalid_function_call", {
       function: functionName,
       reason: "shape_mismatch",
-      valuesShape: { rowCount: values.rowCount, colCount: values.colCount },
-      maskShape: { rowCount: mask.rowCount, colCount: mask.colCount },
+      valuesShape: runtimeCollectionShapeContext(values),
+      maskShape: runtimeCollectionShapeContext(mask),
     });
   }
 
@@ -30,5 +30,5 @@ export function filterView(values: RuntimeView, mask: RuntimeView, functionName:
     }
   }
 
-  return makeRuntimeView(1, 1, kept.length, kept);
+  return makeRuntimeArray(kept);
 }

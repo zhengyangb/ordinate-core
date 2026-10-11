@@ -1,8 +1,8 @@
 import { isError, makeInternalError } from "../errors";
-import type { ExprNode, RuntimeValue, RuntimeView } from "../types";
-import { makeRuntimeView, runtimeViewShapesMatch } from "../view";
+import type { ExprNode, RuntimeValue, RuntimeCollection } from "../types";
+import { mapRuntimeCollection, runtimeCollectionShapeContext, runtimeCollectionShapesMatch } from "../view";
 import type { EvaluatedArgument, FunctionEvalContext } from "./args";
-import { viewValues } from "./aggregates";
+import { collectionValues } from "./aggregates";
 
 type TextUnary = (text: string) => RuntimeValue;
 type TextBinary = (text: string, other: string) => RuntimeValue;
@@ -76,21 +76,21 @@ export function evaluateTextUnary(
   functionName: string,
   node: ExprNode,
   mapText: TextUnary,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const [kind, value] = ctx.evalArgValue(node);
   if (kind === "error") return value as RuntimeValue;
   if (kind === "scalar") {
     return mapTextValue(value as RuntimeValue, functionName, mapText);
   }
 
-  const view = value as RuntimeView;
+  const view = value as RuntimeCollection;
   const values: RuntimeValue[] = [];
-  for (const item of viewValues(view)) {
+  for (const item of collectionValues(view)) {
     const mapped = mapTextValue(item, functionName, mapText);
     if (isError(mapped)) return mapped;
     values.push(mapped);
   }
-  return makeRuntimeView(view.dimension, view.rowCount, view.colCount, values);
+  return mapRuntimeCollection(view, values);
 }
 
 export function evaluateTextBinary(
@@ -99,7 +99,7 @@ export function evaluateTextBinary(
   leftNode: ExprNode,
   rightNode: ExprNode,
   mapText: TextBinary,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const left = ctx.evalArgValue(leftNode);
   if (left[0] === "error") return left[1] as RuntimeValue;
   const right = ctx.evalArgValue(rightNode);
@@ -115,7 +115,7 @@ export function evaluateTextTernary(
   searchNode: ExprNode,
   replacementNode: ExprNode,
   mapText: TextTernary,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const text = ctx.evalArgValue(textNode);
   if (text[0] === "error") return text[1] as RuntimeValue;
   const search = ctx.evalArgValue(searchNode);
@@ -134,7 +134,7 @@ export function evaluateTextSlice(
   textNode: ExprNode,
   startNode: ExprNode,
   endNode: ExprNode | null,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const start = ctx.evalScalarArg(startNode);
   if (isError(start)) return start;
   const end = endNode === null ? null : ctx.evalScalarArg(endNode);
@@ -142,14 +142,14 @@ export function evaluateTextSlice(
   return evaluateTextUnary(ctx, functionName, textNode, (text) => sliceText(text, start, end, functionName));
 }
 
-export function joinTextView(separator: RuntimeValue, view: RuntimeView, functionName: string): RuntimeValue {
+export function joinTextView(separator: RuntimeValue, view: RuntimeCollection, functionName: string): RuntimeValue {
   if (isError(separator)) return separator;
   if (separator.kind !== "string") {
     return makeInternalError("invalid_function_call", { function: functionName, argument: "separator", argumentKind: separator.kind });
   }
 
   const values: string[] = [];
-  for (const item of viewValues(view)) {
+  for (const item of collectionValues(view)) {
     if (isError(item)) return item;
     if (item.kind !== "string") {
       return makeInternalError("invalid_function_call", { function: functionName, argumentKind: item.kind });
@@ -163,7 +163,7 @@ function mapTextArguments(
   functionName: string,
   args: readonly EvaluatedArgument[],
   mapText: (values: string[]) => RuntimeValue,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const resultView = resultShapeView(functionName, args);
   if (isError(resultView as RuntimeValue)) return resultView as RuntimeValue;
 
@@ -174,7 +174,7 @@ function mapTextArguments(
     return mapped;
   }
 
-  const view = resultView as RuntimeView;
+  const view = resultView as RuntimeCollection;
   const values: RuntimeValue[] = [];
   for (let index = 0; index < view.values.length; index += 1) {
     const textArgs = textValuesFromEvaluatedArgs(args, index, functionName);
@@ -183,22 +183,22 @@ function mapTextArguments(
     if (isError(mapped)) return mapped;
     values.push(mapped);
   }
-  return makeRuntimeView(view.dimension, view.rowCount, view.colCount, values);
+  return mapRuntimeCollection(view, values);
 }
 
-function resultShapeView(functionName: string, args: readonly EvaluatedArgument[]): RuntimeView | RuntimeValue | null {
-  let result: RuntimeView | null = null;
+function resultShapeView(functionName: string, args: readonly EvaluatedArgument[]): RuntimeCollection | RuntimeValue | null {
+  let result: RuntimeCollection | null = null;
   for (const [kind, value] of args) {
-    if (kind !== "view") continue;
-    const view = value as RuntimeView;
+    if (kind !== "collection") continue;
+    const view = value as RuntimeCollection;
     if (result === null) {
       result = view;
-    } else if (!runtimeViewShapesMatch(result, view)) {
+    } else if (!runtimeCollectionShapesMatch(result, view)) {
       return makeInternalError("invalid_function_call", {
         function: functionName,
         reason: "shape_mismatch",
-        left: { dimension: result.dimension, rowCount: result.rowCount, colCount: result.colCount },
-        right: { dimension: view.dimension, rowCount: view.rowCount, colCount: view.colCount },
+        left: runtimeCollectionShapeContext(result),
+        right: runtimeCollectionShapeContext(view),
       });
     }
   }
@@ -216,7 +216,7 @@ function textValuesFromEvaluatedArgs(args: readonly EvaluatedArgument[], index: 
 }
 
 function textFromEvaluatedArg(arg: EvaluatedArgument, index: number, functionName: string): string | RuntimeValue {
-  const value = arg[0] === "view" ? (arg[1] as RuntimeView).values[index] : (arg[1] as RuntimeValue);
+  const value = arg[0] === "collection" ? (arg[1] as RuntimeCollection).values[index] : (arg[1] as RuntimeValue);
   if (isError(value)) {
     return value;
   }

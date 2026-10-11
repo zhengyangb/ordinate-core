@@ -101,7 +101,7 @@ describe('RFC-0043 document structure',()=>{
     const output=serializeDocumentState(document), reopened=DocumentState.fromText(output);
     expect(serializeDocumentState(reopened)).toBe(output);
     expect(formatDocument(formatDocument(source))).toBe(formatDocument(source));
-    expect(reopened.frontMatter).toBe('---\nowner: sample\n---');
+    expect(reopened.frontMatter).toBe('---\nord-format: "0.1"\nowner: sample\n---');
     expect(serializeSheetNote(reopened.sheets[1].getSheetNote('beforeTable'))).toBe('*Other intro*');
     expect(reopened.evaluate().sheets.map(sheet=>sheet.values)).toEqual(document.evaluate().sheets.map(sheet=>sheet.values));
     expect(evaluateAndFormatDocument(source)).toContain('**Before**');

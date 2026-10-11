@@ -1,7 +1,7 @@
 import { isError, makeInternalError } from "../errors";
-import type { RuntimeValue, RuntimeView } from "../types";
+import type { RuntimeValue, RuntimeCollection } from "../types";
 
-export function dotProduct(left: RuntimeView, right: RuntimeView): RuntimeValue {
+export function dotProduct(left: RuntimeCollection, right: RuntimeCollection): RuntimeValue {
   const leftVals = vectorValues(left);
   const rightVals = vectorValues(right);
   if (!leftVals || !rightVals) {
@@ -25,7 +25,8 @@ export function dotProduct(left: RuntimeView, right: RuntimeView): RuntimeValue 
   return { kind: "number", value: Number.isInteger(total) ? Math.trunc(total) : total };
 }
 
-function vectorValues(view: RuntimeView): RuntimeValue[] | null {
+function vectorValues(view: RuntimeCollection): RuntimeValue[] | null {
+  if (view.kind === "array") return view.values;
   if (view.rowCount === 1) {
     return view.values;
   }

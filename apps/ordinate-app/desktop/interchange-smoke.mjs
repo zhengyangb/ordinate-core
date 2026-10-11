@@ -820,7 +820,7 @@ async function checkHeaders(native, web) {
     await query(target,`document.querySelector('.source-button').click()`);
     await wait(target,`document.querySelector('.source-shell textarea')`);
     const source=await query(target,`document.querySelector('.source-shell textarea').value`);
-    assert.ok(source.includes('@display'));
+    assert.ok(source.includes('@meta'));
     assert.equal((source.match(/\{:\.2f\}/g)||[]).length,1,'Repeated precision is a column default');
     assert.ok(source.includes('B2 * 2'),'Header choice preserves A1 formula coordinates');
     await query(target,`document.querySelector('.source-button').click()`);

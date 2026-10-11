@@ -263,7 +263,11 @@ export function importFormula(expression: ExcelExpression, sheetNames: readonly 
     }
     if (rule === "shape") {
       arity(1);
-      if (x.flattenedColumn) return term(call(name === "ROWS" ? "columnCount" : "rowCount", x.text), "number");
+      if (x.dynamic) {
+        return term(x.flattenedColumn
+          ? (name === "ROWS" ? call("size", x.text) : "1")
+          : (name === "ROWS" ? "1" : call("size", x.text)), "number");
+      }
       return term(name === "ROWS" && x.fullRows ? String(EXCEL_GRID_LIMITS.rows) : name === "COLUMNS" && x.fullColumns ? String(EXCEL_GRID_LIMITS.columns)
         : call(name === "ROWS" ? "rowCount" : "columnCount", x.text), "number");
     }

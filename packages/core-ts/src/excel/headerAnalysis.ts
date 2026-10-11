@@ -18,7 +18,7 @@ export function analyzeHeaders(rows: WorkbookCell[][], tables: ExcelTableHeader[
     if (range && endColumn === lastColumn && Number(range[2]) >= lastRow && lastRow > 1
       && rows[0].slice(0, lastColumn).every(cell => typeof cell.value === "string" && !cell.formula
         && cell.value.trim() !== "" && !/[\r\n]/.test(cell.value)
-        && !/^\s*(?:=|@display|[-:]+\s*$)/.test(cell.value) && !cell.value.includes("{:")
+        && !/^\s*(?:=|@meta|[-:]+\s*$)/.test(cell.value) && !cell.value.includes("{:")
         && isLiteralHeader(cell.value))) {
       return { headerRows: 1 };
     }

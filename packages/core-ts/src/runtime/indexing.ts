@@ -1,6 +1,6 @@
 import { isError, makeInternalError } from "./errors";
-import type { ErrorRuntimeValue, NumberRuntimeValue, RuntimeValue, RuntimeView } from "./types";
-import { dimensionForShape, isRuntimeView, makeRuntimeView } from "./view";
+import type { ErrorRuntimeValue, NumberRuntimeValue, RuntimeValue, RuntimeCollection } from "./types";
+import { isRuntimeCollection, makeRuntimeArray, makeRuntimeView } from "./view";
 
 export type RuntimeIndexAxis =
   | {
@@ -19,23 +19,23 @@ type NormalizedAxis =
   | { kind: "slice"; start: number; end: number };
 
 export function evaluateIndexing(
-  target: RuntimeValue | RuntimeView,
+  target: RuntimeValue | RuntimeCollection,
   axes: readonly RuntimeIndexAxis[],
   functionName: string,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const axisError = firstAxisError(axes);
   if (axisError) return axisError;
 
-  if (!isRuntimeView(target)) {
+  if (!isRuntimeCollection(target)) {
     return indexText(target, axes, functionName);
   }
 
   return indexView(target, axes, functionName);
 }
 
-export function viewIndexFunction(view: RuntimeView, indexes: readonly RuntimeValue[], functionName: string): RuntimeValue {
+export function viewIndexFunction(view: RuntimeCollection, indexes: readonly RuntimeValue[], functionName: string): RuntimeValue {
   if (indexes.length === 1) {
-    if (view.dimension === 2) {
+    if (view.kind === "view" && view.rowCount > 1 && view.colCount > 1) {
       return makeInternalError("invalid_function_call", { function: functionName, reason: "two_dimensional_view_requires_row_and_col" });
     }
     const index = normalizeScalarIndex(indexes[0], view.values.length, functionName, "index");
@@ -44,6 +44,9 @@ export function viewIndexFunction(view: RuntimeView, indexes: readonly RuntimeVa
   }
 
   if (indexes.length === 2) {
+    if (view.kind === "array") {
+      return makeInternalError("invalid_function_call", { function: functionName, reason: "array_requires_one_axis" });
+    }
     const row = normalizeScalarIndex(indexes[0], view.rowCount, functionName, "row");
     if (isError(row)) return row;
     const col = normalizeScalarIndex(indexes[1], view.colCount, functionName, "col");
@@ -77,22 +80,25 @@ function indexText(value: RuntimeValue, axes: readonly RuntimeIndexAxis[], funct
   return { kind: "string", value: characters.slice(range.start, range.end).join("") };
 }
 
-function indexView(view: RuntimeView, axes: readonly RuntimeIndexAxis[], functionName: string): RuntimeValue | RuntimeView {
+function indexView(view: RuntimeCollection, axes: readonly RuntimeIndexAxis[], functionName: string): RuntimeValue | RuntimeCollection {
   if (axes.length === 1) {
-    if (view.dimension === 2) {
+    if (view.kind === "view" && view.rowCount > 1 && view.colCount > 1) {
       return makeInternalError("invalid_function_call", { function: functionName, reason: "one_axis_indexing_requires_non_matrix_view" });
     }
     return indexOneDimensionalView(view, axes[0], functionName);
   }
 
   if (axes.length === 2) {
+    if (view.kind === "array") {
+      return makeInternalError("invalid_function_call", { function: functionName, reason: "array_requires_one_axis" });
+    }
     return indexTwoDimensionalView(view, axes[0], axes[1], functionName);
   }
 
   return makeInternalError("invalid_function_call", { function: functionName, reason: "invalid_axis_count", axes: axes.length });
 }
 
-function indexOneDimensionalView(view: RuntimeView, axis: RuntimeIndexAxis, functionName: string): RuntimeValue | RuntimeView {
+function indexOneDimensionalView(view: RuntimeCollection, axis: RuntimeIndexAxis, functionName: string): RuntimeValue | RuntimeCollection {
   if (axis.kind === "scalar") {
     const index = normalizeScalarIndex(axis.value, view.values.length, functionName, "index");
     if (isError(index)) return index;
@@ -102,18 +108,19 @@ function indexOneDimensionalView(view: RuntimeView, axis: RuntimeIndexAxis, func
   const range = normalizeSlice(axis, view.values.length, functionName);
   if (isRuntimeError(range)) return range;
   const values = view.values.slice(range.start, range.end);
+  if (view.kind === "array") return makeRuntimeArray(values);
   if (view.rowCount === 1) {
-    return makeRuntimeView(dimensionForShape(1, values.length), 1, values.length, values);
+    return makeRuntimeView(1, values.length, values);
   }
-  return makeRuntimeView(dimensionForShape(values.length, 1), values.length, 1, values);
+  return makeRuntimeView(values.length, 1, values);
 }
 
 function indexTwoDimensionalView(
-  view: RuntimeView,
+  view: Extract<RuntimeCollection, { kind: "view" }>,
   rowAxis: RuntimeIndexAxis,
   colAxis: RuntimeIndexAxis,
   functionName: string,
-): RuntimeValue | RuntimeView {
+): RuntimeValue | RuntimeCollection {
   const rowSelection = normalizeAxis(rowAxis, view.rowCount, functionName, "row");
   if (isRuntimeError(rowSelection)) return rowSelection;
   const colSelection = normalizeAxis(colAxis, view.colCount, functionName, "col");
@@ -133,7 +140,7 @@ function indexTwoDimensionalView(
     }
   }
 
-  return makeRuntimeView(dimensionForShape(rowIndexes.length, colIndexes.length), rowIndexes.length, colIndexes.length, values);
+  return makeRuntimeView(rowIndexes.length, colIndexes.length, values);
 }
 
 function normalizeAxis(

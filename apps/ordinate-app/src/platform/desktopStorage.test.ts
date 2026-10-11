@@ -17,6 +17,7 @@ async function session() {
   await writeFile(file, document(1));
   let text = document(0);
   const adapter = createDesktopStorageAdapter({
+    agent: { connection: async () => ({ state: "signed-out" }), login: async () => {}, models: async () => [], send: async () => {}, stop: async () => {}, openDiagnosticsFolder: async () => {}, openLink: async () => {}, startSystemDictation: async () => {}, stopSystemDictation: async () => {}, resolveProposal: async () => {}, onEvent: () => () => {} },
     windowChrome: "native",
     sessionId: "test-session",
     systemLocale: "en-US",

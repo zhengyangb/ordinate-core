@@ -42,7 +42,7 @@ describe("complete sheet print snapshot", () => {
     expect(() => snapshot('# Report\n<script>invalid note</script>\n\n| 1 |')).toThrow();
   });
   it("preserves number formatting, color, alignment, and cell > row > column overrides", () => {
-    const sheet = snapshot('# Report\n| @display | {::>,red} | {::>,red} | {::>,red} |\n| {::bold} | 1 {:.2f} | 2 {::normal,blue} | = A1 + B1 |');
+    const sheet = snapshot('# Report\n| @meta | {::>,red} | {::>,red} | {::>,red} |\n| {::bold} | 1 {:.2f} | 2 {::normal,blue} | = A1 + B1 |');
     const html = renderToStaticMarkup(<PrintSheet sheet={sheet} />);
     expect(html).toContain('text-align:right;font-weight:700;color:var(--display-color-red)">1.00');
     expect(html).toContain('text-align:right;font-weight:400;color:var(--display-color-blue)">2');

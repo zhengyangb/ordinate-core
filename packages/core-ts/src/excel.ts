@@ -1,7 +1,7 @@
 import { DocumentState, SheetState } from "./incremental";
 import { cloneDocumentState } from "./document_clone";
 import { configureImportedDocument, ImportHeaderError, type ImportSheetHeaders } from "./import_layout";
-import { escapeCellText, parseHierarchyLabel } from "./parser";
+import { escapeCellText, hasNonFormatFrontMatter, parseHierarchyLabel } from "./parser";
 import { stripCellDisplayMetadata } from "./runtime/parse";
 import type { RefSelector, RuntimeValue } from "./runtime/types";
 import { encodeNumberLiteral } from "./number_encoding";
@@ -240,7 +240,7 @@ export async function exportExcelWorkbook(document: DocumentState, options: Exce
     if (snapshot.sheets.some(sheet => sheet.cells.some(row => row.some(cell => cell.body.valid && cell.body.kind === "formula")))) {
       report.warn("semantic_difference", "Formulas recalculate using Excel's rules; results may differ.");
     }
-    if (document.frontMatter !== null) report.warn("metadata_omitted", "ORD front matter has no Excel representation.");
+    if (hasNonFormatFrontMatter(document.frontMatter)) report.warn("metadata_omitted", "ORD front matter has no Excel representation.");
     const sheets = snapshot.sheets.map((sheet, s) => {
       if (sheet.sourceBlocks.filter(block => block.kind === "table").length > 1) throw new ExcelFailure("unsupported_feature", "Multiple native table blocks cannot be silently omitted.", { sheetName: sheet.name });
       if (sheet.sourceBlocks.some(block => block.kind === "note" || (block.kind === "unparsed" && block.lines.some(line => line.trim())))) report.warn("metadata_omitted", "Sheet notes and non-table content are not exported.", { sheetName: sheet.name });

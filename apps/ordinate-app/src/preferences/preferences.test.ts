@@ -18,7 +18,7 @@ describe("user preferences, separate from documents", () => {
     const store = createPreferencesStore(memory);
     expect(store.getState().preferences.appearance).toBe("dark");
     store.getState().update({ dateTimeDisplay: "iso" });
-    expect(readPreferences(memory)).toEqual({ appearance: "dark", dateTimeDisplay: "iso" });
+    expect(readPreferences(memory)).toEqual({ appearance: "dark", dateTimeDisplay: "iso", columnWidthMode: "standard", agentDiagnosticLevel: "off", agentReasoningEffort: "medium" });
     expect(JSON.parse(memory.getItem(DISPLAY_STORAGE_KEY)!)).not.toHaveProperty("appearance");
   });
   it("synchronizes preferences from another window without overwriting them", () => {
@@ -29,7 +29,7 @@ describe("user preferences, separate from documents", () => {
     expect(second.getState().preferences.dateTimeDisplay).toBe("iso");
     second.getState().update({ appearance: "light" });
     first.getState().reload();
-    expect(first.getState().preferences).toEqual({ dateTimeDisplay: "iso", appearance: "light" });
+    expect(first.getState().preferences).toEqual({ dateTimeDisplay: "iso", appearance: "light", columnWidthMode: "standard", agentDiagnosticLevel: "off", agentReasoningEffort: "medium" });
   });
   it("rejects malformed storage and invalid choices early", () => {
     const memory = storage();
@@ -39,6 +39,8 @@ describe("user preferences, separate from documents", () => {
     expect(() => readPreferences(memory)).toThrow();
     const store = createPreferencesStore(null);
     expect(() => store.getState().update({ appearance: "invalid" as "auto" })).toThrow("appearance");
+    expect(() => store.getState().update({ columnWidthMode: "invalid" as "standard" })).toThrow("table width");
+    expect(() => store.getState().update({ agentReasoningEffort: "maximum" as "medium" })).toThrow("reasoning effort");
     expect(store.getState().preferences).toEqual(DEFAULT_PREFERENCES);
   });
   it("stores only editable preferences; region is always determined by the host", () => {
@@ -47,7 +49,36 @@ describe("user preferences, separate from documents", () => {
     const store = createPreferencesStore(memory);
     expect(store.getState().preferences).not.toHaveProperty("region");
     store.getState().update({ dateTimeDisplay: "iso" });
-    expect(JSON.parse(memory.getItem(DISPLAY_STORAGE_KEY)!)).toEqual({ dateTimeDisplay: "iso" });
+    expect(JSON.parse(memory.getItem(DISPLAY_STORAGE_KEY)!)).toEqual({ dateTimeDisplay: "iso", columnWidthMode: "standard", agentDiagnosticLevel: "off", agentReasoningEffort: "medium" });
+  });
+  it("persists wide table widths across windows", () => {
+    const memory = storage();
+    const first = createPreferencesStore(memory), second = createPreferencesStore(memory);
+    first.getState().update({ columnWidthMode: "wide" });
+    second.getState().reload();
+    expect(second.getState().preferences.columnWidthMode).toBe("wide");
+  });
+  it("migrates the old width names without changing their visual meaning", () => {
+    const memory = storage();
+    memory.setItem("ordinate-display-preferences", '{"columnWidthMode":"compact","agentReasoningEffort":"low"}');
+    expect(readPreferences(memory)).toMatchObject({ columnWidthMode: "standard", agentReasoningEffort: "low" });
+    memory.setItem("ordinate-display-preferences", '{"columnWidthMode":"standard"}');
+    expect(readPreferences(memory).columnWidthMode).toBe("wide");
+  });
+  it("persists the diagnostics opt-in across windows", () => {
+    const memory = storage();
+    const first = createPreferencesStore(memory), second = createPreferencesStore(memory);
+    first.getState().update({ agentDiagnosticLevel: "trace" });
+    second.getState().reload();
+    expect(second.getState().preferences.agentDiagnosticLevel).toBe("trace");
+    expect(() => second.getState().update({ agentDiagnosticLevel: "verbose" as "trace" })).toThrow("diagnostics level");
+  });
+  it("persists reasoning effort across windows", () => {
+    const memory = storage();
+    const first = createPreferencesStore(memory), second = createPreferencesStore(memory);
+    first.getState().update({ agentReasoningEffort: "low" });
+    second.getState().reload();
+    expect(second.getState().preferences.agentReasoningEffort).toBe("low");
   });
   it("does not publish changes when persistence fails", () => {
     const store = createPreferencesStore({ getItem: () => null, setItem: () => { throw new Error("Unavailable storage"); } });

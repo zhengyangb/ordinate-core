@@ -26,18 +26,71 @@ export interface Sheet {
 }
 
 export interface ParsedDocument {
-  /** Opaque front-matter block, including delimiters; null when absent. */
+  /** Front-matter block, including delimiters; only its format marker is interpreted. */
   frontMatter: string | null;
   sheets: Sheet[];
 }
 
-export class DocumentParseError extends Error {
-  readonly code = "front_matter_unterminated";
+export const ORD_FORMAT_VERSION = "0.1";
+const ORD_FORMAT_LINE = `ord-format: "${ORD_FORMAT_VERSION}"`;
 
-  constructor() {
-    super("YAML front matter must end with a standalone '---' or '...' line.");
+export class DocumentParseError extends Error {
+  readonly code: "front_matter_unterminated" | "invalid_ord_format" | "unsupported_ord_format" | "legacy_meta_frame";
+
+  constructor(
+    code: DocumentParseError["code"] = "front_matter_unterminated",
+    message = "YAML front matter must end with a standalone '---' or '...' line.",
+  ) {
+    super(message);
+    this.code = code;
     this.name = "DocumentParseError";
   }
+}
+
+function frontMatterPayloadStart(frontMatter: string): { offset: number; newline: string } {
+  const newlineIndex = frontMatter.indexOf("\n");
+  if (newlineIndex < 0) throw new DocumentParseError();
+  return {
+    offset: newlineIndex + 1,
+    newline: frontMatter[newlineIndex - 1] === "\r" ? "\r\n" : "\n",
+  };
+}
+
+function checkOrdFormat(frontMatter: string | null): boolean {
+  if (frontMatter === null) return false;
+  const { offset } = frontMatterPayloadStart(frontMatter);
+  const lines = frontMatter.slice(offset).split(/\r?\n/);
+  const formatLines = lines.flatMap((line, index) => /^ord-format[ \t]*:/.test(line) ? [index] : []);
+  if (formatLines.length === 0) return false;
+  if (formatLines.length !== 1 || formatLines[0] !== 0) {
+    throw new DocumentParseError("invalid_ord_format", "ord-format must occur exactly once, as the first front-matter content line.");
+  }
+  const version = /^ord-format:[ \t]*"(\d+\.\d+)"[ \t]*$/.exec(lines[0])?.[1];
+  if (version === undefined) {
+    throw new DocumentParseError("invalid_ord_format", "ord-format must be a quoted major.minor string on the first front-matter content line.");
+  }
+  if (version !== ORD_FORMAT_VERSION) {
+    throw new DocumentParseError("unsupported_ord_format", `Unsupported ORD format ${version}; this version supports ${ORD_FORMAT_VERSION}.`);
+  }
+  return true;
+}
+
+/** Add the canonical format marker while preserving all other front-matter bytes. */
+export function withOrdFormatFrontMatter(frontMatter: string | null): string {
+  if (frontMatter === null) return `---\n${ORD_FORMAT_LINE}\n---`;
+  if (checkOrdFormat(frontMatter)) return frontMatter;
+  const { offset, newline } = frontMatterPayloadStart(frontMatter);
+  return `${frontMatter.slice(0, offset)}${ORD_FORMAT_LINE}${newline}${frontMatter.slice(offset)}`;
+}
+
+/** True when front matter contains content beyond the canonical format marker. */
+export function hasNonFormatFrontMatter(frontMatter: string | null): boolean {
+  if (frontMatter === null) return false;
+  const { offset } = frontMatterPayloadStart(frontMatter);
+  const payload = frontMatter.slice(offset).replace(/\r?\n(?:---|\.\.\.)[ \t]*$/, "");
+  const lines = payload.split(/\r?\n/);
+  if (checkOrdFormat(frontMatter)) lines.shift();
+  return lines.some((line) => line.trim() !== "");
 }
 
 function splitDocumentEnvelope(text: string): { frontMatter: string | null; body: string } {
@@ -51,19 +104,21 @@ function splitDocumentEnvelope(text: string): { frontMatter: string | null; body
   if (!closing) throw new DocumentParseError();
   const end = closing.index + closing[0].length;
   const newlineLength = source.startsWith("\r\n", end) ? 2 : source[end] === "\n" ? 1 : 0;
-  return { frontMatter: source.slice(0, end), body: source.slice(end + newlineLength) };
+  const frontMatter = source.slice(0, end);
+  checkOrdFormat(frontMatter);
+  return { frontMatter, body: source.slice(end + newlineLength) };
 }
 
 export interface ParsedRow {
   /** Serialization-only row display metadata, removed from logical coordinates. */
-  displayControl?: string;
+  metaControl?: string;
   rawCells: string[];
   cells: string[];
   boundary: number | null;
   errors: string[];
 }
 
-export interface DisplayControlFrameResult {
+export interface MetaControlFrameResult {
   hasControlFrame: boolean;
   controlRow: ParsedRow | null;
   rows: ParsedRow[];
@@ -96,6 +151,9 @@ export function parseDocument(text: string): ParsedDocument {
     const tables = blocks
       .filter((block): block is TableBlock => block.kind === "table")
       .map((block) => block.table);
+    if (tables.some((table) => parseTableRow(table.rows[0]).cells[0] === "@display")) {
+      throw new DocumentParseError("legacy_meta_frame", "The @metadata control frame is no longer supported; use @meta.");
+    }
     const table = tables.length > 0 ? tables[0] : null;
     sheets.push({
       name: currentName,
@@ -195,17 +253,17 @@ export function parseTableRow(row: string): ParsedRow {
   return { rawCells, cells, boundary, errors };
 }
 
-// Strip serialization-only display control frame when top-left marker is "@display".
+// Strip the serialization-only metadata control frame when its top-left marker is "@meta".
 // Control frame consists of:
 // - first row: column display defaults (top-left marker cell + per-column display cells)
 // - first column: row display defaults
 // Returned rows are semantic table rows used by evaluation/validation/runtime.
-export function stripDisplayControlFrame(rows: ParsedRow[]): DisplayControlFrameResult {
+export function stripMetaControlFrame(rows: ParsedRow[]): MetaControlFrameResult {
   if (rows.length === 0) {
     return { hasControlFrame: false, controlRow: null, rows: [] };
   }
   const first = rows[0];
-  if (first.cells.length === 0 || first.cells[0] !== "@display") {
+  if (first.cells.length === 0 || first.cells[0] !== "@meta") {
     return { hasControlFrame: false, controlRow: null, rows };
   }
 
@@ -219,12 +277,12 @@ export function stripDisplayControlFrame(rows: ParsedRow[]): DisplayControlFrame
     if (nextBoundary !== null) {
       nextBoundary -= 1;
       if (nextBoundary < 0) {
-        nextErrors.push("display control frame boundary underflow");
+        nextErrors.push("metadata control frame boundary underflow");
         nextBoundary = null;
       }
     }
     stripped.push({
-      displayControl: row.rawCells[0] ?? "",
+      metaControl: row.rawCells[0] ?? "",
       rawCells: nextRaw,
       cells: nextCells,
       boundary: nextBoundary,

@@ -7,6 +7,15 @@ export {
 } from "./validator";
 
 export { formatDocument } from "./formatter";
+export { workbookSourceRevision, inspectWorkbook, validateWorkbook, evaluateWorkbook, editWorkbook,
+  type SourceRevision, type CapabilityResult, type CapabilityDiagnostic, type CapabilityFailure,
+  type Inspection, type ValidationReport, type EvaluationReport, type EditReport,
+  type CandidateSource, type PortableValue } from "./workbook_capabilities";
+export { CapabilityRequestError, WORKBOOK_LIMITS, decodeEditRequest, listWorkbookOperations, workbookEditSchema,
+  type CellQuery, type EvaluationOptions, type EditRequest, type WorkbookOperation,
+  type RowSelector, type ColumnSelector, type CellTarget, type RegionTarget,
+  type IndexWindow, type PortableFormatSpec } from "./capability_schema";
+export { importWorkbook, type WorkbookImportRequest, type WorkbookImportResult, type WorkbookImportReport } from "./import_capability";
 export { groupHeaderSpans } from "./presentation";
 export { parseSheetNote, serializeSheetNote, matchNoteListItem, SheetNoteError, type SheetNote, type SheetNotePosition, type NoteBlock, type NoteInline, type NoteDiagnostic } from "./sheet_notes";
 export { previewRowsToNote, type RowsToNotePreview } from "./core_note_rows";
@@ -42,7 +51,7 @@ export {
   type TableIR,
   type RowIR,
 } from "./ir";
-export { DocumentParseError, parseHierarchyLabel } from "./parser";
+export { DocumentParseError, ORD_FORMAT_VERSION, parseHierarchyLabel } from "./parser";
 
 export {
   evaluateDocument,
@@ -97,6 +106,9 @@ export {
   type FormulaReferenceSyntax,
   type RefSelector,
   type ReferenceExpr,
+  type RuntimeArray,
+  type RuntimeCollection,
+  type RuntimeView,
   type CellBodyState,
   type CellDisplayState,
   type FormatSpec,

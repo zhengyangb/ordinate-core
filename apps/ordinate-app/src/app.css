@@ -75,8 +75,7 @@
     --glass-bg: oklch(99.4% 0.002 250 / 0.76);
     --glass-border: oklch(100% 0 0 / 0.72);
     --glass-shadow: 0 24px 60px oklch(28% 0.01 245 / 0.14);
-    --chrome-canvas-seam: oklch(86.5% 0.004 242 / 0.52);
-    --chrome-canvas-seam-glow: oklch(100% 0 0 / 0.52);
+    --chrome-canvas-seam: color-mix(in oklab, var(--chrome-border) 60%, transparent);
     --menu-hover-bg: color-mix(
         in oklab,
         var(--chrome-bg) 78%,
@@ -226,8 +225,6 @@
     --glass-bg: oklch(31% 0.008 100 / 0.78);
     --glass-border: oklch(100% 0 0 / 0.1);
     --glass-shadow: 0 24px 60px oklch(10% 0.01 95 / 0.36);
-    --chrome-canvas-seam: oklch(34% 0.006 104 / 0.58);
-    --chrome-canvas-seam-glow: oklch(100% 0 0 / 0.05);
     --menu-hover-bg: color-mix(
         in oklab,
         var(--toolbar-pill) 76%,
@@ -527,10 +524,9 @@ textarea {
     background: var(--chrome-bg);
     backdrop-filter: blur(24px) saturate(1.08);
     color: var(--chrome-ink);
-    box-shadow: inset 0 -1px 0 var(--chrome-canvas-seam-glow);
 }
 
-.app-chrome.source-mode .tool-button:not(.source-button):not(.settings-button):not(.file-command-button) {
+.app-chrome.source-mode .tool-button:not(.source-button):not(.settings-button):not(.file-command-button):not(.agent-button.active) {
     color: color-mix(in oklab, var(--chrome-soft) 54%, transparent);
     filter: grayscale(0.95) saturate(0.55);
     opacity: 0.5;
@@ -546,8 +542,7 @@ textarea {
     min-height: var(--toolbar-height);
     padding: 0.38rem 0.72rem 0.34rem 0.9rem;
     gap: 0.75rem;
-    border-bottom: 1px solid
-        color-mix(in oklab, var(--chrome-border) 86%, transparent);
+    border-bottom: 1px solid var(--chrome-canvas-seam);
 }
 
 .app-chrome.source-mode .topbar {
@@ -740,13 +735,15 @@ textarea {
 }
 
 .source-button.active,
-.search-button.active {
+.search-button.active,
+.agent-button.active {
     color: var(--accent);
     filter: saturate(1.08);
 }
 
 .source-button.active .tool-icon,
-.search-button.active .tool-icon {
+.search-button.active .tool-icon,
+.agent-button.active .tool-icon {
     filter: brightness(1.04)
         drop-shadow(0 0 7px color-mix(in oklab, var(--accent) 52%, transparent))
         drop-shadow(
@@ -2118,7 +2115,6 @@ textarea {
     align-self: start;
     overflow: hidden;
     padding-bottom: var(--index-rail-gap);
-    transform: translateY(-5px);
     background: var(--sheet-surface);
 }
 
@@ -3019,7 +3015,7 @@ textarea {
     font-size: 0.81rem;
     font-weight: 500;
     line-height: 1.1;
-    white-space: nowrap;
+    white-space: normal;
     overflow: hidden;
     text-overflow: ellipsis;
     -webkit-user-select: none;
@@ -3032,10 +3028,13 @@ textarea {
 }
 
 .header-matrix-cell > span {
-    display: inline-block;
+    display: -webkit-box;
     min-width: 0;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 1.2;
     overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 
 .header-matrix-cell:hover {
@@ -4123,6 +4122,11 @@ textarea {
 
 .formula-source-button.is-editable {
     cursor: text;
+}
+
+.formula-source-button.is-readonly {
+    user-select: text;
+    -webkit-user-select: text;
 }
 
 .formula-source-input {

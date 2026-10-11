@@ -94,7 +94,7 @@ describe.each(formats)("RFC-0041 independent %s boundary cases", format => {
   });
 
   it.each([
-    "---", ":---", "---:", ":---:", "@display", "* Marketing", "** Child",
+    "---", ":---", "---:", ":---:", "@meta", "* Marketing", "** Child",
     "# Another sheet", "---\nkey: value\n---", "{: .2f}", "value {: bold}",
     "true", "false", "null", "error[div_by_zero]", "00123", "2026-10-03",
     "=1/0", "99 = 1/0", "+1+1", "@SUM(A1:A2)", "-2+3", '"literal quotes"',
@@ -111,15 +111,15 @@ describe.each(formats)("RFC-0041 independent %s boundary cases", format => {
   });
 
   it("does not interpret a whole row of separators or a first-cell control marker", () => {
-    const input = `@display${separator}{: .2f}\n---${separator}---\n* Parent${separator}true\n** Child${separator}=1/0`;
+    const input = `@meta${separator}{: .2f}\n---${separator}---\n* Parent${separator}true\n** Child${separator}=1/0`;
     expectStrings(unwrap(read(input)), [
-      ["@display", "{: .2f}"], ["---", "---"], ["* Parent", "true"], ["** Child", "=1/0"],
+      ["@meta", "{: .2f}"], ["---", "---"], ["* Parent", "true"], ["** Child", "=1/0"],
     ]);
   });
 
   it("keeps multiple escaping layers independent within the same field", () => {
-    const input = '"""quoted""\\|\\n\r\n{: bold} = 3 || @display"';
-    const field = '"quoted"\\|\\n\r\n{: bold} = 3 || @display';
+    const input = '"""quoted""\\|\\n\r\n{: bold} = 3 || @meta"';
+    const field = '"quoted"\\|\\n\r\n{: bold} = 3 || @meta';
     const document = unwrap(read(input));
     expectStrings(document, [[field]]);
     const restored = DocumentState.fromText(serializeDocumentState(document));
