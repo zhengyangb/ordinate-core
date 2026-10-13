@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exampleAssetUrl, exampleById, isMacPlatform, macDownloadUrl, shouldOfferExamples, type Example } from "./onlineModel";
+import { desktopPlatform, exampleAssetUrl, exampleById, macDownloadUrl, shouldOfferExamples, type Example } from "./onlineModel";
 import { CANONICAL_BLANK_DOCUMENT } from "../platform/blankDocument";
 import { buildExampleAssets } from "../../tooling/onlineExamples";
 import { ORD_FORMAT_VERSION } from "@ordinate/core";
@@ -32,8 +32,8 @@ describe("online examples and release configuration", () => {
     expect(() => exampleAssetUrl("../../private.ord", "/", "https://ordinate.example")).toThrow("Invalid example");
     expect(() => exampleAssetUrl("https://other.example/file.ord", "/", "https://ordinate.example")).toThrow();
   });
-  it.each([["MacIntel", 0, true], ["macOS", 0, true], ["MacIntel", 5, false], ["iPhone", 1, false], ["Win32", 0, false], ["Linux x86_64", 0, false]])("uses platform %s only for the Mac shortcut", (platform, touches, expected) => {
-    expect(isMacPlatform(platform as string, touches as number)).toBe(expected);
+  it.each([["MacIntel", 0, "mac"], ["macOS", 0, "mac"], ["MacIntel", 5, "other"], ["iPhone", 1, "other"], ["Win32", 0, "windows"], ["Linux x86_64", 0, "linux"]])("uses platform %s only for desktop availability copy", (platform, touches, expected) => {
+    expect(desktopPlatform(platform as string, touches as number)).toBe(expected);
   });
   it("keeps unpublished downloads explicit and rejects invalid release URLs", () => {
     expect(macDownloadUrl(undefined)).toBeNull();

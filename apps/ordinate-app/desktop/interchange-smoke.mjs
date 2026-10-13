@@ -64,7 +64,7 @@ const query = (win, expression) => win.webContents.executeJavaScript(expression)
 const buttonExpression = text => `[...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
 async function click(win, text) { await wait(win, `${buttonExpression(text)} && !${buttonExpression(text)}.disabled`); await query(win, `${buttonExpression(text)}.click()`); }
 async function nativeWindow(record, quitPhase = () => closing ? 'approved' : 'idle') {
-  const entry = createDocumentWindow({ record, rendererUrl: 'ordinate-test://app/', persist: async () => {},
+  const entry = createDocumentWindow({ record, rendererUrl: 'ordinate-test://app/', persist: async () => {}, offerExamplesOnLaunch: false,
     open: async (parent, filename) => {
       assert.equal(parent, entry.win);
       assert.ok(filename, 'A dropped ORD opens directly without a picker');

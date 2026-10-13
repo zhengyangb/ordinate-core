@@ -1,0 +1,33 @@
+{
+  "binary@0.3.0": {
+    "license": "MIT",
+    "copyright": "James Halliday",
+    "reason": "The published package declares MIT but omits a license text."
+  },
+  "buffers@0.1.1": {
+    "license": "MIT",
+    "copyright": "James Halliday",
+    "reason": "The published package has no license metadata or text. This exact upstream version was subsequently identified as MIT by the Debian node-buffers copyright record; review before upgrading.",
+    "source": "https://sources.debian.org/copyright/license/node-buffers/0.1.1-2/"
+  },
+  "chainsaw@0.1.0": {
+    "license": "MIT/X11",
+    "copyright": "James Halliday",
+    "reason": "The published package declares MIT/X11 but omits a license text."
+  },
+  "isarray@1.0.0": {
+    "license": "MIT",
+    "copyright": "Julian Gruber",
+    "reason": "The published package declares MIT but omits a license text."
+  },
+  "saxes@5.0.1": {
+    "license": "ISC",
+    "copyright": "Louis-Dominique Dubeau",
+    "reason": "The published package declares ISC but omits a license text."
+  },
+  "saxes@6.0.0": {
+    "license": "ISC",
+    "copyright": "Louis-Dominique Dubeau",
+    "reason": "The published package declares ISC but omits a license text."
+  }
+}

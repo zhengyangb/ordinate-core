@@ -21,6 +21,7 @@ const workspace = createWorkspaceSession(app.getPath("userData"));
 let initialized = false;
 let openQueue: Promise<unknown> = Promise.resolve();
 let startup: Promise<void>;
+let systemDocumentRequested = false;
 const focused = () => {
   const win = BrowserWindow.getFocusedWindow();
   return win ? windows.get(win.id) : undefined;
@@ -37,10 +38,10 @@ const quitting = createQuitCoordinator({
   quit: () => app.quit(), reportError,
 });
 
-async function createWindow(record: DocumentSession = { id: randomUUID(), filename: null, text: null }, parent?: BrowserWindow) {
+async function createWindow(record: DocumentSession = { id: randomUUID(), filename: null, text: null }, parent?: BrowserWindow, offerExamplesOnLaunch = false) {
   if (quitting.phase !== "idle") throw new Error("Finish the quit confirmation before opening another document.");
   const entry = createDocumentWindow({
-    record, rendererUrl, persist,
+    record, rendererUrl, persist, offerExamplesOnLaunch,
     open: chooseDocuments,
     newDocument: async parent => { await createWindow(undefined, parent); },
     createUntitled: async (text, parent, draftName) => { await createWindow({ id: randomUUID(), filename: null, text, draftName }, parent); },
@@ -79,6 +80,7 @@ async function openDocument(filename: string, parent?: BrowserWindow) {
 }
 
 function openSystemDocument(filename: string, parent?: BrowserWindow): Promise<DocumentWindow> {
+  systemDocumentRequested = true;
   const opening = openQueue.then(async () => { await startup; return openDocument(filename, parent); });
   openQueue = opening.catch(() => undefined);
   return opening;
@@ -118,6 +120,7 @@ function installMenu() {
     { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => run(() => createWindow()) },
     { label: "Open…", accelerator: "CmdOrCtrl+O", click: () => run(() => chooseDocuments(focused()?.win)) },
     ...(process.platform === "darwin" ? [{ role: "recentDocuments" as const, submenu: [{ role: "clearRecentDocuments" as const }] }] : []),
+    { id: "examples", label: "Examples…", click: () => command("examples") },
     { type: "separator" },
     { id: "save", label: "Save", accelerator: "CmdOrCtrl+S", click: () => command("save") },
     { id: "saveAs", label: "Save As…", accelerator: "CmdOrCtrl+Shift+S", click: () => command("saveAs") },
@@ -168,7 +171,7 @@ function installMenu() {
 function refreshMenu() {
   const entry = focused();
   const menu = Menu.getApplicationMenu();
-  for (const id of ["save", "saveAs", "import", "export", "duplicate", "rename", "move", "revert", "print"]) {
+  for (const id of ["examples", "save", "saveAs", "import", "export", "duplicate", "rename", "move", "revert", "print"]) {
     const item = menu?.getMenuItemById(id);
     if (item) item.enabled = !!entry && (id !== "revert" || !!entry.record.filename);
   }
@@ -188,13 +191,13 @@ async function start() {
       if (!target.startsWith(`${assets}${path.sep}`)) return new Response("Forbidden", { status: 403 });
       const response = await net.fetch(pathToFileURL(target).href);
       const headers = new Headers(response.headers);
-      headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'");
+      headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'");
       return new Response(response.body, { status: response.status, headers });
     });
   }
   installMenu();
-  const records = await workspace.read();
-  if (records.length) for (const record of records) await createWindow(record);
+  const { records, firstLaunch } = await workspace.read();
+  if (records.length) for (const [index, record] of records.entries()) await createWindow(record, undefined, firstLaunch && !systemDocumentRequested && index === 0);
   else await createWindow();
   initialized = true;
   await persist();

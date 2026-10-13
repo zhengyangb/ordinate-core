@@ -36,6 +36,7 @@ describe("User-facing native examples (the root files are the only source)", () 
     }
     const saved = serializeDocumentState(document), reopened = DocumentState.fromText(saved);
     expect(validateDocument(saved).errors).toEqual([]);
+    expect(serializeDocumentState(reopened), `${file}: native save must be idempotent`).toBe(saved);
     expect(reopened.evaluate()).toEqual(evaluated);
     expect(resolveDocumentPresentation(reopened)).toEqual(resolveDocumentPresentation(document));
     document.sheets.forEach((sheet, i) => {

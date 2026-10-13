@@ -74,7 +74,8 @@ export function createOnlineDraftStore(win: Window): LocalDraftStore {
       const { db, sessionId } = await prepare();
       const record = await transact<StoredDraft | undefined>(db, "readonly", store => store.get([sessionId, key]));
       if (record === undefined) return null;
-      if (record.sessionId !== sessionId || record.key !== key || typeof record.text !== "string" || typeof record.version !== "string" || !Number.isFinite(record.updatedAt)) {
+      if (record.sessionId !== sessionId || record.key !== key || typeof record.text !== "string" || typeof record.version !== "string" || !Number.isFinite(record.updatedAt)
+        || (record.untitledBaselineText !== undefined && typeof record.untitledBaselineText !== "string")) {
         throw new Error("The Online recovery draft is invalid.");
       }
       const { sessionId: _owner, ...draft } = record;

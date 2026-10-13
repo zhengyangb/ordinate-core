@@ -4,29 +4,25 @@ import { BLANK_DOCUMENT } from "../platform/blankDocument";
 import type { OnlineChrome, OnlineEditorCommands } from "../platform/experience";
 import { formatStorageFailure, useFileSessionStore } from "../store/fileSessionStore";
 import { InfoDialog } from "../components/InfoDialog";
+import { revealStartupWhenVisible } from "../platform/startupScreen";
 import { ExampleDialog } from "./ExampleDialog";
-import { afterVisiblePause } from "./visibleEntrance";
 import { remoteUrlFromFragment } from "./remoteWorkbook";
 import { useRemoteWorkbook } from "./useRemoteWorkbook";
-import { exampleAssetUrl, exampleById, isMacPlatform, macDownloadUrl, shouldOfferExamples, type Example } from "./onlineModel";
+import { desktopPlatform, exampleById, macDownloadUrl, readExampleAsset, shouldOfferExamples, type Example } from "./onlineModel";
 import "./online.css";
 
 const releaseUrl = macDownloadUrl(import.meta.env.VITE_MAC_DOWNLOAD_URL);
-const mac = isMacPlatform(navigator.platform, navigator.maxTouchPoints);
-
-async function readAsset(file: string, signal?: AbortSignal) {
-  const response = await fetch(exampleAssetUrl(file, import.meta.env.BASE_URL, location.href), { signal });
-  if (!response.ok) throw new Error(`Could not load ${file} (${response.status})`);
-  return response.text();
-}
+const platform = desktopPlatform(navigator.platform, navigator.maxTouchPoints);
 
 export default function OnlineApp() {
   const [gallery, setGallery] = useState(false);
   const [examples, setExamples] = useState<Example[]>([]);
+  const [catalogReady, setCatalogReady] = useState(false);
   const [ready, setReady] = useState(false);
+  const [launchReady, setLaunchReady] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [downloadNotice, setDownloadNotice] = useState(false);
+  const [availabilityNotice, setAvailabilityNotice] = useState<"assistant" | "desktop" | null>(null);
   const [selected, setSelected] = useState<{ example: Example; text: string } | null>(null);
   const commands = useRef<OnlineEditorCommands | null>(null);
   const operation = useRef(false);
@@ -59,8 +55,10 @@ export default function OnlineApp() {
 
   useEffect(() => {
     const abort = new AbortController();
-    void readAsset("catalog.json", abort.signal).then(text => setExamples(JSON.parse(text) as Example[]))
-      .catch((cause: unknown) => { if (!abort.signal.aborted) setError(String(cause)); });
+    void readExampleAsset("catalog.json", abort.signal).then(text => {
+      setExamples(JSON.parse(text) as Example[]);
+      setCatalogReady(true);
+    }).catch((cause: unknown) => { if (!abort.signal.aborted) { setError(String(cause)); setCatalogReady(true); } });
     return () => abort.abort();
   }, []);
   useLayoutEffect(() => { host.current!.inert = gallery || remote.isOpen; }, [gallery, remote.isOpen]);
@@ -77,48 +75,46 @@ export default function OnlineApp() {
     operation.current = true;
     setBusy(example?.id ?? "blank"); setError(null);
     try {
-      const text = example ? resetText ?? await readAsset(example.file) : BLANK_DOCUMENT;
+      const text = example ? resetText ?? await readExampleAsset(example.file) : BLANK_DOCUMENT;
       // Only one modal owns focus: any replacement confirmation belongs to App.
       setGallery(false);
-      const accepted = await commands.current.replaceDocument(text, example?.title ?? "Untitled", example ? "content" : "new");
+      // Built-in examples start new documents from pristine templates; imported
+      // content remains a dirty working copy that must be saved explicitly.
+      const accepted = await commands.current.replaceDocument(text, example?.title ?? "Untitled", "new");
       if (accepted) setSelected(example ? { example, text } : null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { operation.current = false; setBusy(null); }
   }, []);
 
-  useEffect(() => {
-    if (!ready || launchHandled.current) return;
-    if (openRemoteFragment()) return;
-    if (!examples.length) return;
+  useLayoutEffect(() => {
+    if (!ready || !catalogReady || launchHandled.current) return;
+    if (openRemoteFragment()) { setLaunchReady(true); return; }
     const url = new URL(location.href);
     const id = url.searchParams.get("example");
     if (id) {
       launchHandled.current = true;
       // Reload recovers edits instead of reopening the original template.
       url.searchParams.delete("example"); history.replaceState(null, "", url);
-      try { void openDocument(exampleById(examples, id)); }
-      catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      try {
+        const opening = openDocument(exampleById(examples, id));
+        if (pristine) void opening.finally(() => setLaunchReady(true));
+        else setLaunchReady(true);
+      } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setLaunchReady(true); }
       return;
     }
-    if (!pristine || interacted.current) { launchHandled.current = true; return; }
-    // A background tab must not spend the entrance before the user sees it.
-    // Cancel if content changes or the user starts working during the pause.
-    return afterVisiblePause(() => {
-      // A hash-only navigation does not remount the editor. It can claim the
-      // launch while this invitation's visible pause is still pending.
-      if (launchHandled.current || interacted.current) return;
-      launchHandled.current = true;
-      setGallery(true);
-    });
-  }, [examples, ready, pristine, openDocument, openRemoteFragment]);
+    launchHandled.current = true;
+    if (pristine && !interacted.current) setGallery(true);
+    setLaunchReady(true);
+  }, [examples, ready, catalogReady, pristine, openDocument, openRemoteFragment]);
+  useLayoutEffect(() => { if (launchReady) return revealStartupWhenVisible(); }, [launchReady]);
 
-  const downloadMac = () => {
-    if (releaseUrl) window.open(releaseUrl, "_blank", "noopener,noreferrer");
-    else setDownloadNotice(true);
-  };
   const online: OnlineChrome = {
-    isMac: mac, downloadMac,
-    showExamples: () => { launchHandled.current = true; setGallery(true); },
+    desktopPlatform: platform,
+    showDesktopAvailability: () => {
+      if (platform === "mac" && releaseUrl) window.open(releaseUrl, "_blank", "noopener,noreferrer");
+      else setAvailabilityNotice("desktop");
+    },
+    showAssistantAvailability: () => setAvailabilityNotice("assistant"),
     openFromLink: () => { launchHandled.current = true; setGallery(false); setError(null); remote.openFromLink(); },
     resetExample: selected && file === null && draftName === selected.example.title
       ? () => { void openDocument(selected.example, selected.text); } : undefined,
@@ -126,8 +122,9 @@ export default function OnlineApp() {
   const beginWorking = () => { interacted.current = true; };
 
   return <>
-    <div ref={host} className="online-editor-host" onPointerDownCapture={beginWorking} onKeyDownCapture={beginWorking}>
-      <App initialText={BLANK_DOCUMENT} online={online} onSessionReady={receiveCommands} />
+    <div ref={host} className="app-editor-host" onPointerDownCapture={beginWorking} onKeyDownCapture={beginWorking}>
+      <App initialText={BLANK_DOCUMENT} online={online} onSessionReady={receiveCommands}
+        onShowExamples={() => { launchHandled.current = true; setGallery(true); }} />
     </div>
     {gallery && <ExampleDialog examples={examples} busy={busy} error={error} onClose={closeGallery}
       onOpen={example => { void openDocument(example); }} onBlank={() => { void openDocument(); }}
@@ -137,6 +134,12 @@ export default function OnlineApp() {
       if (startupError) location.reload();
       else { setError(null); remote.clearError(); }
     }}><p>{error ?? startupError ?? remote.detachedError}</p></InfoDialog>}
-    {downloadNotice && <InfoDialog title="Mac download isn’t available yet" onClose={() => setDownloadNotice(false)}><p>The Mac app hasn’t been published. You can keep working in Ordinate.</p></InfoDialog>}
+    {availabilityNotice && <InfoDialog
+      title={availabilityNotice === "assistant" ? "AI Assistant is in the desktop app" : platform === "mac" ? "Mac app isn’t available yet" : `${platform === "windows" ? "Windows" : platform === "linux" ? "Linux" : "Desktop"} app · Coming soon`}
+      onClose={() => setAvailabilityNotice(null)}
+      action={platform === "mac" && releaseUrl && availabilityNotice === "assistant" ? { label: "Get Mac app", onClick: () => { window.open(releaseUrl, "_blank", "noopener,noreferrer"); setAvailabilityNotice(null); } } : undefined}
+    ><p>{availabilityNotice === "assistant"
+      ? platform === "mac" ? releaseUrl ? "To work with your workbook using AI, open it in Ordinate for Mac." : "AI Assistant comes with Ordinate for Mac. The Mac app hasn’t been published yet." : `AI Assistant is available in the desktop app. The ${platform === "windows" ? "Windows" : platform === "linux" ? "Linux" : "desktop"} version is coming soon.`
+      : platform === "mac" ? "The Mac app hasn’t been published yet. You can keep working in Ordinate Online." : `Ordinate for ${platform === "windows" ? "Windows" : platform === "linux" ? "Linux" : "your platform"} is coming soon. You can keep working in Ordinate Online.`}</p></InfoDialog>}
   </>;
 }

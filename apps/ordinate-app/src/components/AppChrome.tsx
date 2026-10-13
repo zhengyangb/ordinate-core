@@ -25,6 +25,7 @@ export type FileStatusTone = "neutral" | "dirty" | "saving" | "warning" | "error
 
 type AppChromeProps = {
   online?: OnlineChrome;
+  onShowExamples?: () => void;
   onImportFile?: () => void;
   titlePlacement?: "toolbar" | "native";
   mode: "table" | "source";
@@ -150,6 +151,7 @@ function positionSheetRenameError(target: DOMRect): { top: number; left: number 
 
 export default function AppChrome({
   online,
+  onShowExamples,
   onImportFile,
   titlePlacement = "toolbar",
   mode,
@@ -532,7 +534,8 @@ export default function AppChrome({
   const applicationGroups: ApplicationMenuGroup[] = [
     { label: "File", items: [
       { label: "New document", run: onNewFile, disabled: agentPreviewActive, icon: <NewDocumentIcon /> },
-      ...(online ? [{ label: "Examples…", run: online.showExamples }, ...(online.resetExample ? [{ label: "Reset example…", run: online.resetExample }] : [])] : []),
+      ...(onShowExamples ? [{ label: "Examples…", run: onShowExamples }] : []),
+      ...(online?.resetExample ? [{ label: "Reset example…", run: online.resetExample }] : []),
       { label: "Open…", run: onOpenFile, disabled: agentPreviewActive, icon: <OpenIcon /> },
       ...(online ? [{ label: "Open from link…", run: online.openFromLink }] : []),
       { label: "Save", run: onSaveFile, icon: <SaveIcon /> },
@@ -552,7 +555,7 @@ export default function AppChrome({
       { label: "Sheet setup…", run: onToggleSheetSetup, disabled: agentPreviewActive || mode !== "table" || !activeSheet, icon: <SheetSetupIcon /> },
     ] },
     { label: "Help", items: [
-      ...(online ? [{ label: "Get Mac app…", run: online.downloadMac }] : []),
+      ...(online ? [{ label: online.desktopPlatform === "mac" ? "Get Mac app…" : "Desktop app · Coming soon…", run: online.showDesktopAvailability }] : []),
       { label: "About Ordinate", run: () => setAboutOpen(true) },
     ] },
   ];
@@ -727,23 +730,24 @@ export default function AppChrome({
           </div>
         </nav>
 
-        {online?.isMac && <MacDownloadButton onClick={online.downloadMac} />}
+        {online && <MacDownloadButton platform={online.desktopPlatform} onClick={online.showDesktopAvailability} />}
         <div className="toolbar-actions">
           <SearchButton />
-          {!online && <button
+          <button
             className={agentOpen ? "tool-button agent-button active" : "tool-button agent-button"}
             type="button"
             disabled={agentPreviewActive}
-            onClick={onToggleAgent}
-            aria-label={agentOpen ? (agentDebugMode ? "Close assistant simulator" : "Close AI assistant") : (agentDebugMode ? "Open assistant simulator" : "Open AI assistant")}
-            aria-expanded={agentOpen}
-            aria-controls="ordinate-agent-panel"
-            onMouseEnter={(event) => onTooltipEnter(agentDebugMode ? "Assistant simulator" : "AI assistant", event.currentTarget)}
+            onClick={online ? online.showAssistantAvailability : onToggleAgent}
+            aria-label={online ? "AI assistant · Desktop app" : agentOpen ? (agentDebugMode ? "Close assistant simulator" : "Close AI assistant") : (agentDebugMode ? "Open assistant simulator" : "Open AI assistant")}
+            aria-expanded={online ? undefined : agentOpen}
+            aria-controls={online ? undefined : "ordinate-agent-panel"}
+            aria-haspopup={online ? "dialog" : undefined}
+            onMouseEnter={(event) => onTooltipEnter(online ? "AI assistant · Desktop app" : agentDebugMode ? "Assistant simulator" : "AI assistant", event.currentTarget)}
             onMouseLeave={(event) => onTooltipRelease(event.currentTarget)}
-            onFocus={(event) => onTooltipEnter(agentDebugMode ? "Assistant simulator" : "AI assistant", event.currentTarget)}
+            onFocus={(event) => onTooltipEnter(online ? "AI assistant · Desktop app" : agentDebugMode ? "Assistant simulator" : "AI assistant", event.currentTarget)}
             onBlur={(event) => onTooltipRelease(event.currentTarget)}
             onMouseDown={(event) => onTooltipSuppress(event.currentTarget)}
-          ><span className="tool-icon"><SparklesIcon /></span></button>}
+          ><span className="tool-icon"><SparklesIcon /></span></button>
           <button
             className={mode === "source" ? "tool-button source-button active" : "tool-button source-button"}
             disabled={agentPreviewActive}

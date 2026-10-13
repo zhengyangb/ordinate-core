@@ -8,4 +8,4 @@
 .mac-download-button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 .topbar > .mac-download-button { margin-right: .45rem; }
 .topbar > .mac-download-button + .toolbar-actions { padding-left: .45rem; border-left: 1px solid var(--chrome-border); }
-@media (max-width: 1000px) { .topbar > .mac-download-button span { display: none; } .topbar > .mac-download-button { padding: .3rem; width: 1.85rem; } }
+@media (max-width: 660px) { .topbar > .mac-download-button span { display: none; } .topbar > .mac-download-button { padding: .3rem; width: 1.85rem; } }

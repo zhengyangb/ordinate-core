@@ -216,3 +216,19 @@ gate fails if the engine is missing; it never silently skips. It uses disposable
 files and an isolated profile, poisons formula caches, and checks recomputed
 values after selected input edits. Calc/Excel differences are recorded separately
 as oracle calibration checks, not counted as proof of formula compatibility.
+
+## License
+
+Ordinate's own code is licensed under [MIT](LICENSE), copyright (c) 2026
+[@zhengyangb](https://github.com/zhengyangb). Third-party components keep their
+own licenses. Web and desktop builds generate third-party notices from installed
+runtime dependencies and lockfiles; the CLI build does the same for its bundled
+dependencies. A new dependency with a missing or unreviewed license stops the
+build. See the [app packaging notes](apps/ordinate-app/README.md#third-party)
+for the shipped notice locations.
+
+After changing an npm dependency, update its package lockfile and install it,
+then run the relevant build. The generator reads the new installed package's
+license and notice files, so the shipped list updates automatically. It refuses
+unknown license expressions or missing license text; exact-version exceptions
+are reviewed in `scripts/license-text-overrides.json` rather than guessed.

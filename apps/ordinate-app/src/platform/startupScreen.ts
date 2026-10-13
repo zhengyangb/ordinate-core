@@ -11,6 +11,18 @@ export function finishStartup() {
   performance.mark("ordinate:interactive");
 }
 
+/** Keep a prepared first view behind the shell until its tab becomes visible. */
+export function revealStartupWhenVisible() {
+  if (document.visibilityState === "visible") { finishStartup(); return; }
+  const reveal = () => {
+    if (document.visibilityState !== "visible") return;
+    document.removeEventListener("visibilitychange", reveal);
+    finishStartup();
+  };
+  document.addEventListener("visibilitychange", reveal);
+  return () => document.removeEventListener("visibilitychange", reveal);
+}
+
 export function failStartup(error: unknown) {
   const screen = document.getElementById("startup-screen");
   if (!screen) throw error;

@@ -27,6 +27,7 @@ const bridge: DesktopBridge = {
   windowChrome: "native",
   sessionId,
   systemLocale,
+  offerExamplesOnLaunch: process.argv.includes("--ordinate-offer-examples"),
   restoreDocument: () => ipcRenderer.invoke("document:restore"),
   openDocument: (file) => {
     if (!file) return ipcRenderer.invoke("document:open");

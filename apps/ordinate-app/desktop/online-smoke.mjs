@@ -11,27 +11,6 @@ export async function checkOnline(win, {query, wait, capture}) {
   await win.webContents.debugger.sendCommand('Page.enable');
   await win.webContents.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {source:`(() => {
     const trace = window.__testStartup = {emptySheetRendered:false,reveal:null};
-    const entrance = window.__testEntrance = {readyAt:null,enteredAt:null,visibleAt:document.visibilityState==='visible'?performance.now():null,visible:null,paintedFrames:0,opacity:[]};
-    document.addEventListener('visibilitychange',()=>{
-      if (document.visibilityState==='visible') entrance.visibleAt=performance.now();
-    });
-    const invitationObserver = new MutationObserver(() => {
-      if (entrance.readyAt===null && document.documentElement?.dataset.startup==='ready') {
-        entrance.readyAt=performance.now();
-        requestAnimationFrame(() => { if (!document.querySelector('.online-example-dialog')) entrance.paintedFrames++; });
-      }
-      if (document.querySelector('.online-example-dialog')) {
-        entrance.enteredAt=performance.now(); entrance.visible=document.visibilityState;
-        invitationObserver.disconnect();
-        const backdrop=document.querySelector('.app-modal-backdrop');
-        const sample=()=>{
-          const opacity=Number(getComputedStyle(backdrop).opacity); entrance.opacity.push(opacity);
-          if (opacity<1) requestAnimationFrame(sample);
-        };
-        sample();
-      }
-    });
-    invitationObserver.observe(document,{childList:true,subtree:true,attributes:true});
     const observer = new MutationObserver(() => {
       if (document.querySelector('.empty-state h3')?.textContent==='No sheet selected') trace.emptySheetRendered=true;
       if (document.documentElement?.dataset.startup==='ready') {
@@ -60,37 +39,29 @@ export async function checkOnline(win, {query, wait, capture}) {
     await wait(win,`[...document.querySelectorAll('[role="dialog"] button')].some(b=>b.textContent===${JSON.stringify(text)})`);
     await query(win,`[...document.querySelectorAll('[role="dialog"] button')].find(b=>b.textContent===${JSON.stringify(text)}).click()`);
   };
-  // Real page visibility, not a mocked focus flag: hidden tabs must not mount
-  // the invitation or use up its animation before activation.
+  // A hidden tab may prepare the invitation, but must keep the startup shell
+  // until activation so the first visible view is already complete.
   await win.loadURL('ordinate-test://web/online.html');
   assert.equal(await query(win,`document.visibilityState`),'hidden');
-  await new Promise(resolve=>setTimeout(resolve,400));
-  assert.equal(await query(win,`!!document.querySelector('.online-example-dialog')`),false,'No invitation in the background');
+  await wait(win,`document.querySelector('.online-example-dialog')`);
+  assert.equal(await query(win,`document.documentElement.dataset.startup`),'loading','Prepared invitation stays behind the startup shell');
   win.show(); win.focus();
   await wait(win,`document.querySelector('.online-example:not(:disabled)')`);
   await checkStartup('Cold Online startup');
-  const entrance=await query(win,`window.__testEntrance`);
-  assert.equal(entrance.visible,'visible','Entrance starts only after activation');
-  assert.equal(entrance.paintedFrames,1,'One visible editor paint precedes the invitation');
-  const visiblePause=entrance.enteredAt-Math.max(entrance.readyAt,entrance.visibleAt);
-  assert.ok(visiblePause>=400&&visiblePause<700,`A 400ms visible pause follows activation/readiness: ${JSON.stringify(entrance)}`);
+  assert.equal(await query(win,`!!document.querySelector('.online-example-dialog')`),true,'The invitation is part of the first visible view');
   assert.deepEqual(await query(win,`(() => {
     const backdrop=getComputedStyle(document.querySelector('.app-modal-backdrop'));
     const dialog=getComputedStyle(document.querySelector('.online-example-dialog'));
     return [backdrop.animationDuration,dialog.animationDuration,dialog.animationDelay];
   })()`),['0.24s','0.2s','0.04s'],'Backdrop and dialog settle together in 240ms');
-  await wait(win,`window.__testEntrance.opacity.at(-1)===1`);
-  const opacity=await query(win,`window.__testEntrance.opacity`);
-  assert.ok(opacity[0]<1&&opacity.length>2,'Backdrop fades in rather than popping in');
-  assert.ok(opacity.every((value,i)=>i===0||value>=opacity[i-1]),'Backdrop fades smoothly without reversing');
   win.webContents.setBackgroundThrottling(false);
   await query(win,`document.documentElement.dataset.theme='light'`);
   assert.equal(await query(win,`document.querySelectorAll('.online-example').length`),8);
   assert.equal(await query(win,`document.querySelectorAll('.online-featured').length`),1);
   await wait(win,`document.activeElement?.textContent==='Start with an example'`);
-  assert.ok(await query(win,`getComputedStyle(document.querySelector('.online-editor-host')).visibility==='visible'&&document.querySelector('.ag-cell')`),'Editor remains visible behind the dialog');
+  assert.ok(await query(win,`getComputedStyle(document.querySelector('.app-editor-host')).visibility==='visible'&&document.querySelector('.ag-cell')`),'Editor remains visible behind the dialog');
   assert.equal(await query(win,`!!document.querySelector('.online-brand')||!!document.querySelector('.online-continue')`),false);
-  assert.equal(await query(win,`document.querySelector('.online-editor-host').inert`),true);
+  assert.equal(await query(win,`document.querySelector('.app-editor-host').inert`),true);
   await capture(win,'online-gallery-desktop');
   await query(win,`document.querySelector('[role="radio"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))`);
   await wait(win,`document.querySelectorAll('.online-example').length===4`);
@@ -215,7 +186,7 @@ export async function checkOnline(win, {query, wait, capture}) {
     await capture(win,'online-guide-'+name.toLowerCase().replaceAll(' ','-'));
   }
   await menu('File','Examples…');
-  await query(win,`document.querySelector('[aria-label="Open Mortgage"]').click()`); await confirm('Replace document'); await wait(win,ready);
+  await query(win,`document.querySelector('[aria-label="Open Mortgage"]').click()`); await wait(win,ready);
   assert.equal(await query(win,`document.querySelector('.app-title-name').textContent`),'Mortgage');
   assert.equal(await query(win,`document.querySelectorAll('.sheet-tab').length`),5);
   await capture(win,'online-mortgage-editor');
@@ -231,12 +202,26 @@ export async function checkOnline(win, {query, wait, capture}) {
   await menu('File','Examples…');
   await wait(win,`document.querySelector('.online-example-dialog')`);
   await query(win,`document.querySelector('[aria-label="Open Company report"]').click()`);
+  await wait(win,`${ready} && document.querySelector('.app-title-name')?.textContent==='Company report'`);
+  assert.equal(await query(win,`!!document.querySelector('[role="dialog"]')`),false,'Untouched examples switch without replacement confirmation');
+  await query(win,`document.querySelector('.source-button').click()`);
+  await wait(win,`document.querySelector('.source-shell textarea')`);
+  await query(win,`(() => { const input=document.querySelector('.source-shell textarea');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,input.value+'\\n\\nEdited example.');
+    input.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('.source-button').click(); })()`);
+  await wait(win,ready);
+  await menu('File','Examples…');
+  await query(win,`document.querySelector('[aria-label="Open DCF valuation"]').click()`);
   await confirm('Keep editing'); await wait(win,ready);
-  assert.equal(await query(win,`document.querySelector('.app-title-name').textContent`),'Mortgage','Cancel protects current document');
-  for (const label of ['Company report','DCF valuation','Project investment','Personal budget','Subscription business','Inventory replenishment','Time and invoices']) {
+  assert.equal(await query(win,`document.querySelector('.app-title-name').textContent`),'Company report','Cancel protects edited examples');
+  await menu('File','Examples…');
+  await query(win,`document.querySelector('[aria-label="Open DCF valuation"]').click()`);
+  await confirm('Replace document'); await wait(win,ready);
+  assert.equal(await query(win,`document.querySelector('.app-title-name').textContent`),'DCF valuation');
+  for (const label of ['Project investment','Personal budget','Subscription business','Inventory replenishment','Time and invoices']) {
     await menu('File','Examples…');
     await query(win,`document.querySelector('[aria-label=${JSON.stringify('Open '+label)}]').click()`);
-    await confirm('Replace document'); await wait(win,ready);
+    await wait(win,ready);
     assert.equal(await query(win,`document.querySelector('.app-title-name').textContent`),label);
     assert.equal(await query(win,`!!document.querySelector('.error[role="alert"]')`),false,label);
   }
@@ -282,6 +267,9 @@ export async function checkOnline(win, {query, wait, capture}) {
   await wait(win,`${ready} && document.querySelector('.app-title-name')?.textContent==='Mortgage'`);
   assert.equal(await query(win,`document.querySelector('.app-title-name').textContent`),'Mortgage','Known example deep link opens directly');
   assert.equal(await query(win,`new URL(location.href).searchParams.has('example')`),false);
+  await win.loadURL('ordinate-test://web/online.html?example=project-investment');
+  await wait(win,`${ready} && document.querySelector('.app-title-name')?.textContent==='Project investment'`);
+  assert.equal(await query(win,`!!document.querySelector('[role="dialog"]')`),false,'Untouched deep-linked examples switch without confirmation');
   win.setSize(390,780); await wait(win,`innerWidth===390`);
   await query(win,`document.documentElement.dataset.theme='dark'`);
   await query(win,`document.querySelector('[aria-label="Ordinate menu"]').click()`); await wait(win,`document.querySelector('.application-menu')`);
@@ -299,7 +287,7 @@ export async function checkOnline(win, {query, wait, capture}) {
   await new Promise(resolve=>setTimeout(resolve,900));
   assert.ok((await query(win,currentOnlineDrafts)).every(record=>record.text===null),'Failed recovery must not overwrite a saved draft with an empty document');
   win.webContents.debugger.detach();
-  console.log('Online passed: visible-only 400ms pause, painted editor, smooth 240ms fade, reduced motion, command cursor + wordmark hover, guided workbook + 8 models, modal layout at 1094/918/390/320px, light/dark, keyboard navigation, cancel/replace, draft restoration, isolation and deep links.');
+  console.log('Online passed: prepared first view without delayed invitation, reduced motion, command cursor + wordmark hover, guided workbook + 8 models, modal layout at 1094/918/390/320px, light/dark, keyboard navigation, cancel/replace, draft restoration, isolation and deep links.');
 }
 
 export async function checkStaticOnline(win, base, {query, wait, capture}) {

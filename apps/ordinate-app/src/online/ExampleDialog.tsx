@@ -10,8 +10,8 @@ function Preview({ example }: { example: Example }) {
   </table></div>;
 }
 
-export function ExampleDialog({ examples, busy, error, onClose, onOpen, onBlank, onOpenFile }: {
-  examples: Example[]; busy: string | null; error: string | null;
+export function ExampleDialog({ examples, loading = false, busy, error, onClose, onOpen, onBlank, onOpenFile }: {
+  examples: Example[]; loading?: boolean; busy: string | null; error: string | null;
   onClose: () => void; onOpen: (example: Example) => void; onBlank: () => void; onOpenFile: () => void;
 }) {
   const [category, setCategory] = useState("All");
@@ -27,6 +27,7 @@ export function ExampleDialog({ examples, busy, error, onClose, onOpen, onBlank,
         <button className="online-dialog-close" aria-label="Close examples" onClick={onClose}>×</button>
       </header>
       <div className="online-gallery-content">
+        {loading && <p className="online-gallery-loading" role="status">Loading examples…</p>}
         {featured && <button className="online-featured" disabled={!!busy} onClick={() => onOpen(featured)} aria-label={`Open ${featured.title}`}>
           <div className="online-featured-copy"><span className="online-featured-kicker">Guided workbook · {featured.sheets} sheets</span>
             <h3>{featured.title}</h3><p>{featured.description}</p><span className="online-featured-action">Explore Ordinate <span aria-hidden="true">→</span></span></div>

@@ -39,7 +39,7 @@ export type StorageAdapter = {
   watch?: (file: FileReference, callback: (error: StorageFailure | null) => void) => () => void;
 };
 
-export type DesktopCommand = "open" | "save" | "saveAs" | "undo" | "redo" | "import" | "export" | "print" | "settings";
+export type DesktopCommand = "open" | "save" | "saveAs" | "undo" | "redo" | "import" | "export" | "print" | "settings" | "examples";
 export type DocumentRequest = { id: string; kind: "flush" | "save" | "move" | "open" | "duplicate" | "saveAs" | "revert" };
 export type DocumentWrite = { file: FileReference | null; text: string; version: string | null };
 /** Durability of a recovery draft does not mean the user has saved a named file. */
@@ -56,6 +56,7 @@ export type DesktopBridge = Pick<StorageAdapter, "availability" | "open" | "save
   readonly windowChrome: "native";
   readonly sessionId: string;
   readonly systemLocale: string;
+  readonly offerExamplesOnLaunch: boolean;
   restoreDocument: () => Promise<{ snapshot: StorageResult<FileSnapshot> | null; text: string | null; draftName?: string }>;
   openDocument: (file?: File) => Promise<void>;
   newDocument: () => Promise<void>;

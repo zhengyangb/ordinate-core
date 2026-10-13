@@ -305,10 +305,11 @@ function axisRowSelectionEqual(
   );
 }
 
-export default function App({ initialText, online, onSessionReady }: {
+export default function App({ initialText, online, onSessionReady, onShowExamples }: {
   initialText?: string;
   online?: import("./platform/experience").OnlineChrome;
   onSessionReady?: (commands: import("./platform/experience").OnlineEditorCommands) => void;
+  onShowExamples?: () => void;
 } = {}) {
   const { preferences, update: updatePreferences, systemLocale, displayCell } = usePreferences();
   const browserDebugAgent = useMemo(() => !window.ordinateDesktop && !online ? createBrowserDebugAgentBridge() : null, [online]);
@@ -3459,9 +3460,12 @@ export default function App({ initialText, online, onSessionReady }: {
     notes.begin(currentSheetState.sheetId, position);
   };
   const onlineChrome = useMemo(() => online ? { ...online,
-    showExamples: () => { prepareForPersistence(); online.showExamples(); },
     openFromLink: () => { prepareForPersistence(); online.openFromLink(); },
   } : undefined, [online, prepareForPersistence]);
+  const showExamples = useCallback(() => {
+    prepareForPersistence();
+    onShowExamples?.();
+  }, [onShowExamples, prepareForPersistence]);
   const interchange = useInterchangeController(prepareForPersistence, onlineChrome?.openFromLink);
   const openSettings = useCallback(() => {
     prepareForPersistence();
@@ -3483,6 +3487,7 @@ export default function App({ initialText, online, onSessionReady }: {
     initialText, mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence,
     assistantWorking,
     hasPendingCellEdit: formulaInputMode === "edit" || notes.draft !== null,
+    onExamples: onShowExamples ? showExamples : undefined,
     onImport: interchange.openImport, onExport: interchange.openExport, onPrint: printing.openPrint, onBrowserOpen: interchange.openBrowserFile, onSettings: openSettings,
   });
   const [initialGridReady, setInitialGridReady] = useState(false);
@@ -3490,7 +3495,7 @@ export default function App({ initialText, online, onSessionReady }: {
   const initialViewReady = initializationStatus === "ready"
     && (mode === "source" || !shouldRenderGrid || initialGridReady);
   useEffect(() => {
-    if (initializationStatus === "failed" || initialViewReady) finishStartup();
+    if (initializationStatus === "failed" || (initialViewReady && !onSessionReady)) finishStartup();
     // Online's invitation uses the same readiness boundary as the startup reveal,
     // not merely storage completion (which can precede the first table layout).
     if (initialViewReady) onSessionReady?.({ replaceDocument: handleOpenDocumentText, openFile: handleOpenFile });
@@ -3665,12 +3670,13 @@ export default function App({ initialText, online, onSessionReady }: {
       <div className={["app-window", mode === "source" ? "source-mode" : "", agentPreview ? "has-agent-preview" : ""].filter(Boolean).join(" ")}>
         <AppChrome
           online={onlineChrome}
+          onShowExamples={onShowExamples ? showExamples : undefined}
           onImportFile={interchange.openImport}
           titlePlacement={window.ordinateDesktop ? "native" : "toolbar"}
           mode={mode}
           agentOpen={agentOpen}
           agentPreviewActive={assistantWorking}
-          agentDebugMode={!window.ordinateDesktop}
+          agentDebugMode={!window.ordinateDesktop && !onlineChrome}
           onToggleAgent={() => setAgentOpen(open => !open)}
           fileName={fileName}
           fileStatus={fileStatus.label}

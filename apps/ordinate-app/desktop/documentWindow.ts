@@ -26,6 +26,7 @@ type Options = {
   record: DocumentSession;
   rendererUrl: string;
   persist: () => Promise<void>;
+  offerExamplesOnLaunch: boolean;
   open: (parent: BrowserWindow, filename?: string) => Promise<void>;
   newDocument: (parent: BrowserWindow) => Promise<void>;
   createUntitled: (text: string, parent: BrowserWindow, draftName?: string) => Promise<void>;
@@ -43,7 +44,8 @@ export function createDocumentWindow(options: Options) {
     ...(process.platform === "darwin" ? { tabbingIdentifier: "dev.ordinate.documents" } : {}),
     webPreferences: {
       preload: path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.cjs"),
-      additionalArguments: [`--ordinate-session=${record.id}`, `--ordinate-locale=${app.getSystemLocale()}`],
+      additionalArguments: [`--ordinate-session=${record.id}`, `--ordinate-locale=${app.getSystemLocale()}`,
+        ...(options.offerExamplesOnLaunch ? ["--ordinate-offer-examples"] : [])],
       nodeIntegration: false, contextIsolation: true, sandbox: true,
     },
   });

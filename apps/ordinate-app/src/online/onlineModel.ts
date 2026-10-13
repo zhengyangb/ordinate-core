@@ -18,9 +18,12 @@ export function exampleById(examples: Example[], id: string): Example {
   return example;
 }
 
-// Detection affects only the download shortcut, never editor capabilities.
-export function isMacPlatform(platform: string, maxTouchPoints: number): boolean {
-  return /mac/i.test(platform) && maxTouchPoints < 2;
+// Platform changes only the desktop availability message, never editor capabilities.
+export function desktopPlatform(platform: string, maxTouchPoints: number): "mac" | "windows" | "linux" | "other" {
+  if (/mac/i.test(platform) && maxTouchPoints < 2) return "mac";
+  if (/win/i.test(platform)) return "windows";
+  if (/linux/i.test(platform)) return "linux";
+  return "other";
 }
 
 export function macDownloadUrl(configured: string | undefined): string | null {
@@ -34,4 +37,10 @@ export function exampleAssetUrl(file: string, base: string, origin: string): URL
   // Public requests come from the build's catalog, not arbitrary query-string URLs.
   if (!/^[a-zA-Z0-9-]+\.(ord|json)$/.test(file)) throw new Error("Invalid example asset name");
   return new URL(`${base}examples/${file}`, origin);
+}
+
+export async function readExampleAsset(file: string, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(exampleAssetUrl(file, import.meta.env.BASE_URL, location.href), { signal });
+  if (!response.ok) throw new Error(`Could not load ${file} (${response.status})`);
+  return response.text();
 }

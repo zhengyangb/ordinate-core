@@ -1,24 +1,26 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { failStartup, finishStartup } from "./startupScreen";
+import { failStartup, finishStartup, revealStartupWhenVisible } from "./startupScreen";
 
 afterEach(() => vi.unstubAllGlobals());
 
-function fixture() {
-  let visible = true;
+function fixture(initialVisibility: "visible" | "hidden" = "visible") {
+  let screenPresent = true;
   const root = { inert: true, removeAttribute: vi.fn() };
   const screen = {
-    remove: vi.fn(() => { visible = false; }),
+    remove: vi.fn(() => { screenPresent = false; }),
     replaceChildren: vi.fn(), removeAttribute: vi.fn(),
   };
   const dataset = { startup: "loading" };
   const mark = vi.fn();
   vi.stubGlobal("performance", { mark });
-  vi.stubGlobal("document", {
+  const document = Object.assign(new EventTarget(), {
+    visibilityState: initialVisibility,
     documentElement: { dataset },
-    getElementById: (id: string) => id === "root" ? root : visible ? screen : null,
+    getElementById: (id: string) => id === "root" ? root : screenPresent ? screen : null,
     createElement: () => ({ textContent: "", setAttribute: vi.fn(), addEventListener: vi.fn() }),
   });
-  return { root, screen, dataset, mark };
+  vi.stubGlobal("document", document);
+  return { root, screen, dataset, mark, document };
 }
 
 describe("startup screen lifecycle", () => {
@@ -43,5 +45,24 @@ describe("startup screen lifecycle", () => {
     expect(message.setAttribute).toHaveBeenCalledWith("role", "alert");
     expect(button.textContent).toBe("Reload");
     expect(screen.removeAttribute).toHaveBeenCalledWith("aria-busy");
+  });
+
+  it("keeps a prepared background tab covered until it becomes visible", () => {
+    const { root, screen, document } = fixture("hidden");
+    revealStartupWhenVisible();
+    expect(root.inert).toBe(true);
+    expect(screen.remove).not.toHaveBeenCalled();
+    document.visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(screen.remove).toHaveBeenCalledOnce();
+    expect(root.inert).toBe(false);
+  });
+
+  it("cancels a background reveal when its host unmounts", () => {
+    const { screen, document } = fixture("hidden");
+    revealStartupWhenVisible()?.();
+    document.visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(screen.remove).not.toHaveBeenCalled();
   });
 });

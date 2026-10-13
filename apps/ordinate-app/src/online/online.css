@@ -1,4 +1,4 @@
-.online-editor-host { position: absolute; inset: 0; }
+.app-editor-host { position: absolute; inset: 0; }
 .remote-workbook-dialog { width: min(29rem, calc(100vw - 2rem)); }
 .remote-workbook-content { max-height: calc(100dvh - 2rem); overflow-y: auto; }
 .remote-workbook-field { display: grid; gap: .45rem; min-width: 0; }
@@ -30,6 +30,7 @@
 .online-dialog-close { align-self: flex-start; flex: none; width: 1.8rem; height: 1.8rem; border: 0; border-radius: 50%; background: transparent; color: var(--chrome-soft); font: inherit; font-size: 1.3rem; line-height: 1; }
 .online-dialog-close:hover { background: var(--toolbar-pill); color: var(--chrome-ink); }
 .online-gallery-content { overflow: auto; overscroll-behavior: contain; min-height: 0; padding: .15rem 1.5rem 1.35rem; scrollbar-gutter: stable; }
+.online-gallery-loading { margin: 1rem 0; color: var(--chrome-soft); font-size: .82rem; }
 .online-featured { display: grid; grid-template-columns: 1fr 42%; gap: 1rem; width: 100%; padding: 0; border: 1px solid var(--chrome-border); border-radius: .65rem; overflow: hidden; text-align: left; color: var(--chrome-ink); background: var(--toolbar-pill); font: inherit; margin-bottom: 1.5rem; }
 .online-featured-copy { padding: 1.1rem 1.15rem; align-self: center; }
 .online-featured-kicker { color: var(--chrome-soft); font-size: .68rem; }
