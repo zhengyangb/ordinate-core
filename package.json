@@ -1,6 +1,7 @@
 {
   "name": "ordinate",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "app": "npm --prefix apps/ordinate-app run app",
     "build:cli": "npm --prefix packages/cli run build",

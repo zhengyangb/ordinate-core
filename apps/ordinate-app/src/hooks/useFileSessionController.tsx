@@ -23,9 +23,10 @@ type Options = Pick<EditorState, "mode" | "revision" | "sourceText" | "docState"
   onExport: () => void;
   onPrint: () => Promise<void>;
   onSettings: () => void;
+  onExamples?: () => void;
   onBrowserOpen: (openDocument: () => void) => void;
 };
-export function useFileSessionController({ initialText, mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence, hasPendingCellEdit, assistantWorking, onImport, onExport, onPrint, onBrowserOpen, onSettings }: Options) {
+export function useFileSessionController({ initialText, mode, revision, sourceText, docState, undo, redo, requestConfirmation, prepareForPersistence, hasPendingCellEdit, assistantWorking, onImport, onExport, onPrint, onBrowserOpen, onSettings, onExamples }: Options) {
   const prepareRef = useRef(prepareForPersistence);
   useLayoutEffect(() => { prepareRef.current = prepareForPersistence; }, [prepareForPersistence]);
   const editingRef = useRef(hasPendingCellEdit);
@@ -278,9 +279,13 @@ export function useFileSessionController({ initialText, mode, revision, sourceTe
     // Native menu accelerators bypass DOM keyboard bubbling. A modal must not
     // let Undo/Open/Save mutate the document behind a conversion review.
     if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+    if (command === "examples") {
+      onExamples?.();
+      return;
+    }
     const handlers = { open: handleOpenFile, save: handleSaveFile, saveAs: handleSaveFileAs, undo, redo, import: onImport, export: onExport, print: onPrint, settings: onSettings };
     void handlers[command]();
-  }), [assistantWorking, handleOpenFile, handleSaveFile, handleSaveFileAs, mode, undo, redo, onImport, onExport, onPrint, onSettings]);
+  }), [assistantWorking, handleOpenFile, handleSaveFile, handleSaveFileAs, mode, undo, redo, onImport, onExport, onPrint, onSettings, onExamples]);
 
 
   return { initializationStatus, fileDropCue, fileName, fileStatus, handleNewFile, handleOpenFile, handleOpenDocumentText, handleSaveFile, handleSaveFileAs };

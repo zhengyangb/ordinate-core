@@ -446,7 +446,7 @@ export function AgentPanel({ open, onClose, editingBlocked, bridge, onPreviewCha
       <div ref={scrollContentRef} className="agent-transcript-content">
       {connection.state === "unavailable" ? <div className="agent-intro">
         <div className="agent-intro-glyph"><SparklesIcon /></div>
-        <h2>Ask about your workbook</h2>
+        <h2>Assistant unavailable</h2>
         <p>{connection.reason}</p>
         <button type="button" className="agent-connect" onClick={() => {
           void bridge.connection().then(setConnection);
@@ -454,7 +454,7 @@ export function AgentPanel({ open, onClose, editingBlocked, bridge, onPreviewCha
       </div> : connection.state === "signed-out" || connection.state === "signing-in" || connection.state === "sign-in-error" ? <div className="agent-intro">
         <AgentHeroMark />
         <h2>Work alongside your model</h2>
-        <p>Connect ChatGPT to ask questions and make changes across this workbook.</p>
+        <p>Connect ChatGPT to create a spreadsheet from an image, edit this workbook, or ask questions.</p>
         {connection.state === "sign-in-error" && <p role="alert">{connection.reason}</p>}
         <button type="button" className="agent-connect" disabled={connection.state === "signing-in"} onClick={() => {
           void bridge.login().catch(error => setConnection({ state: "unavailable", reason: String(error) }));
@@ -462,8 +462,8 @@ export function AgentPanel({ open, onClose, editingBlocked, bridge, onPreviewCha
         <small>The assistant works on a temporary copy and syncs validated changes back to this document.</small>
       </div> : messages.length === 0 ? <div className="agent-intro">
         <AgentHeroMark />
-        <h2>{debugMode ? "Try the assistant workflow" : "Ask about your workbook"}</h2>
-        <p>{debugMode ? "Fixed scenarios exercise editing, progress, validation, and undo. No model is running. The first scenario replaces this workbook; Undo restores it." : "Explore a formula, check a model, or describe a change. Your current sheet is included as context."}</p>
+        <h2>{debugMode ? "Try the assistant workflow" : "Create, edit, or explore"}</h2>
+        <p>{debugMode ? "Fixed scenarios exercise editing, progress, validation, and undo. No model is running. The first scenario replaces this workbook; Undo restores it." : "Ask a question, request a change, or attach an image to turn it into a spreadsheet."}</p>
         {debugMode && <div className="agent-debug-prompts" aria-label="Simulation scenarios">{DEBUG_PROMPTS.map(prompt => <button type="button" key={prompt} onClick={() => setDraft(prompt)}>{prompt}</button>)}</div>}
       </div> : messages.map((message, index) => {
         if (processAtIndex.has(index)) return null;
@@ -494,7 +494,7 @@ export function AgentPanel({ open, onClose, editingBlocked, bridge, onPreviewCha
         {attachments.length > 0 && <div className="agent-attachment-list" aria-label="Attached files">{attachments.map((file, index) => <span className="agent-attachment-chip" key={`${index}-${file.name}`}><span title={file.name}>{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setAttachments(current => current.filter((_, item) => item !== index))}>×</button></span>)}</div>}
         <label htmlFor="agent-prompt" className="agent-composer-visually-hidden">Message to assistant</label>
         <textarea ref={promptRef} id="agent-prompt" rows={1} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={onComposerKeyDown} onPaste={onComposerPaste}
-          placeholder="Ask about this workbook…" disabled={busy || Boolean(conflict) || editingBlocked || modelsLoading || !selectedModel} />
+          placeholder={debugMode ? "Choose a scenario…" : "Ask a question or describe a task…"} disabled={busy || Boolean(conflict) || editingBlocked || modelsLoading || !selectedModel} />
         <div className="agent-composer-actions">
         <input ref={fileInputRef} hidden type="file" multiple onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
         <div className="agent-composer-options">

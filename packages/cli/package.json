@@ -1,6 +1,7 @@
 {
   "name": "ordinate-cli",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "engines": {
@@ -18,7 +19,7 @@
     "build": "node build.mjs",
     "sync:skill": "npm run build && node skill_reference.mjs --write",
     "check:skill": "node skill_reference.mjs --check",
-    "prepack": "npm run build && npm run check:skill",
+    "prepack": "npm run build && npm run check:skill && node ../../scripts/prepare-package-license.mjs packages/cli",
     "test": "npm run build && node --test tests/*.test.mjs"
   },
   "dependencies": {

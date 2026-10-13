@@ -2,6 +2,7 @@
 #startup-screen { position: fixed; inset: 0; z-index: 100; }
 :root[data-startup="loading"] #root,
 :root[data-startup="failed"] #root { visibility: hidden; }
+:root[data-startup="ready"] #root { animation: startup-reveal 180ms var(--ease-out-quart) both; }
 .startup-toolbar { gap: 1.5rem; }
 .startup-placeholder {
     display: block;
@@ -24,7 +25,6 @@
 .startup-table {
     width: min(660px, 100%);
     color: var(--sheet-ink);
-    animation: startup-breathe 1.8s ease-in-out infinite alternate;
 }
 .startup-table-heading {
     height: 38px;
@@ -52,8 +52,8 @@
     border: 1px solid var(--chrome-border); border-radius: 8px;
     background: var(--chrome-bg); color: var(--chrome-ink); padding: 8px 16px;
 }
-@keyframes startup-breathe { from { opacity: .55; } to { opacity: .95; } }
-@media (prefers-reduced-motion: reduce) { .startup-table { animation: none; } }
+@keyframes startup-reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { :root[data-startup="ready"] #root { animation: none; } }
 @media (max-width: 540px) {
     .startup-canvas { padding: 24px 18px; }
     .startup-tools { width: 68px; margin: 0; }

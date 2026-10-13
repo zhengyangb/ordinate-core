@@ -17,7 +17,12 @@ export function serializeDocumentState(state: DocumentState): string {
 
   state.sheets.forEach((sheet, sheetIdx) => {
     lines.push(`# ${sheet.name}`);
-    lines.push(...serializeSheetBodyLines(sheet, formulaRenderContext));
+    const bodyLines = serializeSheetBodyLines(sheet, formulaRenderContext);
+    // The document owns separators between sheets. A parsed sheet may retain
+    // trailing blank note lines; emitting those again would grow the source
+    // on every open/save cycle.
+    while (bodyLines.at(-1)?.trim() === "") bodyLines.pop();
+    lines.push(...bodyLines);
     if (sheetIdx !== state.sheets.length - 1) {
       lines.push("");
     }

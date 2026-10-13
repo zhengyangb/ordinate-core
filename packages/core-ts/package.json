@@ -1,10 +1,12 @@
 {
   "name": "ordinate-core",
   "version": "0.1.0",
+  "license": "MIT",
   "exports": "./src/index.ts",
   "private": true,
   "type": "module",
   "scripts": {
+    "prepack": "node ../../scripts/prepare-package-license.mjs packages/core-ts",
     "test": "vitest run",
     "test:interchange": "vitest run --config vitest.interchange.config.ts",
     "test:excel": "vitest run --config vitest.excel.config.ts",

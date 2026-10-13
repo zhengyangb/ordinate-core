@@ -438,8 +438,8 @@ async function assertFormulaMetadataAndTooltips(entry) {
   console.log('Formula chrome passed: single/multi-selection, click details, light/dark contrast, tooltip handoff/exit/reentry');
 }
 
-async function windowFor(record) {
-  const entry = createDocumentWindow({ record, rendererUrl: 'ordinate-test://app/', persist: async () => {},
+async function windowFor(record, offerExamplesOnLaunch = false) {
+  const entry = createDocumentWindow({ record, rendererUrl: 'ordinate-test://app/', persist: async () => {}, offerExamplesOnLaunch,
     open: async () => { throw new Error('Unexpected Open dialog'); }, checkDestination: async () => {},
     newDocument: async parent => {
       assert.equal(parent, entry.win, 'New document must belong to the requesting window, not another focused window');
@@ -447,7 +447,10 @@ async function windowFor(record) {
       if (process.platform === 'darwin') parent.addTabbedWindow(created.win);
       newDocuments.push(created);
     },
-    createUntitled: async text => { copies.push(await windowFor({ id: `copy-${copies.length}`, filename: null, text })); },
+    createUntitled: async (text, parent, draftName) => {
+      assert.equal(parent, entry.win);
+      copies.push(await windowFor({ id: `copy-${copies.length}`, filename: null, text, draftName }));
+    },
     quitPhase: () => closing ? 'approved' : 'idle', closed: () => {},
   });
   entries.push(entry);
@@ -589,6 +592,50 @@ async function run() {
   await second.host.request('saveAs');
   assert.match(await readFile(destination, 'utf8'), /Beta/);
   await Promise.all(entries.filter(e => !e.win.isDestroyed()).map(e => e.host.flush()));
+  const welcome = await windowFor({ id: 'welcome', filename: null, text: null }, true);
+  await welcome.win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+    const deadline = performance.now() + 10000;
+    const check = () => {
+      if (document.querySelector('.online-example-dialog [aria-label="Open Getting started"]')) resolve();
+      else if (performance.now() > deadline) reject(new Error('First launch did not offer examples'));
+      else requestAnimationFrame(check);
+    }; check();
+  })`);
+  await welcome.win.webContents.executeJavaScript(`document.querySelector('.online-example-dialog [aria-label="Open Getting started"]').click()`);
+  await welcome.win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+    const deadline = performance.now() + 10000;
+    const check = () => {
+      if (!document.querySelector('.online-example-dialog') && document.querySelector('[role="tab"][aria-label="Start Here"]')) resolve();
+      else if (performance.now() > deadline) reject(new Error('Example did not replace the pristine blank document'));
+      else requestAnimationFrame(check);
+    }; check();
+  })`);
+  assert.equal(copies.length, 1, 'Opening the first example reuses the pristine window');
+  welcome.win.webContents.send('editor:command', 'examples');
+  await welcome.win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+    const deadline = performance.now() + 10000;
+    const check = () => {
+      if (document.querySelector('.online-example-dialog [aria-label="Open Company report"]')) resolve();
+      else if (performance.now() > deadline) reject(new Error('Native Examples command did not reopen the gallery'));
+      else requestAnimationFrame(check);
+    }; check();
+  })`);
+  await welcome.win.webContents.executeJavaScript(`document.querySelector('.online-example-dialog [aria-label="Open Company report"]').click()`);
+  await welcome.win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+    const deadline = performance.now() + 10000;
+    const check = () => {
+      if (!document.querySelector('.online-example-dialog')) resolve();
+      else if (performance.now() > deadline) reject(new Error('Example gallery did not close after opening a copy'));
+      else requestAnimationFrame(check);
+    }; check();
+  })`);
+  assert.equal(copies.length, 2, 'Opening an example from an existing document creates a new window');
+  assert.equal(copies[1].record.draftName, 'Company report');
+  assert.match(copies[1].record.text, /# Acme Results/);
+  const restored = await windowFor({ id: 'restored-with-content', filename: null, text: source }, true);
+  await new Promise(resolve => setTimeout(resolve, 650));
+  assert.equal(await restored.win.webContents.executeJavaScript(`!!document.querySelector('.online-example-dialog')`), false,
+    'Restoring an existing document must not show onboarding');
   if (process.platform === 'darwin') {
     const tabWindows = [];
     for (let i = 0; i < 3; i += 1) {

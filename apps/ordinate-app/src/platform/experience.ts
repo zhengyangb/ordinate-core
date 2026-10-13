@@ -3,11 +3,11 @@ export function isOnlineExperience(): boolean {
 }
 
 export type OnlineChrome = {
-  showExamples: () => void;
   openFromLink: () => void;
   resetExample?: () => void;
-  downloadMac: () => void;
-  isMac: boolean;
+  showDesktopAvailability: () => void;
+  showAssistantAvailability: () => void;
+  desktopPlatform: "mac" | "windows" | "linux" | "other";
 };
 
 export type OnlineEditorCommands = {

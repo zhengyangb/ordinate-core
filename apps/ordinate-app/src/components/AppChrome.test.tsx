@@ -33,21 +33,26 @@ describe("host-specific document title placement", () => {
     expect(markup).toContain('aria-haspopup="menu" aria-expanded="false"');
     expect(renderToStaticMarkup(<AppChrome {...props} titlePlacement="native" />)).not.toContain('aria-label="Ordinate menu"');
   });
-  it("limits the Mac shortcut to the online Mac experience", () => {
-    const online = { showExamples: noop, openFromLink: noop, downloadMac: noop, isMac: true };
+  it("keeps a platform-aware desktop shortcut in the online toolbar", () => {
+    const online = { openFromLink: noop, showDesktopAvailability: noop, showAssistantAvailability: noop, desktopPlatform: "mac" as const };
     const markup = renderToStaticMarkup(<AppChrome {...props} online={online} />);
     expect(markup).toContain('aria-label="Get Mac app"');
     expect(markup.indexOf('aria-label="Get Mac app"')).toBeGreaterThan(markup.indexOf('aria-label="Settings"'));
     expect(markup.indexOf('aria-label="Get Mac app"')).toBeLessThan(markup.indexOf('class="toolbar-actions"'));
     expect(renderToStaticMarkup(<AppChrome {...props} />)).not.toContain('aria-label="Get Mac app"');
-    expect(renderToStaticMarkup(<AppChrome {...props} online={{ ...online, isMac: false }} />)).not.toContain('aria-label="Get Mac app"');
+    const windows = renderToStaticMarkup(<AppChrome {...props} online={{ ...online, desktopPlatform: "windows" }} />);
+    expect(windows).toContain('aria-label="Windows app · Coming soon"');
+    expect(windows).toContain('<span>Coming soon</span>');
   });
-  it("shows AI between search and source only outside Online", () => {
+  it("shows AI between search and source, including its online availability entry", () => {
     const raw = renderToStaticMarkup(<AppChrome {...props} />);
     expect(raw.indexOf('aria-label="Open AI assistant"')).toBeGreaterThan(raw.indexOf('aria-label="Search'));
     expect(raw.indexOf('aria-label="Open AI assistant"')).toBeLessThan(raw.indexOf('aria-label="Open source mode"'));
-    const online = { showExamples: noop, openFromLink: noop, downloadMac: noop, isMac: false };
-    expect(renderToStaticMarkup(<AppChrome {...props} online={online} />)).not.toContain('aria-label="Open AI assistant"');
+    const online = { openFromLink: noop, showDesktopAvailability: noop, showAssistantAvailability: noop, desktopPlatform: "windows" as const };
+    const onlineMarkup = renderToStaticMarkup(<AppChrome {...props} online={online} />);
+    expect(onlineMarkup).toContain('aria-label="AI assistant · Desktop app"');
+    expect(onlineMarkup).toContain('aria-haspopup="dialog"');
+    expect(onlineMarkup).not.toContain('aria-controls="ordinate-agent-panel"');
     const simulator = renderToStaticMarkup(<AppChrome {...props} agentDebugMode />);
     expect(simulator).toContain('aria-label="Open assistant simulator"');
     expect(simulator).not.toContain('aria-label="Open AI assistant"');

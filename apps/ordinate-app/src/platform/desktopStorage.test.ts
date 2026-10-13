@@ -21,6 +21,7 @@ async function session() {
     windowChrome: "native",
     sessionId: "test-session",
     systemLocale: "en-US",
+    offerExamplesOnLaunch: false,
     openDocument: async () => {},
     newDocument: async () => {},
     openImportedDocument: async () => { throw new Error("Not used by storage tests"); },

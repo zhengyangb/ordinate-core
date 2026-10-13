@@ -13,8 +13,9 @@ class StartupErrorBoundary extends React.Component<React.PropsWithChildren, { fa
   render() { return this.state.failed ? null : this.props.children; }
 }
 const OnlineApp = lazy(() => import("./online/OnlineApp"));
+const DesktopApp = lazy(() => import("./DesktopApp"));
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <StartupErrorBoundary><Suspense fallback={null}>{isOnlineExperience() ? <OnlineApp /> : <App />}</Suspense></StartupErrorBoundary>
+    <StartupErrorBoundary><Suspense fallback={null}>{isOnlineExperience() ? <OnlineApp /> : window.ordinateDesktop ? <DesktopApp /> : <App />}</Suspense></StartupErrorBoundary>
   </React.StrictMode>,
 );

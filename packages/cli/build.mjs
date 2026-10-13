@@ -2,6 +2,7 @@ import { build } from 'esbuild';
 import { chmod, readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'], {stdio: 'inherit'});
+execFileSync(process.execPath, ['../../scripts/generate-third-party-licenses.mjs', 'cli', 'dist/THIRD_PARTY_LICENSES.txt'], {stdio: 'inherit'});
 const manifest = JSON.parse(await readFile('package.json', 'utf8'));
 const entries = [['ordinate-cli', 'src/main.ts'], ['ordinate-mcp', 'src/mcp.ts']];
 for (const [name, entry] of entries) {

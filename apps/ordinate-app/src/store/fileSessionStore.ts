@@ -52,6 +52,7 @@ export type FileConflict = {
 
 export type LocalDraftRecord = {
   draftName?: string;
+  untitledBaselineText?: string;
   key: string;
   text: string;
   version: string;
@@ -373,6 +374,7 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
     set({ operation, pendingAutosave: false, lastError: null });
     const record: LocalDraftRecord = {
       ...(!state.file && state.draftName ? { draftName: state.draftName } : {}),
+      ...(!state.file && state.untitledBaselineText !== null ? { untitledBaselineText: state.untitledBaselineText } : {}),
       key,
       text,
       version: `${operation.id}:${now()}`,
@@ -524,8 +526,10 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
         return;
       }
       const currentText = deps.editor.getPersistableText().text;
-      const next = { ...get(), localDraftText: draft.text, conflict: null, externalSnapshot: null };
+      const restoredBaseline = draft.text === currentText ? draft.untitledBaselineText ?? null : get().untitledBaselineText;
+      const next = { ...get(), untitledBaselineText: restoredBaseline, localDraftText: draft.text, conflict: null, externalSnapshot: null };
       set({
+        untitledBaselineText: restoredBaseline,
         localDraftText: draft.text,
         ...(draft.text === currentText && draft.draftName ? { draftName: draft.draftName } : {}),
         localDraftVersion: draft.version,
@@ -1047,12 +1051,14 @@ export function createFileSessionStore(deps: FileSessionDeps): StoreApi<FileSess
       if (!recovery) return;
       deps.editor.replaceDocumentText(recovery.draft.text);
       const editorText = deps.editor.getPersistableText().text;
+      const untitledBaselineText = get().file ? get().untitledBaselineText : recovery.draft.untitledBaselineText ?? null;
       set({
         recoveryDraft: null,
         ...(!get().file && recovery.draft.draftName ? { draftName: recovery.draft.draftName } : {}),
+        untitledBaselineText,
         localDraftText: editorText,
         localDraftVersion: recovery.draft.version,
-        ...recomputeDirtyState({ ...get(), localDraftText: editorText }, editorText),
+        ...recomputeDirtyState({ ...get(), untitledBaselineText, localDraftText: editorText }, editorText),
       });
     },
 

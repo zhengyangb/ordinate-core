@@ -70,10 +70,9 @@ For local testing with Online at `http://127.0.0.1:5190/`, paste
 Use the actual server port and the same hostname in both URLs. A disk `file://`
 path is not fetchable this way; use local Open or serve it from the editor's origin.
 
-The spreadsheet appears first. Only an untouched default new document receives
-the examples dialog after a visible spreadsheet paint and a 400ms pause, with a
-240ms entrance. Background tabs wait for activation and get the full pause; starting to work cancels
-that invitation.
+Only an untouched default new document receives the examples dialog at launch.
+The editor and invitation are prepared behind the startup screen, then revealed
+together; background tabs reveal the prepared view when activated.
 Existing browser drafts resume directly, with no Continue screen. File → Examples
 reopens the same dialog on demand. Getting started is a six-sheet guided workbook
 above the eight full-scale models. The editor remains visible behind the dialog;
@@ -89,8 +88,10 @@ generates miniature table previews using the core presentation engine. Catalog
 and workbook mismatches fail the build. Add examples there, not under `src/`.
 
 Set `VITE_MAC_DOWNLOAD_URL=https://…` at build time when a release is available.
-Until then, the visible button opens a short unpublished-release notice. The
-editor toolbar shortcut appears on macOS; Help has the action on all platforms.
+Until then, the Mac button opens a short unpublished-release notice. The
+toolbar shows a Coming soon shortcut on Windows and Linux, with a platform-specific
+explanation on click. Online exposes an Assistant entry that explains the model-backed
+Assistant requires the desktop app; it does not run a model in the browser.
 This does not download an unsigned development build or publish a release.
 
 ```sh
@@ -184,6 +185,15 @@ This is a local, unsigned development build, not a distribution-ready installer.
 Signing, notarization, installers, auto-update, and Windows/Linux validation are
 separate release work.
 Do not bypass Gatekeeper warnings; a distributable build needs proper signing.
+
+The unsigned Finder installation-window preview is available on macOS with
+`npm run desktop:dmg:preview`. It creates `release/Ordinate-<version>-<arch>.dmg`
+for visual review only; do not distribute it as a release. The editable design
+source is `resources/dmg-background.svg`; the preview command renders its 1×
+and Retina PNGs, then packages the app and an Applications shortcut at the
+coordinates in `package.json`. Production distribution still requires a
+Developer ID Application certificate, signing, notarization, and a clean-Mac
+installation check. The current `mac.identity: null` intentionally skips signing.
 
 ## Local files
 
@@ -313,4 +323,9 @@ resolve those before exposing development servers or preparing a public release.
 
 ## Third-party
 
-- See `THIRD_PARTY_NOTICES.md` for font attribution and license notices.
+- Web builds include generated notices in `dist/licenses/THIRD_PARTY_LICENSES.txt`.
+  Desktop builds also place third-party, Electron, Chromium, and Ordinate license
+  texts in `Ordinate.app/Contents/Resources/licenses/`. The CLI bundle includes
+  its notices in `packages/cli/dist/THIRD_PARTY_LICENSES.txt`. The notice
+  generator reads the installed runtime dependency trees and lockfiles and
+  stops the build when a new package has no reviewable license text.

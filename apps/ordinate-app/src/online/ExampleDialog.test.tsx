@@ -28,4 +28,11 @@ describe("examples dialog", () => {
     expect(html).toMatch(/app-modal-action primary[^>]*disabled/);
     expect(html).toMatch(/app-modal-action secondary[^>]*disabled/);
   });
+  it("keeps blank and open-file actions available while local examples load", () => {
+    const html = renderToStaticMarkup(<ExampleDialog examples={[]} loading busy={null} error={null}
+      onClose={noop} onOpen={noop} onBlank={noop} onOpenFile={noop} />);
+    expect(html).toContain('role="status">Loading examples…');
+    expect(html).toContain('Blank document</button>');
+    expect(html).toContain('Open file…</button>');
+  });
 });

@@ -176,6 +176,38 @@ describe("imported working copies", () => {
 });
 
 describe("pristine untitled documents", () => {
+  it("restores a built-in template baseline across navigation without treating it as an edit", async () => {
+    const first = createHarness();
+    first.store.getState().initializeUntitled(DOC_B, "Example");
+    await first.store.getState().autosaveNow();
+    expect((await first.localDraftStore.get("untitled:untitled-test"))?.untitledBaselineText).toBe(DOC_B);
+
+    const restored = createHarness({ localDraftStore: first.localDraftStore });
+    restored.store.getState().initializeUntitled(DOC_A);
+    await restored.store.getState().loadUntitledDraft();
+    restored.store.getState().recoverDraft();
+    expect(restored.store.getState()).toMatchObject({ draftName: "Example", untitledBaselineText: DOC_B, documentDirty: "clean" });
+    restored.editor.setText(DOC_C);
+    restored.store.getState().syncEditorSnapshot();
+    expect(restored.store.getState().documentDirty).toBe("dirty");
+    restored.editor.setText(DOC_B);
+    restored.store.getState().syncEditorSnapshot();
+    expect(restored.store.getState().documentDirty).toBe("clean");
+  });
+
+  it("keeps edits to a built-in template dirty after recovery", async () => {
+    const first = createHarness();
+    first.store.getState().initializeUntitled(DOC_B, "Example");
+    first.editor.setText(DOC_C);
+    await first.store.getState().autosaveNow();
+
+    const restored = createHarness({ localDraftStore: first.localDraftStore });
+    restored.store.getState().initializeUntitled(DOC_A);
+    await restored.store.getState().loadUntitledDraft();
+    restored.store.getState().recoverDraft();
+    expect(restored.store.getState()).toMatchObject({ draftName: "Example", untitledBaselineText: DOC_B, documentDirty: "dirty" });
+  });
+
   it("does not treat the initial table or its recovery draft as a user edit", async () => {
     const { store } = createHarness();
     store.getState().initializeUntitled(DOC_A);

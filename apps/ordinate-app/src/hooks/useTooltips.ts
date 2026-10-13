@@ -68,7 +68,7 @@ export function useTooltips() {
 
   const handleTabMouseEnter = useCallback((sheetName: string, target: HTMLButtonElement) => {
     const label = target.querySelector<HTMLElement>(".sheet-tab-label");
-    if (!label || label.scrollWidth <= label.clientWidth + 1) {
+    if (!label || label.scrollWidth <= label.clientWidth) {
       clearTooltip();
       return;
     }

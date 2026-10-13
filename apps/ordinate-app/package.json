@@ -2,6 +2,7 @@
   "name": "ordinate-app",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "main": "desktop-out/desktop/main.js",
   "description": "Ordinate structured document editor",
@@ -9,13 +10,14 @@
     "app": "npm run desktop:build",
     "dev": "vite",
     "dev:online": "vite --mode online",
-    "build": "tsc -b && vite build",
-    "build:online": "tsc -b && vite build --mode online",
+    "build": "tsc -b && vite build && node ../../scripts/generate-third-party-licenses.mjs web dist/licenses/THIRD_PARTY_LICENSES.txt",
+    "build:online": "tsc -b && vite build --mode online && node ../../scripts/generate-third-party-licenses.mjs web dist/licenses/THIRD_PARTY_LICENSES.txt",
+    "prepack": "node ../../scripts/prepare-package-license.mjs apps/ordinate-app",
     "preview": "vite preview",
     "preview:online": "vite preview --mode online",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "desktop:compile": "npm --prefix ../../packages/cli run build && tsc -p tsconfig.desktop.json && node desktop/build-native.mjs",
+    "desktop:compile": "npm --prefix ../../packages/cli run build && tsc -p tsconfig.desktop.json && node desktop/build-native.mjs && node ../../scripts/generate-third-party-licenses.mjs desktop desktop-out/licenses/THIRD_PARTY_LICENSES.txt",
     "desktop:test-native": "npm run desktop:compile && node desktop/build-native.mjs --test && electron desktop/document-smoke.mjs",
     "desktop:test-workspace": "npm run build && npm run desktop:compile && electron desktop/workspace-smoke.mjs",
     "desktop:test-interchange": "npm run build && npm run desktop:compile && electron desktop/interchange-smoke.mjs",
@@ -23,6 +25,7 @@
     "desktop:dev": "npm run desktop:compile && node desktop/dev.mjs",
     "desktop:debug": "npm run desktop:compile && node desktop/dev.mjs --inspect",
     "desktop:build": "npm run build && npm run desktop:compile && electron-builder --dir --config.electronDist=node_modules/electron/dist",
+    "desktop:dmg:preview": "npm run build && npm run desktop:compile && swift desktop/render-dmg-background.swift resources/dmg-background.svg && electron-builder --mac dmg --config.electronDist=node_modules/electron/dist",
     "desktop:start": "electron ."
   },
   "build": {
@@ -46,6 +49,22 @@
       {
         "from": "../../packages/cli/skills/ordinate-authoring",
         "to": "agent/skills/ordinate-authoring"
+      },
+      {
+        "from": "../../LICENSE",
+        "to": "licenses/Ordinate-LICENSE.txt"
+      },
+      {
+        "from": "desktop-out/licenses/THIRD_PARTY_LICENSES.txt",
+        "to": "licenses/THIRD_PARTY_LICENSES.txt"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSE",
+        "to": "licenses/Electron-LICENSE.txt"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSES.chromium.html",
+        "to": "licenses/LICENSES.chromium.html"
       }
     ],
     "mac": {
@@ -78,6 +97,29 @@
           }
         ]
       }
+    },
+    "dmg": {
+      "background": "resources/dmg-background.png",
+      "window": {
+        "width": 600,
+        "height": 400
+      },
+      "contents": [
+        {
+          "x": 158,
+          "y": 248,
+          "type": "file"
+        },
+        {
+          "x": 442,
+          "y": 248,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "iconSize": 92,
+      "iconTextSize": 12,
+      "title": "Ordinate"
     },
     "asar": true,
     "asarUnpack": [
