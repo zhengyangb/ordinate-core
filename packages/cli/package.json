@@ -2,7 +2,12 @@
   "name": "ordinate-cli",
   "version": "0.1.0",
   "license": "MIT",
-  "private": true,
+  "description": "Ordinate workbook CLI and MCP server, with the authoring skill.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhengyangb/ordinate-core.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -24,13 +29,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.1",
-    "ordinate-core": "file:../core-ts",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.3.1",
     "@types/node": "22.19.15",
     "esbuild": "0.21.5",
+    "ordinate-core": "file:../core-ts",
     "typescript": "^5.6.0"
   }
 }

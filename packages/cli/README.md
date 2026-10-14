@@ -3,20 +3,20 @@
 A headless file adapter for the same Core used by the editor. The package and
 CLI executable are named `ordinate-cli`; it also builds `ordinate-mcp` for
 MCP hosts. There is no `ordinate` command alias.
-Requires Node.js
-20 or newer. No GUI, API key, global npm install, or agent skill is required.
+Requires Node.js 20 or newer. No GUI, API key, or agent skill is required.
 
-From the repository root:
+Once published, install the CLI and use the `ordinate-cli` command:
 
 ```sh
-npm --prefix packages/cli install
-npm run build:cli
-node packages/cli/dist/ordinate-cli.mjs --help
+npm install -g ordinate-cli
+ordinate-cli --help
 ```
 
-Use the executable directly for clean stdout. `npm run cli -- ...` is convenient
-interactively, but npm prints a script banner. PATH/app-bundle installation and
-registry publication are separate distribution work; this package is private.
+For a one-off invocation after publication, use `npx ordinate-cli --help`.
+To run from this repository before installing the published package, build from
+the repository root with `npm --prefix packages/cli install` and
+`npm run build:cli`, then run `node packages/cli/dist/ordinate-cli.mjs --help`.
+That `.mjs` path is a local build artifact, not the public command name.
 
 ## Language reference and authoring skill
 
@@ -24,12 +24,12 @@ Command help describes the adapter; queryable reference describes what goes
 inside the workbook. These commands need no source file or network:
 
 ```sh
-node packages/cli/dist/ordinate-cli.mjs help
-node packages/cli/dist/ordinate-cli.mjs help formulas
-node packages/cli/dist/ordinate-cli.mjs help references
-node packages/cli/dist/ordinate-cli.mjs help formats
-node packages/cli/dist/ordinate-cli.mjs help functions
-node packages/cli/dist/ordinate-cli.mjs help function sum --json
+ordinate-cli help
+ordinate-cli help formulas
+ordinate-cli help references
+ordinate-cli help formats
+ordinate-cli help functions
+ordinate-cli help function sum --json
 ```
 
 `syntax` and `notes` are also topics. Function names, signatures and examples
@@ -45,18 +45,21 @@ topics and Core function metadata, not a separately maintained manual.
 Run `npm --prefix packages/cli run sync:skill` after changing those sources;
 tests and the pack check reject outdated generated references. It ships in this
 package and shares its release version; installation into an agent host is
-explicit, not an npm postinstall side effect. The package remains private;
-no registry publication or global/agent installation is implied.
+explicit, not an npm postinstall side effect. `npm install ordinate-cli` provides
+the files at `node_modules/ordinate-cli/skills/ordinate-authoring`, but does not
+register them with Codex or another agent host. Install that folder through the
+host's skill installer or copy it to a recognized skill location. The skill is
+not a separate npm package.
 See [RFC-0051](../../rfcs/0051-language-discovery-and-authoring-skill.md)
 for structure, ownership, and distribution decisions.
 
 ## Read and check
 
 ```sh
-node packages/cli/dist/ordinate-cli.mjs inspect model.ord --json
-node packages/cli/dist/ordinate-cli.mjs inspect model.ord --sheet Plan --notes --json
-node packages/cli/dist/ordinate-cli.mjs validate model.ord
-node packages/cli/dist/ordinate-cli.mjs evaluate model.ord --sheet Plan --json
+ordinate-cli inspect model.ord --json
+ordinate-cli inspect model.ord --sheet Plan --notes --json
+ordinate-cli validate model.ord
+ordinate-cli evaluate model.ord --sheet Plan --json
 ```
 
 Inspection without `--sheet` gives an overview and an exact `input.revision`.
@@ -76,8 +79,8 @@ editor into a new `.ord` workbook. The input is never changed. Choose the format
 explicitly; no file-extension guessing occurs.
 
 ```sh
-node packages/cli/dist/ordinate-cli.mjs import source.xlsx --format xlsx --output working.ord --json
-node packages/cli/dist/ordinate-cli.mjs import source.csv --format csv --options import.json --output working.ord --json
+ordinate-cli import source.xlsx --format xlsx --output working.ord --json
+ordinate-cli import source.csv --format csv --options import.json --output working.ord --json
 ```
 
 For the second command, `import.json` might contain
@@ -102,7 +105,7 @@ sheet named Plan with a Revenue row and a Q1 column. Replace the revision with
 the value returned by inspection:
 
 ```sh
-node packages/cli/dist/ordinate-cli.mjs edit model.ord --operations - --write <<'JSON'
+ordinate-cli edit model.ord --operations - --write <<'JSON'
 {
   "baseRevision": "sha256:REPLACE_WITH_THE_64_CHARACTER_REVISION",
   "operations": [
@@ -132,11 +135,11 @@ resolve against current staged state after each operation. Row paths are arrays,
 so dots inside names are literal. Internal IDs are not public selectors.
 
 ```sh
-node packages/cli/dist/ordinate-cli.mjs edit --help
-node packages/cli/dist/ordinate-cli.mjs edit --help --operation duplicate_columns
-node packages/cli/dist/ordinate-cli.mjs edit --help --operation fill_region
-node packages/cli/dist/ordinate-cli.mjs edit --help --operation set_row_default_format
-node packages/cli/dist/ordinate-cli.mjs edit --help --schema
+ordinate-cli edit --help
+ordinate-cli edit --help --operation duplicate_columns
+ordinate-cli edit --help --operation fill_region
+ordinate-cli edit --help --operation set_row_default_format
+ordinate-cli edit --help --schema
 ```
 
 Fill source/target rectangles must be adjacent and in the same sheet. Choose

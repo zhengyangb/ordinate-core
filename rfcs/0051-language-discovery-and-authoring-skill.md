@@ -129,9 +129,9 @@ updates the skill without touching parser/evaluator semantics.
 The CLI package includes `dist` and `skills`; language reference is bundled in
 the executable. A skill is a directory of text/resources, not an npm runtime
 module. It does not require a separate npm package or a global npm installation.
-If the CLI is later published through npm, it can carry the same skill directory.
-The package is currently private; publication/PATH/desktop distribution remain
-separate work under RFC-0050.
+The CLI package is prepared to carry the same skill directory when published
+through npm. Registry publication, PATH installation, and desktop distribution
+remain separate work under RFC-0050.
 
 Agent discovery is host-specific. Users may explicitly install/copy the skill
 into their host's skill location or provide its path. Bundling does not make

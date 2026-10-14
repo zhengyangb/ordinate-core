@@ -2,22 +2,35 @@
   "name": "ordinate-core",
   "version": "0.1.0",
   "license": "MIT",
-  "exports": "./src/index.ts",
-  "private": true,
+  "description": "The Ordinate workbook parser, evaluator, and editing core.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhengyangb/ordinate-core.git",
+    "directory": "packages/core-ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
   "type": "module",
   "scripts": {
-    "prepack": "node ../../scripts/prepare-package-license.mjs packages/core-ts",
+    "prepack": "npm run build && node ../../scripts/prepare-package-license.mjs packages/core-ts",
     "test": "vitest run",
     "test:interchange": "vitest run --config vitest.interchange.config.ts",
     "test:excel": "vitest run --config vitest.excel.config.ts",
     "test:excel:recalc": "tsc -p tsconfig.excel-recalc.json && vitest run --config vitest.excel-recalc.config.ts",
     "test:watch": "vitest",
-    "build": "tsc -p tsconfig.json"
+    "build": "node build.mjs"
   },
   "devDependencies": {
     "@formulajs/formulajs": "^4.6.1",
     "@types/node": "22.19.15",
     "@vitest/coverage-v8": "^1.6.1",
+    "esbuild": "0.21.5",
     "fast-formula-parser": "1.0.19",
     "typescript": "^5.6.0",
     "vitest": "^1.6.0",
